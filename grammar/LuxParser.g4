@@ -461,6 +461,7 @@ expression
     | OCT_LIT                                                  # octLitExpr
     | BIN_LIT                                                  # binLitExpr
     | FLOAT_LIT                                                # floatLitExpr
+    | DOT INT_LIT                                              # leadingDotFloatLitExpr
     | BOOL_LIT                                                 # boolLitExpr
     | CHAR_LIT                                                 # charLitExpr
     | STR_LIT                                                  # strLitExpr

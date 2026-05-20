@@ -241,6 +241,8 @@ public:
 
     virtual std::any visitMethodCallExpr(LuxParser::MethodCallExprContext *context) = 0;
 
+    virtual std::any visitLeadingDotFloatLitExpr(LuxParser::LeadingDotFloatLitExprContext *context) = 0;
+
     virtual std::any visitEnumNamedVariantExpr(LuxParser::EnumNamedVariantExprContext *context) = 0;
 
     virtual std::any visitStructLitExpr(LuxParser::StructLitExprContext *context) = 0;

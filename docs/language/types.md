@@ -169,7 +169,7 @@ int32 main() {
 |---|---|---|
 | `float32` | 4 bytes | ~7 decimal digits (IEEE 754 single) |
 | `float64` | 8 bytes | ~15 decimal digits (IEEE 754 double) |
-| `float80` | 10 bytes | ~18 decimal digits (x87 extended) |
+| `float80` | target ABI dependent (typically 16 bytes on x86-64) | ~18 decimal digits (80-bit x87 extended precision) |
 | `float128` | 16 bytes | ~33 decimal digits (IEEE 754 quad) |
 | `double` | 8 bytes | Alias for `float64` |
 

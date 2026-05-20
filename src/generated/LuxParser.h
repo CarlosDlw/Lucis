@@ -1944,6 +1944,16 @@ public:
     virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
   };
 
+  class  LeadingDotFloatLitExprContext : public ExpressionContext {
+  public:
+    LeadingDotFloatLitExprContext(ExpressionContext *ctx);
+
+    antlr4::tree::TerminalNode *DOT();
+    antlr4::tree::TerminalNode *INT_LIT();
+
+    virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+  };
+
   class  EnumNamedVariantExprContext : public ExpressionContext {
   public:
     EnumNamedVariantExprContext(ExpressionContext *ctx);

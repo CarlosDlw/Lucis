@@ -1814,10 +1814,14 @@ std::any IRGen::visitVarDeclStmt(LuxParser::VarDeclStmtContext* ctx) {
 
         auto  initVal = visit(ctx->expression());
         auto* val     = castValue(initVal);
+        auto* srcTI   = resolveExprTypeInfo(ctx->expression());
 
         if (val->getType() != type) {
             if (val->getType()->isIntegerTy() && type->isIntegerTy()) {
-                val = builder_->CreateIntCast(val, type, ti->isSigned, name + "_cast");
+                bool srcSigned = !val->getType()->isIntegerTy(1);
+                if (srcTI && srcTI->kind == TypeKind::Integer)
+                    srcSigned = srcTI->isSigned;
+                val = builder_->CreateIntCast(val, type, srcSigned, name + "_cast");
             } else if (val->getType()->isFloatingPointTy() && type->isFloatingPointTy()) {
                 if (val->getType()->getPrimitiveSizeInBits() > type->getPrimitiveSizeInBits())
                     val = builder_->CreateFPTrunc(val, type, name + "_trunc");
@@ -1891,11 +1895,16 @@ std::any IRGen::visitAssignStmt(LuxParser::AssignStmtContext* ctx) {
     // Simple reassignment: x = 42; (no bracket expressions)
     if (exprs.size() == 1) {
         auto* val = castValue(visit(exprs[0]));
+        auto* srcTI = resolveExprTypeInfo(exprs[0]);
         auto* varTy = allocType;
 
         if (val->getType() != varTy) {
-            if (val->getType()->isIntegerTy() && varTy->isIntegerTy())
-                val = builder_->CreateIntCast(val, varTy, elemTI->isSigned);
+            if (val->getType()->isIntegerTy() && varTy->isIntegerTy()) {
+                bool srcSigned = !val->getType()->isIntegerTy(1);
+                if (srcTI && srcTI->kind == TypeKind::Integer)
+                    srcSigned = srcTI->isSigned;
+                val = builder_->CreateIntCast(val, varTy, srcSigned);
+            }
             else if (val->getType()->isFloatingPointTy() && varTy->isFloatingPointTy()) {
                 if (val->getType()->getPrimitiveSizeInBits() > varTy->getPrimitiveSizeInBits())
                     val = builder_->CreateFPTrunc(val, varTy);
@@ -3664,6 +3673,10 @@ std::any IRGen::visitCallStmt(LuxParser::CallStmtContext* ctx) {
             ? "lux_assertEqual" : "lux_assertNotEqual";
         auto* ty = tArgs[0]->getType();
         auto* rhs = tArgs[1];
+        auto fileName = module_->getName().str();
+        auto* fileGlobal = builder_->CreateGlobalString(fileName, ".test_assert_file", 0, module_);
+        auto* fileLen = llvm::ConstantInt::get(usizeTy, fileName.size());
+        auto* lineNo  = llvm::ConstantInt::get(i32Ty, ctx->getStart()->getLine());
         if (rhs->getType() != ty) {
             if (ty->isIntegerTy() && rhs->getType()->isIntegerTy()) {
                 rhs = builder_->CreateIntCast(rhs, ty, true);
@@ -3679,25 +3692,32 @@ std::any IRGen::visitCallStmt(LuxParser::CallStmtContext* ctx) {
             callArgs.push_back(builder_->CreateExtractValue(tArgs[0], 1));
             callArgs.push_back(builder_->CreateExtractValue(rhs, 0));
             callArgs.push_back(builder_->CreateExtractValue(rhs, 1));
+            callArgs.push_back(fileGlobal);
+            callArgs.push_back(fileLen);
+            callArgs.push_back(lineNo);
             auto callee = declareBuiltin(prefix + "Str", voidTy,
-                {ptrTy, usizeTy, ptrTy, usizeTy});
+                {ptrTy, usizeTy, ptrTy, usizeTy, ptrTy, usizeTy, i32Ty});
             builder_->CreateCall(callee, callArgs);
         } else if (ty == i1Ty) {
             auto* a = builder_->CreateZExt(tArgs[0], i32Ty);
             auto* b = builder_->CreateZExt(rhs, i32Ty);
-            auto callee = declareBuiltin(prefix + "Bool", voidTy, {i32Ty, i32Ty});
-            builder_->CreateCall(callee, {a, b});
+            auto callee = declareBuiltin(prefix + "Bool", voidTy,
+                {i32Ty, i32Ty, ptrTy, usizeTy, i32Ty});
+            builder_->CreateCall(callee, {a, b, fileGlobal, fileLen, lineNo});
         } else if (ty == i8Ty) {
-            auto callee = declareBuiltin(prefix + "Char", voidTy, {i8Ty, i8Ty});
-            builder_->CreateCall(callee, {tArgs[0], rhs});
+            auto callee = declareBuiltin(prefix + "Char", voidTy,
+                {i8Ty, i8Ty, ptrTy, usizeTy, i32Ty});
+            builder_->CreateCall(callee, {tArgs[0], rhs, fileGlobal, fileLen, lineNo});
         } else if (ty->isDoubleTy()) {
-            auto callee = declareBuiltin(prefix + "F64", voidTy, {f64Ty, f64Ty});
-            builder_->CreateCall(callee, {tArgs[0], rhs});
+            auto callee = declareBuiltin(prefix + "F64", voidTy,
+                {f64Ty, f64Ty, ptrTy, usizeTy, i32Ty});
+            builder_->CreateCall(callee, {tArgs[0], rhs, fileGlobal, fileLen, lineNo});
         } else {
             auto* a = builder_->CreateIntCast(tArgs[0], i64Ty, true);
             auto* b = builder_->CreateIntCast(rhs, i64Ty, true);
-            auto callee = declareBuiltin(prefix + "I64", voidTy, {i64Ty, i64Ty});
-            builder_->CreateCall(callee, {a, b});
+            auto callee = declareBuiltin(prefix + "I64", voidTy,
+                {i64Ty, i64Ty, ptrTy, usizeTy, i32Ty});
+            builder_->CreateCall(callee, {a, b, fileGlobal, fileLen, lineNo});
         }
         return {};
     }
@@ -3711,11 +3731,17 @@ std::any IRGen::visitCallStmt(LuxParser::CallStmtContext* ctx) {
         if (!requireArgs(funcName, tArgs, 1)) return {};
         auto* voidTy = llvm::Type::getVoidTy(*context_);
         auto* i32Ty  = llvm::Type::getInt32Ty(*context_);
+        auto* ptrTy   = llvm::PointerType::getUnqual(*context_);
+        auto* usizeTy = module_->getDataLayout().getIntPtrType(*context_);
         auto* cond = builder_->CreateZExt(tArgs[0], i32Ty);
+        auto fileName = module_->getName().str();
+        auto* fileGlobal = builder_->CreateGlobalString(fileName, ".test_assert_bool_file", 0, module_);
+        auto* fileLen = llvm::ConstantInt::get(usizeTy, fileName.size());
+        auto* lineNo  = llvm::ConstantInt::get(i32Ty, ctx->getStart()->getLine());
         std::string cName = (funcName == "assertTrue")
             ? "lux_assertTrue" : "lux_assertFalse";
-        auto callee = declareBuiltin(cName, voidTy, {i32Ty});
-        builder_->CreateCall(callee, {cond});
+        auto callee = declareBuiltin(cName, voidTy, {i32Ty, ptrTy, usizeTy, i32Ty});
+        builder_->CreateCall(callee, {cond, fileGlobal, fileLen, lineNo});
         return {};
     }
 
@@ -3742,18 +3768,25 @@ std::any IRGen::visitCallStmt(LuxParser::CallStmtContext* ctx) {
             if (!requireArgs(funcName, tArgs, 2)) return {};
             auto* voidTy = llvm::Type::getVoidTy(*context_);
             auto* i64Ty  = llvm::Type::getInt64Ty(*context_);
+            auto* i32Ty  = llvm::Type::getInt32Ty(*context_);
             auto* f64Ty  = llvm::Type::getDoubleTy(*context_);
+            auto* ptrTy   = llvm::PointerType::getUnqual(*context_);
+            auto* usizeTy = module_->getDataLayout().getIntPtrType(*context_);
+            auto fileName = module_->getName().str();
+            auto* fileGlobal = builder_->CreateGlobalString(fileName, ".test_cmp_file", 0, module_);
+            auto* fileLen = llvm::ConstantInt::get(usizeTy, fileName.size());
+            auto* lineNo  = llvm::ConstantInt::get(i32Ty, ctx->getStart()->getLine());
             auto* ty = tArgs[0]->getType();
             if (ty->isDoubleTy()) {
                 auto callee = declareBuiltin(cmpF64.at(funcName), voidTy,
-                    {f64Ty, f64Ty});
-                builder_->CreateCall(callee, {tArgs[0], tArgs[1]});
+                    {f64Ty, f64Ty, ptrTy, usizeTy, i32Ty});
+                builder_->CreateCall(callee, {tArgs[0], tArgs[1], fileGlobal, fileLen, lineNo});
             } else {
                 auto* a = builder_->CreateIntCast(tArgs[0], i64Ty, true);
                 auto* b = builder_->CreateIntCast(tArgs[1], i64Ty, true);
                 auto callee = declareBuiltin(itI->second, voidTy,
-                    {i64Ty, i64Ty});
-                builder_->CreateCall(callee, {a, b});
+                    {i64Ty, i64Ty, ptrTy, usizeTy, i32Ty});
+                builder_->CreateCall(callee, {a, b, fileGlobal, fileLen, lineNo});
             }
             return {};
         }
@@ -3768,14 +3801,22 @@ std::any IRGen::visitCallStmt(LuxParser::CallStmtContext* ctx) {
         if (!requireArgs(funcName, tArgs, 2)) return {};
         auto* ptrTy   = llvm::PointerType::getUnqual(*context_);
         auto* usizeTy = module_->getDataLayout().getIntPtrType(*context_);
+        auto* i32Ty   = llvm::Type::getInt32Ty(*context_);
         auto* voidTy  = llvm::Type::getVoidTy(*context_);
+        auto fileName = module_->getName().str();
+        auto* fileGlobal = builder_->CreateGlobalString(fileName, ".test_strcontains_file", 0, module_);
+        auto* fileLen = llvm::ConstantInt::get(usizeTy, fileName.size());
+        auto* lineNo  = llvm::ConstantInt::get(i32Ty, ctx->getStart()->getLine());
         std::vector<llvm::Value*> callArgs;
         callArgs.push_back(builder_->CreateExtractValue(tArgs[0], 0));
         callArgs.push_back(builder_->CreateExtractValue(tArgs[0], 1));
         callArgs.push_back(builder_->CreateExtractValue(tArgs[1], 0));
         callArgs.push_back(builder_->CreateExtractValue(tArgs[1], 1));
+        callArgs.push_back(fileGlobal);
+        callArgs.push_back(fileLen);
+        callArgs.push_back(lineNo);
         auto callee = declareBuiltin("lux_assertStringContains", voidTy,
-            {ptrTy, usizeTy, ptrTy, usizeTy});
+            {ptrTy, usizeTy, ptrTy, usizeTy, ptrTy, usizeTy, i32Ty});
         builder_->CreateCall(callee, callArgs);
         return {};
     }
@@ -3789,9 +3830,16 @@ std::any IRGen::visitCallStmt(LuxParser::CallStmtContext* ctx) {
         if (!requireArgs(funcName, tArgs, 3)) return {};
         auto* voidTy = llvm::Type::getVoidTy(*context_);
         auto* f64Ty  = llvm::Type::getDoubleTy(*context_);
+        auto* i32Ty   = llvm::Type::getInt32Ty(*context_);
+        auto* ptrTy   = llvm::PointerType::getUnqual(*context_);
+        auto* usizeTy = module_->getDataLayout().getIntPtrType(*context_);
+        auto fileName = module_->getName().str();
+        auto* fileGlobal = builder_->CreateGlobalString(fileName, ".test_near_file", 0, module_);
+        auto* fileLen = llvm::ConstantInt::get(usizeTy, fileName.size());
+        auto* lineNo  = llvm::ConstantInt::get(i32Ty, ctx->getStart()->getLine());
         auto callee = declareBuiltin("lux_assertNear", voidTy,
-            {f64Ty, f64Ty, f64Ty});
-        builder_->CreateCall(callee, {tArgs[0], tArgs[1], tArgs[2]});
+            {f64Ty, f64Ty, f64Ty, ptrTy, usizeTy, i32Ty});
+        builder_->CreateCall(callee, {tArgs[0], tArgs[1], tArgs[2], fileGlobal, fileLen, lineNo});
         return {};
     }
 
@@ -3811,11 +3859,16 @@ std::any IRGen::visitCallStmt(LuxParser::CallStmtContext* ctx) {
             if (!requireArgs(funcName, tArgs, 1)) return {};
             auto* ptrTy   = llvm::PointerType::getUnqual(*context_);
             auto* usizeTy = module_->getDataLayout().getIntPtrType(*context_);
+            auto* i32Ty   = llvm::Type::getInt32Ty(*context_);
             auto* voidTy  = llvm::Type::getVoidTy(*context_);
+            auto fileName = module_->getName().str();
+            auto* fileGlobal = builder_->CreateGlobalString(fileName, ".test_util_file", 0, module_);
+            auto* fileLen = llvm::ConstantInt::get(usizeTy, fileName.size());
+            auto* lineNo  = llvm::ConstantInt::get(i32Ty, ctx->getStart()->getLine());
             auto* strPtr = builder_->CreateExtractValue(tArgs[0], 0);
             auto* strLen = builder_->CreateExtractValue(tArgs[0], 1);
-            auto callee = declareBuiltin(tsIt->second, voidTy, {ptrTy, usizeTy});
-            builder_->CreateCall(callee, {strPtr, strLen});
+            auto callee = declareBuiltin(tsIt->second, voidTy, {ptrTy, usizeTy, ptrTy, usizeTy, i32Ty});
+            builder_->CreateCall(callee, {strPtr, strLen, fileGlobal, fileLen, lineNo});
             return {};
         }
     }
@@ -4847,6 +4900,13 @@ std::any IRGen::visitBinLitExpr(LuxParser::BinLitExprContext* ctx) {
 
 std::any IRGen::visitFloatLitExpr(LuxParser::FloatLitExprContext* ctx) {
     double v = std::stod(ctx->FLOAT_LIT()->getText());
+    return static_cast<llvm::Value*>(
+        llvm::ConstantFP::get(llvm::Type::getDoubleTy(*context_), v));
+}
+
+std::any IRGen::visitLeadingDotFloatLitExpr(
+        LuxParser::LeadingDotFloatLitExprContext* ctx) {
+    double v = std::stod("0." + ctx->INT_LIT()->getText());
     return static_cast<llvm::Value*>(
         llvm::ConstantFP::get(llvm::Type::getDoubleTy(*context_), v));
 }
@@ -11010,26 +11070,47 @@ std::any IRGen::visitChainedTupleArrowIndexExpr(
 std::any IRGen::visitRelExpr(LuxParser::RelExprContext* ctx) {
     auto* lhs = castValue(visit(ctx->expression(0)));
     auto* rhs = castValue(visit(ctx->expression(1)));
+    auto* lhsTI = resolveExprTypeInfo(ctx->expression(0));
+    auto* rhsTI = resolveExprTypeInfo(ctx->expression(1));
     auto [l, r] = promoteArithmetic(lhs, rhs);
     bool isFloat = l->getType()->isFloatingPointTy();
+    bool useSignedIntCmp = true;
+    if (!isFloat && l->getType()->isIntegerTy()) {
+        // int1 must behave as 0/1 in relational ops.
+        if (l->getType()->isIntegerTy(1)) {
+            useSignedIntCmp = false;
+        } else if (lhsTI && rhsTI
+                && lhsTI->kind == TypeKind::Integer
+                && rhsTI->kind == TypeKind::Integer) {
+            useSignedIntCmp = lhsTI->isSigned || rhsTI->isSigned;
+        }
+    }
 
     switch (ctx->op->getType()) {
     case LuxLexer::LT:
         return static_cast<llvm::Value*>(
             isFloat ? builder_->CreateFCmpOLT(l, r, "lt")
-                    : builder_->CreateICmpSLT(l, r, "lt"));
+                    : (useSignedIntCmp
+                        ? builder_->CreateICmpSLT(l, r, "lt")
+                        : builder_->CreateICmpULT(l, r, "lt")));
     case LuxLexer::GT:
         return static_cast<llvm::Value*>(
             isFloat ? builder_->CreateFCmpOGT(l, r, "gt")
-                    : builder_->CreateICmpSGT(l, r, "gt"));
+                    : (useSignedIntCmp
+                        ? builder_->CreateICmpSGT(l, r, "gt")
+                        : builder_->CreateICmpUGT(l, r, "gt")));
     case LuxLexer::LTE:
         return static_cast<llvm::Value*>(
             isFloat ? builder_->CreateFCmpOLE(l, r, "lte")
-                    : builder_->CreateICmpSLE(l, r, "lte"));
+                    : (useSignedIntCmp
+                        ? builder_->CreateICmpSLE(l, r, "lte")
+                        : builder_->CreateICmpULE(l, r, "lte")));
     case LuxLexer::GTE:
         return static_cast<llvm::Value*>(
             isFloat ? builder_->CreateFCmpOGE(l, r, "gte")
-                    : builder_->CreateICmpSGE(l, r, "gte"));
+                    : (useSignedIntCmp
+                        ? builder_->CreateICmpSGE(l, r, "gte")
+                        : builder_->CreateICmpUGE(l, r, "gte")));
     default:
         return static_cast<llvm::Value*>(llvm::UndefValue::get(l->getType()));
     }
@@ -11433,7 +11514,8 @@ const TypeInfo* IRGen::resolveExprTypeInfo(LuxParser::ExpressionContext* ctx) {
         dynamic_cast<LuxParser::BinLitExprContext*>(ctx))
         return typeRegistry_.lookup("int32");
 
-    if (dynamic_cast<LuxParser::FloatLitExprContext*>(ctx))
+    if (dynamic_cast<LuxParser::FloatLitExprContext*>(ctx) ||
+        dynamic_cast<LuxParser::LeadingDotFloatLitExprContext*>(ctx))
         return typeRegistry_.lookup("float64");
 
     if (dynamic_cast<LuxParser::BoolLitExprContext*>(ctx))
@@ -14649,7 +14731,9 @@ IRGen::visitMethodCallExpr(LuxParser::MethodCallExprContext* ctx) {
         if (tag == "int.toStringRadix") {
             llvm::Value* val = receiverVal;
             if (val->getType() != i64Ty)
-                val = builder_->CreateSExt(val, i64Ty, "ext");
+                val = isSigned
+                    ? static_cast<llvm::Value*>(builder_->CreateSExt(val, i64Ty, "ext"))
+                    : static_cast<llvm::Value*>(builder_->CreateZExt(val, i64Ty, "ext"));
             auto* radix = args[0];
             if (radix->getType() != i32Ty)
                 radix = builder_->CreateIntCast(radix, i32Ty, false);

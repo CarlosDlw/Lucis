@@ -114,7 +114,7 @@ Type keywords are reserved identifiers for primitive types.
 |---------|------|-----------|
 | `float32` | 4 bytes | ~7 digits |
 | `float64` | 8 bytes | ~15 digits |
-| `float80` | 10 bytes | ~18 digits |
+| `float80` | target ABI dependent (typically 16 bytes on x86-64) | ~18 digits (80-bit precision) |
 | `float128` | 16 bytes | ~33 digits |
 | `double` | 8 bytes | Alias for `float64` |
 

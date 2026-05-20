@@ -82,6 +82,7 @@ public:
     std::any visitOctLitExpr(LuxParser::OctLitExprContext* ctx)       override;
     std::any visitBinLitExpr(LuxParser::BinLitExprContext* ctx)       override;
     std::any visitFloatLitExpr(LuxParser::FloatLitExprContext* ctx)   override;
+    std::any visitLeadingDotFloatLitExpr(LuxParser::LeadingDotFloatLitExprContext* ctx) override;
     std::any visitBoolLitExpr(LuxParser::BoolLitExprContext* ctx)     override;
     std::any visitCharLitExpr(LuxParser::CharLitExprContext* ctx)     override;
     std::any visitStrLitExpr(LuxParser::StrLitExprContext* ctx)       override;

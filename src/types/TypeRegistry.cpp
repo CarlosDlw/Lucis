@@ -25,7 +25,7 @@ bool TypeRegistry::isUnsignedType(const std::string& name) const {
 
 void TypeRegistry::registerBuiltins() {
     // ── Signed integers ─────────────────────────────────────────────────
-    registerType({ "int1",   TypeKind::Integer, 1,   true, "i1"   });
+    registerType({ "int1",   TypeKind::Integer, 1,   false, "i1"   });
     registerType({ "int8",   TypeKind::Integer, 8,   true, "i8"   });
     registerType({ "int16",  TypeKind::Integer, 16,  true, "i16"  });
     registerType({ "int32",  TypeKind::Integer, 32,  true, "i32"  });

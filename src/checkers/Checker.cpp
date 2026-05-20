@@ -1560,7 +1560,8 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
         dynamic_cast<LuxParser::BinLitExprContext*>(expr))
         return typeRegistry_.lookup("int32");
 
-    if (dynamic_cast<LuxParser::FloatLitExprContext*>(expr))
+    if (dynamic_cast<LuxParser::FloatLitExprContext*>(expr) ||
+        dynamic_cast<LuxParser::LeadingDotFloatLitExprContext*>(expr))
         return typeRegistry_.lookup("float64");
 
     if (dynamic_cast<LuxParser::BoolLitExprContext*>(expr))

@@ -31,7 +31,9 @@ bool ProjectContext::build(const std::string& filePath) {
         unit.filePath    = path;
         unit.parseResult = Parser::parse(path);
 
-        if (unit.parseResult.hasErrors || !unit.parseResult.tree)
+        // Keep files with recoverable parse errors in the symbol registry to
+        // avoid cascading "undeclared function" diagnostics in other files.
+        if (!unit.parseResult.tree)
             continue;
 
         unit.namespaceName = extractNamespace(unit.parseResult.tree);
@@ -41,6 +43,9 @@ bool ProjectContext::build(const std::string& filePath) {
         registry_.registerFile(unit.namespaceName, path,
                                unit.parseResult.tree);
         fileNamespaces_[path] = unit.namespaceName;
+        try {
+            fileNamespaces_[fs::canonical(path).string()] = unit.namespaceName;
+        } catch (...) {}
 
         // Resolve C headers from this file.
         std::vector<LuxParser::IncludeDeclContext*> includes;
@@ -81,6 +86,24 @@ std::string ProjectContext::namespaceFor(const std::string& filePath) const {
         auto canon = fs::canonical(filePath).string();
         it = fileNamespaces_.find(canon);
         if (it != fileNamespaces_.end()) return it->second;
+    } catch (...) {}
+
+    // Try weakly-canonical path (works even if some path components are missing).
+    try {
+        auto weak = fs::weakly_canonical(filePath).string();
+        it = fileNamespaces_.find(weak);
+        if (it != fileNamespaces_.end()) return it->second;
+    } catch (...) {}
+
+    // Last-resort fallback: match by filename when path representations differ.
+    try {
+        auto name = fs::path(filePath).filename().string();
+        if (!name.empty()) {
+            for (const auto& [p, ns] : fileNamespaces_) {
+                if (fs::path(p).filename() == name)
+                    return ns;
+            }
+        }
     } catch (...) {}
 
     return "";

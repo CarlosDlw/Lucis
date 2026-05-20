@@ -459,6 +459,10 @@ public:
     return visitChildren(ctx);
   }
 
+  virtual std::any visitLeadingDotFloatLitExpr(LuxParser::LeadingDotFloatLitExprContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
   virtual std::any visitEnumNamedVariantExpr(LuxParser::EnumNamedVariantExprContext *ctx) override {
     return visitChildren(ctx);
   }

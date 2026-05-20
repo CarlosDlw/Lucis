@@ -1,0 +1,10 @@
+namespace Main;
+
+int32 main() {
+    testIntTypes();
+    testUintTypes();
+    testFloatTypes();
+    testFloatLiteralFormats();
+    testIntegerLiteralFormats();
+    ret 0;
+}
