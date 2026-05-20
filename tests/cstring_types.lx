@@ -1,0 +1,29 @@
+namespace Main;
+
+use std::log::println;
+use std::test::{ assertEqual };
+
+extern void free(*void ptr);
+
+int32 testCStringTypes() {
+    println("[Testing cstring type...] ");
+
+    string luxStr = "Hello from Lux";
+    cstring cStr = cstr(luxStr);
+
+    // cstring is an alias for *char and uses C null-terminated representation.
+    assertEqual(sizeof(cstring), sizeof(*char));
+    assertEqual(typeof(cStr) == "cstring" || typeof(cStr) == "*char", true);
+
+    string roundtrip = fromCStr(cStr);
+    assertEqual(roundtrip, "Hello from Lux");
+
+    // fromCStrLen should preserve explicit slice length from C string memory.
+    string sliced = fromCStrLen(cStr, 5);
+    assertEqual(sliced, "Hello");
+
+    free(cStr as *void);
+
+    println("✔ cstring tests passed");
+    ret 0;
+}

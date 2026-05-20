@@ -1467,7 +1467,10 @@ std::any IRGen::visitVarDeclStmt(LuxParser::VarDeclStmtContext* ctx) {
         auto* type   = val->getType();
         auto* alloca = builder_->CreateAlloca(type, nullptr, name);
         builder_->CreateStore(val, alloca);
-        locals_[name] = { alloca, ti, exprDims };
+        VarInfo vi{ alloca, ti, exprDims };
+        vi.isBorrowed = (ti && ti->kind == TypeKind::String &&
+                 isBorrowedStringValueExpr(ctx->expression()));
+        locals_[name] = std::move(vi);
         return {};
     }
 
@@ -1803,6 +1806,8 @@ std::any IRGen::visitVarDeclStmt(LuxParser::VarDeclStmtContext* ctx) {
             }
         }
         VarInfo vi{ alloca, ti, trackedDims };
+        vi.isBorrowed = (ti && ti->kind == TypeKind::String &&
+                 isBorrowedStringValueExpr(ctx->expression()));
         vi.fixedArraySizes = std::move(pointerArraySizes);
         locals_[name] = std::move(vi);
 
@@ -1914,6 +1919,8 @@ std::any IRGen::visitAssignStmt(LuxParser::AssignStmtContext* ctx) {
         }
 
         builder_->CreateStore(val, alloca);
+        if (elemTI && elemTI->kind == TypeKind::String)
+            it->second.isBorrowed = isBorrowedStringValueExpr(exprs[0]);
         return {};
     }
 
@@ -12691,6 +12698,7 @@ void IRGen::emitCleanupForLocal(const std::string& name, const VarInfo& info) {
     if (!info.typeInfo) return;
 
     if (info.typeInfo->kind == TypeKind::String) {
+        if (info.isBorrowed) return;
         auto* value = builder_->CreateLoad(info.alloca->getAllocatedType(), info.alloca, name + "_str");
         auto* strPtr = builder_->CreateExtractValue(value, 0, name + "_ptr");
         auto* strLen = builder_->CreateExtractValue(value, 1, name + "_len");
@@ -12824,8 +12832,21 @@ void IRGen::emitAllCleanups(const std::string& skipVar) {
 
 bool IRGen::isDropTrackedLocal(const VarInfo& info) const {
     if (!info.typeInfo || info.arrayDims > 0) return false;
+    if (info.typeInfo->kind == TypeKind::String && info.isBorrowed) return false;
     return info.typeInfo->kind == TypeKind::String ||
            info.typeInfo->kind == TypeKind::Extended;
+}
+
+bool IRGen::isBorrowedStringValueExpr(LuxParser::ExpressionContext* expr) const {
+    if (!expr) return false;
+    if (isBorrowedStringExpr(expr)) return true;
+    if (auto* ident = dynamic_cast<LuxParser::IdentExprContext*>(expr)) {
+        auto it = locals_.find(ident->IDENTIFIER()->getText());
+        if (it == locals_.end()) return false;
+        if (!it->second.typeInfo || it->second.typeInfo->kind != TypeKind::String) return false;
+        return it->second.isBorrowed;
+    }
+    return false;
 }
 
 void IRGen::consumeLocalByName(const std::string& name) {

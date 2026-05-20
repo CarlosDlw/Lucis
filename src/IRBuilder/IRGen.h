@@ -170,6 +170,7 @@ private:
         const TypeInfo*   typeInfo;
         unsigned          arrayDims = 0; // 0 = scalar, 1 = []T, 2 = [][]T, etc.
         bool              isParam   = false; // true = borrowed from caller, skip auto-free
+        bool              isBorrowed = false; // true = borrowed string view, skip auto-free
         std::vector<unsigned> fixedArraySizes; // declared [N] sizes (incl. pointer-to-array)
     };
     std::unordered_map<std::string, VarInfo> locals_;
@@ -412,6 +413,7 @@ private:
                             const std::string& tempNameHint = "vec_lit");
     void                emitBlockExitCleanups(const std::unordered_map<std::string, VarInfo>& savedLocals);
     bool                isDropTrackedLocal(const VarInfo& info) const;
+    bool                isBorrowedStringValueExpr(LuxParser::ExpressionContext* expr) const;
     void                consumeLocalByName(const std::string& name);
     void                consumeExprIfOwnedLocal(LuxParser::ExpressionContext* expr);
     void                emitScopeCallback(LuxParser::ScopeCallbackContext* ctx);

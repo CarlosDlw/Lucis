@@ -5,6 +5,9 @@ int32 main() {
     testUintTypes();
     testBoolTypes();
     testCharTypes();
+    testStringTypes();
+    testVoidTypes();
+    testCStringTypes();
     testFloatTypes();
     testFloatLiteralFormats();
     testIntegerLiteralFormats();
