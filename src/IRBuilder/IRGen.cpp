@@ -2969,6 +2969,52 @@ std::any IRGen::visitExprStmt(LuxParser::ExprStmtContext* ctx) {
 std::any IRGen::visitCallStmt(LuxParser::CallStmtContext* ctx) {
     auto funcName = ctx->IDENTIFIER()->getText();
 
+    auto cleanupTempArg = [&](LuxParser::ExpressionContext* argExpr, llvm::Value* argVal) {
+        if (!argExpr || !argVal) return;
+        if (dynamic_cast<LuxParser::IdentExprContext*>(argExpr)) return;
+
+        auto* argTI = resolveExprTypeInfo(argExpr);
+        if (!argTI) return;
+        if (resolveExprArrayDims(argExpr) > 0) return;
+
+        auto* voidTy = llvm::Type::getVoidTy(*context_);
+        auto* ptrTy = llvm::PointerType::getUnqual(*context_);
+        auto* usizeTy = module_->getDataLayout().getIntPtrType(*context_);
+
+        if (argTI->kind == TypeKind::String) {
+            if (isBorrowedStringExpr(argExpr)) return;
+            auto* strPtr = builder_->CreateExtractValue(argVal, 0, "tmp_arg_ptr");
+            auto* strLen = builder_->CreateExtractValue(argVal, 1, "tmp_arg_len");
+            auto callee = declareBuiltin("lux_freeStr", voidTy, {ptrTy, usizeTy});
+            builder_->CreateCall(callee, {strPtr, strLen});
+            return;
+        }
+
+        if (argTI->kind != TypeKind::Extended) return;
+
+        std::string freeFuncName;
+        if (argTI->extendedKind == "Vec") {
+            auto suffix = getVecSuffix(argTI->elementType ? argTI->elementType : argTI);
+            freeFuncName = "lux_vec_free_" + suffix;
+        } else if (argTI->extendedKind == "Map") {
+            freeFuncName = "lux_map_free_" + argTI->builtinSuffix;
+        } else if (argTI->extendedKind == "Set") {
+            auto suffix = argTI->elementType
+                              ? (argTI->elementType->builtinSuffix.empty()
+                                     ? "raw" : argTI->elementType->builtinSuffix)
+                              : argTI->builtinSuffix;
+            freeFuncName = "lux_set_free_" + suffix;
+        } else {
+            return;
+        }
+
+        auto* extTy = argTI->toLLVMType(*context_, module_->getDataLayout());
+        auto* tmpAlloca = builder_->CreateAlloca(extTy, nullptr, "tmp_arg_ext");
+        builder_->CreateStore(argVal, tmpAlloca);
+        auto callee = declareBuiltin(freeFuncName, voidTy, {ptrTy});
+        builder_->CreateCall(callee, {tmpAlloca});
+    };
+
     std::vector<const TypeInfo*> argTypes;
     if (auto* argList = ctx->argList()) {
         for (auto* exprCtx : argList->expression())
@@ -3042,6 +3088,13 @@ std::any IRGen::visitCallStmt(LuxParser::CallStmtContext* ctx) {
             if (ctx->argList() && !ctx->argList()->expression().empty())
                 consumeExprIfOwnedLocal(ctx->argList()->expression()[0]);
         }
+
+        if (funcName != "freeStr" && ctx->argList()) {
+            auto exprs = ctx->argList()->expression();
+            for (size_t i = 0; i < exprs.size() && i < args.size(); i++)
+                cleanupTempArg(exprs[i], args[i]);
+        }
+
         return {};
     }
 
@@ -10573,8 +10626,24 @@ std::any IRGen::visitCastExpr(LuxParser::CastExprContext* ctx) {
 }
 
 std::any IRGen::visitSizeofExpr(LuxParser::SizeofExprContext* ctx) {
-    auto* ti = resolveTypeInfo(ctx->typeSpec());
+    auto* spec = ctx->typeSpec();
+    std::vector<uint64_t> arraySizes;
+    while (spec && spec->LBRACKET()) {
+        if (!spec->INT_LIT()) {
+            std::cerr << "lux: sizeof requires fixed-size array type\n";
+            return static_cast<llvm::Value*>(
+                llvm::ConstantInt::get(llvm::Type::getInt64Ty(*context_), 0));
+        }
+        arraySizes.push_back(std::stoull(spec->INT_LIT()->getText()));
+        if (spec->typeSpec().empty()) break;
+        spec = spec->typeSpec(0);
+    }
+
+    auto* ti = resolveTypeInfo(spec);
     auto* llvmTy = ti->toLLVMType(*context_, module_->getDataLayout());
+    for (auto it = arraySizes.rbegin(); it != arraySizes.rend(); ++it)
+        llvmTy = llvm::ArrayType::get(llvmTy, *it);
+
     auto& dl = module_->getDataLayout();
     uint64_t sizeBytes = dl.getTypeAllocSize(llvmTy);
     return static_cast<llvm::Value*>(
@@ -11852,6 +11921,19 @@ const TypeInfo* IRGen::resolveExprTypeInfo(LuxParser::ExpressionContext* ctx) {
         if (auto* ident = dynamic_cast<LuxParser::IdentExprContext*>(callee)) {
             auto fname = ident->IDENTIFIER()->getText();
 
+            if (globalBuiltins_.count(fname)) {
+                if (fname == "typeof" || fname == "toString" ||
+                    fname == "fromCStr" || fname == "fromCStrCopy" ||
+                    fname == "fromCStrLen" || fname == "sprintf")
+                    return typeRegistry_.lookup("string");
+                if (fname == "sizeof" || fname == "toInt")
+                    return typeRegistry_.lookup("int64");
+                if (fname == "toFloat")
+                    return typeRegistry_.lookup("float64");
+                if (fname == "toBool")
+                    return typeRegistry_.lookup("bool");
+            }
+
             auto fit = genericFuncTemplates_.find(fname);
             if (fit != genericFuncTemplates_.end()) {
                 std::vector<const TypeInfo*> argTypes;
@@ -12058,6 +12140,17 @@ const TypeInfo* IRGen::resolveExprTypeInfo(LuxParser::ExpressionContext* ctx) {
         auto* recvTI = resolveExprTypeInfo(mc->expression());
         if (!recvTI) return nullptr;
         auto methodName = mc->IDENTIFIER()->getText();
+
+        auto recvArrayDims = resolveExprArrayDims(mc->expression());
+        if (recvArrayDims > 0) {
+            auto* arrayDesc = methodRegistry_.lookupArrayMethod(methodName);
+            if (arrayDesc) {
+                if (arrayDesc->returnType == "_self") return recvTI;
+                if (arrayDesc->returnType == "_elem") return recvTI->elementType;
+                return typeRegistry_.lookup(arrayDesc->returnType);
+            }
+        }
+
         auto* desc = methodRegistry_.lookup(recvTI->kind, methodName);
         if (desc) {
             if (desc->returnType == "_self") return recvTI;
@@ -12259,6 +12352,18 @@ unsigned IRGen::resolveExprArrayDims(LuxParser::ExpressionContext* ctx) {
     if (auto* idx = dynamic_cast<LuxParser::IndexExprContext*>(ctx)) {
         auto baseDims = resolveExprArrayDims(idx->expression(0));
         return baseDims > 0 ? baseDims - 1 : 0;
+    }
+
+    if (auto* mc = dynamic_cast<LuxParser::MethodCallExprContext*>(ctx)) {
+        auto baseDims = resolveExprArrayDims(mc->expression());
+        if (baseDims == 0) return 0;
+
+        auto* md = methodRegistry_.lookupArrayMethod(mc->IDENTIFIER()->getText());
+        if (!md) return 0;
+
+        if (md->returnType == "_self") return baseDims;
+        if (md->returnType == "_elem") return baseDims > 0 ? baseDims - 1 : 0;
+        return 0;
     }
 
     if (auto* arr = dynamic_cast<LuxParser::ArrayLitExprContext*>(ctx)) {
@@ -13942,18 +14047,14 @@ IRGen::visitMethodCallExpr(LuxParser::MethodCallExprContext* ctx) {
                 return static_cast<llvm::Value*>(
                     builder_->CreateLoad(arrTy, newAlloca, "copy_val"));
             }
-            // ── slice(start, end): returns a new fixed array (compile-time) ──
-            // Note: for runtime slicing, we'd need dynamic arrays. For fixed arrays,
-            //  we return a full-size copy with only the slice elements meaningful.
-            //  Since Lux fixed arrays have compile-time sizes, slice returns a copy.
+            // ── slice(start, end): returns a fixed array when bounds are constant ──
+            // If bounds are not compile-time constants, fall back to full-size copy.
             if (methodName == "slice") {
-                // For fixed arrays, we can only do a partial load.
-                // Return a full array copy with elements outside the slice zeroed.
                 if (args.size() < 2) {
                     std::cerr << "lux: slice() requires start and end arguments\n";
                     return static_cast<llvm::Value*>(llvm::UndefValue::get(arrTy));
                 }
-                // We'll implement a simple element-by-element copy from start to end
+
                 auto* startIdx = args[0];
                 auto* endIdx   = args[1];
                 if (startIdx->getType() != i64Ty)
@@ -13961,10 +14062,39 @@ IRGen::visitMethodCallExpr(LuxParser::MethodCallExprContext* ctx) {
                 if (endIdx->getType() != i64Ty)
                     endIdx = builder_->CreateIntCast(endIdx, i64Ty, true);
 
+                auto* startC = llvm::dyn_cast<llvm::ConstantInt>(startIdx);
+                auto* endC   = llvm::dyn_cast<llvm::ConstantInt>(endIdx);
+
+                if (startC && endC) {
+                    uint64_t s = startC->getZExtValue();
+                    uint64_t e = endC->getZExtValue();
+                    if (s > arrLen) s = arrLen;
+                    if (e > arrLen) e = arrLen;
+                    if (e < s) e = s;
+
+                    uint64_t outLen = e - s;
+                    auto* outArrTy = llvm::ArrayType::get(elemTy, outLen);
+                    auto* outAlloca = builder_->CreateAlloca(outArrTy, nullptr, "slice_const");
+
+                    auto* totalSz = llvm::ConstantInt::get(i64Ty,
+                        module_->getDataLayout().getTypeAllocSize(outArrTy));
+                    builder_->CreateMemSet(outAlloca, builder_->getInt8(0), totalSz,
+                        llvm::MaybeAlign(module_->getDataLayout().getABITypeAlign(outArrTy)));
+
+                    auto* zero = llvm::ConstantInt::get(i64Ty, 0);
+                    for (uint64_t i = 0; i < outLen; i++) {
+                        auto* srcI = llvm::ConstantInt::get(i64Ty, s + i);
+                        auto* dstI = llvm::ConstantInt::get(i64Ty, i);
+                        auto* srcGep = builder_->CreateInBoundsGEP(arrTy, arrAlloca, {zero, srcI}, "slc_src");
+                        auto* dstGep = builder_->CreateInBoundsGEP(outArrTy, outAlloca, {zero, dstI}, "slc_dst");
+                        builder_->CreateStore(builder_->CreateLoad(elemTy, srcGep), dstGep);
+                    }
+
+                    return static_cast<llvm::Value*>(
+                        builder_->CreateLoad(outArrTy, outAlloca, "slice_const_val"));
+                }
+
                 auto* newAlloca = builder_->CreateAlloca(arrTy, nullptr, "slice");
-                // Zero-initialize
-                auto* elemSz = llvm::ConstantInt::get(i64Ty,
-                    module_->getDataLayout().getTypeAllocSize(elemTy));
                 auto* totalSz = llvm::ConstantInt::get(i64Ty,
                     module_->getDataLayout().getTypeAllocSize(arrTy));
                 builder_->CreateMemSet(newAlloca, builder_->getInt8(0), totalSz,
@@ -14268,6 +14398,45 @@ IRGen::visitMethodCallExpr(LuxParser::MethodCallExprContext* ctx) {
                     return static_cast<llvm::Value*>(
                         llvm::ConstantInt::get(boolTy, 0));
                 }
+
+                if (ctx->argList() && !ctx->argList()->expression().empty()) {
+                    if (auto* arrLit = dynamic_cast<LuxParser::ArrayLitExprContext*>(
+                            ctx->argList()->expression()[0])) {
+                        auto litElems = arrLit->expression();
+                        if (litElems.size() != arrLen) {
+                            return static_cast<llvm::Value*>(
+                                llvm::ConstantInt::get(boolTy, 0));
+                        }
+
+                        auto* resultAlloca = builder_->CreateAlloca(boolTy, nullptr, "eq_lit_res");
+                        builder_->CreateStore(llvm::ConstantInt::get(boolTy, 1), resultAlloca);
+                        auto* zero = llvm::ConstantInt::get(i64Ty, 0);
+
+                        for (uint64_t i = 0; i < arrLen; i++) {
+                            auto* idx = llvm::ConstantInt::get(i64Ty, i);
+                            auto* gepA = builder_->CreateInBoundsGEP(arrTy, arrAlloca, {zero, idx});
+                            auto* a = builder_->CreateLoad(elemTy, gepA, "a");
+
+                            auto* rhs = castValue(visit(litElems[i]));
+                            rhs = castToElem(rhs);
+
+                            llvm::Value* eq;
+                            if (elemTy->isIntegerTy())
+                                eq = builder_->CreateICmpEQ(a, rhs, "eq");
+                            else if (elemTy->isFloatingPointTy())
+                                eq = builder_->CreateFCmpOEQ(a, rhs, "eq");
+                            else
+                                eq = builder_->CreateICmpEQ(a, rhs, "eq");
+
+                            auto* cur = builder_->CreateLoad(boolTy, resultAlloca, "cur");
+                            builder_->CreateStore(builder_->CreateAnd(cur, eq, "and"), resultAlloca);
+                        }
+
+                        return static_cast<llvm::Value*>(
+                            builder_->CreateLoad(boolTy, resultAlloca, "equals_lit"));
+                    }
+                }
+
                 // The argument is another array value (loaded)
                 auto* other = args[0];
                 auto* otherAlloca = builder_->CreateAlloca(arrTy, nullptr, "eq_other");
@@ -14323,7 +14492,7 @@ IRGen::visitMethodCallExpr(LuxParser::MethodCallExprContext* ctx) {
                 auto* zero = llvm::ConstantInt::get(i64Ty, 0);
                 std::string fmtElem;
                 if (elemTy->isIntegerTy())
-                    fmtElem = "%lld";
+                    fmtElem = (receiverTI && !receiverTI->isSigned) ? "%llu" : "%lld";
                 else
                     fmtElem = "%.6g";
 
@@ -14338,7 +14507,10 @@ IRGen::visitMethodCallExpr(LuxParser::MethodCallExprContext* ctx) {
                     auto* gep = builder_->CreateInBoundsGEP(arrTy, arrAlloca, {zero, idx});
                     auto* elem = builder_->CreateLoad(elemTy, gep, "elem");
                     llvm::Value* printVal = elem;
-                    if (elemTy->isFloatTy())
+                    if (elemTy->isIntegerTy())
+                        printVal = builder_->CreateIntCast(elem, i64Ty,
+                            receiverTI ? receiverTI->isSigned : true, "toI64");
+                    else if (elemTy->isFloatTy())
                         printVal = builder_->CreateFPExt(elem,
                             llvm::Type::getDoubleTy(*context_), "toD");
                     std::vector<llvm::Value*> fmtArgs = {ptr, rem, fmtStr, printVal};
@@ -14396,7 +14568,7 @@ IRGen::visitMethodCallExpr(LuxParser::MethodCallExprContext* ctx) {
                 auto* zero = llvm::ConstantInt::get(i64Ty, 0);
                 std::string fmtElem;
                 if (elemTy->isIntegerTy())
-                    fmtElem = "%lld";
+                    fmtElem = (receiverTI && !receiverTI->isSigned) ? "%llu" : "%lld";
                 else if (elemTy->isFloatingPointTy())
                     fmtElem = "%.6g";
                 else
@@ -14421,7 +14593,10 @@ IRGen::visitMethodCallExpr(LuxParser::MethodCallExprContext* ctx) {
                     auto* gep = builder_->CreateInBoundsGEP(arrTy, arrAlloca, {zero, idx});
                     auto* elem = builder_->CreateLoad(elemTy, gep, "elem");
                     llvm::Value* printVal = elem;
-                    if (elemTy->isFloatTy())
+                    if (elemTy->isIntegerTy())
+                        printVal = builder_->CreateIntCast(elem, i64Ty,
+                            receiverTI ? receiverTI->isSigned : true, "toI64");
+                    else if (elemTy->isFloatTy())
                         printVal = builder_->CreateFPExt(elem,
                             llvm::Type::getDoubleTy(*context_), "toD");
                     std::vector<llvm::Value*> fmtArgs = {cur, rem, fmtStr, printVal};
@@ -14437,7 +14612,7 @@ IRGen::visitMethodCallExpr(LuxParser::MethodCallExprContext* ctx) {
                 s = builder_->CreateInsertValue(s, finalLen, 1);
                 return static_cast<llvm::Value*>(s);
             }
-            // ── rotate(n): rotate array elements left by n positions ─────
+            // ── rotate(n): positive rotates right, negative rotates left ───
             if (methodName == "rotate") {
                 if (args.empty() || arrLen <= 1) {
                     return static_cast<llvm::Value*>(
@@ -14446,9 +14621,14 @@ IRGen::visitMethodCallExpr(LuxParser::MethodCallExprContext* ctx) {
                 auto* n = args[0];
                 if (n->getType() != i64Ty)
                     n = builder_->CreateIntCast(n, i64Ty, true);
-                // Normalize: n = n % arrLen
+
                 auto* lenConst = llvm::ConstantInt::get(i64Ty, arrLen);
-                n = builder_->CreateURem(n, lenConst, "normN");
+                auto* nMod = builder_->CreateSRem(n, lenConst, "normN");
+                auto* neg = builder_->CreateICmpSLT(nMod, llvm::ConstantInt::get(i64Ty, 0));
+                n = builder_->CreateSelect(neg,
+                                           builder_->CreateAdd(nMod, lenConst),
+                                           nMod,
+                                           "normPos");
 
                 // Use temp buffer: copy all to temp, then write back rotated
                 auto* tmpAlloca = builder_->CreateAlloca(arrTy, nullptr, "rot_tmp");
@@ -14460,11 +14640,14 @@ IRGen::visitMethodCallExpr(LuxParser::MethodCallExprContext* ctx) {
                     auto* dstGep = builder_->CreateInBoundsGEP(arrTy, tmpAlloca, {zero, idx});
                     builder_->CreateStore(builder_->CreateLoad(elemTy, srcGep), dstGep);
                 }
-                // Write back rotated: arr[i] = tmp[(i + n) % len]
+                // Write back rotated right: arr[i] = tmp[(i + len - n) % len]
                 for (uint64_t i = 0; i < arrLen; i++) {
                     auto* idx = llvm::ConstantInt::get(i64Ty, i);
                     auto* srcIdx = builder_->CreateURem(
-                        builder_->CreateAdd(idx, n), lenConst, "ri");
+                        builder_->CreateAdd(
+                            builder_->CreateSub(idx, n), lenConst),
+                        lenConst,
+                        "ri");
                     auto* srcGep = builder_->CreateInBoundsGEP(arrTy, tmpAlloca, {zero, srcIdx});
                     auto* dstGep = builder_->CreateInBoundsGEP(arrTy, arrAlloca, {zero, idx});
                     builder_->CreateStore(builder_->CreateLoad(elemTy, srcGep), dstGep);

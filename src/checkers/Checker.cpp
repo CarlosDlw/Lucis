@@ -2367,6 +2367,17 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
 
     // ── Sizeof: sizeof(type) ────────────────────────────────────────
     if (auto* sz = dynamic_cast<LuxParser::SizeofExprContext*>(expr)) {
+        // sizeof requires concrete type sizes; unsized [] dimensions are not valid.
+        auto* spec = sz->typeSpec();
+        while (spec && spec->LBRACKET()) {
+            if (!spec->INT_LIT()) {
+                error(expr, "sizeof: unsized array type is not allowed; use fixed-size '[N]T'");
+                return typeRegistry_.lookup("int64");
+            }
+            if (spec->typeSpec().empty()) break;
+            spec = spec->typeSpec(0);
+        }
+
         unsigned dims = 0;
         auto* ti = resolveTypeSpec(sz->typeSpec(), dims);
         if (!ti) error(expr, "sizeof: unknown type");
@@ -5648,6 +5659,18 @@ unsigned Checker::resolveExprArrayDims(LuxParser::ExpressionContext* expr) {
     if (auto* idx = dynamic_cast<LuxParser::IndexExprContext*>(expr)) {
         unsigned baseDims = resolveExprArrayDims(idx->expression(0));
         return baseDims > 0 ? baseDims - 1 : 0;
+    }
+    if (auto* mc = dynamic_cast<LuxParser::MethodCallExprContext*>(expr)) {
+        unsigned baseDims = resolveExprArrayDims(mc->expression());
+        if (baseDims == 0) return 0;
+
+        auto methodName = mc->IDENTIFIER()->getText();
+        auto* md = methodRegistry_.lookupArrayMethod(methodName);
+        if (!md) return 0;
+
+        if (md->returnType == "_self") return baseDims;
+        if (md->returnType == "_elem") return baseDims > 0 ? baseDims - 1 : 0;
+        return 0;
     }
     if (auto* paren = dynamic_cast<LuxParser::ParenExprContext*>(expr))
         return resolveExprArrayDims(paren->expression());

@@ -22,6 +22,7 @@ struct FuncLookupCtx {
     const CBindings* bindings = nullptr;
     const BuiltinRegistry* builtinReg = nullptr;
     const ExtendedTypeRegistry* extTypeReg = nullptr;
+    const MethodRegistry* methodReg = nullptr;
     const ProjectContext* project = nullptr;
 };
 
@@ -2606,10 +2607,22 @@ std::optional<HoverResult> HoverProvider::hoverMethodCall(
     if (encFunc) {
         auto locals = collectLocals(encFunc, cursorLine, tree, &bindings, project);
 
+        FuncLookupCtx flc;
+        flc.tree = tree;
+        flc.bindings = &bindings;
+        flc.builtinReg = &builtinRegistry_;
+        flc.extTypeReg = &extTypeRegistry_;
+        flc.methodReg = &methodRegistry_;
+        flc.project = project;
+
         if (!receiverText.empty()) {
             auto lit = locals.find(receiverText);
             if (lit != locals.end())
                 receiverTypeName = lit->second.typeName;
+        }
+
+        if (receiverTypeName.empty()) {
+            receiverTypeName = inferExprTypeName(receiver, locals, &flc);
         }
     }
 
@@ -2899,6 +2912,7 @@ std::optional<HoverResult> HoverProvider::hoverFieldAccess(
         flc.bindings = &bindings;
         flc.builtinReg = &builtinRegistry_;
         flc.extTypeReg = &extTypeRegistry_;
+        flc.methodReg = &methodRegistry_;
         flc.project = project;
         receiverTypeName = inferExprTypeName(receiver, locals, &flc);
     }
@@ -3422,6 +3436,21 @@ static std::string lookupFuncReturnType(
         const FuncLookupCtx* flc) {
     if (!flc) return "";
 
+    static const std::unordered_map<std::string, std::string> globalBuiltinReturns = {
+        {"typeof", "string"},
+        {"toString", "string"},
+        {"fromCStr", "string"},
+        {"fromCStrCopy", "string"},
+        {"fromCStrLen", "string"},
+        {"sprintf", "string"},
+        {"sizeof", "int64"},
+        {"toInt", "int64"},
+        {"toFloat", "float64"},
+        {"toBool", "bool"}
+    };
+    if (auto it = globalBuiltinReturns.find(funcName); it != globalBuiltinReturns.end())
+        return it->second;
+
     // 1) C functions from CBindings (most authoritative for #include)
     if (flc->bindings) {
         auto* cfunc = flc->bindings->findFunction(funcName);
@@ -3741,6 +3770,25 @@ static std::string inferExprTypeName(
         auto receiverType = inferExprTypeName(mc->expression(), locals, flc);
         if (!receiverType.empty()) {
             std::string methodName = mc->IDENTIFIER()->getText();
+
+            if (!receiverType.empty() && receiverType[0] == '[' && flc && flc->methodReg) {
+                auto* md = flc->methodReg->lookupArrayMethod(methodName);
+                if (md) {
+                    auto arrayElemType = [](const std::string& t) -> std::string {
+                        if (t.rfind("[]", 0) == 0) return t.substr(2);
+                        if (!t.empty() && t[0] == '[') {
+                            auto close = t.find(']');
+                            if (close != std::string::npos && close + 1 < t.size())
+                                return t.substr(close + 1);
+                        }
+                        return "";
+                    };
+
+                    if (md->returnType == "_self") return receiverType;
+                    if (md->returnType == "_elem") return arrayElemType(receiverType);
+                    return md->returnType;
+                }
+            }
 
             // 1) Check user-defined extend methods
             if (flc && flc->tree) {
@@ -4271,6 +4319,7 @@ HoverProvider::collectLocals(LuxParser::FunctionDeclContext* func,
     flc.bindings   = bindings;
     flc.builtinReg = &builtinRegistry_;
     flc.extTypeReg = &extTypeRegistry_;
+    flc.methodReg  = &methodRegistry_;
     flc.project    = project;
 
     // Collect parameters
