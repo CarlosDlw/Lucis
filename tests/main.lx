@@ -32,5 +32,6 @@ int32 main() {
     testGenericsInferenceAndMethods();
     testGenericsUserTypes();
     testGenericsTaskAndConstraints();
+    testOperatorsFull();
     ret 0;
 }
