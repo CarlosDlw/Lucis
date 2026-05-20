@@ -1,0 +1,120 @@
+namespace Main;
+
+use std::log::println;
+use std::test::{ assertEqual };
+
+enum SMethodState {
+    Ready,
+    Done,
+}
+
+struct SMethodVec2 {
+    int32 x;
+    int32 y;
+}
+
+struct SMethodParticle {
+    SMethodVec2 pos;
+    int32 speed;
+    SMethodState state;
+    bool active;
+}
+
+extend SMethodVec2 {
+    SMethodVec2 create(int32 x, int32 y) {
+        SMethodVec2 v = SMethodVec2 { x: x, y: y };
+        ret v;
+    }
+
+    SMethodVec2 zero() {
+        SMethodVec2 v = SMethodVec2 { x: 0, y: 0 };
+        ret v;
+    }
+
+    int32 manhattanLength(&self) {
+        int32 ax = self->x;
+        int32 ay = self->y;
+        if ax < 0 { ax = 0 - ax; }
+        if ay < 0 { ay = 0 - ay; }
+        ret ax + ay;
+    }
+
+    bool isZero(&self) {
+        ret self->x == 0 && self->y == 0;
+    }
+
+    SMethodVec2 add(&self, SMethodVec2 other) {
+        SMethodVec2 result = SMethodVec2 { x: self->x + other.x, y: self->y + other.y };
+        ret result;
+    }
+
+    void translate(&self, int32 dx, int32 dy) {
+        self->x += dx;
+        self->y += dy;
+    }
+}
+
+extend SMethodParticle {
+    SMethodParticle create(int32 x, int32 y) {
+        SMethodVec2 p = SMethodVec2 { x: x, y: y };
+        SMethodParticle part = SMethodParticle { pos: p, speed: 1, state: SMethodState::Ready, active: true };
+        ret part;
+    }
+
+    int32 getSpeed(&self) {
+        ret self->speed;
+    }
+
+    bool isActive(&self) {
+        ret self->active;
+    }
+
+    SMethodState getState(&self) {
+        ret self->state;
+    }
+
+    SMethodVec2 getPosition(&self) {
+        ret self->pos;
+    }
+
+    void deactivate(&self) {
+        self->active = false;
+        self->state = SMethodState::Done;
+    }
+}
+
+int32 testStructsMethodsAndExtend() {
+    println("[Testing structs: methods/extend...]");
+
+    SMethodVec2 a = SMethodVec2::create(3, 4);
+    SMethodVec2 z = SMethodVec2::zero();
+
+    assertEqual(a.manhattanLength(), 7);
+    assertEqual(a.isZero(), false);
+    assertEqual(z.isZero(), true);
+
+    SMethodVec2 b = SMethodVec2::create(10, 20);
+    SMethodVec2 c = a.add(b);
+    assertEqual(c.x, 13);
+    assertEqual(c.y, 24);
+
+    a.translate(100, 200);
+    assertEqual(a.x, 103);
+    assertEqual(a.y, 204);
+
+    SMethodParticle p = SMethodParticle::create(7, 8);
+    assertEqual(p.getSpeed(), 1);
+    assertEqual(p.isActive(), true);
+    assertEqual(p.getState() is SMethodState::Ready, true);
+
+    SMethodVec2 pp = p.getPosition();
+    assertEqual(pp.x, 7);
+    assertEqual(pp.y, 8);
+
+    p.deactivate();
+    assertEqual(p.isActive(), false);
+    assertEqual(p.getState() is SMethodState::Done, true);
+
+    println("✔ structs methods/extend tests passed");
+    ret 0;
+}

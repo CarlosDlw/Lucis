@@ -1009,6 +1009,8 @@ public:
     antlr4::tree::TerminalNode *ASSIGN();
     ExpressionContext *expression();
     antlr4::tree::TerminalNode *SEMI();
+    std::vector<antlr4::tree::TerminalNode *> DOT();
+    antlr4::tree::TerminalNode* DOT(size_t i);
 
 
     virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
@@ -1037,6 +1039,8 @@ public:
     antlr4::tree::TerminalNode *CARET_ASSIGN();
     antlr4::tree::TerminalNode *LSHIFT_ASSIGN();
     antlr4::tree::TerminalNode *RSHIFT_ASSIGN();
+    std::vector<antlr4::tree::TerminalNode *> DOT();
+    antlr4::tree::TerminalNode* DOT(size_t i);
 
 
     virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;

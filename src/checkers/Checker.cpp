@@ -4495,10 +4495,10 @@ void Checker::checkStmt(LuxParser::StatementContext* stmt,
         checkFieldCompoundAssignStmt(fieldCompound);
     } else if (auto* fieldAssign = stmt->fieldAssignStmt()) {
         checkFieldAssignStmt(fieldAssign);
-    } else if (stmt->arrowAssignStmt()) {
-        resolveExprType(stmt->arrowAssignStmt()->expression());
-    } else if (stmt->arrowCompoundAssignStmt()) {
-        resolveExprType(stmt->arrowCompoundAssignStmt()->expression());
+    } else if (auto* arrowAssign = stmt->arrowAssignStmt()) {
+        checkArrowAssignStmt(arrowAssign);
+    } else if (auto* arrowCompound = stmt->arrowCompoundAssignStmt()) {
+        checkArrowCompoundAssignStmt(arrowCompound);
     } else if (auto* derefAssign = stmt->derefAssignStmt()) {
         checkDerefAssignStmt(derefAssign);
     } else if (auto* derefCompound = stmt->derefCompoundAssignStmt()) {
@@ -5310,6 +5310,190 @@ void Checker::checkFieldCompoundAssignStmt(LuxParser::FieldCompoundAssignStmtCon
                          "' requires integer operand, got '" + rhsType->name + "'");
 
     // Compile-time division by zero check
+    if (opText == "/=" || opText == "%=") {
+        if (auto* intLit = dynamic_cast<LuxParser::IntLitExprContext*>(stmt->expression())) {
+            if (intLit->INT_LIT()->getText() == "0")
+                error(stmt, "division by zero");
+        }
+    }
+}
+
+void Checker::checkArrowAssignStmt(LuxParser::ArrowAssignStmtContext* stmt) {
+    auto ids = stmt->IDENTIFIER();
+    if (ids.size() < 2) {
+        error(stmt, "malformed '->' assignment");
+        return;
+    }
+
+    auto varName = ids[0]->getText();
+    auto it = locals_.find(varName);
+    if (it == locals_.end()) {
+        error(stmt, "undefined variable '" + varName + "'");
+        return;
+    }
+
+    const TypeInfo* currentType = it->second.type;
+    bool pointerBase = false;
+
+    if (currentType && currentType->kind == TypeKind::Pointer && currentType->pointeeType) {
+        currentType = currentType->pointeeType;
+        pointerBase = true;
+    }
+
+    // Resolve dotted base before arrow: a.b.c->x
+    for (size_t i = 1; i + 1 < ids.size(); i++) {
+        auto fieldName = ids[i]->getText();
+
+        if (!currentType ||
+            (currentType->kind != TypeKind::Struct && currentType->kind != TypeKind::Union)) {
+            error(stmt, "cannot access field '" + fieldName +
+                             "' on non-struct type");
+            return;
+        }
+
+        bool found = false;
+        const TypeInfo* nextType = nullptr;
+        for (auto& field : currentType->fields) {
+            if (field.name == fieldName) {
+                nextType = field.typeInfo;
+                found = true;
+                break;
+            }
+        }
+        if (!found || !nextType) {
+            error(stmt, "struct '" + currentType->name +
+                             "' has no field '" + fieldName + "'");
+            return;
+        }
+
+        currentType = nextType;
+        if (currentType->kind == TypeKind::Pointer && currentType->pointeeType) {
+            currentType = currentType->pointeeType;
+            pointerBase = true;
+        }
+    }
+
+    if (!pointerBase || !currentType ||
+        (currentType->kind != TypeKind::Struct && currentType->kind != TypeKind::Union)) {
+        error(stmt, "'->' requires pointer to struct or union");
+        return;
+    }
+
+    auto arrowField = ids.back()->getText();
+    const TypeInfo* fieldType = nullptr;
+    for (auto& field : currentType->fields) {
+        if (field.name == arrowField) {
+            fieldType = field.typeInfo;
+            break;
+        }
+    }
+    if (!fieldType) {
+        error(stmt, "struct '" + currentType->name +
+                         "' has no field '" + arrowField + "'");
+        return;
+    }
+
+    auto* rhsType = resolveExprType(stmt->expression());
+    if (rhsType && fieldType && !isAssignable(fieldType, rhsType)) {
+        error(stmt, "type mismatch in arrow assignment: expected '" +
+                         fieldType->name + "', got '" + rhsType->name + "'");
+    }
+}
+
+void Checker::checkArrowCompoundAssignStmt(LuxParser::ArrowCompoundAssignStmtContext* stmt) {
+    auto ids = stmt->IDENTIFIER();
+    if (ids.size() < 2) {
+        error(stmt, "malformed '->' compound assignment");
+        return;
+    }
+
+    auto varName = ids[0]->getText();
+    auto it = locals_.find(varName);
+    if (it == locals_.end()) {
+        error(stmt, "undefined variable '" + varName + "'");
+        return;
+    }
+
+    const TypeInfo* currentType = it->second.type;
+    bool pointerBase = false;
+
+    if (currentType && currentType->kind == TypeKind::Pointer && currentType->pointeeType) {
+        currentType = currentType->pointeeType;
+        pointerBase = true;
+    }
+
+    for (size_t i = 1; i + 1 < ids.size(); i++) {
+        auto fieldName = ids[i]->getText();
+
+        if (!currentType ||
+            (currentType->kind != TypeKind::Struct && currentType->kind != TypeKind::Union)) {
+            error(stmt, "cannot access field '" + fieldName +
+                             "' on non-struct type");
+            return;
+        }
+
+        bool found = false;
+        const TypeInfo* nextType = nullptr;
+        for (auto& field : currentType->fields) {
+            if (field.name == fieldName) {
+                nextType = field.typeInfo;
+                found = true;
+                break;
+            }
+        }
+        if (!found || !nextType) {
+            error(stmt, "struct '" + currentType->name +
+                             "' has no field '" + fieldName + "'");
+            return;
+        }
+
+        currentType = nextType;
+        if (currentType->kind == TypeKind::Pointer && currentType->pointeeType) {
+            currentType = currentType->pointeeType;
+            pointerBase = true;
+        }
+    }
+
+    if (!pointerBase || !currentType || currentType->kind != TypeKind::Struct) {
+        error(stmt, "'->' requires pointer to struct");
+        return;
+    }
+
+    auto arrowField = ids.back()->getText();
+    const TypeInfo* fieldType = nullptr;
+    for (auto& field : currentType->fields) {
+        if (field.name == arrowField) {
+            fieldType = field.typeInfo;
+            break;
+        }
+    }
+    if (!fieldType) {
+        error(stmt, "struct '" + currentType->name +
+                         "' has no field '" + arrowField + "'");
+        return;
+    }
+
+    auto* rhsType = resolveExprType(stmt->expression());
+    auto opText = stmt->op->getText();
+
+    bool needsNumeric = (opText == "+=" || opText == "-=" ||
+                         opText == "*=" || opText == "/=");
+    bool needsInteger = (opText == "%=" || opText == "&=" || opText == "|=" ||
+                         opText == "^=" || opText == "<<=" || opText == ">>=");
+
+    if (needsNumeric && fieldType && !isNumeric(fieldType))
+        error(stmt, "operator '" + opText +
+                         "' requires numeric field, got '" + fieldType->name + "'");
+    if (needsInteger && fieldType && !isInteger(fieldType))
+        error(stmt, "operator '" + opText +
+                         "' requires integer field, got '" + fieldType->name + "'");
+    if (needsNumeric && rhsType && !isNumeric(rhsType))
+        error(stmt, "operator '" + opText +
+                         "' requires numeric operand, got '" + rhsType->name + "'");
+    if (needsInteger && rhsType && !isInteger(rhsType))
+        error(stmt, "operator '" + opText +
+                         "' requires integer operand, got '" + rhsType->name + "'");
+
     if (opText == "/=" || opText == "%=") {
         if (auto* intLit = dynamic_cast<LuxParser::IntLitExprContext*>(stmt->expression())) {
             if (intLit->INT_LIT()->getText() == "0")

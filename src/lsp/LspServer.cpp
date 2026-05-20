@@ -182,8 +182,9 @@ std::string LspServer::findMainFile(const std::string& projectRoot) {
 // possible. This prevents the context from becoming stale when the user
 // switches between tabs (VS Code does not re-fire didOpen for already-
 // opened documents).
-void LspServer::rebuildContext(const std::string& filePath) {
+void LspServer::rebuildContext(const std::string& filePath, bool force) {
     std::string projectRoot = ProjectContext::findProjectRoot(filePath);
+    if (projectRoot.empty()) return;
 
     // (Re-)discover the main file if we don't know it yet, or if this file
     // IS the main file (so we always prefer the freshest path).
@@ -209,7 +210,18 @@ void LspServer::rebuildContext(const std::string& filePath) {
     // Always build context from the main file so it stays stable across tab
     // switches. Fall back to the current file if main cannot be found.
     std::string anchorFile = mainFilePath_.empty() ? filePath : mainFilePath_;
+
+    // Fast-path for didOpen storms: if we're already built for the same
+    // project root and same anchor, skip expensive full-project parsing.
+    if (!force && projectContext_.isValid() &&
+        contextProjectRoot_ == projectRoot &&
+        contextAnchorPath_ == anchorFile) {
+        return;
+    }
+
     if (projectContext_.build(anchorFile)) {
+        contextProjectRoot_ = projectRoot;
+        contextAnchorPath_ = anchorFile;
         std::cerr << "[lux-lsp] project root: "
                   << projectContext_.projectRoot()
                   << " (anchored to " << anchorFile << ")\n";
@@ -233,7 +245,7 @@ void LspServer::handleDidOpen(const json& msg) {
     std::cerr << "[lux-lsp] opened: " << uri << "\n";
 
     std::string filePath = DocumentStore::uriToPath(uri);
-    rebuildContext(filePath);
+    rebuildContext(filePath, false);
 
     publishDiagnostics(uri, text);
 }
@@ -255,7 +267,7 @@ void LspServer::handleDidSave(const json& msg) {
 
     // Rebuild project context on save (files may have changed).
     std::string filePath = DocumentStore::uriToPath(uri);
-    rebuildContext(filePath);
+    rebuildContext(filePath, true);
 
     publishDiagnostics(uri, text);
 }

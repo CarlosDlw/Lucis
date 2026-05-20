@@ -33,5 +33,9 @@ int32 main() {
     testGenericsUserTypes();
     testGenericsTaskAndConstraints();
     testOperatorsFull();
+    testRangesFull();
+    testStructsCore();
+    testStructsPointers();
+    testStructsMethodsAndExtend();
     ret 0;
 }

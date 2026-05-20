@@ -80,6 +80,30 @@ static std::string formatTypedHover(const std::string& kind,
          + symbolName + "\n```";
 }
 
+static std::string normalizeHoverMarkdown(std::string contents) {
+    // Normalize to the language id recognized by markdown hover rendering.
+    const std::string from = "```lx";
+    const std::string to = "```lux";
+    size_t pos = 0;
+    while ((pos = contents.find(from, pos)) != std::string::npos) {
+        contents.replace(pos, from.size(), to);
+        pos += to.size();
+    }
+
+    // Some paths still produce plain typed text like "(field) ...".
+    // Wrap those in a Lux fenced block so hover has syntax highlighting.
+    if (contents.find("```") == std::string::npos) {
+        size_t first = contents.find_first_not_of(" \t\n\r");
+        if (first != std::string::npos && contents[first] == '(') {
+            std::string raw = contents.substr(first);
+            if (!raw.empty() && raw.back() == '\n') raw.pop_back();
+            contents = "```lux\n" + raw + "\n```";
+        }
+    }
+
+    return contents;
+}
+
 // ═══════════════════════════════════════════════════════════════════════
 //  Doc-comment helper
 // ═══════════════════════════════════════════════════════════════════════
@@ -876,24 +900,29 @@ std::optional<HoverResult> HoverProvider::walkExprForHover(
             auto* receiver = aa->expression();
             auto* token = fieldId->getSymbol();
 
-            // Resolve receiver pointer type
-            std::string ptrTypeName;
-            if (auto* ident = dynamic_cast<LuxParser::IdentExprContext*>(receiver)) {
-                std::string varName = ident->IDENTIFIER()->getText();
-                auto* func = findEnclosingFunction(tree, cursorLine);
-                if (func) {
-                    auto locals = collectLocals(func, cursorLine, tree, &bindings, project);
-                    auto it = locals.find(varName);
-                    if (it != locals.end()) {
-                        ptrTypeName = it->second.typeName;
-                    }
-                }
+            std::string receiverTypeName;
+            auto* func = findEnclosingFunction(tree, cursorLine);
+            if (func) {
+                auto locals = collectLocals(func, cursorLine, tree, &bindings, project);
+                FuncLookupCtx flc;
+                flc.tree = tree;
+                flc.bindings = &bindings;
+                flc.builtinReg = &builtinRegistry_;
+                flc.extTypeReg = &extTypeRegistry_;
+                flc.methodReg = &methodRegistry_;
+                flc.project = project;
+                receiverTypeName = inferExprTypeName(receiver, locals, &flc);
             }
 
-            // Dereference: strip leading '*' to get struct name
-            std::string structName;
-            if (!ptrTypeName.empty() && ptrTypeName[0] == '*') {
-                structName = ptrTypeName.substr(1);
+            // Dereference one level for arrow access and normalize generic base.
+            std::string structName = receiverTypeName;
+            if (!structName.empty() && structName[0] == '*') {
+                structName = structName.substr(1);
+            }
+            std::string base;
+            std::vector<std::string> args;
+            if (parseGenericInstance(structName, base, args)) {
+                structName = base;
             }
 
             // Search local structs
@@ -1914,8 +1943,10 @@ std::optional<HoverResult> HoverProvider::walkStmtForHover(
 
     // Check arrow assignment statements: ptr->field = expr;
     if (auto* aas = stmt->arrowAssignStmt()) {
-        auto* baseId = aas->IDENTIFIER(0);
-        auto* fieldId = aas->IDENTIFIER(1);
+        auto ids = aas->IDENTIFIER();
+        if (ids.empty()) return std::nullopt;
+        auto* baseId = ids[0];
+        auto* fieldId = ids.size() >= 2 ? ids.back() : nullptr;
 
         // Hover on base identifier (e.g., self)
         if (baseId && baseId->getSymbol() == hoveredToken) {
@@ -1923,20 +1954,72 @@ std::optional<HoverResult> HoverProvider::walkStmtForHover(
                               bindings, cursorLine, project);
         }
 
-        // Hover on field identifier on LHS (e.g., self->done)
-        if (fieldId && fieldId->getSymbol() == hoveredToken && baseId) {
-            std::string fieldName = fieldId->getText();
-            std::string ptrTypeName;
+        auto resolveFieldType = [&](const std::string& ownerType,
+                                    const std::string& fieldName) -> std::string {
+            if (ownerType.empty()) return "";
 
+            std::string lookupType = ownerType;
+            std::unordered_map<std::string, std::string> subst;
+            std::string base;
+            std::vector<std::string> args;
+            if (parseGenericInstance(ownerType, base, args)) {
+                lookupType = base;
+            }
+
+            if (auto* sd = findStructDecl(tree, lookupType)) {
+                if (!args.empty() && sd->typeParamList()) {
+                    auto tps = sd->typeParamList()->typeParam();
+                    for (size_t i = 0; i < std::min(args.size(), tps.size()); i++) {
+                        auto ids = tps[i]->IDENTIFIER();
+                        if (!ids.empty()) subst[ids[0]->getText()] = args[i];
+                    }
+                }
+                for (auto* f : sd->structField()) {
+                    if (f->IDENTIFIER()->getText() == fieldName)
+                        return substituteTypeParams(typeSpecToString(f->typeSpec()), subst);
+                }
+            }
+            if (auto* ud = findUnionDecl(tree, lookupType)) {
+                if (!args.empty() && ud->typeParamList()) {
+                    auto tps = ud->typeParamList()->typeParam();
+                    for (size_t i = 0; i < std::min(args.size(), tps.size()); i++) {
+                        auto ids = tps[i]->IDENTIFIER();
+                        if (!ids.empty()) subst[ids[0]->getText()] = args[i];
+                    }
+                }
+                for (auto* f : ud->unionField()) {
+                    if (f->IDENTIFIER()->getText() == fieldName)
+                        return substituteTypeParams(typeSpecToString(f->typeSpec()), subst);
+                }
+            }
+            if (auto* ti = typeRegistry_.lookup(ownerType)) {
+                if (ti->kind == TypeKind::Struct || ti->kind == TypeKind::Union) {
+                    for (auto& f : ti->fields) {
+                        if (f.name == fieldName && f.typeInfo)
+                            return f.typeInfo->name;
+                    }
+                }
+            }
+            if (auto* cs = bindings.findStruct(ownerType)) {
+                for (auto& f : cs->fields) {
+                    if (f.name == fieldName && f.typeInfo)
+                        return f.typeInfo->name;
+                }
+            }
+            return "";
+        };
+
+        if (fieldId && fieldId->getSymbol() == hoveredToken && baseId) {
+            std::string currentType;
             auto* func = findEnclosingFunction(tree, cursorLine);
             if (func) {
                 auto locals = collectLocals(func, cursorLine, tree, &bindings, project);
                 auto it = locals.find(baseId->getText());
-                if (it != locals.end()) ptrTypeName = it->second.typeName;
+                if (it != locals.end()) currentType = it->second.typeName;
             }
 
             // In extend instance methods, self is the implicit receiver.
-            if (ptrTypeName.empty() && baseId->getText() == "self") {
+            if (currentType.empty() && baseId->getText() == "self") {
                 size_t tokenLine = cursorLine + 1;
                 for (auto* tld : tree->topLevelDecl()) {
                     auto* ext = tld->extendDecl();
@@ -1948,29 +2031,58 @@ std::optional<HoverResult> HoverProvider::walkStmtForHover(
                         if (tokenLine < ms->getLine() || tokenLine > me->getLine()) continue;
                         if (method->AMPERSAND() && method->IDENTIFIER().size() >= 2 &&
                             method->IDENTIFIER(1)->getText() == "self") {
-                            ptrTypeName = "*" + ext->IDENTIFIER()->getText();
+                            currentType = "*" + ext->IDENTIFIER()->getText();
                             break;
                         }
                     }
-                    if (!ptrTypeName.empty()) break;
+                    if (!currentType.empty()) break;
                 }
             }
 
-            std::string structName;
-            if (!ptrTypeName.empty() && ptrTypeName[0] == '*')
-                structName = ptrTypeName.substr(1);
-
-            if (!structName.empty()) {
-                if (auto* sd = findStructDecl(tree, structName)) {
-                    for (auto* f : sd->structField()) {
-                        if (f->IDENTIFIER()->getText() == fieldName) {
-                            std::string md = "```lux\n(field) "
-                                + typeSpecToString(f->typeSpec()) + " "
-                                + structName + "." + fieldName + "\n```";
-                            return makeResult(fieldId->getSymbol(), md);
-                        }
-                    }
+            // Resolve dotted chain before arrow: a.b.c->x
+            for (size_t i = 1; i + 1 < ids.size(); i++) {
+                auto dotField = ids[i]->getText();
+                std::string owner = currentType;
+                if (!owner.empty() && owner[0] == '*') owner = owner.substr(1);
+                auto nextType = resolveFieldType(owner, dotField);
+                if (nextType.empty()) {
+                    currentType.clear();
+                    break;
                 }
+                currentType = nextType;
+            }
+
+            std::string owner = currentType;
+            if (!owner.empty() && owner[0] == '*') owner = owner.substr(1);
+            auto finalType = resolveFieldType(owner, fieldId->getText());
+            if (!owner.empty() && !finalType.empty()) {
+                std::string md = "```lux\n(field) " + finalType + " "
+                               + owner + "." + fieldId->getText() + "\n```";
+                return makeResult(fieldId->getSymbol(), md);
+            }
+        }
+
+        // Hover on dotted identifiers before arrow
+        if (ids.size() > 2) {
+            std::string currentType;
+            auto* func = findEnclosingFunction(tree, cursorLine);
+            if (func) {
+                auto locals = collectLocals(func, cursorLine, tree, &bindings, project);
+                auto it = locals.find(baseId->getText());
+                if (it != locals.end()) currentType = it->second.typeName;
+            }
+            for (size_t i = 1; i + 1 < ids.size(); i++) {
+                auto* dotId = ids[i];
+                std::string owner = currentType;
+                if (!owner.empty() && owner[0] == '*') owner = owner.substr(1);
+                auto nextType = resolveFieldType(owner, dotId->getText());
+                if (dotId && dotId->getSymbol() == hoveredToken && !owner.empty() && !nextType.empty()) {
+                    std::string md = "```lux\n(field) " + nextType + " "
+                                   + owner + "." + dotId->getText() + "\n```";
+                    return makeResult(dotId->getSymbol(), md);
+                }
+                if (nextType.empty()) break;
+                currentType = nextType;
             }
         }
 
@@ -1984,27 +2096,81 @@ std::optional<HoverResult> HoverProvider::walkStmtForHover(
 
     // Check arrow compound assignment statements: ptr->field += expr;
     if (auto* acs = stmt->arrowCompoundAssignStmt()) {
-        auto* baseId = acs->IDENTIFIER(0);
-        auto* fieldId = acs->IDENTIFIER(1);
+        auto ids = acs->IDENTIFIER();
+        if (ids.empty()) return std::nullopt;
+        auto* baseId = ids[0];
+        auto* fieldId = ids.size() >= 2 ? ids.back() : nullptr;
 
         if (baseId && baseId->getSymbol() == hoveredToken) {
             return hoverIdent(baseId->getText(), hoveredToken, tree,
                               bindings, cursorLine, project);
         }
 
-        if (fieldId && fieldId->getSymbol() == hoveredToken && baseId) {
-            std::string fieldName = fieldId->getText();
-            std::string ptrTypeName;
+        auto resolveFieldType = [&](const std::string& ownerType,
+                                    const std::string& fieldName) -> std::string {
+            if (ownerType.empty()) return "";
 
+            std::string lookupType = ownerType;
+            std::unordered_map<std::string, std::string> subst;
+            std::string base;
+            std::vector<std::string> args;
+            if (parseGenericInstance(ownerType, base, args)) {
+                lookupType = base;
+            }
+
+            if (auto* sd = findStructDecl(tree, lookupType)) {
+                if (!args.empty() && sd->typeParamList()) {
+                    auto tps = sd->typeParamList()->typeParam();
+                    for (size_t i = 0; i < std::min(args.size(), tps.size()); i++) {
+                        auto ids = tps[i]->IDENTIFIER();
+                        if (!ids.empty()) subst[ids[0]->getText()] = args[i];
+                    }
+                }
+                for (auto* f : sd->structField()) {
+                    if (f->IDENTIFIER()->getText() == fieldName)
+                        return substituteTypeParams(typeSpecToString(f->typeSpec()), subst);
+                }
+            }
+            if (auto* ud = findUnionDecl(tree, lookupType)) {
+                if (!args.empty() && ud->typeParamList()) {
+                    auto tps = ud->typeParamList()->typeParam();
+                    for (size_t i = 0; i < std::min(args.size(), tps.size()); i++) {
+                        auto ids = tps[i]->IDENTIFIER();
+                        if (!ids.empty()) subst[ids[0]->getText()] = args[i];
+                    }
+                }
+                for (auto* f : ud->unionField()) {
+                    if (f->IDENTIFIER()->getText() == fieldName)
+                        return substituteTypeParams(typeSpecToString(f->typeSpec()), subst);
+                }
+            }
+            if (auto* ti = typeRegistry_.lookup(ownerType)) {
+                if (ti->kind == TypeKind::Struct || ti->kind == TypeKind::Union) {
+                    for (auto& f : ti->fields) {
+                        if (f.name == fieldName && f.typeInfo)
+                            return f.typeInfo->name;
+                    }
+                }
+            }
+            if (auto* cs = bindings.findStruct(ownerType)) {
+                for (auto& f : cs->fields) {
+                    if (f.name == fieldName && f.typeInfo)
+                        return f.typeInfo->name;
+                }
+            }
+            return "";
+        };
+
+        if (fieldId && fieldId->getSymbol() == hoveredToken && baseId) {
+            std::string currentType;
             auto* func = findEnclosingFunction(tree, cursorLine);
             if (func) {
                 auto locals = collectLocals(func, cursorLine, tree, &bindings, project);
                 auto it = locals.find(baseId->getText());
-                if (it != locals.end()) ptrTypeName = it->second.typeName;
+                if (it != locals.end()) currentType = it->second.typeName;
             }
 
-            // In extend instance methods, self is the implicit receiver.
-            if (ptrTypeName.empty() && baseId->getText() == "self") {
+            if (currentType.empty() && baseId->getText() == "self") {
                 size_t tokenLine = cursorLine + 1;
                 for (auto* tld : tree->topLevelDecl()) {
                     auto* ext = tld->extendDecl();
@@ -2016,29 +2182,56 @@ std::optional<HoverResult> HoverProvider::walkStmtForHover(
                         if (tokenLine < ms->getLine() || tokenLine > me->getLine()) continue;
                         if (method->AMPERSAND() && method->IDENTIFIER().size() >= 2 &&
                             method->IDENTIFIER(1)->getText() == "self") {
-                            ptrTypeName = "*" + ext->IDENTIFIER()->getText();
+                            currentType = "*" + ext->IDENTIFIER()->getText();
                             break;
                         }
                     }
-                    if (!ptrTypeName.empty()) break;
+                    if (!currentType.empty()) break;
                 }
             }
 
-            std::string structName;
-            if (!ptrTypeName.empty() && ptrTypeName[0] == '*')
-                structName = ptrTypeName.substr(1);
-
-            if (!structName.empty()) {
-                if (auto* sd = findStructDecl(tree, structName)) {
-                    for (auto* f : sd->structField()) {
-                        if (f->IDENTIFIER()->getText() == fieldName) {
-                            std::string md = "```lux\n(field) "
-                                + typeSpecToString(f->typeSpec()) + " "
-                                + structName + "." + fieldName + "\n```";
-                            return makeResult(fieldId->getSymbol(), md);
-                        }
-                    }
+            for (size_t i = 1; i + 1 < ids.size(); i++) {
+                auto dotField = ids[i]->getText();
+                std::string owner = currentType;
+                if (!owner.empty() && owner[0] == '*') owner = owner.substr(1);
+                auto nextType = resolveFieldType(owner, dotField);
+                if (nextType.empty()) {
+                    currentType.clear();
+                    break;
                 }
+                currentType = nextType;
+            }
+
+            std::string owner = currentType;
+            if (!owner.empty() && owner[0] == '*') owner = owner.substr(1);
+            auto finalType = resolveFieldType(owner, fieldId->getText());
+            if (!owner.empty() && !finalType.empty()) {
+                std::string md = "```lux\n(field) " + finalType + " "
+                               + owner + "." + fieldId->getText() + "\n```";
+                return makeResult(fieldId->getSymbol(), md);
+            }
+        }
+
+        if (ids.size() > 2) {
+            std::string currentType;
+            auto* func = findEnclosingFunction(tree, cursorLine);
+            if (func) {
+                auto locals = collectLocals(func, cursorLine, tree, &bindings, project);
+                auto it = locals.find(baseId->getText());
+                if (it != locals.end()) currentType = it->second.typeName;
+            }
+            for (size_t i = 1; i + 1 < ids.size(); i++) {
+                auto* dotId = ids[i];
+                std::string owner = currentType;
+                if (!owner.empty() && owner[0] == '*') owner = owner.substr(1);
+                auto nextType = resolveFieldType(owner, dotId->getText());
+                if (dotId && dotId->getSymbol() == hoveredToken && !owner.empty() && !nextType.empty()) {
+                    std::string md = "```lux\n(field) " + nextType + " "
+                                   + owner + "." + dotId->getText() + "\n```";
+                    return makeResult(dotId->getSymbol(), md);
+                }
+                if (nextType.empty()) break;
+                currentType = nextType;
             }
         }
 
@@ -3539,6 +3732,50 @@ static LuxParser::EnumDeclContext* findEnumDeclForInference(
     return nullptr;
 }
 
+static LuxParser::StructDeclContext* findStructDeclForInference(
+    const std::string& name,
+    const FuncLookupCtx* flc) {
+    if (!flc) return nullptr;
+    if (flc->tree) {
+        for (auto* tld : flc->tree->topLevelDecl()) {
+            auto* sd = tld->structDecl();
+            if (sd && sd->IDENTIFIER() && sd->IDENTIFIER()->getText() == name)
+                return sd;
+        }
+    }
+    if (flc->project && flc->project->isValid()) {
+        for (auto& ns : flc->project->registry().allNamespaces()) {
+            auto* sym = flc->project->registry().findSymbol(ns, name);
+            if (!sym || sym->kind != ExportedSymbol::Struct) continue;
+            if (auto* sd = dynamic_cast<LuxParser::StructDeclContext*>(sym->decl))
+                return sd;
+        }
+    }
+    return nullptr;
+}
+
+static LuxParser::UnionDeclContext* findUnionDeclForInference(
+    const std::string& name,
+    const FuncLookupCtx* flc) {
+    if (!flc) return nullptr;
+    if (flc->tree) {
+        for (auto* tld : flc->tree->topLevelDecl()) {
+            auto* ud = tld->unionDecl();
+            if (ud && ud->IDENTIFIER() && ud->IDENTIFIER()->getText() == name)
+                return ud;
+        }
+    }
+    if (flc->project && flc->project->isValid()) {
+        for (auto& ns : flc->project->registry().allNamespaces()) {
+            auto* sym = flc->project->registry().findSymbol(ns, name);
+            if (!sym || sym->kind != ExportedSymbol::Union) continue;
+            if (auto* ud = dynamic_cast<LuxParser::UnionDeclContext*>(sym->decl))
+                return ud;
+        }
+    }
+    return nullptr;
+}
+
 // Infer the type name of an expression for auto variable resolution.
 // This is a lightweight heuristic — no full type-checking.
 static std::string inferExprTypeName(
@@ -3563,6 +3800,70 @@ static std::string inferExprTypeName(
         auto it = locals.find(id->IDENTIFIER()->getText());
         if (it != locals.end()) return it->second.typeName;
         return "";
+    }
+
+    auto resolveFieldType = [&](const std::string& ownerType,
+                                const std::string& fieldName) -> std::string {
+        if (ownerType.empty()) return "";
+
+        std::string lookupType = ownerType;
+        std::unordered_map<std::string, std::string> subst;
+        std::string base;
+        std::vector<std::string> args;
+        if (parseGenericInstance(ownerType, base, args)) {
+            lookupType = base;
+        }
+
+        if (auto* sd = findStructDeclForInference(lookupType, flc)) {
+            if (!args.empty() && sd->typeParamList()) {
+                auto tps = sd->typeParamList()->typeParam();
+                for (size_t i = 0; i < std::min(args.size(), tps.size()); i++) {
+                    auto ids = tps[i]->IDENTIFIER();
+                    if (!ids.empty()) subst[ids[0]->getText()] = args[i];
+                }
+            }
+            for (auto* f : sd->structField()) {
+                if (f->IDENTIFIER()->getText() == fieldName)
+                    return substituteTypeParams(f->typeSpec()->getText(), subst);
+            }
+        }
+
+        if (auto* ud = findUnionDeclForInference(lookupType, flc)) {
+            if (!args.empty() && ud->typeParamList()) {
+                auto tps = ud->typeParamList()->typeParam();
+                for (size_t i = 0; i < std::min(args.size(), tps.size()); i++) {
+                    auto ids = tps[i]->IDENTIFIER();
+                    if (!ids.empty()) subst[ids[0]->getText()] = args[i];
+                }
+            }
+            for (auto* f : ud->unionField()) {
+                if (f->IDENTIFIER()->getText() == fieldName)
+                    return substituteTypeParams(f->typeSpec()->getText(), subst);
+            }
+        }
+
+        if (flc && flc->bindings) {
+            if (auto* cs = flc->bindings->findStruct(lookupType)) {
+                for (auto& f : cs->fields) {
+                    if (f.name == fieldName && f.typeInfo)
+                        return f.typeInfo->name;
+                }
+            }
+        }
+
+        return "";
+    };
+
+    if (auto* fa = dynamic_cast<LuxParser::FieldAccessExprContext*>(expr)) {
+        auto baseType = inferExprTypeName(fa->expression(), locals, flc);
+        if (baseType.empty()) return "";
+        return resolveFieldType(baseType, fa->IDENTIFIER()->getText());
+    }
+
+    if (auto* aa = dynamic_cast<LuxParser::ArrowAccessExprContext*>(expr)) {
+        auto baseType = inferExprTypeName(aa->expression(), locals, flc);
+        if (baseType.empty() || baseType[0] != '*') return "";
+        return resolveFieldType(baseType.substr(1), aa->IDENTIFIER()->getText());
     }
 
     // Address-of: &expr → *type
@@ -4696,7 +4997,7 @@ std::string HoverProvider::formatExtendMethods(LuxParser::ExtendDeclContext* ext
 HoverResult HoverProvider::makeResult(antlr4::Token* token,
                                        const std::string& contents) {
     HoverResult r;
-    r.contents = contents;
+    r.contents = normalizeHoverMarkdown(contents);
     r.line     = token->getLine() - 1; // to 0-based
     r.col      = token->getCharPositionInLine();
     r.endLine  = r.line;

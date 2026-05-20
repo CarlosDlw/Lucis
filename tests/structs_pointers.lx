@@ -1,0 +1,47 @@
+namespace Main;
+
+use std::log::println;
+use std::test::{ assertEqual };
+
+struct SPtrNode {
+    int32 value;
+    *SPtrNode next;
+}
+
+struct SPtrInner {
+    int32 x;
+    int32 y;
+}
+
+struct SPtrOuter {
+    int32 id;
+    *SPtrInner data;
+}
+
+int32 testStructsPointers() {
+    println("[Testing structs: pointer fields/self-reference...]");
+
+    SPtrNode c = SPtrNode { value: 30, next: null };
+    SPtrNode b = SPtrNode { value: 20, next: &c };
+    SPtrNode a = SPtrNode { value: 10, next: &b };
+
+    assertEqual(a.value, 10);
+    assertEqual(a.next->value, 20);
+    assertEqual(a.next->next->value, 30);
+
+    SPtrInner point = SPtrInner { x: 100, y: 200 };
+    SPtrOuter wrapper = SPtrOuter { id: 1, data: &point };
+
+    assertEqual(wrapper.id, 1);
+    assertEqual(wrapper.data->x, 100);
+    assertEqual(wrapper.data->y, 200);
+
+    wrapper.data->x += 5;
+    wrapper.data->y -= 20;
+
+    assertEqual(point.x, 105);
+    assertEqual(point.y, 180);
+
+    println("✔ structs pointer/self-reference tests passed");
+    ret 0;
+}

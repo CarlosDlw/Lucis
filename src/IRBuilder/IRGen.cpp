@@ -2784,8 +2784,13 @@ std::any IRGen::visitFieldIndexAssignStmt(LuxParser::FieldIndexAssignStmtContext
 // ptr->field = value;
 std::any IRGen::visitArrowAssignStmt(LuxParser::ArrowAssignStmtContext* ctx) {
     auto identifiers = ctx->IDENTIFIER();
+    if (identifiers.size() < 2) {
+        std::cerr << "lux: malformed '->' assignment\n";
+        return {};
+    }
+
     auto varName = identifiers[0]->getText();
-    auto fieldName = identifiers[1]->getText();
+    auto fieldName = identifiers.back()->getText();
 
     auto it = locals_.find(varName);
     if (it == locals_.end()) {
@@ -2793,31 +2798,76 @@ std::any IRGen::visitArrowAssignStmt(LuxParser::ArrowAssignStmtContext* ctx) {
         return {};
     }
 
-    // Load the pointer from the alloca
     auto* ptrTy = llvm::PointerType::getUnqual(*context_);
-    auto* ptrVal = builder_->CreateLoad(ptrTy, it->second.alloca, varName + "_ptr");
+    const TypeInfo* currentTI = it->second.typeInfo;
+    llvm::Value* basePtr = nullptr;
+    bool pointerBase = false;
 
-    // Resolve struct type info
-    const TypeInfo* structTI = it->second.typeInfo;
-    if (structTI->kind == TypeKind::Pointer)
-        structTI = structTI->pointeeType;
+    if (currentTI && currentTI->kind == TypeKind::Pointer && currentTI->pointeeType) {
+        basePtr = builder_->CreateLoad(ptrTy, it->second.alloca, varName + "_ptr");
+        currentTI = currentTI->pointeeType;
+        pointerBase = true;
+    } else {
+        basePtr = it->second.alloca;
+    }
 
-    if (!structTI || (structTI->kind != TypeKind::Struct && structTI->kind != TypeKind::Union)) {
+    // Resolve dotted base before arrow: a.b.c->x
+    for (size_t i = 1; i + 1 < identifiers.size(); i++) {
+        auto baseField = identifiers[i]->getText();
+        if (!currentTI || (currentTI->kind != TypeKind::Struct && currentTI->kind != TypeKind::Union)) {
+            std::cerr << "lux: cannot access field '" << baseField
+                      << "' on non-struct type\n";
+            return {};
+        }
+
+        int idx = -1;
+        const TypeInfo* nextTI = nullptr;
+        for (size_t f = 0; f < currentTI->fields.size(); f++) {
+            if (currentTI->fields[f].name == baseField) {
+                idx = static_cast<int>(f);
+                nextTI = currentTI->fields[f].typeInfo;
+                break;
+            }
+        }
+        if (idx < 0 || !nextTI) {
+            std::cerr << "lux: '" << currentTI->name
+                      << "' has no field '" << baseField << "'\n";
+            return {};
+        }
+
+        if (currentTI->kind == TypeKind::Union) {
+            currentTI = nextTI;
+        } else {
+            auto* currentLLTy = currentTI->toLLVMType(*context_, module_->getDataLayout());
+            auto* gep = builder_->CreateStructGEP(currentLLTy, basePtr, idx, baseField + "_ptr");
+            basePtr = gep;
+            currentTI = nextTI;
+        }
+
+        if (currentTI && currentTI->kind == TypeKind::Pointer && currentTI->pointeeType) {
+            basePtr = builder_->CreateLoad(ptrTy, basePtr, baseField + "_load");
+            currentTI = currentTI->pointeeType;
+            pointerBase = true;
+        }
+    }
+
+    if (!pointerBase || !currentTI ||
+        (currentTI->kind != TypeKind::Struct && currentTI->kind != TypeKind::Union)) {
         std::cerr << "lux: '->' requires pointer to struct or union\n";
         return {};
     }
 
     int fieldIdx = -1;
     const TypeInfo* fieldTI = nullptr;
-    for (size_t f = 0; f < structTI->fields.size(); f++) {
-        if (structTI->fields[f].name == fieldName) {
+    for (size_t f = 0; f < currentTI->fields.size(); f++) {
+        if (currentTI->fields[f].name == fieldName) {
             fieldIdx = static_cast<int>(f);
-            fieldTI = structTI->fields[f].typeInfo;
+            fieldTI = currentTI->fields[f].typeInfo;
             break;
         }
     }
-    if (fieldIdx < 0) {
-        std::cerr << "lux: '" << structTI->name
+    if (fieldIdx < 0 || !fieldTI) {
+        std::cerr << "lux: '" << currentTI->name
                   << "' has no field '" << fieldName << "'\n";
         return {};
     }
@@ -2832,12 +2882,12 @@ std::any IRGen::visitArrowAssignStmt(LuxParser::ArrowAssignStmtContext* ctx) {
             val = builder_->CreateFPCast(val, fieldLLTy);
     }
 
-    if (structTI->kind == TypeKind::Union) {
-        // Union: store at offset 0 (same as ptrVal)
-        builder_->CreateStore(val, ptrVal);
+    if (currentTI->kind == TypeKind::Union) {
+        // Union: store at offset 0 (same as base pointer)
+        builder_->CreateStore(val, basePtr);
     } else {
-        auto* structLLTy = structTI->toLLVMType(*context_, module_->getDataLayout());
-        auto* gep = builder_->CreateStructGEP(structLLTy, ptrVal, fieldIdx, fieldName + "_ptr");
+        auto* structLLTy = currentTI->toLLVMType(*context_, module_->getDataLayout());
+        auto* gep = builder_->CreateStructGEP(structLLTy, basePtr, fieldIdx, fieldName + "_ptr");
         builder_->CreateStore(val, gep);
     }
     return {};
@@ -2847,8 +2897,13 @@ std::any IRGen::visitArrowAssignStmt(LuxParser::ArrowAssignStmtContext* ctx) {
 std::any IRGen::visitArrowCompoundAssignStmt(
     LuxParser::ArrowCompoundAssignStmtContext* ctx) {
     auto identifiers = ctx->IDENTIFIER();
+    if (identifiers.size() < 2) {
+        std::cerr << "lux: malformed '->' compound assignment\n";
+        return {};
+    }
+
     auto varName = identifiers[0]->getText();
-    auto fieldName = identifiers[1]->getText();
+    auto fieldName = identifiers.back()->getText();
 
     auto it = locals_.find(varName);
     if (it == locals_.end()) {
@@ -2857,33 +2912,78 @@ std::any IRGen::visitArrowCompoundAssignStmt(
     }
 
     auto* ptrTy = llvm::PointerType::getUnqual(*context_);
-    auto* ptrVal = builder_->CreateLoad(ptrTy, it->second.alloca, varName + "_ptr");
+    const TypeInfo* currentTI = it->second.typeInfo;
+    llvm::Value* basePtr = nullptr;
+    bool pointerBase = false;
 
-    const TypeInfo* structTI = it->second.typeInfo;
-    if (structTI->kind == TypeKind::Pointer)
-        structTI = structTI->pointeeType;
+    if (currentTI && currentTI->kind == TypeKind::Pointer && currentTI->pointeeType) {
+        basePtr = builder_->CreateLoad(ptrTy, it->second.alloca, varName + "_ptr");
+        currentTI = currentTI->pointeeType;
+        pointerBase = true;
+    } else {
+        basePtr = it->second.alloca;
+    }
 
-    if (!structTI || structTI->kind != TypeKind::Struct) {
+    for (size_t i = 1; i + 1 < identifiers.size(); i++) {
+        auto baseField = identifiers[i]->getText();
+        if (!currentTI || (currentTI->kind != TypeKind::Struct && currentTI->kind != TypeKind::Union)) {
+            std::cerr << "lux: cannot access field '" << baseField
+                      << "' on non-struct type\n";
+            return {};
+        }
+
+        int idx = -1;
+        const TypeInfo* nextTI = nullptr;
+        for (size_t f = 0; f < currentTI->fields.size(); f++) {
+            if (currentTI->fields[f].name == baseField) {
+                idx = static_cast<int>(f);
+                nextTI = currentTI->fields[f].typeInfo;
+                break;
+            }
+        }
+        if (idx < 0 || !nextTI) {
+            std::cerr << "lux: '" << currentTI->name
+                      << "' has no field '" << baseField << "'\n";
+            return {};
+        }
+
+        if (currentTI->kind == TypeKind::Union) {
+            currentTI = nextTI;
+        } else {
+            auto* currentLLTy = currentTI->toLLVMType(*context_, module_->getDataLayout());
+            auto* gepField = builder_->CreateStructGEP(currentLLTy, basePtr, idx, baseField + "_ptr");
+            basePtr = gepField;
+            currentTI = nextTI;
+        }
+
+        if (currentTI && currentTI->kind == TypeKind::Pointer && currentTI->pointeeType) {
+            basePtr = builder_->CreateLoad(ptrTy, basePtr, baseField + "_load");
+            currentTI = currentTI->pointeeType;
+            pointerBase = true;
+        }
+    }
+
+    if (!pointerBase || !currentTI || currentTI->kind != TypeKind::Struct) {
         std::cerr << "lux: '->' requires pointer to struct\n";
         return {};
     }
 
     int fieldIdx = -1;
-    for (size_t f = 0; f < structTI->fields.size(); f++) {
-        if (structTI->fields[f].name == fieldName) {
+    for (size_t f = 0; f < currentTI->fields.size(); f++) {
+        if (currentTI->fields[f].name == fieldName) {
             fieldIdx = static_cast<int>(f);
             break;
         }
     }
     if (fieldIdx < 0) {
-        std::cerr << "lux: struct '" << structTI->name
+        std::cerr << "lux: struct '" << currentTI->name
                   << "' has no field '" << fieldName << "'\n";
         return {};
     }
 
-    auto* structLLTy = structTI->toLLVMType(*context_, module_->getDataLayout());
-    auto* gep = builder_->CreateStructGEP(structLLTy, ptrVal, fieldIdx, fieldName + "_ptr");
-    auto* fieldTy = structTI->fields[fieldIdx].typeInfo
+    auto* structLLTy = currentTI->toLLVMType(*context_, module_->getDataLayout());
+    auto* gep = builder_->CreateStructGEP(structLLTy, basePtr, fieldIdx, fieldName + "_ptr");
+    auto* fieldTy = currentTI->fields[fieldIdx].typeInfo
                         ->toLLVMType(*context_, module_->getDataLayout());
 
     auto* oldVal = builder_->CreateLoad(fieldTy, gep, fieldName + "_old");
@@ -2892,7 +2992,7 @@ std::any IRGen::visitArrowCompoundAssignStmt(
     if (rhs->getType() != fieldTy) {
         if (rhs->getType()->isIntegerTy() && fieldTy->isIntegerTy())
             rhs = builder_->CreateIntCast(rhs, fieldTy,
-                      structTI->fields[fieldIdx].typeInfo->isSigned);
+                      currentTI->fields[fieldIdx].typeInfo->isSigned);
     }
 
     llvm::Value* result;
@@ -2913,12 +3013,12 @@ std::any IRGen::visitArrowCompoundAssignStmt(
         result = isFloat ? builder_->CreateFMul(oldVal, rhs) : builder_->CreateMul(oldVal, rhs);
     else if (opType == LuxLexer::SLASH_ASSIGN)
         result = isFloat ? builder_->CreateFDiv(oldVal, rhs)
-                         : (structTI->fields[fieldIdx].typeInfo->isSigned
+                         : (currentTI->fields[fieldIdx].typeInfo->isSigned
                                 ? builder_->CreateSDiv(oldVal, rhs)
                                 : builder_->CreateUDiv(oldVal, rhs));
     else if (opType == LuxLexer::PERCENT_ASSIGN)
         result = isFloat ? builder_->CreateFRem(oldVal, rhs)
-                         : (structTI->fields[fieldIdx].typeInfo->isSigned
+                         : (currentTI->fields[fieldIdx].typeInfo->isSigned
                                 ? builder_->CreateSRem(oldVal, rhs)
                                 : builder_->CreateURem(oldVal, rhs));
     else if (opType == LuxLexer::AMP_ASSIGN)
@@ -2930,7 +3030,7 @@ std::any IRGen::visitArrowCompoundAssignStmt(
     else if (opType == LuxLexer::LSHIFT_ASSIGN)
         result = builder_->CreateShl(oldVal, rhs);
     else if (opType == LuxLexer::RSHIFT_ASSIGN)
-        result = structTI->fields[fieldIdx].typeInfo->isSigned
+        result = currentTI->fields[fieldIdx].typeInfo->isSigned
                      ? builder_->CreateAShr(oldVal, rhs)
                      : builder_->CreateLShr(oldVal, rhs);
     else {

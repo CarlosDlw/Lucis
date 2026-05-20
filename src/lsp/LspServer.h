@@ -64,7 +64,9 @@ private:
 
     // Ensures projectContext_ is built, always anchored to the main file.
     // Falls back to filePath if no main file can be found.
-    void rebuildContext(const std::string& filePath);
+    // When force=false, skips expensive full rebuild if the active context
+    // already matches the same project root/anchor.
+    void rebuildContext(const std::string& filePath, bool force = false);
 
     // Helpers
     void sendResponse(const json& id, const json& result);
@@ -73,4 +75,8 @@ private:
 
     // Cached path of the project's main file (namespace Main + main()).
     std::string mainFilePath_;
+
+    // Cached context identity to avoid redundant full project rebuilds.
+    std::string contextProjectRoot_;
+    std::string contextAnchorPath_;
 };

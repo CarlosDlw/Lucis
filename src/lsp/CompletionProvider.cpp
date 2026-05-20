@@ -107,6 +107,12 @@ static bool parseGenericInstance(const std::string& t,
 static LuxParser::FunctionDeclContext* findFunctionDeclForInference(
     const std::string& name,
     const FuncLookupCtx* flc);
+static LuxParser::StructDeclContext* findStructDeclForInference(
+    const std::string& name,
+    const FuncLookupCtx* flc);
+static LuxParser::UnionDeclContext* findUnionDeclForInference(
+    const std::string& name,
+    const FuncLookupCtx* flc);
 static LuxParser::EnumDeclContext* findEnumDeclForInference(
     const std::string& name,
     const FuncLookupCtx* flc);
@@ -303,6 +309,50 @@ static LuxParser::EnumDeclContext* findEnumDeclForInference(
     return nullptr;
 }
 
+static LuxParser::StructDeclContext* findStructDeclForInference(
+    const std::string& name,
+    const FuncLookupCtx* flc) {
+    if (!flc) return nullptr;
+    if (flc->tree) {
+        for (auto* tld : flc->tree->topLevelDecl()) {
+            auto* sd = tld->structDecl();
+            if (sd && sd->IDENTIFIER() && sd->IDENTIFIER()->getText() == name)
+                return sd;
+        }
+    }
+    if (flc->project && flc->project->isValid()) {
+        for (auto& ns : flc->project->registry().allNamespaces()) {
+            auto* sym = flc->project->registry().findSymbol(ns, name);
+            if (!sym || sym->kind != ExportedSymbol::Struct) continue;
+            if (auto* sd = dynamic_cast<LuxParser::StructDeclContext*>(sym->decl))
+                return sd;
+        }
+    }
+    return nullptr;
+}
+
+static LuxParser::UnionDeclContext* findUnionDeclForInference(
+    const std::string& name,
+    const FuncLookupCtx* flc) {
+    if (!flc) return nullptr;
+    if (flc->tree) {
+        for (auto* tld : flc->tree->topLevelDecl()) {
+            auto* ud = tld->unionDecl();
+            if (ud && ud->IDENTIFIER() && ud->IDENTIFIER()->getText() == name)
+                return ud;
+        }
+    }
+    if (flc->project && flc->project->isValid()) {
+        for (auto& ns : flc->project->registry().allNamespaces()) {
+            auto* sym = flc->project->registry().findSymbol(ns, name);
+            if (!sym || sym->kind != ExportedSymbol::Union) continue;
+            if (auto* ud = dynamic_cast<LuxParser::UnionDeclContext*>(sym->decl))
+                return ud;
+        }
+    }
+    return nullptr;
+}
+
 static std::string substituteTypeParams(
     const std::string& type,
     const std::unordered_map<std::string, std::string>& subst) {
@@ -461,6 +511,70 @@ static std::string inferExprTypeName(
         auto it = locals.find(id->IDENTIFIER()->getText());
         if (it != locals.end()) return it->second.typeName;
         return "";
+    }
+
+    auto resolveFieldType = [&](const std::string& ownerType,
+                                const std::string& fieldName) -> std::string {
+        if (ownerType.empty()) return "";
+
+        std::string lookupType = ownerType;
+        std::unordered_map<std::string, std::string> subst;
+        std::string base;
+        std::vector<std::string> args;
+        if (parseGenericInstance(ownerType, base, args)) {
+            lookupType = base;
+        }
+
+        if (auto* sd = findStructDeclForInference(lookupType, flc)) {
+            if (!args.empty() && sd->typeParamList()) {
+                auto tps = sd->typeParamList()->typeParam();
+                for (size_t i = 0; i < std::min(args.size(), tps.size()); i++) {
+                    auto ids = tps[i]->IDENTIFIER();
+                    if (!ids.empty()) subst[ids[0]->getText()] = args[i];
+                }
+            }
+            for (auto* f : sd->structField()) {
+                if (f->IDENTIFIER()->getText() == fieldName)
+                    return substituteTypeParams(f->typeSpec()->getText(), subst);
+            }
+        }
+
+        if (auto* ud = findUnionDeclForInference(lookupType, flc)) {
+            if (!args.empty() && ud->typeParamList()) {
+                auto tps = ud->typeParamList()->typeParam();
+                for (size_t i = 0; i < std::min(args.size(), tps.size()); i++) {
+                    auto ids = tps[i]->IDENTIFIER();
+                    if (!ids.empty()) subst[ids[0]->getText()] = args[i];
+                }
+            }
+            for (auto* f : ud->unionField()) {
+                if (f->IDENTIFIER()->getText() == fieldName)
+                    return substituteTypeParams(f->typeSpec()->getText(), subst);
+            }
+        }
+
+        if (flc && flc->bindings) {
+            if (auto* cs = flc->bindings->findStruct(lookupType)) {
+                for (auto& f : cs->fields) {
+                    if (f.name == fieldName && f.typeInfo)
+                        return f.typeInfo->name;
+                }
+            }
+        }
+
+        return "";
+    };
+
+    if (auto* fa = dynamic_cast<LuxParser::FieldAccessExprContext*>(expr)) {
+        auto baseType = inferExprTypeName(fa->expression(), locals, flc);
+        if (baseType.empty()) return "";
+        return resolveFieldType(baseType, fa->IDENTIFIER()->getText());
+    }
+
+    if (auto* aa = dynamic_cast<LuxParser::ArrowAccessExprContext*>(expr)) {
+        auto baseType = inferExprTypeName(aa->expression(), locals, flc);
+        if (baseType.empty() || baseType[0] != '*') return "";
+        return resolveFieldType(baseType.substr(1), aa->IDENTIFIER()->getText());
     }
     if (auto* addr = dynamic_cast<LuxParser::AddrOfExprContext*>(expr)) {
         if (auto* ident = dynamic_cast<LuxParser::IdentExprContext*>(addr->expression())) {
@@ -1179,12 +1293,6 @@ std::vector<CompletionItem> CompletionProvider::complete(
                 varType = lookupFuncReturnType(req.receiverCall, &flc);
             }
 
-            if (req.context == CompletionContext::ArrowAccess) {
-                // Strip pointer for arrow access
-                if (!varType.empty() && varType[0] == '*')
-                    varType = varType.substr(1);
-            }
-
             // Unwrap receiver type when expression has [..] indexing
             if (req.indexDepth > 0 && !varType.empty()) {
                 // First, resolve type alias to its underlying type string
@@ -1224,6 +1332,12 @@ std::vector<CompletionItem> CompletionProvider::complete(
                     if (retType.empty()) break; // unknown member, stop
                     varType = retType;
                 }
+            }
+
+            if (req.context == CompletionContext::ArrowAccess) {
+                // Strip pointer for arrow access after resolving chain.
+                if (!varType.empty() && varType[0] == '*')
+                    varType = varType.substr(1);
             }
 
             req.receiverType = varType;
@@ -1475,12 +1589,87 @@ CompletionProvider::CompletionRequest CompletionProvider::analyzeContext(
 
         if (idEnd >= 2 && before[idEnd - 1] == '>' && before[idEnd - 2] == '-') {
             req.prefix = before.substr(idEnd);
-            // Extract receiver variable name
             size_t arrowPos = idEnd - 2;
             size_t recEnd = arrowPos;
-            while (recEnd > 0 && (std::isalnum(before[recEnd - 1]) || before[recEnd - 1] == '_'))
+
+            std::vector<std::string> chain;
+            unsigned indexDepth = 0;
+
+            while (recEnd > 0) {
+                if (before[recEnd - 1] == ')') {
+                    size_t parenEnd = recEnd - 1;
+                    int depth = 1;
+                    size_t p = parenEnd;
+                    while (p > 0 && depth > 0) {
+                        --p;
+                        if (before[p] == ')') ++depth;
+                        else if (before[p] == '(') --depth;
+                    }
+                    if (depth != 0) break;
+
+                    size_t nameEnd = p;
+                    size_t nameStart = nameEnd;
+                    while (nameStart > 0 &&
+                           (std::isalnum(static_cast<unsigned char>(before[nameStart - 1])) ||
+                            before[nameStart - 1] == '_')) {
+                        --nameStart;
+                    }
+                    if (nameStart == nameEnd) break;
+
+                    std::string methodName = before.substr(nameStart, nameEnd - nameStart);
+                    recEnd = nameStart;
+                    if (recEnd > 0 && before[recEnd - 1] == '.') {
+                        chain.push_back(methodName);
+                        --recEnd;
+                    } else {
+                        req.receiverCall = methodName;
+                        break;
+                    }
+                } else if (before[recEnd - 1] == ']') {
+                    size_t bracketEnd = recEnd - 1;
+                    int depth = 1;
+                    size_t p = bracketEnd;
+                    while (p > 0 && depth > 0) {
+                        --p;
+                        if (before[p] == ']') ++depth;
+                        else if (before[p] == '[') --depth;
+                    }
+                    if (depth != 0) break;
+                    recEnd = p;
+                    ++indexDepth;
+                } else if (std::isalnum(static_cast<unsigned char>(before[recEnd - 1])) ||
+                           before[recEnd - 1] == '_') {
+                    size_t nameEnd = recEnd;
+                    size_t nameStart = nameEnd;
+                    while (nameStart > 0 &&
+                           (std::isalnum(static_cast<unsigned char>(before[nameStart - 1])) ||
+                            before[nameStart - 1] == '_')) {
+                        --nameStart;
+                    }
+
+                    if (nameStart == nameEnd) break;
+
+                    if (nameStart > 0 && before[nameStart - 1] == '.') {
+                        chain.push_back(before.substr(nameStart, nameEnd - nameStart));
+                        recEnd = nameStart - 1;
+                    } else {
+                        break;
+                    }
+                } else {
+                    break;
+                }
+            }
+
+            size_t nameEnd = recEnd;
+            while (recEnd > 0 &&
+                   (std::isalnum(static_cast<unsigned char>(before[recEnd - 1])) ||
+                    before[recEnd - 1] == '_')) {
                 --recEnd;
-            req.receiverVar = before.substr(recEnd, arrowPos - recEnd);
+            }
+            req.receiverVar = before.substr(recEnd, nameEnd - recEnd);
+            req.indexDepth = indexDepth;
+            std::reverse(chain.begin(), chain.end());
+            req.methodChain = std::move(chain);
             req.context = CompletionContext::ArrowAccess;
             return req;
         }
