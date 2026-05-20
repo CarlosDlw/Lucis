@@ -1,0 +1,37 @@
+namespace Main;
+
+use std::log::println;
+use std::test::{ assertEqual };
+use std::thread::Task;
+
+int32 concurrencyAdd(int32 a, int32 b) {
+    ret a + b;
+}
+
+int32 concurrencyHeavyWork() {
+    int32 sum = 0;
+    for int32 i = 0; i < 1000; i++ {
+        sum += i;
+    }
+    ret sum;
+}
+
+int32 testConcurrencySpawnAwait() {
+    println("[Testing concurrency: spawn/await...]");
+
+    Task<int32> one = spawn concurrencyAdd(10, 20);
+    int32 oneResult = await one;
+    assertEqual(oneResult, 30);
+
+    Task<int32> t1 = spawn concurrencyHeavyWork();
+    Task<int32> t2 = spawn concurrencyHeavyWork();
+
+    int32 r1 = await t1;
+    int32 r2 = await t2;
+
+    assertEqual(r1, 499500);
+    assertEqual(r2, 499500);
+
+    println("✔ concurrency spawn/await tests passed");
+    ret 0;
+}

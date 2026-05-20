@@ -1,0 +1,88 @@
+namespace Main;
+
+use std::log::println;
+use std::test::{ assertEqual };
+
+int32 testControlFlowSwitch() {
+    println("[Testing control flow: switch...]");
+
+    int32 day = 3;
+    int32 dayCode = 0;
+    switch day {
+        case 1 {
+            dayCode = 10;
+        }
+        case 2 {
+            dayCode = 20;
+        }
+        case 3 {
+            dayCode = 30;
+        }
+        default {
+            dayCode = -1;
+        }
+    }
+    assertEqual(dayCode, 30);
+
+    int32 category = 5;
+    int32 categoryCode = 0;
+    switch (category) {
+        case 1, 2, 3 {
+            categoryCode = 1;
+        }
+        case 4, 5, 6 {
+            categoryCode = 2;
+        }
+        case 7, 8, 9 {
+            categoryCode = 3;
+        }
+        default {
+            categoryCode = -1;
+        }
+    }
+    assertEqual(categoryCode, 2);
+
+    int32 unknown = 99;
+    int32 unknownCode = 0;
+    switch unknown {
+        case 1 {
+            unknownCode = 1;
+        }
+        case 2 {
+            unknownCode = 2;
+        }
+        default {
+            unknownCode = -1;
+        }
+    }
+    assertEqual(unknownCode, -1);
+
+    int32 noDefault = 42;
+    int32 untouched = 777;
+    switch noDefault {
+        case 1 {
+            untouched = 1;
+        }
+        case 3 {
+            untouched = 3;
+        }
+    }
+    assertEqual(untouched, 777);
+
+    int32 fall = 0;
+    switch 1 {
+        case 1 {
+            fall += 1;
+        }
+        case 2 {
+            fall += 100;
+        }
+        default {
+            fall += 1000;
+        }
+    }
+    assertEqual(fall, 1);
+
+    println("✔ control flow switch tests passed");
+    ret 0;
+}

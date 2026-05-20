@@ -1,0 +1,114 @@
+namespace Main;
+
+use std::log::println;
+use std::test::{ assertEqual };
+
+int32 testArrayFeaturesFull() {
+    println("[Testing full array feature/method coverage...]");
+
+    // Declaration forms
+    [5]int32 fixed = [10, 20, 30, 40, 50];
+    []int32 inferred = [1, 2, 3, 4, 5];
+    [3]float64 coords = [1.0, 2.5, 3.7];
+    [6]char hello = ['H', 'e', 'l', 'l', 'o', '\0'];
+
+    assertEqual(fixed.len(), 5);
+    assertEqual(inferred.len(), 5);
+    assertEqual(coords.len(), 3);
+
+    // Indexing + assignment
+    assertEqual(inferred[0], 1);
+    inferred[2] = 99;
+    assertEqual(inferred[2], 99);
+
+    // Multi-dimensional arrays
+    [][]int32 matrix = [[1, 2, 3], [4, 5, 6]];
+    assertEqual(matrix[0][0], 1);
+    assertEqual(matrix[0][2], 3);
+    assertEqual(matrix[1][1], 5);
+    matrix[1][2] = 42;
+    assertEqual(matrix[1][2], 42);
+
+    // Core methods
+    []int32 arr = [30, 10, 20, 10, 40];
+    assertEqual(arr.len(), 5);
+    assertEqual(arr.isEmpty(), false);
+    assertEqual(arr.at(2), 20);
+    assertEqual(arr.first(), 30);
+    assertEqual(arr.last(), 40);
+    assertEqual(arr.contains(10), true);
+    assertEqual(arr.indexOf(10), 1);
+    assertEqual(arr.lastIndexOf(10), 3);
+    assertEqual(arr.count(10), 2);
+
+    []int32 filled = [1, 2, 3, 4, 5];
+    filled.fill(7);
+    assertEqual(filled.equals([7, 7, 7, 7, 7]), true);
+
+    []int32 swapped = [1, 2, 3, 4, 5];
+    swapped.swap(0, 4);
+    assertEqual(swapped.equals([5, 2, 3, 4, 1]), true);
+
+    []int32 rev = [1, 2, 3, 4, 5];
+    rev.reverse();
+    assertEqual(rev.equals([5, 4, 3, 2, 1]), true);
+
+    []int32 copied = arr.copy();
+    assertEqual(copied.equals(arr), true);
+
+    []int32 sliced = arr.slice(1, 4);
+    assertEqual(sliced.equals([10, 20, 10]), true);
+
+    []int32 nums = [1, 2, 3, 4, 5];
+    assertEqual(nums.sum(), 15);
+    assertEqual(nums.product(), 120);
+    assertEqual(nums.min(), 1);
+    assertEqual(nums.max(), 5);
+    assertEqual(nums.minIndex(), 0);
+    assertEqual(nums.maxIndex(), 4);
+    assertEqual(nums.average(), 3.0);
+
+    []int32 order = [30, 10, 20];
+    assertEqual(order.isSorted(), false);
+    order.sort();
+    assertEqual(order.equals([10, 20, 30]), true);
+    assertEqual(order.isSorted(), true);
+    order.sortDesc();
+    assertEqual(order.equals([30, 20, 10]), true);
+
+    []int32 eqA = [1, 2, 3];
+    []int32 eqB = [1, 2, 3];
+    assertEqual(eqA.equals(eqB), true);
+
+    assertEqual(eqA.toString().contains("["), true);
+    assertEqual(eqA.join("-").contains("-"), true);
+
+    []int32 rot = [1, 2, 3, 4];
+    rot.rotate(1);
+    assertEqual(rot.equals([4, 1, 2, 3]), true);
+    rot.rotate(-1);
+    assertEqual(rot.equals([1, 2, 3, 4]), true);
+
+    // List comprehensions
+    [4]int32 seq = [x | for int32 x in 0..4];
+    assertEqual(seq.equals([0, 1, 2, 3]), true);
+
+    [4]int32 squares = [x * x | for int32 x in 0..4];
+    assertEqual(squares.equals([0, 1, 4, 9]), true);
+
+    [5]int32 incl = [x | for int32 x in 1..=5];
+    assertEqual(incl.equals([1, 2, 3, 4, 5]), true);
+
+    [8]int32 evens = [x | for int32 x in 0..8 if x % 2 == 0];
+    assertEqual(evens.equals([0, 2, 4, 6, 0, 0, 0, 0]), true);
+
+    [6]int32 oddSquares = [x * x | for int32 x in 0..6 if x % 2 != 0];
+    assertEqual(oddSquares.equals([1, 9, 25, 0, 0, 0]), true);
+
+    // Array decay + pointer dereference (explicit parentheses to avoid cast precedence ambiguity)
+    char firstChar = *((&hello) as *char);
+    assertEqual(firstChar, 'H');
+
+    println("✔ full array feature/method tests passed");
+    ret 0;
+}

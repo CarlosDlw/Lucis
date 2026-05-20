@@ -2,14 +2,35 @@ namespace Main;
 
 int32 main() {
     testIntTypes();
+    testIntMethodsExtra();
     testUintTypes();
     testBoolTypes();
     testCharTypes();
+    testCharMethodsExtra();
     testStringTypes();
+    testStringCollectionsMethods();
+    testArrayTypes();
+    testArrayFeaturesFull();
     testVoidTypes();
     testCStringTypes();
     testFloatTypes();
+    testFloatMethodsExtra();
     testFloatLiteralFormats();
     testIntegerLiteralFormats();
+    testTypeCastingAndChecking();
+    testConcurrencySpawnAwait();
+    testConcurrencyMutexLock();
+    testConcurrencyThreadUtils();
+    testControlFlowConditionalsAndLoops();
+    testControlFlowBreakContinue();
+    testControlFlowSwitch();
+    testControlFlowErrorHandling();
+    testEnumUnitAndSwitch();
+    testEnumPayloadAndIs();
+    testEnumGenericAndStructField();
+    testExpressionsFull();
+    testGenericsInferenceAndMethods();
+    testGenericsUserTypes();
+    testGenericsTaskAndConstraints();
     ret 0;
 }

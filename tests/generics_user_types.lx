@@ -1,0 +1,52 @@
+namespace Main;
+
+use std::log::println;
+use std::test::{ assertEqual };
+
+struct GPair<A, B> {
+    A first;
+    B second;
+}
+
+union GResult<T, E> {
+    T ok;
+    E err;
+}
+
+enum GOption<T> {
+    None,
+    Some(T),
+}
+
+int32 testGenericsUserTypes() {
+    println("[Testing generics: user-defined types...]");
+
+    GPair<int32, string> p1 = GPair<int32, string> { first: 10, second: "ten" };
+    GPair<float64, bool> p2 = GPair<float64, bool> { first: 2.5, second: true };
+
+    assertEqual(p1.first, 10);
+    assertEqual(p1.second, "ten");
+    assertEqual(p2.first, 2.5);
+    assertEqual(p2.second, true);
+
+    GResult<int32, string> ok = GResult<int32, string> { ok: 123 };
+    GResult<int32, string> err = GResult<int32, string> { err: "boom" };
+
+    assertEqual(ok.ok, 123);
+    assertEqual(err.err, "boom");
+
+    GOption<int32> o1 = GOption<int32>::Some(55);
+    GOption<int32> o2 = GOption<int32>::None;
+
+    assertEqual(o1 is GOption<int32>::Some, true);
+    assertEqual(o2 is GOption<int32>::None, true);
+
+    int32 someValue = 0;
+    if o1 is GOption<int32>::Some(v) {
+        someValue = v;
+    }
+    assertEqual(someValue, 55);
+
+    println("✔ generics user-type tests passed");
+    ret 0;
+}

@@ -1,0 +1,20 @@
+namespace Main;
+
+use std::log::println;
+use std::test::{ assertEqual };
+use std::thread::{ cpuCount, threadId, yield };
+
+int32 testConcurrencyThreadUtils() {
+    println("[Testing concurrency: thread utilities...]");
+
+    uint32 cores = cpuCount();
+    assertEqual(cores >= 1, true);
+
+    uint64 tid = threadId();
+    assertEqual(tid > 0, true);
+
+    yield();
+
+    println("✔ concurrency thread utility tests passed");
+    ret 0;
+}

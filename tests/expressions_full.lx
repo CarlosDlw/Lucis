@@ -1,0 +1,129 @@
+namespace Main;
+
+use std::log::println;
+use std::test::{ assertEqual };
+use std::thread::Task;
+
+struct ExprPoint {
+    int32 x;
+    int32 y;
+}
+
+enum ExprColor {
+    Red,
+    Green,
+    Blue,
+}
+
+enum ExprResult<V, E> {
+    Ok(V),
+    Err(E),
+}
+
+int32 exprCompute(int32 a, int32 b) {
+    ret a + b;
+}
+
+int32 testExpressionsFull() {
+    println("[Testing expressions full coverage...]");
+
+    int32 a = 10;
+    int32 b = 20;
+
+    // Ternary
+    int32 maxV = a > b ? a : b;
+    int32 minV = a < b ? a : b;
+    int32 nested = a > 10 ? 1 : (a > 3 ? 2 : 3);
+    int32 doubled = (a > 5 ? a : b) * 2;
+
+    assertEqual(maxV, 20);
+    assertEqual(minV, 10);
+    assertEqual(nested, 2);
+    assertEqual(doubled, 20);
+
+    // Null coalescing
+    int32 raw = 42;
+    *int32 nilPtr = null;
+    *int32 fallback = nilPtr ?? &raw;
+
+    assertEqual(*fallback, 42);
+
+    // Cast + is
+    int64 wide = a as int64;
+    float64 asFloat = a as float64;
+    int32 trunc = 3.14 as int32;
+
+    assertEqual(wide, 10);
+    assertEqual(asFloat, 10.0);
+    assertEqual(trunc, 3);
+    assertEqual(a is int32, true);
+
+    // sizeof + typeof
+    assertEqual(sizeof(int8), 1);
+    assertEqual(sizeof(int32), 4);
+    assertEqual(sizeof(int64), 8);
+    assertEqual(sizeof(float64), 8);
+    assertEqual(sizeof(bool), 1);
+    assertEqual(sizeof(char), 1);
+    assertEqual(typeof(42), "int32");
+
+    // Prefix/postfix inc/dec
+    int32 n = 5;
+    int32 pref = ++n;
+    int32 post = n++;
+    int32 pdec = --n;
+    int32 qdec = n--;
+
+    assertEqual(pref, 6);
+    assertEqual(post, 6);
+    assertEqual(pdec, 6);
+    assertEqual(qdec, 6);
+    assertEqual(n, 5);
+
+    // Struct literals + pointer expressions + arrow
+    ExprPoint p = ExprPoint { x: 10, y: 20 };
+    *ExprPoint pptr = &p;
+
+    assertEqual(p.x, 10);
+    assertEqual(p.y, 20);
+    assertEqual((*pptr).x, 10);
+    assertEqual(pptr->x, 10);
+
+    // Enum access + enum checks in expressions
+    ExprColor c = ExprColor::Red;
+    assertEqual(c is ExprColor::Red, true);
+
+    ExprResult<int32, string> ok = ExprResult<int32, string>::Ok(10);
+    int32 okValue = 0;
+    if ok is ExprResult<int32, string>::Ok(v) {
+        okValue = v;
+    }
+    assertEqual(okValue, 10);
+
+    // Method calls
+    int32 absV = (-42).abs();
+    float64 sqrtV = (9.0).sqrt();
+    bool empty = "hello".isEmpty();
+
+    assertEqual(absV, 42);
+    assertEqual(sqrtV, 3.0);
+    assertEqual(empty, false);
+
+    // Arrays + indexing + list comprehension
+    []int32 nums = [10, 20, 30];
+    assertEqual(nums[0], 10);
+
+    [][]int32 matrix = [[1, 2], [3, 4]];
+    assertEqual(matrix[1][0], 3);
+
+    [4]int32 squares = [x * x | for int32 x in 0..4];
+    assertEqual(squares.equals([0, 1, 4, 9]), true);
+
+    // Spawn + await expressions
+    Task<int32> t = spawn exprCompute(10, 20);
+    int32 result = await t;
+    assertEqual(result, 30);
+
+    println("✔ expressions full coverage passed");
+    ret 0;
+}

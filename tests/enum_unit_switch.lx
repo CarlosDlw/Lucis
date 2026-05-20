@@ -1,0 +1,63 @@
+namespace Main;
+
+use std::log::println;
+use std::test::{ assertEqual };
+
+enum Color {
+    Red,
+    Green,
+    Blue,
+}
+
+enum Direction {
+    North,
+    South,
+    East,
+    West,
+}
+
+int32 testEnumUnitAndSwitch() {
+    println("[Testing enums: unit variants and switch...]");
+
+    Color c = Color::Green;
+    int32 colorCode = -1;
+
+    switch c {
+        case Color::Red {
+            colorCode = 0;
+        }
+        case Color::Green {
+            colorCode = 1;
+        }
+        case Color::Blue {
+            colorCode = 2;
+        }
+    }
+
+    assertEqual(colorCode, 1);
+    assertEqual(c is Color::Green, true);
+    assertEqual(c is Color::Red, false);
+
+    Direction d = Direction::West;
+    int32 dirCode = -1;
+
+    switch d {
+        case Direction::North {
+            dirCode = 10;
+        }
+        case Direction::South {
+            dirCode = 20;
+        }
+        case Direction::East {
+            dirCode = 30;
+        }
+        case Direction::West {
+            dirCode = 40;
+        }
+    }
+
+    assertEqual(dirCode, 40);
+
+    println("✔ enum unit/switch tests passed");
+    ret 0;
+}

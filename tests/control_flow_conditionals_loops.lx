@@ -1,0 +1,92 @@
+namespace Main;
+
+use std::log::println;
+use std::test::{ assertEqual };
+
+int32 testControlFlowConditionalsAndLoops() {
+    println("[Testing control flow: conditionals/loops...]");
+
+    int32 x = 10;
+    int32 branch = 0;
+
+    if x > 5 {
+        branch += 1;
+    }
+
+    if (x == 10) {
+        branch += 10;
+    }
+
+    if x == 1 {
+        branch += 100;
+    } else if (x == 5) {
+        branch += 1000;
+    } else if x == 10 {
+        branch += 10000;
+    } else {
+        branch += 100000;
+    }
+
+    assertEqual(branch, 10011);
+
+    int32 cStyleSum = 0;
+    for int32 i = 0; i < 5; i++ {
+        cStyleSum += i;
+    }
+    assertEqual(cStyleSum, 10);
+
+    int32 rangeExclusive = 0;
+    for int32 i in 0..5 {
+        rangeExclusive += i;
+    }
+    assertEqual(rangeExclusive, 10);
+
+    int32 rangeInclusive = 0;
+    for int32 i in 1..=5 {
+        rangeInclusive += i;
+    }
+    assertEqual(rangeInclusive, 15);
+
+    []int32 values = [10, 20, 30, 40, 50];
+    int32 arraySum = 0;
+    for int32 v in values {
+        arraySum += v;
+    }
+    assertEqual(arraySum, 150);
+
+    int32 count = 0;
+    while count < 5 {
+        count += 1;
+    }
+    assertEqual(count, 5);
+
+    int32 j = 10;
+    while (j > 7) {
+        j -= 1;
+    }
+    assertEqual(j, 7);
+
+    int32 doCount = 100;
+    int32 doExec = 0;
+    do {
+        doExec += 1;
+        doCount += 1;
+    } while doCount < 100;
+    assertEqual(doExec, 1);
+    assertEqual(doCount, 101);
+
+    int32 loopCount = 0;
+    int32 loopSum = 0;
+    loop {
+        if loopCount == 5 {
+            break;
+        }
+        loopSum += loopCount;
+        loopCount += 1;
+    }
+    assertEqual(loopCount, 5);
+    assertEqual(loopSum, 10);
+
+    println("✔ control flow conditionals/loops tests passed");
+    ret 0;
+}

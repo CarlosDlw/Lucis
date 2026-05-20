@@ -1,0 +1,93 @@
+namespace Main;
+
+use std::log::println;
+use std::test::{ assertEqual };
+
+int32 testArrayTypes() {
+    println("[Testing array types...]");
+
+    [5]int32 fixed = [1, 2, 3, 4, 5];
+    []int32 inferred = [10, 20, 30];
+    [][]int32 matrix = [[1, 2], [3, 4]];
+
+    // Identity, declaration forms, and metadata from types.md
+    assertEqual(sizeof([5]int32), 20);
+    assertEqual(sizeof([5]int32), 20);
+    assertEqual(sizeof([2][2]int32), 16);
+    assertEqual(typeof(fixed).contains("int32"), true);
+    assertEqual(typeof(inferred).contains("int32"), true);
+
+    // Indexing and reassignment
+    assertEqual(fixed[0], 1);
+    assertEqual(fixed[4], 5);
+    inferred[1] = 99;
+    assertEqual(inferred[1], 99);
+
+    assertEqual(matrix[0][0], 1);
+    assertEqual(matrix[1][1], 4);
+    matrix[1][0] = 42;
+    assertEqual(matrix[1][0], 42);
+
+    // Core array methods
+    assertEqual(fixed.len(), 5);
+    assertEqual(fixed.isEmpty(), false);
+    assertEqual(fixed.at(2), 3);
+    assertEqual(fixed.first(), 1);
+    assertEqual(fixed.last(), 5);
+    assertEqual(fixed.contains(3), true);
+    assertEqual(fixed.indexOf(3), 2);
+    assertEqual(fixed.lastIndexOf(3), 2);
+    assertEqual(fixed.count(3), 1);
+
+    // Numeric helpers
+    assertEqual(fixed.sum(), 15);
+    assertEqual(fixed.product(), 120);
+    assertEqual(fixed.min(), 1);
+    assertEqual(fixed.max(), 5);
+    assertEqual(fixed.minIndex(), 0);
+    assertEqual(fixed.maxIndex(), 4);
+    assertEqual(fixed.average(), 3.0);
+
+    // Copy + in-place transforms
+    [5]int32 copy = fixed.copy();
+    assertEqual(copy.equals(fixed), true);
+
+    copy.swap(0, 4);
+    assertEqual(copy[0], 5);
+    assertEqual(copy[4], 1);
+
+    copy.reverse();
+    assertEqual(copy[0], 1);
+    assertEqual(copy[4], 5);
+
+    copy.fill(7);
+    assertEqual(copy.sum(), 35);
+
+    // Sorting and ordering
+    []int32 sortable = [30, 10, 20];
+    assertEqual(sortable.isSorted(), false);
+    sortable.sort();
+    assertEqual(sortable[0], 10);
+    assertEqual(sortable[2], 30);
+    assertEqual(sortable.isSorted(), true);
+
+    sortable.sortDesc();
+    assertEqual(sortable[0], 30);
+    assertEqual(sortable[2], 10);
+
+    // Slice and representation helpers
+    []int32 sub = fixed.slice(1, 4);
+    assertEqual(sub.len(), 3);
+    assertEqual(sub[0], 2);
+    assertEqual(sub[2], 4);
+    assertEqual(fixed.toString().contains("["), true);
+    assertEqual(fixed.join("-").contains("-"), true);
+
+    // Rotation
+    []int32 rot = [1, 2, 3, 4];
+    rot.rotate(1);
+    assertEqual(rot.equals([4, 1, 2, 3]), true);
+
+    println("✔ array tests passed");
+    ret 0;
+}

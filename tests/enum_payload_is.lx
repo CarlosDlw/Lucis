@@ -1,0 +1,50 @@
+namespace Main;
+
+use std::log::println;
+use std::test::{ assertEqual };
+
+enum Token {
+    Eof,
+    Number(float64),
+    Ident(string),
+}
+
+enum Shape {
+    Unit,
+    Circle { r: float64 },
+    Rect { w: float64, h: float64 },
+}
+
+int32 testEnumPayloadAndIs() {
+    println("[Testing enums: payload variants and is...]");
+
+    Token t1 = Token::Eof;
+    Token t2 = Token::Number(42.0);
+    Token t3 = Token::Ident("lux");
+
+    assertEqual(t1 is Token::Eof, true);
+    assertEqual(t2 is Token::Number, true);
+    assertEqual(t3 is Token::Ident, true);
+
+    float64 numValue = 0.0;
+    if t2 is Token::Number(n) {
+        numValue = n;
+    }
+    assertEqual(numValue, 42.0);
+
+    string identValue = "";
+    if t3 is Token::Ident(name) {
+        identValue = name;
+    }
+    assertEqual(identValue, "lux");
+
+    Shape s1 = Shape::Circle { r: 4.0 };
+    Shape s2 = Shape::Rect { w: 10.0, h: 6.0 };
+
+    assertEqual(s1 is Shape::Circle, true);
+    assertEqual(s2 is Shape::Rect, true);
+    assertEqual(s1 is Shape::Unit, false);
+
+    println("✔ enum payload/is tests passed");
+    ret 0;
+}
