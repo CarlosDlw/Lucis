@@ -17,12 +17,14 @@ public:
                                 const std::string& outputPath,
                                 const std::vector<std::string>& extraLinkerFlags = {},
                                 const std::vector<std::string>& extraLibPaths = {},
-                                bool withSanitizers = true);
+                                bool withSanitizers = true,
+                                bool quiet = false);
 
     // Compile a C source file into an object file using the system C compiler.
     static bool compileCSource(const std::string& cSourcePath,
                                const std::string& objectPath,
-                               const std::vector<std::string>& extraIncludePaths = {});
+                               const std::vector<std::string>& extraIncludePaths = {},
+                               bool quiet = false);
 
     // Locate runtime builtins static library next to the lux executable.
     static std::string builtinsLibraryPath();

@@ -33,6 +33,7 @@
 #include <cstring>
 #include <fstream>
 #include <iomanip>
+#include <fcntl.h>
 #include <unistd.h>
 #include <sys/wait.h>
 
@@ -218,13 +219,15 @@ CLI::CLI(int argc, char* argv[])
         isRun_ = true;
         options_.runJIT   = true;
         options_.inputFile = argv[2];
-        // Collect -l/-L/-I flags; everything after -- goes to runArgs
+        // Collect -l/-L/-I/-q flags; everything after -- goes to runArgs
         bool doubleDash = false;
         for (int i = 3; i < argc; i++) {
             std::string arg = argv[i];
             if (arg == "--") { doubleDash = true; continue; }
             if (doubleDash) {
                 options_.runArgs.push_back(arg);
+            } else if (arg == "-q" || arg == "--quiet") {
+                options_.quiet = true;
             } else if (arg.rfind("-l", 0) == 0 && arg.size() > 2) {
                 options_.linkerFlags.push_back(arg);
             } else if (arg.rfind("-L", 0) == 0 && arg.size() > 2) {
@@ -268,6 +271,8 @@ bool CLI::parse(int argc, char* argv[]) {
             options_.optimizationLevel = 2;
         } else if (arg == "-o3") {
             options_.optimizationLevel = 3;
+        } else if (arg == "-q" || arg == "--quiet") {
+            options_.quiet = true;
         } else if (arg.rfind("-l", 0) == 0 && arg.size() > 2) {
             options_.linkerFlags.push_back(arg);
         } else if (arg.rfind("-L", 0) == 0 && arg.size() > 2) {
@@ -294,7 +299,9 @@ void CLI::printHelp() const {
         << "  lux <file.lx>              Compile and print LLVM IR to stdout\n"
         << "  lux <file.lx> <output>     Compile and emit native binary\n"
         << "  lux <file.lx> <output> -oN Compile with optimization level N (1, 2, or 3)\n"
+        << "  lux <file.lx> <output> -q  Compile with minimal output\n"
         << "  lux run <file.lx>          JIT-execute via LLVM IR (no binary emitted)\n"
+        << "  lux run <file.lx> -q       JIT-execute with minimal output\n"
         << "  lux run <file.lx> -- ...   JIT-execute, forwarding args to main\n"
         << "  lux helpc <lib> [symbol]   C library reference helper\n"
         << "  lux lsp                    Start LSP server (for editor integration)\n"
@@ -303,7 +310,8 @@ void CLI::printHelp() const {
         << "Linker flags:\n"
         << "  -lname       Link against library 'name' (e.g. -lSDL2)\n"
         << "  -Lpath       Add 'path' to the library search path\n"
-        << "  -Ipath       Add 'path' to the include search path (reserved)\n\n"
+        << "  -Ipath       Add 'path' to the include search path (reserved)\n"
+        << "  -q, --quiet  Hide pipeline logs and show only final output\n\n"
         << "Examples:\n"
         << "  lux main.lx\n"
         << "  lux main.lx ./main\n"
@@ -374,6 +382,7 @@ std::string CLI::makeObjectName(const SourceUnit& unit) {
 
 int CLI::compile() {
     auto progress = [&](int current, int total, const std::string& msg) {
+        if (options_.quiet) return;
         printProgressLine("build", current, total, msg);
     };
     constexpr int totalSteps = 7;
@@ -407,7 +416,8 @@ int CLI::compile() {
     size_t parseIdx = 0;
     for (auto& filePath : allFiles) {
         ++parseIdx;
-        printUnitLine("build", "parse", parseIdx, parseTotal, filePath);
+        if (!options_.quiet)
+            printUnitLine("build", "parse", parseIdx, parseTotal, filePath);
         SourceUnit unit;
         unit.filePath    = filePath;
         unit.parseResult = Parser::parse(filePath);
@@ -516,8 +526,10 @@ int CLI::compile() {
             if (lf == flag) { alreadyProvided = true; break; }
         }
         if (!alreadyProvided) {
-            std::cerr << "lux: auto-linking '" << flag
-                      << "' (required by <" << header << ">)\n";
+            if (!options_.quiet) {
+                std::cerr << "lux: auto-linking '" << flag
+                          << "' (required by <" << header << ">)\n";
+            }
             options_.linkerFlags.push_back(flag);
         }
     }
@@ -527,7 +539,8 @@ int CLI::compile() {
     // ═════════════════════════════════════════════════════════════════════
     std::vector<std::string> cObjectFiles;
     if (!cSourceFiles.empty()) {
-        printOutputDivider("build", "compiler output");
+        if (!options_.quiet)
+            printOutputDivider("build", "compiler output");
     }
     for (auto& cSrc : cSourceFiles) {
         auto stem = fs::path(cSrc).stem().string();
@@ -543,7 +556,7 @@ int CLI::compile() {
                 cIncFlags.push_back("-I" + ip);
         }
 
-        if (!CodeGen::compileCSource(cSrc, objPath, cIncFlags)) {
+        if (!CodeGen::compileCSource(cSrc, objPath, cIncFlags, options_.quiet)) {
             std::cerr << "lux: failed to compile C source '"
                       << cSrc << "'\n";
             return 1;
@@ -560,7 +573,8 @@ int CLI::compile() {
     size_t checkIdx = 0;
     for (auto& unit : units) {
         ++checkIdx;
-        printUnitLine("build", "check", checkIdx, checkTotal, unit.filePath);
+        if (!options_.quiet)
+            printUnitLine("build", "check", checkIdx, checkTotal, unit.filePath);
         Checker checker;
         checker.setNamespaceContext(&registry, unit.namespaceName, unit.filePath);
         checker.setCBindings(&cBindings);
@@ -585,7 +599,8 @@ int CLI::compile() {
     size_t irIdx = 0;
     for (auto& unit : units) {
         ++irIdx;
-        printUnitLine("build", "ir", irIdx, irTotal, unit.filePath);
+        if (!options_.quiet)
+            printUnitLine("build", "ir", irIdx, irTotal, unit.filePath);
         IRGen irGen;
         irGen.setNamespaceContext(&registry, unit.namespaceName, unit.filePath);
         irGen.setCBindings(&cBindings);
@@ -633,9 +648,11 @@ int CLI::compile() {
     // STEP 7: LINK ALL OBJECT FILES
     // ═════════════════════════════════════════════════════════════════════
     progress(++step, totalSteps, "linking final binary");
-    printOutputDivider("build", "linker output");
+    if (!options_.quiet)
+        printOutputDivider("build", "linker output");
     if (!CodeGen::linkObjectFiles(objectFiles, options_.outputFile,
-                                    options_.linkerFlags, options_.libPaths)) {
+                                   options_.linkerFlags, options_.libPaths,
+                                   true, options_.quiet)) {
         printErrorLine("failed to link binary '" + options_.outputFile + "'");
         return 1;
     }
@@ -660,6 +677,7 @@ int CLI::jitRun() {
 #endif
 
     auto progress = [&](int current, int total, const std::string& msg) {
+        if (options_.quiet) return;
         printProgressLine("run", current, total, msg);
     };
     constexpr int totalSteps = 8;
@@ -683,7 +701,8 @@ int CLI::jitRun() {
     size_t parseIdx = 0;
     for (auto& filePath : allFiles) {
         ++parseIdx;
-        printUnitLine("run", "parse", parseIdx, parseTotal, filePath);
+        if (!options_.quiet)
+            printUnitLine("run", "parse", parseIdx, parseTotal, filePath);
         SourceUnit unit;
         unit.filePath    = filePath;
         unit.parseResult = Parser::parse(filePath);
@@ -744,8 +763,10 @@ int CLI::jitRun() {
         bool already = false;
         for (auto& lf : options_.linkerFlags) if (lf == flag) { already = true; break; }
         if (!already) {
-            std::cerr << "lux: auto-linking '" << flag
-                      << "' (required by <" << header << ">)\n";
+            if (!options_.quiet) {
+                std::cerr << "lux: auto-linking '" << flag
+                          << "' (required by <" << header << ">)\n";
+            }
             options_.linkerFlags.push_back(flag);
         }
     }
@@ -756,7 +777,8 @@ int CLI::jitRun() {
     size_t checkIdx = 0;
     for (auto& unit : units) {
         ++checkIdx;
-        printUnitLine("run", "check", checkIdx, checkTotal, unit.filePath);
+        if (!options_.quiet)
+            printUnitLine("run", "check", checkIdx, checkTotal, unit.filePath);
         Checker checker;
         checker.setNamespaceContext(&registry, unit.namespaceName, unit.filePath);
         checker.setCBindings(&cBindings);
@@ -781,7 +803,8 @@ int CLI::jitRun() {
     size_t irIdx = 0;
     for (auto& unit : units) {
         ++irIdx;
-        printUnitLine("run", "ir", irIdx, irTotal, unit.filePath);
+        if (!options_.quiet)
+            printUnitLine("run", "ir", irIdx, irTotal, unit.filePath);
         IRGen irGen;
         irGen.setNamespaceContext(&registry, unit.namespaceName, unit.filePath);
         irGen.setCBindings(&cBindings);
@@ -883,6 +906,14 @@ int CLI::jitRun() {
         pid_t lpid = ::fork();
         if (lpid < 0) return false;
         if (lpid == 0) {
+            if (options_.quiet) {
+                int devNull = ::open("/dev/null", O_WRONLY);
+                if (devNull >= 0) {
+                    ::dup2(devNull, STDOUT_FILENO);
+                    ::dup2(devNull, STDERR_FILENO);
+                    if (devNull > STDERR_FILENO) ::close(devNull);
+                }
+            }
             std::vector<const char*> argv;
             argv.push_back(cc);
             argv.push_back(irPath.c_str());
@@ -914,7 +945,8 @@ int CLI::jitRun() {
 
     if (needBuild) {
         progress(step, totalSteps, "cache miss: building run artifact");
-        printOutputDivider("run", "compiler/linker output");
+        if (!options_.quiet)
+            printOutputDivider("run", "compiler/linker output");
         std::string runLLTemplate = tempDir + "/lux-run-ir-XXXXXX.ll";
         std::vector<char> llTmpl(runLLTemplate.begin(), runLLTemplate.end());
         llTmpl.push_back('\0');
@@ -957,7 +989,8 @@ int CLI::jitRun() {
     }
 
     progress(++step, totalSteps, "executing program");
-    printOutputDivider("run", "program output");
+    if (!options_.quiet)
+        printOutputDivider("run", "program output");
     pid_t pid = ::fork();
     if (pid < 0) {
         printErrorLine(std::string("failed to execute run binary: ") + std::strerror(errno));

@@ -12,6 +12,7 @@ struct CLIOptions {
     std::string inputFile;
     std::string outputFile;
     int         optimizationLevel = 0;
+    bool        quiet       = false;
     bool        showIR      = false;
     bool        showHelp    = false;
     bool        showVersion = false;

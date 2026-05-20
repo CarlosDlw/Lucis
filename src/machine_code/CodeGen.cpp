@@ -23,6 +23,7 @@
 #endif
 
 #include <iostream>
+#include <fcntl.h>
 #include <unistd.h>
 #include <sys/wait.h>
 
@@ -33,11 +34,20 @@
 static bool tryLink(const char*        linker,
                     const std::string& objectPath,
                     const std::string& builtinsPath,
-                    const std::string& outputPath) {
+                    const std::string& outputPath,
+                    bool quiet) {
     pid_t pid = ::fork();
     if (pid < 0) return false;
 
     if (pid == 0) {
+        if (quiet) {
+            int devNull = ::open("/dev/null", O_WRONLY);
+            if (devNull >= 0) {
+                ::dup2(devNull, STDOUT_FILENO);
+                ::dup2(devNull, STDERR_FILENO);
+                if (devNull > STDERR_FILENO) ::close(devNull);
+            }
+        }
         // Child process
         std::vector<const char*> argv;
         argv.push_back(linker);
@@ -69,11 +79,20 @@ static bool tryLinkMulti(const char*                      linker,
                           const std::string&              outputPath,
                           const std::vector<std::string>& extraLinkerFlags,
                           const std::vector<std::string>& extraLibPaths,
-                          bool withSanitizers) {
+                          bool withSanitizers,
+                          bool quiet) {
     pid_t pid = ::fork();
     if (pid < 0) return false;
 
     if (pid == 0) {
+        if (quiet) {
+            int devNull = ::open("/dev/null", O_WRONLY);
+            if (devNull >= 0) {
+                ::dup2(devNull, STDOUT_FILENO);
+                ::dup2(devNull, STDERR_FILENO);
+                if (devNull > STDERR_FILENO) ::close(devNull);
+            }
+        }
         // Build argv: linker obj1 obj2 ... builtins -Lpath... -lm -lz -lpthread -lfoo... -o out
         std::vector<const char*> argv;
         argv.push_back(linker);
@@ -122,7 +141,8 @@ static std::string findBuiltinsPath() {
 
 bool CodeGen::compileCSource(const std::string& cSourcePath,
                               const std::string& objectPath,
-                              const std::vector<std::string>& extraIncludePaths) {
+                              const std::vector<std::string>& extraIncludePaths,
+                              bool quiet) {
     const char* compilers[] = { "cc", "clang", "gcc" };
 
     for (auto* cc : compilers) {
@@ -130,6 +150,14 @@ bool CodeGen::compileCSource(const std::string& cSourcePath,
         if (pid < 0) return false;
 
         if (pid == 0) {
+            if (quiet) {
+                int devNull = ::open("/dev/null", O_WRONLY);
+                if (devNull >= 0) {
+                    ::dup2(devNull, STDOUT_FILENO);
+                    ::dup2(devNull, STDERR_FILENO);
+                    if (devNull > STDERR_FILENO) ::close(devNull);
+                }
+            }
             std::vector<const char*> argv;
             argv.push_back(cc);
             argv.push_back("-c");
@@ -170,8 +198,8 @@ bool CodeGen::emitBinary(IRModule& irModule, const std::string& outputPath) {
 
     auto builtinsPath = findBuiltinsPath();
 
-    bool linked = tryLink("clang", objectPath, builtinsPath, outputPath)
-               || tryLink("gcc",   objectPath, builtinsPath, outputPath);
+    bool linked = tryLink("clang", objectPath, builtinsPath, outputPath, false)
+               || tryLink("gcc",   objectPath, builtinsPath, outputPath, false);
 
     llvm::sys::fs::remove(objectPath);
 
@@ -185,13 +213,14 @@ bool CodeGen::linkObjectFiles(const std::vector<std::string>& objectPaths,
                                const std::string& outputPath,
                                const std::vector<std::string>& extraLinkerFlags,
                                const std::vector<std::string>& extraLibPaths,
-                               bool withSanitizers) {
+                               bool withSanitizers,
+                               bool quiet) {
     auto builtinsPath = findBuiltinsPath();
 
     bool linked = tryLinkMulti("clang", objectPaths, builtinsPath, outputPath,
-                               extraLinkerFlags, extraLibPaths, withSanitizers)
+                               extraLinkerFlags, extraLibPaths, withSanitizers, quiet)
                || tryLinkMulti("gcc",   objectPaths, builtinsPath, outputPath,
-                               extraLinkerFlags, extraLibPaths, withSanitizers);
+                               extraLinkerFlags, extraLibPaths, withSanitizers, quiet);
 
     if (!linked) {
         std::cerr << "lux: linking failed — ensure clang or gcc is installed\n";
