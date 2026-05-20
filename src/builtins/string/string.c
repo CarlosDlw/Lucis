@@ -643,6 +643,10 @@ char* lux_cstr(const char* s, size_t sLen) {
     return buf;
 }
 
+void* lux_allocString(size_t size) {
+    return malloc(size);
+}
+
 lux_str_result lux_fromCStr(const char* cstr) {
     if (!cstr) return (lux_str_result){ "", 0 };
     size_t len = strlen(cstr);

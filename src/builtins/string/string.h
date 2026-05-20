@@ -86,6 +86,7 @@ lux_str_result lux_fromBytesVec(const lux_str_vec_header* vec);
 // ── C FFI String Conversion ─────────────────────────────────────────────────
 
 char*             lux_cstr(const char* s, size_t sLen);
+void*             lux_allocString(size_t size);
 lux_str_result  lux_fromCStr(const char* cstr);
 lux_str_result  lux_fromCStrCopy(const char* cstr);
 lux_str_result  lux_fromCStrLen(const char* cstr, size_t len);

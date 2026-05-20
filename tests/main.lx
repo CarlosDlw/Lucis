@@ -3,6 +3,8 @@ namespace Main;
 int32 main() {
     testIntTypes();
     testUintTypes();
+    testBoolTypes();
+    testCharTypes();
     testFloatTypes();
     testFloatLiteralFormats();
     testIntegerLiteralFormats();

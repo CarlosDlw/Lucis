@@ -14282,7 +14282,7 @@ IRGen::visitMethodCallExpr(LuxParser::MethodCallExprContext* ctx) {
                 auto* strTy  = llvm::StructType::get(*context_, {ptrTy, usizeTy});
                 auto* i32T   = llvm::Type::getInt32Ty(*context_);
 
-                auto mallocCallee = declareBuiltin("malloc", ptrTy, {usizeTy});
+                auto mallocCallee = declareBuiltin("lux_allocString", ptrTy, {usizeTy});
                 auto* bufSize = llvm::ConstantInt::get(usizeTy, arrLen * 24 + 4);
                 std::vector<llvm::Value*> mallocArgs = {bufSize};
                 auto* buf = builder_->CreateCall(mallocCallee, mallocArgs, "buf");
@@ -14359,7 +14359,7 @@ IRGen::visitMethodCallExpr(LuxParser::MethodCallExprContext* ctx) {
                     sepLen = llvm::ConstantInt::get(usizeTy, 0);
                 }
 
-                auto mallocCallee = declareBuiltin("malloc", ptrTy, {usizeTy});
+                auto mallocCallee = declareBuiltin("lux_allocString", ptrTy, {usizeTy});
                 auto* bufSize = llvm::ConstantInt::get(usizeTy, arrLen * 24 + arrLen * 16 + 4);
                 std::vector<llvm::Value*> mallocArgs = {bufSize};
                 auto* buf = builder_->CreateCall(mallocCallee, mallocArgs, "joinbuf");
@@ -15120,7 +15120,7 @@ IRGen::visitMethodCallExpr(LuxParser::MethodCallExprContext* ctx) {
         if (tag == "char.toString") {
             // Allocate 1-byte string on heap, return {ptr, 1}
             auto* one = llvm::ConstantInt::get(usizeTy, 1);
-            auto callee = declareBuiltin("malloc", ptrTy, {usizeTy});
+            auto callee = declareBuiltin("lux_allocString", ptrTy, {usizeTy});
             auto* buf = builder_->CreateCall(callee, {one}, "char_buf");
             builder_->CreateStore(receiverVal, buf);
             llvm::Value* s = llvm::UndefValue::get(strTy);
@@ -15133,7 +15133,7 @@ IRGen::visitMethodCallExpr(LuxParser::MethodCallExprContext* ctx) {
             auto* n = args[0];
             if (n->getType() != usizeTy)
                 n = builder_->CreateIntCast(n, usizeTy, false);
-            auto mallocCallee = declareBuiltin("malloc", ptrTy, {usizeTy});
+            auto mallocCallee = declareBuiltin("lux_allocString", ptrTy, {usizeTy});
             auto* buf = builder_->CreateCall(mallocCallee, {n}, "rep_buf");
             auto memsetCallee = declareBuiltin("memset", ptrTy, {ptrTy, i32Ty, usizeTy});
             auto* charI32 = builder_->CreateZExt(receiverVal, i32Ty, "ch32");
