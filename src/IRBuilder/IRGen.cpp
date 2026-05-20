@@ -3663,29 +3663,39 @@ std::any IRGen::visitCallStmt(LuxParser::CallStmtContext* ctx) {
         std::string prefix = (funcName == "assertEqual")
             ? "lux_assertEqual" : "lux_assertNotEqual";
         auto* ty = tArgs[0]->getType();
+        auto* rhs = tArgs[1];
+        if (rhs->getType() != ty) {
+            if (ty->isIntegerTy() && rhs->getType()->isIntegerTy()) {
+                rhs = builder_->CreateIntCast(rhs, ty, true);
+            } else if (ty->isDoubleTy() && rhs->getType()->isIntegerTy()) {
+                rhs = builder_->CreateSIToFP(rhs, ty);
+            } else if (ty->isIntegerTy() && rhs->getType()->isDoubleTy()) {
+                rhs = builder_->CreateFPToSI(rhs, ty);
+            }
+        }
         if (ty == strTy) {
             std::vector<llvm::Value*> callArgs;
             callArgs.push_back(builder_->CreateExtractValue(tArgs[0], 0));
             callArgs.push_back(builder_->CreateExtractValue(tArgs[0], 1));
-            callArgs.push_back(builder_->CreateExtractValue(tArgs[1], 0));
-            callArgs.push_back(builder_->CreateExtractValue(tArgs[1], 1));
+            callArgs.push_back(builder_->CreateExtractValue(rhs, 0));
+            callArgs.push_back(builder_->CreateExtractValue(rhs, 1));
             auto callee = declareBuiltin(prefix + "Str", voidTy,
                 {ptrTy, usizeTy, ptrTy, usizeTy});
             builder_->CreateCall(callee, callArgs);
         } else if (ty == i1Ty) {
             auto* a = builder_->CreateZExt(tArgs[0], i32Ty);
-            auto* b = builder_->CreateZExt(tArgs[1], i32Ty);
+            auto* b = builder_->CreateZExt(rhs, i32Ty);
             auto callee = declareBuiltin(prefix + "Bool", voidTy, {i32Ty, i32Ty});
             builder_->CreateCall(callee, {a, b});
         } else if (ty == i8Ty) {
             auto callee = declareBuiltin(prefix + "Char", voidTy, {i8Ty, i8Ty});
-            builder_->CreateCall(callee, {tArgs[0], tArgs[1]});
+            builder_->CreateCall(callee, {tArgs[0], rhs});
         } else if (ty->isDoubleTy()) {
             auto callee = declareBuiltin(prefix + "F64", voidTy, {f64Ty, f64Ty});
-            builder_->CreateCall(callee, {tArgs[0], tArgs[1]});
+            builder_->CreateCall(callee, {tArgs[0], rhs});
         } else {
             auto* a = builder_->CreateIntCast(tArgs[0], i64Ty, true);
-            auto* b = builder_->CreateIntCast(tArgs[1], i64Ty, true);
+            auto* b = builder_->CreateIntCast(rhs, i64Ty, true);
             auto callee = declareBuiltin(prefix + "I64", voidTy, {i64Ty, i64Ty});
             builder_->CreateCall(callee, {a, b});
         }
