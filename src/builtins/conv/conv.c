@@ -1,4 +1,5 @@
 #include "conv.h"
+#include "string/string.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -7,9 +8,10 @@
 /* ── helper: make heap-allocated result from buffer ──────────────────── */
 static lux_conv_str_result make_result(const char* buf, size_t len) {
     lux_conv_str_result res;
-    char* out = (char*)malloc(len);
+    char* out = (char*)lux_allocString(len + 1);
     if (out) {
         memcpy(out, buf, len);
+        out[len] = '\0';
         res.ptr = out;
         res.len = len;
     } else {

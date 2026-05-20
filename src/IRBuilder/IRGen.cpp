@@ -3131,6 +3131,13 @@ std::any IRGen::visitCallStmt(LuxParser::CallStmtContext* ctx) {
                     }
                 }
                 builder_->CreateCall(genericFn, args);
+
+                if (ctx->argList()) {
+                    auto exprs = ctx->argList()->expression();
+                    for (size_t i = 0; i < exprs.size() && i < args.size(); i++)
+                        cleanupTempArg(exprs[i], args[i]);
+                }
+
                 return {};
             }
         }
@@ -3357,6 +3364,13 @@ std::any IRGen::visitCallStmt(LuxParser::CallStmtContext* ctx) {
             }
             builder_->CreateCall(userFn, args);
         }
+
+        if (ctx->argList()) {
+            auto exprs = ctx->argList()->expression();
+            for (size_t i = 0; i < exprs.size() && i < rawArgs.size(); i++)
+                cleanupTempArg(exprs[i], rawArgs[i]);
+        }
+
         return {};
     }
 
@@ -13355,6 +13369,16 @@ IRGen::visitMethodCallExpr(LuxParser::MethodCallExprContext* ctx) {
         if (strVal) {
             auto* strPtr = builder_->CreateExtractValue(strVal, 0, "str_ptr");
             auto* strLen = builder_->CreateExtractValue(strVal, 1, "str_len");
+            bool cleanupTempReceiver = !dynamic_cast<LuxParser::IdentExprContext*>(baseExpr) &&
+                                       !isBorrowedStringExpr(baseExpr);
+
+            auto cleanupReceiverIfTemp = [&]() {
+                if (!cleanupTempReceiver) return;
+                auto freeCallee = declareBuiltin("lux_freeStr", llvm::Type::getVoidTy(*context_),
+                                                 {ptrTy, usizeTy});
+                builder_->CreateCall(freeCallee, {strPtr, strLen});
+                cleanupTempReceiver = false;
+            };
 
             // Collect extra arguments
             std::vector<llvm::Value*> mArgs;
@@ -13420,6 +13444,7 @@ IRGen::visitMethodCallExpr(LuxParser::MethodCallExprContext* ctx) {
                 auto callee = declareBuiltin(boolFns.at(methodName), i32Ty,
                     {ptrTy, usizeTy, ptrTy, usizeTy});
                 auto* r = builder_->CreateCall(callee, callArgs, methodName);
+                cleanupReceiverIfTemp();
                 return static_cast<llvm::Value*>(
                     builder_->CreateICmpNE(r, llvm::ConstantInt::get(i32Ty, 0)));
             }
