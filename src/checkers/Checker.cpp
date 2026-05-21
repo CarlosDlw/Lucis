@@ -767,6 +767,43 @@ bool Checker::check(LuxParser::ProgramContext* tree) {
     // from same namespace and user imports, so type resolution works.
     // Process in dependency order: enums/typeAliases first, then structs/unions, then functions.
     if (nsRegistry_) {
+        // Pre-register local enums/aliases and struct/union skeletons first so
+        // cross-file declarations can resolve current-file type names.
+        for (auto* decl : tree->topLevelDecl()) {
+            if (auto* ed = decl->enumDecl()) {
+                auto name = ed->IDENTIFIER()->getText();
+                if (!typeRegistry_.lookup(name) && !genericEnumTemplates_.count(name))
+                    checkEnumDecl(ed);
+            } else if (auto* ta = decl->typeAliasDecl()) {
+                auto name = ta->IDENTIFIER()->getText();
+                if (!typeRegistry_.lookup(name))
+                    checkTypeAliasDecl(ta);
+            }
+        }
+        for (auto* decl : tree->topLevelDecl()) {
+            if (auto* sd = decl->structDecl()) {
+                auto name = sd->IDENTIFIER()->getText();
+                if (!typeRegistry_.lookup(name) && !genericStructTemplates_.count(name)) {
+                    TypeInfo skeleton;
+                    skeleton.name = name;
+                    skeleton.kind = TypeKind::Struct;
+                    skeleton.bitWidth = 0;
+                    skeleton.isSigned = false;
+                    typeRegistry_.registerType(std::move(skeleton));
+                }
+            } else if (auto* ud = decl->unionDecl()) {
+                auto name = ud->IDENTIFIER()->getText();
+                if (!typeRegistry_.lookup(name) && !genericUnionTemplates_.count(name)) {
+                    TypeInfo skeleton;
+                    skeleton.name = name;
+                    skeleton.kind = TypeKind::Union;
+                    skeleton.bitWidth = 0;
+                    skeleton.isSigned = false;
+                    typeRegistry_.registerType(std::move(skeleton));
+                }
+            }
+        }
+
         // Same-namespace external symbols
         auto extSyms = nsRegistry_->getExternalSymbols(
             currentNamespace_, currentFile_);
@@ -789,6 +826,7 @@ bool Checker::check(LuxParser::ProgramContext* tree) {
                 auto baseName = ts->IDENTIFIER()->getText();
                 auto* depSym = nsRegistry_->findSymbol(ns, baseName);
                 if (!depSym) return;
+                if (depSym->sourceFile == currentFile_) return;
 
                 if (depSym->kind == ExportedSymbol::Enum &&
                     !typeRegistry_.lookup(baseName) &&
@@ -825,9 +863,13 @@ bool Checker::check(LuxParser::ProgramContext* tree) {
         // Phase A: enums and type aliases (these have no dependencies)
         for (auto* sym : extSyms) {
             if (sym->kind == ExportedSymbol::Enum) {
+                if (typeRegistry_.lookup(sym->name) || genericEnumTemplates_.count(sym->name))
+                    continue;
                 auto* decl = static_cast<LuxParser::EnumDeclContext*>(sym->decl);
                 checkEnumDecl(decl);
             } else if (sym->kind == ExportedSymbol::TypeAlias) {
+                if (typeRegistry_.lookup(sym->name))
+                    continue;
                 auto* decl = static_cast<LuxParser::TypeAliasDeclContext*>(sym->decl);
                 checkTypeAliasDecl(decl);
             }
@@ -836,9 +878,13 @@ bool Checker::check(LuxParser::ProgramContext* tree) {
             auto* sym = nsRegistry_->findSymbol(ns, symName);
             if (!sym) continue;
             if (sym->kind == ExportedSymbol::Enum) {
+                if (typeRegistry_.lookup(sym->name) || genericEnumTemplates_.count(sym->name))
+                    continue;
                 auto* decl = static_cast<LuxParser::EnumDeclContext*>(sym->decl);
                 checkEnumDecl(decl);
             } else if (sym->kind == ExportedSymbol::TypeAlias) {
+                if (typeRegistry_.lookup(sym->name))
+                    continue;
                 auto* decl = static_cast<LuxParser::TypeAliasDeclContext*>(sym->decl);
                 checkTypeAliasDecl(decl);
             }
@@ -847,10 +893,20 @@ bool Checker::check(LuxParser::ProgramContext* tree) {
         // Phase B: structs and unions (may reference enums/aliases from phase A)
         for (auto* sym : extSyms) {
             if (sym->kind == ExportedSymbol::Struct) {
+                if (typeRegistry_.lookup(sym->name) || genericStructTemplates_.count(sym->name))
+                    continue;
                 auto* decl = static_cast<LuxParser::StructDeclContext*>(sym->decl);
+                for (auto* field : decl->structField())
+                    ensureTypeDependencyFromSpec(
+                        ensureTypeDependencyFromSpec, field->typeSpec(), currentNamespace_);
                 checkStructDecl(decl);
             } else if (sym->kind == ExportedSymbol::Union) {
+                if (typeRegistry_.lookup(sym->name) || genericUnionTemplates_.count(sym->name))
+                    continue;
                 auto* decl = static_cast<LuxParser::UnionDeclContext*>(sym->decl);
+                for (auto* field : decl->unionField())
+                    ensureTypeDependencyFromSpec(
+                        ensureTypeDependencyFromSpec, field->typeSpec(), currentNamespace_);
                 checkUnionDecl(decl);
             }
         }
@@ -858,10 +914,20 @@ bool Checker::check(LuxParser::ProgramContext* tree) {
             auto* sym = nsRegistry_->findSymbol(ns, symName);
             if (!sym) continue;
             if (sym->kind == ExportedSymbol::Struct) {
+                if (typeRegistry_.lookup(sym->name) || genericStructTemplates_.count(sym->name))
+                    continue;
                 auto* decl = static_cast<LuxParser::StructDeclContext*>(sym->decl);
+                for (auto* field : decl->structField())
+                    ensureTypeDependencyFromSpec(
+                        ensureTypeDependencyFromSpec, field->typeSpec(), ns);
                 checkStructDecl(decl);
             } else if (sym->kind == ExportedSymbol::Union) {
+                if (typeRegistry_.lookup(sym->name) || genericUnionTemplates_.count(sym->name))
+                    continue;
                 auto* decl = static_cast<LuxParser::UnionDeclContext*>(sym->decl);
+                for (auto* field : decl->unionField())
+                    ensureTypeDependencyFromSpec(
+                        ensureTypeDependencyFromSpec, field->typeSpec(), ns);
                 checkUnionDecl(decl);
             }
         }
@@ -911,21 +977,32 @@ bool Checker::check(LuxParser::ProgramContext* tree) {
         }
     }
 
-    // Pass 2: register type aliases
-    for (auto* decl : tree->topLevelDecl()) {
-        if (auto* ta = decl->typeAliasDecl()) {
-            checkTypeAliasDecl(ta);
+    // Pass 2/3: local type registration.
+    if (!nsRegistry_) {
+        for (auto* decl : tree->topLevelDecl()) {
+            if (auto* ta = decl->typeAliasDecl()) {
+                checkTypeAliasDecl(ta);
+            }
         }
-    }
 
-    // Pass 3: register struct and enum types
-    for (auto* decl : tree->topLevelDecl()) {
-        if (auto* sd = decl->structDecl()) {
-            checkStructDecl(sd);
-        } else if (auto* ud = decl->unionDecl()) {
-            checkUnionDecl(ud);
-        } else if (auto* ed = decl->enumDecl()) {
-            checkEnumDecl(ed);
+        for (auto* decl : tree->topLevelDecl()) {
+            if (auto* sd = decl->structDecl()) {
+                checkStructDecl(sd);
+            } else if (auto* ud = decl->unionDecl()) {
+                checkUnionDecl(ud);
+            } else if (auto* ed = decl->enumDecl()) {
+                checkEnumDecl(ed);
+            }
+        }
+    } else {
+        // Under namespace mode, aliases/enums were already registered in pass 1.5.
+        // Validate/upgrade local struct and union declarations now.
+        for (auto* decl : tree->topLevelDecl()) {
+            if (auto* sd = decl->structDecl()) {
+                checkStructDecl(sd);
+            } else if (auto* ud = decl->unionDecl()) {
+                checkUnionDecl(ud);
+            }
         }
     }
 
@@ -3818,9 +3895,17 @@ void Checker::checkUseDecls(LuxParser::ProgramContext* tree) {
 void Checker::checkTypeAliasDecl(LuxParser::TypeAliasDeclContext* decl) {
     auto name = decl->IDENTIFIER()->getText();
 
-    if (typeRegistry_.lookup(name)) {
-        error(decl, "type '" + name + "' already defined");
-        return;
+    auto* existing = typeRegistry_.lookup(name);
+    bool canUpgradeSkeleton = false;
+    if (existing) {
+        canUpgradeSkeleton =
+            existing->kind == TypeKind::Struct &&
+            existing->fields.empty() &&
+            existing->bitWidth == 0;
+        if (!canUpgradeSkeleton) {
+            error(decl, "type '" + name + "' already defined");
+            return;
+        }
     }
 
     // For now, we register a Function TypeInfo for fn(...) -> T aliases
@@ -3889,9 +3974,16 @@ void Checker::checkStructDecl(LuxParser::StructDeclContext* decl) {
         return;
     }
 
-    if (typeRegistry_.lookup(name)) {
-        error(decl, "type '" + name + "' already defined");
-        return;
+    auto* existing = typeRegistry_.lookup(name);
+    if (existing) {
+        bool canUpgradeSkeleton =
+            existing->kind == TypeKind::Struct &&
+            existing->fields.empty() &&
+            existing->bitWidth == 0;
+        if (!canUpgradeSkeleton) {
+            error(decl, "type '" + name + "' already defined");
+            return;
+        }
     }
 
     // Register skeleton first so self-referencing pointer fields
@@ -3901,7 +3993,8 @@ void Checker::checkStructDecl(LuxParser::StructDeclContext* decl) {
     skeleton.kind = TypeKind::Struct;
     skeleton.bitWidth = 0;
     skeleton.isSigned = false;
-    typeRegistry_.registerType(skeleton);
+    if (!existing)
+        typeRegistry_.registerType(skeleton);
 
     TypeInfo ti = skeleton;
     std::unordered_set<std::string> seen;
@@ -3950,9 +4043,17 @@ void Checker::checkUnionDecl(LuxParser::UnionDeclContext* decl) {
         return;
     }
 
-    if (typeRegistry_.lookup(name)) {
-        error(decl, "type '" + name + "' already defined");
-        return;
+    auto* existing = typeRegistry_.lookup(name);
+    bool canUpgradeSkeleton = false;
+    if (existing) {
+        canUpgradeSkeleton =
+            existing->kind == TypeKind::Union &&
+            existing->fields.empty() &&
+            existing->bitWidth == 0;
+        if (!canUpgradeSkeleton) {
+            error(decl, "type '" + name + "' already defined");
+            return;
+        }
     }
 
     TypeInfo ti;

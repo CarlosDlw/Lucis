@@ -388,13 +388,34 @@ std::any IRGen::visitProgram(LuxParser::ProgramContext* ctx) {
 
     // Register type aliases first
     for (auto* decl : ctx->topLevelDecl()) {
-        if (decl->typeAliasDecl())
+        auto* aliasDecl = decl->typeAliasDecl();
+        if (!aliasDecl)
+            continue;
+        auto name = aliasDecl->IDENTIFIER()->getText();
+        if (!typeRegistry_.lookup(name))
             visit(decl);
     }
     // Register struct, union, and enum types first
     for (auto* decl : ctx->topLevelDecl()) {
-        if (decl->structDecl() || decl->unionDecl() || decl->enumDecl())
-            visit(decl);
+        if (auto* structDecl = decl->structDecl()) {
+            auto name = structDecl->IDENTIFIER()->getText();
+            auto* existing = typeRegistry_.lookup(name);
+            bool needsCompletion =
+                existing && existing->kind == TypeKind::Struct && existing->fields.empty();
+            if ((!existing || needsCompletion) && !genericStructTemplates_.count(name))
+                visit(decl);
+        } else if (auto* unionDecl = decl->unionDecl()) {
+            auto name = unionDecl->IDENTIFIER()->getText();
+            auto* existing = typeRegistry_.lookup(name);
+            bool needsCompletion =
+                existing && existing->kind == TypeKind::Union && existing->fields.empty();
+            if ((!existing || needsCompletion) && !genericUnionTemplates_.count(name))
+                visit(decl);
+        } else if (auto* enumDecl = decl->enumDecl()) {
+            auto name = enumDecl->IDENTIFIER()->getText();
+            if (!typeRegistry_.lookup(name) && !genericEnumTemplates_.count(name))
+                visit(decl);
+        }
     }
     // Register struct methods via `extend` blocks
     for (auto* decl : ctx->topLevelDecl()) {
@@ -433,8 +454,20 @@ std::any IRGen::visitStructDecl(LuxParser::StructDeclContext* ctx) {
 
     auto structName = ctx->IDENTIFIER()->getText();
 
+    if (auto* existing = typeRegistry_.lookup(structName)) {
+        bool alreadyComplete = existing->kind == TypeKind::Struct && !existing->fields.empty();
+        bool isSkeleton = existing->kind == TypeKind::Struct && existing->fields.empty();
+        if (alreadyComplete) return {};
+        if (!isSkeleton)
+            return {};
+    }
+
     // Create opaque LLVM struct first (enables self-referencing pointer fields)
-    auto* structType = llvm::StructType::create(*context_, structName);
+    auto* structType = llvm::StructType::getTypeByName(*context_, structName);
+    if (!structType)
+        structType = llvm::StructType::create(*context_, structName);
+    if (!structType->isOpaque())
+        return {};
 
     // Register skeleton in TypeRegistry so resolveTypeInfo can find it
     TypeInfo ti;
@@ -442,7 +475,8 @@ std::any IRGen::visitStructDecl(LuxParser::StructDeclContext* ctx) {
     ti.kind = TypeKind::Struct;
     ti.bitWidth = 0;
     ti.isSigned = false;
-    typeRegistry_.registerType(ti);
+    if (!typeRegistry_.lookup(structName))
+        typeRegistry_.registerType(ti);
 
     // Collect field types
     std::vector<llvm::Type*> fieldTypes;
@@ -490,6 +524,14 @@ std::any IRGen::visitUnionDecl(LuxParser::UnionDeclContext* ctx) {
     }
 
     auto unionName = ctx->IDENTIFIER()->getText();
+
+    if (auto* existing = typeRegistry_.lookup(unionName)) {
+        bool alreadyComplete = existing->kind == TypeKind::Union && !existing->fields.empty();
+        bool isSkeleton = existing->kind == TypeKind::Union && existing->fields.empty();
+        if (alreadyComplete) return {};
+        if (!isSkeleton)
+            return {};
+    }
 
     // Collect field types and compute the max field size
     std::vector<FieldInfo> fieldInfos;
@@ -1233,8 +1275,52 @@ std::any IRGen::visitUseGroup(LuxParser::UseGroupContext* ctx) {
 //  Cross-file symbol registration (namespace support)
 // ═══════════════════════════════════════════════════════════════════════
 
-void IRGen::registerCrossFileSymbols(LuxParser::ProgramContext* /*ctx*/) {
+void IRGen::registerCrossFileSymbols(LuxParser::ProgramContext* ctx) {
     if (!nsRegistry_) return;
+
+    // Pre-register local enums/aliases and struct/union skeletons first so
+    // external same-namespace declarations can resolve current-file type names.
+    if (ctx) {
+        for (auto* decl : ctx->topLevelDecl()) {
+            if (auto* enumDecl = decl->enumDecl()) {
+                auto name = enumDecl->IDENTIFIER()->getText();
+                if (!typeRegistry_.lookup(name) && !genericEnumTemplates_.count(name))
+                    visitEnumDecl(enumDecl);
+            } else if (auto* aliasDecl = decl->typeAliasDecl()) {
+                auto name = aliasDecl->IDENTIFIER()->getText();
+                if (!typeRegistry_.lookup(name))
+                    visitTypeAliasDecl(aliasDecl);
+            }
+        }
+
+        for (auto* decl : ctx->topLevelDecl()) {
+            if (auto* structDecl = decl->structDecl()) {
+                auto name = structDecl->IDENTIFIER()->getText();
+                if (!typeRegistry_.lookup(name) && !genericStructTemplates_.count(name)) {
+                    TypeInfo skeleton;
+                    skeleton.name = name;
+                    skeleton.kind = TypeKind::Struct;
+                    skeleton.bitWidth = 0;
+                    skeleton.isSigned = false;
+                    typeRegistry_.registerType(std::move(skeleton));
+                    if (!llvm::StructType::getTypeByName(*context_, name))
+                        llvm::StructType::create(*context_, name);
+                }
+            } else if (auto* unionDecl = decl->unionDecl()) {
+                auto name = unionDecl->IDENTIFIER()->getText();
+                if (!typeRegistry_.lookup(name) && !genericUnionTemplates_.count(name)) {
+                    TypeInfo skeleton;
+                    skeleton.name = name;
+                    skeleton.kind = TypeKind::Union;
+                    skeleton.bitWidth = 0;
+                    skeleton.isSigned = false;
+                    typeRegistry_.registerType(std::move(skeleton));
+                    if (!llvm::StructType::getTypeByName(*context_, name))
+                        llvm::StructType::create(*context_, name);
+                }
+            }
+        }
+    }
 
     auto sameNsSymbols = nsRegistry_->getExternalSymbols(
         currentNamespace_, currentFile_);
@@ -1254,6 +1340,7 @@ void IRGen::registerCrossFileSymbols(LuxParser::ProgramContext* /*ctx*/) {
             auto baseName = ts->IDENTIFIER()->getText();
             auto* depSym = nsRegistry_->findSymbol(ns, baseName);
             if (!depSym) return;
+            if (depSym->sourceFile == currentFile_) return;
 
             if (depSym->kind == ExportedSymbol::Enum && !typeRegistry_.lookup(baseName)) {
                 auto* ed = static_cast<LuxParser::EnumDeclContext*>(depSym->decl);
@@ -1299,12 +1386,20 @@ void IRGen::registerCrossFileSymbols(LuxParser::ProgramContext* /*ctx*/) {
     for (auto* sym : sameNsSymbols) {
         if (sym->kind == ExportedSymbol::Struct) {
             auto* structCtx = dynamic_cast<LuxParser::StructDeclContext*>(sym->decl);
-            if (structCtx && !typeRegistry_.lookup(sym->name))
+            if (structCtx && !typeRegistry_.lookup(sym->name)) {
+                for (auto* field : structCtx->structField())
+                    ensureTypeDependencyFromSpec(
+                        ensureTypeDependencyFromSpec, field->typeSpec(), currentNamespace_);
                 visitStructDecl(structCtx);
+            }
         } else if (sym->kind == ExportedSymbol::Union) {
             auto* unionCtx = dynamic_cast<LuxParser::UnionDeclContext*>(sym->decl);
-            if (unionCtx && !typeRegistry_.lookup(sym->name))
+            if (unionCtx && !typeRegistry_.lookup(sym->name)) {
+                for (auto* field : unionCtx->unionField())
+                    ensureTypeDependencyFromSpec(
+                        ensureTypeDependencyFromSpec, field->typeSpec(), currentNamespace_);
                 visitUnionDecl(unionCtx);
+            }
         }
     }
 
@@ -1331,12 +1426,20 @@ void IRGen::registerCrossFileSymbols(LuxParser::ProgramContext* /*ctx*/) {
 
         if (sym->kind == ExportedSymbol::Struct) {
             auto* structCtx = dynamic_cast<LuxParser::StructDeclContext*>(sym->decl);
-            if (structCtx && !typeRegistry_.lookup(sym->name))
+            if (structCtx && !typeRegistry_.lookup(sym->name)) {
+                for (auto* field : structCtx->structField())
+                    ensureTypeDependencyFromSpec(
+                        ensureTypeDependencyFromSpec, field->typeSpec(), sourceNs);
                 visitStructDecl(structCtx);
+            }
         } else if (sym->kind == ExportedSymbol::Union) {
             auto* unionCtx = dynamic_cast<LuxParser::UnionDeclContext*>(sym->decl);
-            if (unionCtx && !typeRegistry_.lookup(sym->name))
+            if (unionCtx && !typeRegistry_.lookup(sym->name)) {
+                for (auto* field : unionCtx->unionField())
+                    ensureTypeDependencyFromSpec(
+                        ensureTypeDependencyFromSpec, field->typeSpec(), sourceNs);
                 visitUnionDecl(unionCtx);
+            }
         }
     }
 
@@ -12082,6 +12185,36 @@ const TypeInfo* IRGen::resolveTypeInfo(LuxParser::TypeSpecContext* ctx) {
         // Check active generic type-param substitution (e.g. T → int32 inside generic body)
         auto substIt = currentGenericSubst_.find(name);
         if (substIt != currentGenericSubst_.end()) return substIt->second;
+
+        // Namespace-aware lazy type loading (cross-file support).
+        if (nsRegistry_) {
+            auto loadSymbolType = [&](const ExportedSymbol* sym) {
+                if (!sym || !sym->decl) return;
+                if (sym->kind == ExportedSymbol::Enum) {
+                    visitEnumDecl(static_cast<LuxParser::EnumDeclContext*>(sym->decl));
+                } else if (sym->kind == ExportedSymbol::Struct) {
+                    visitStructDecl(static_cast<LuxParser::StructDeclContext*>(sym->decl));
+                } else if (sym->kind == ExportedSymbol::Union) {
+                    visitUnionDecl(static_cast<LuxParser::UnionDeclContext*>(sym->decl));
+                } else if (sym->kind == ExportedSymbol::TypeAlias) {
+                    visitTypeAliasDecl(static_cast<LuxParser::TypeAliasDeclContext*>(sym->decl));
+                }
+            };
+
+            if (auto* sameNs = nsRegistry_->findSymbol(currentNamespace_, name)) {
+                loadSymbolType(sameNs);
+                if (auto* loaded = typeRegistry_.lookup(name)) return loaded;
+            }
+
+            auto importIt = userImports_.find(name);
+            if (importIt != userImports_.end()) {
+                if (auto* imported = nsRegistry_->findSymbol(importIt->second, name)) {
+                    loadSymbolType(imported);
+                    if (auto* loaded = typeRegistry_.lookup(name)) return loaded;
+                }
+            }
+        }
+
         // Generic template placeholders may appear transiently in IR-only paths.
         // Checker already validates user-facing unknown-type errors.
         if (!(name.size() == 1 && std::isupper(static_cast<unsigned char>(name[0]))))
