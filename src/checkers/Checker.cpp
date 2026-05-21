@@ -2617,6 +2617,17 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
             }
         }
 
+        // A value argument cannot have type void.
+        for (size_t i = 0; i < argTypes.size(); i++) {
+            auto* ti = argTypes[i];
+            if (ti && ti->kind == TypeKind::Void) {
+                error(argExprs[i],
+                      "argument " + std::to_string(i + 1) +
+                      " has type 'void'; functions returning void cannot be used as values");
+                return nullptr;
+            }
+        }
+
         // Lux std::log::sprintf expects Lux `string` values, not `*char`.
         // Guard expression calls during semantic checking.
         if (calleeName == "sprintf" && imports_.isImported("sprintf")) {
@@ -5712,6 +5723,17 @@ void Checker::checkCallStmt(LuxParser::CallStmtContext* stmt) {
         for (auto* argExpr : argList->expression()) {
             argExprs.push_back(argExpr);
             argTypes.push_back(resolveExprType(argExpr));
+        }
+    }
+
+    // A value argument cannot have type void.
+    for (size_t i = 0; i < argTypes.size(); i++) {
+        auto* ti = argTypes[i];
+        if (ti && ti->kind == TypeKind::Void) {
+            error(argExprs[i],
+                  "argument " + std::to_string(i + 1) +
+                  " has type 'void'; functions returning void cannot be used as values");
+            return;
         }
     }
 
