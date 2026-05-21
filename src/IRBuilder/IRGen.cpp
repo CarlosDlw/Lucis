@@ -1395,6 +1395,48 @@ std::string IRGen::resolveCallTarget(const std::string& name) const {
     return name;
 }
 
+llvm::Value* IRGen::coerceValueToType(llvm::Value* value,
+                                      llvm::Type* targetType,
+                                      bool assumeSignedInt) {
+    if (!value || !targetType) return value;
+    auto* srcType = value->getType();
+    if (srcType == targetType) return value;
+
+    if (srcType->isIntegerTy() && targetType->isIntegerTy())
+        return builder_->CreateIntCast(value, targetType, assumeSignedInt);
+
+    if (srcType->isFloatingPointTy() && targetType->isFloatingPointTy()) {
+        if (srcType->getPrimitiveSizeInBits() > targetType->getPrimitiveSizeInBits())
+            return builder_->CreateFPTrunc(value, targetType);
+        return builder_->CreateFPExt(value, targetType);
+    }
+
+    if (srcType->isIntegerTy() && targetType->isFloatingPointTy())
+        return builder_->CreateSIToFP(value, targetType);
+
+    if (srcType->isFloatingPointTy() && targetType->isIntegerTy())
+        return builder_->CreateFPToSI(value, targetType);
+
+    if (srcType->isStructTy() && targetType->isStructTy()) {
+        auto* srcST = llvm::cast<llvm::StructType>(srcType);
+        auto* dstST = llvm::cast<llvm::StructType>(targetType);
+        if (srcST->getNumElements() != dstST->getNumElements())
+            return value;
+
+        llvm::Value* agg = llvm::UndefValue::get(dstST);
+        for (unsigned i = 0; i < srcST->getNumElements(); i++) {
+            auto* elem = builder_->CreateExtractValue(value, {i}, "coerce_e");
+            auto* coercedElem = coerceValueToType(elem, dstST->getElementType(i), assumeSignedInt);
+            if (!coercedElem || coercedElem->getType() != dstST->getElementType(i))
+                return value;
+            agg = builder_->CreateInsertValue(agg, coercedElem, {i}, "coerce_ins");
+        }
+        return agg;
+    }
+
+    return value;
+}
+
 // int32 x = 42;   or   []int32 arr = [1, 2, 3];   or   Vec<int32> v = [1, 2, 3];
 std::any IRGen::visitVarDeclStmt(LuxParser::VarDeclStmtContext* ctx) {
     // ── Tuple destructuring: auto (x, y) = expr; ────────────────────
@@ -1464,7 +1506,15 @@ std::any IRGen::visitVarDeclStmt(LuxParser::VarDeclStmtContext* ctx) {
         }
 
         // Scalar auto variable
-        auto* type   = val->getType();
+        auto* type = ti ? ti->toLLVMType(*context_, module_->getDataLayout())
+                        : val->getType();
+        auto* srcTI = resolveExprTypeInfo(ctx->expression());
+        bool srcSigned = true;
+        if (srcTI && srcTI->kind == TypeKind::Integer)
+            srcSigned = srcTI->isSigned;
+        else if (val->getType()->isIntegerTy(1))
+            srcSigned = false;
+        val = coerceValueToType(val, type, srcSigned);
         auto* alloca = builder_->CreateAlloca(type, nullptr, name);
         builder_->CreateStore(val, alloca);
         VarInfo vi{ alloca, ti, exprDims };
@@ -1821,42 +1871,10 @@ std::any IRGen::visitVarDeclStmt(LuxParser::VarDeclStmtContext* ctx) {
         auto* val     = castValue(initVal);
         auto* srcTI   = resolveExprTypeInfo(ctx->expression());
 
-        if (val->getType() != type) {
-            if (val->getType()->isIntegerTy() && type->isIntegerTy()) {
-                bool srcSigned = !val->getType()->isIntegerTy(1);
-                if (srcTI && srcTI->kind == TypeKind::Integer)
-                    srcSigned = srcTI->isSigned;
-                val = builder_->CreateIntCast(val, type, srcSigned, name + "_cast");
-            } else if (val->getType()->isFloatingPointTy() && type->isFloatingPointTy()) {
-                if (val->getType()->getPrimitiveSizeInBits() > type->getPrimitiveSizeInBits())
-                    val = builder_->CreateFPTrunc(val, type, name + "_trunc");
-                else
-                    val = builder_->CreateFPExt(val, type, name + "_ext");
-            } else if (val->getType()->isStructTy() && type->isStructTy()) {
-                // Tuple/struct element-wise cast
-                auto* srcST = llvm::cast<llvm::StructType>(val->getType());
-                auto* dstST = llvm::cast<llvm::StructType>(type);
-                if (srcST->getNumElements() == dstST->getNumElements()) {
-                    llvm::Value* agg = llvm::UndefValue::get(dstST);
-                    for (unsigned i = 0; i < srcST->getNumElements(); i++) {
-                        auto* elem = builder_->CreateExtractValue(val, {i});
-                        auto* dstElemTy = dstST->getElementType(i);
-                        if (elem->getType() != dstElemTy) {
-                            if (elem->getType()->isIntegerTy() && dstElemTy->isIntegerTy())
-                                elem = builder_->CreateIntCast(elem, dstElemTy, true);
-                            else if (elem->getType()->isFloatingPointTy() && dstElemTy->isFloatingPointTy()) {
-                                if (elem->getType()->getPrimitiveSizeInBits() > dstElemTy->getPrimitiveSizeInBits())
-                                    elem = builder_->CreateFPTrunc(elem, dstElemTy);
-                                else
-                                    elem = builder_->CreateFPExt(elem, dstElemTy);
-                            }
-                        }
-                        agg = builder_->CreateInsertValue(agg, elem, {i});
-                    }
-                    val = agg;
-                }
-            }
-        }
+        bool srcSigned = !val->getType()->isIntegerTy(1);
+        if (srcTI && srcTI->kind == TypeKind::Integer)
+            srcSigned = srcTI->isSigned;
+        val = coerceValueToType(val, type, srcSigned);
 
         builder_->CreateStore(val, alloca);
     }

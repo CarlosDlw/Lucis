@@ -22,6 +22,7 @@
 #include <llvm/Bitcode/BitcodeReader.h>
 #include <llvm/Support/MemoryBuffer.h>
 #include <llvm/Support/MD5.h>
+#include <llvm/Support/Error.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/raw_ostream.h>
 
@@ -831,6 +832,7 @@ int CLI::jitRun() {
                                                   *masterCtx);
             if (!parsed) {
                 printErrorLine("bitcode re-parse failed for '" + unit.filePath + "'");
+                printErrorLine(llvm::toString(parsed.takeError()));
                 return 1;
             }
             masterMod = std::move(parsed.get());
@@ -847,6 +849,7 @@ int CLI::jitRun() {
                                                   *masterCtx);
             if (!parsed) {
                 printErrorLine("bitcode re-parse failed for '" + unit.filePath + "'");
+                printErrorLine(llvm::toString(parsed.takeError()));
                 return 1;
             }
             if (llvm::Linker::linkModules(*masterMod,

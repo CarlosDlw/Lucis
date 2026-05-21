@@ -302,6 +302,11 @@ private:
     void forwardDeclareFunction(LuxParser::FunctionDeclContext* decl);
     std::string resolveCallTarget(const std::string& name) const;
 
+    // Recursively coerce scalars/aggregates to a target LLVM type.
+    llvm::Value* coerceValueToType(llvm::Value* value,
+                                   llvm::Type* targetType,
+                                   bool assumeSignedInt = true);
+
     // ── User-defined generics ──────────────────────────────────────────────
     // Generic struct and function template registries
     struct GenericStructTemplate {
