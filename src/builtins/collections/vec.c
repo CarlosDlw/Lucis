@@ -648,20 +648,26 @@ lux_string lux_vec_toString_str(const lux_vec_header* v) {
     if (v->len == 0) {
         lux_string r = { "[]", 2 }; return r;
     }
-    size_t cap = 64;
-    char* buf = (char*)malloc(cap);
+    const lux_string* d = vec_cdata_str(v);
+    size_t total = 2; // '[' and ']'
+    for (size_t i = 0; i < v->len; i++) {
+        if (i > 0) total += 2; // ", "
+        total += d[i].len + 2; // quotes + content
+    }
+
+    char* buf = (char*)lux_allocString(total + 1);
+    if (!buf) {
+        lux_string r = { "", 0 }; return r;
+    }
+
     size_t pos = 0;
     buf[pos++] = '[';
-    const lux_string* d = vec_cdata_str(v);
     for (size_t i = 0; i < v->len; i++) {
         if (i > 0) { buf[pos++] = ','; buf[pos++] = ' '; }
-        size_t need = d[i].len + 3; // quotes + content
-        while (cap - pos < need) { cap *= 2; buf = (char*)realloc(buf, cap); }
         buf[pos++] = '"';
         memcpy(buf + pos, d[i].ptr, d[i].len); pos += d[i].len;
         buf[pos++] = '"';
     }
-    if (pos + 1 >= cap) { cap = pos + 2; buf = (char*)realloc(buf, cap); }
     buf[pos++] = ']';
     buf[pos] = '\0';
     lux_string r = { buf, pos }; return r;
@@ -676,7 +682,10 @@ lux_string lux_vec_join_str(const lux_vec_header* v, lux_string sep) {
         if (i > 0) total += sep.len;
         total += d[i].len;
     }
-    char* buf = (char*)malloc(total + 1);
+    char* buf = (char*)lux_allocString(total + 1);
+    if (!buf) {
+        lux_string r = { "", 0 }; return r;
+    }
     size_t pos = 0;
     for (size_t i = 0; i < v->len; i++) {
         if (i > 0) { memcpy(buf + pos, sep.ptr, sep.len); pos += sep.len; }
