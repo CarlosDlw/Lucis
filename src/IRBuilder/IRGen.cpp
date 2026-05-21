@@ -15205,7 +15205,29 @@ IRGen::visitMethodCallExpr(LuxParser::MethodCallExprContext* ctx) {
         // Helper: get LLVM intrinsic function
         auto getIntrinsic = [&](llvm::Intrinsic::ID id,
                                 llvm::ArrayRef<llvm::Type*> tys = {}) -> llvm::Function* {
-            return llvm::Intrinsic::getOrInsertDeclaration(module_, id, tys);
+            auto* fnTy = llvm::Intrinsic::getType(*context_, id, tys);
+            auto name = llvm::Intrinsic::getName(id, tys, module_, fnTy);
+            auto callee = module_->getOrInsertFunction(name, fnTy);
+            return llvm::cast<llvm::Function>(callee.getCallee());
+        };
+
+        auto callUnaryMath = [&](const char* f32Name,
+                                 const char* f64Name,
+                                 llvm::Value* x,
+                                 const std::string& name) -> llvm::Value* {
+            const char* fn = x->getType()->isFloatTy() ? f32Name : f64Name;
+            auto callee = declareBuiltin(fn, x->getType(), {x->getType()});
+            return builder_->CreateCall(callee, {x}, name);
+        };
+
+        auto callBinaryMath = [&](const char* f32Name,
+                                  const char* f64Name,
+                                  llvm::Value* a,
+                                  llvm::Value* b,
+                                  const std::string& name) -> llvm::Value* {
+            const char* fn = a->getType()->isFloatTy() ? f32Name : f64Name;
+            auto callee = declareBuiltin(fn, a->getType(), {a->getType(), a->getType()});
+            return builder_->CreateCall(callee, {a, b}, name);
         };
 
         // ── Integer methods ──────────────────────────────────────────────
@@ -15536,36 +15558,35 @@ IRGen::visitMethodCallExpr(LuxParser::MethodCallExprContext* ctx) {
         }
         if (tag == "float.tan") {
             return static_cast<llvm::Value*>(
-                builder_->CreateUnaryIntrinsic(llvm::Intrinsic::tan, receiverVal, nullptr, "tan"));
+                callUnaryMath("tanf", "tan", receiverVal, "tan"));
         }
         if (tag == "float.asin") {
             return static_cast<llvm::Value*>(
-                builder_->CreateUnaryIntrinsic(llvm::Intrinsic::asin, receiverVal, nullptr, "asin"));
+                callUnaryMath("asinf", "asin", receiverVal, "asin"));
         }
         if (tag == "float.acos") {
             return static_cast<llvm::Value*>(
-                builder_->CreateUnaryIntrinsic(llvm::Intrinsic::acos, receiverVal, nullptr, "acos"));
+                callUnaryMath("acosf", "acos", receiverVal, "acos"));
         }
         if (tag == "float.atan") {
             return static_cast<llvm::Value*>(
-                builder_->CreateUnaryIntrinsic(llvm::Intrinsic::atan, receiverVal, nullptr, "atan"));
+                callUnaryMath("atanf", "atan", receiverVal, "atan"));
         }
         if (tag == "float.atan2") {
-            auto* fn = getIntrinsic(llvm::Intrinsic::atan2, {recvTy});
             return static_cast<llvm::Value*>(
-                builder_->CreateCall(fn, {receiverVal, castArg(args[0])}, "atan2"));
+                callBinaryMath("atan2f", "atan2", receiverVal, castArg(args[0]), "atan2"));
         }
         if (tag == "float.sinh") {
             return static_cast<llvm::Value*>(
-                builder_->CreateUnaryIntrinsic(llvm::Intrinsic::sinh, receiverVal, nullptr, "sinh"));
+                callUnaryMath("sinhf", "sinh", receiverVal, "sinh"));
         }
         if (tag == "float.cosh") {
             return static_cast<llvm::Value*>(
-                builder_->CreateUnaryIntrinsic(llvm::Intrinsic::cosh, receiverVal, nullptr, "cosh"));
+                callUnaryMath("coshf", "cosh", receiverVal, "cosh"));
         }
         if (tag == "float.tanh") {
             return static_cast<llvm::Value*>(
-                builder_->CreateUnaryIntrinsic(llvm::Intrinsic::tanh, receiverVal, nullptr, "tanh"));
+                callUnaryMath("tanhf", "tanh", receiverVal, "tanh"));
         }
         if (tag == "float.hypot") {
             // hypot not an LLVM intrinsic — call C library

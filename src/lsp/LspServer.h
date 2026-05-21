@@ -10,6 +10,7 @@
 #include "lsp/SignatureHelpProvider.h"
 #include "lsp/ProjectContext.h"
 
+#include <cstdio>
 #include <nlohmann/json.hpp>
 #include <string>
 

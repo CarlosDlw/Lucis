@@ -864,7 +864,6 @@ int CLI::jitRun() {
         printErrorLine("no IR generated");
         return 1;
     }
-    masterMod->setTargetTriple(llvm::Triple(llvm::sys::getDefaultTargetTriple()));
     progress(++step, totalSteps, "preparing cache and compilation");
 
     // ─── Step 7: Native-run path (emit object, link temp binary, execute) ─
