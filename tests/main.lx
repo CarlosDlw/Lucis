@@ -17,6 +17,7 @@ int32 main() {
     testFloatMethodsExtra();
     testFloatLiteralFormats();
     testIntegerLiteralFormats();
+    testTypeAliasesFull();
     testTypeCastingAndChecking();
     testConcurrencySpawnAwait();
     testConcurrencyMutexLock();
@@ -34,6 +35,7 @@ int32 main() {
     testGenericsTaskAndConstraints();
     testOperatorsFull();
     testRangesFull();
+    testUnionsFull();
     testTuplesFull();
     testStructsCore();
     testStructsPointers();
