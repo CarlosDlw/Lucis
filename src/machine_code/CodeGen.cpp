@@ -29,6 +29,33 @@
 
 // ── Internal helpers ─────────────────────────────────────────────────────────
 
+template <typename TargetT>
+static auto createTargetMachineCompat(TargetT* target,
+                                      const llvm::Triple& triple,
+                                      llvm::StringRef cpu,
+                                      llvm::StringRef features,
+                                      const llvm::TargetOptions& opt,
+                                      int)
+    -> decltype(target->createTargetMachine(triple, cpu, features, opt,
+                                            llvm::Reloc::PIC_)) {
+    return target->createTargetMachine(triple, cpu, features, opt,
+                                       llvm::Reloc::PIC_);
+}
+
+template <typename TargetT>
+static auto createTargetMachineCompat(TargetT* target,
+                                      const llvm::Triple& triple,
+                                      llvm::StringRef cpu,
+                                      llvm::StringRef features,
+                                      const llvm::TargetOptions& opt,
+                                      long)
+    -> decltype(target->createTargetMachine(llvm::StringRef(), cpu, features,
+                                            opt, llvm::Reloc::PIC_)) {
+    auto tripleStr = triple.str();
+    return target->createTargetMachine(llvm::StringRef(tripleStr), cpu, features,
+                                       opt, llvm::Reloc::PIC_);
+}
+
 // Spawn `linker objectPath builtinsPath -o outputPath` and wait for it.
 // Returns true only if the child exits with code 0.
 static bool tryLink(const char*        linker,
@@ -247,10 +274,9 @@ bool CodeGen::emitObjectFile(llvm::Module* module, const std::string& objectPath
 
     auto cpu      = llvm::sys::getHostCPUName();
     auto features = llvm::StringRef("");
-
     llvm::TargetOptions opt;
     std::unique_ptr<llvm::TargetMachine> machine(
-        target->createTargetMachine(targetTriple, cpu, features, opt, llvm::Reloc::PIC_));
+        createTargetMachineCompat(target, targetTriple, cpu, features, opt, 0));
 
     module->setDataLayout(machine->createDataLayout());
 
