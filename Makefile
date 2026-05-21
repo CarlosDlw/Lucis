@@ -59,10 +59,14 @@ grammar:
 		echo "Set ANTLR_JAR=/path/to/antlr-4.13.2-complete.jar or place the jar at project root."; \
 		exit 1; \
 	fi
+	@# Remove stale nested outputs produced by some ANTLR invocations.
+	@rm -rf "$(GENERATED_DIR)/grammar" "$(GENERATED_DIR)/Lux"
 	@mkdir -p $(GENERATED_DIR)
-	@java -jar "$(ANTLR_JAR)" -Dlanguage=Cpp -visitor -no-listener \
-		-o "$(GENERATED_DIR)" \
-		"$(GRAMMAR_DIR)/LuxLexer.g4" "$(GRAMMAR_DIR)/LuxParser.g4"
+	@cd "$(GRAMMAR_DIR)" && \
+		java -jar "../$(ANTLR_JAR)" -Dlanguage=Cpp -visitor -no-listener \
+			-Xexact-output-dir \
+			-o "../$(GENERATED_DIR)" \
+			LuxLexer.g4 LuxParser.g4
 	@echo "ANTLR generated sources updated in $(GENERATED_DIR)."
 
 ## help  — lista os targets disponíveis
