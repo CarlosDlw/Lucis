@@ -10315,6 +10315,51 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                     if (sretAlloca) llvmIdx++;
                     if (llvmIdx < fnType->getNumParams()) {
                         auto* expectedTy = fnType->getParamType(llvmIdx);
+                        if (argVal->getType()->isArrayTy() && expectedTy->isStructTy()) {
+                            // Array-to-slice lowering for []T-style params:
+                            // pass {ptr to first element, len}.
+                            auto* dstST = llvm::cast<llvm::StructType>(expectedTy);
+                            if (dstST->getNumElements() == 2 &&
+                                dstST->getElementType(0)->isPointerTy() &&
+                                dstST->getElementType(1)->isIntegerTy()) {
+                                auto* srcArrTy = llvm::cast<llvm::ArrayType>(argVal->getType());
+
+                                llvm::Value* srcAlloca = nullptr;
+                                llvm::LoadInst* deadLoad = nullptr;
+                                if (auto* li = llvm::dyn_cast<llvm::LoadInst>(argVal)) {
+                                    srcAlloca = li->getPointerOperand();
+                                    deadLoad = li;
+                                }
+                                if (!srcAlloca) {
+                                    srcAlloca = builder_->CreateAlloca(argVal->getType(), nullptr, "arr.slice");
+                                    builder_->CreateStore(argVal, srcAlloca);
+                                }
+
+                                auto* i64Ty = llvm::Type::getInt64Ty(*context_);
+                                auto* zero = llvm::ConstantInt::get(i64Ty, 0);
+                                auto* elemPtr = builder_->CreateGEP(argVal->getType(), srcAlloca,
+                                                                     {zero, zero}, "arr.slice.ptr");
+
+                                auto* ptrFieldTy = dstST->getElementType(0);
+                                llvm::Value* ptrField = elemPtr;
+                                if (elemPtr->getType() != ptrFieldTy)
+                                    ptrField = builder_->CreateBitCast(elemPtr, ptrFieldTy, "arr.slice.cast");
+
+                                auto* lenFieldTy = dstST->getElementType(1);
+                                auto* lenField = llvm::ConstantInt::get(
+                                    llvm::cast<llvm::IntegerType>(lenFieldTy),
+                                    srcArrTy->getNumElements());
+
+                                llvm::Value* slice = llvm::UndefValue::get(dstST);
+                                slice = builder_->CreateInsertValue(slice, ptrField, {0}, "arr.slice.ins.ptr");
+                                slice = builder_->CreateInsertValue(slice, lenField, {1}, "arr.slice.ins.len");
+                                argVal = slice;
+
+                                if (deadLoad && deadLoad->use_empty())
+                                    deadLoad->eraseFromParent();
+                            }
+                        }
+
                         if (argVal->getType()->isArrayTy() && expectedTy->isPointerTy()) {
                             // Reuse the source alloca if the value came from a load —
                             // avoids a full array copy that would hang the LLVM backend.
