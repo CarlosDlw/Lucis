@@ -4262,11 +4262,11 @@ void Checker::registerFunctionSignature(LuxParser::FunctionDeclContext* func) {
             paramTypes.push_back(pType);
 
             if (param->SPREAD()) {
-                if (i != params.size() - 1) {
-                    error(param, "variadic parameter must be the last parameter");
-                    return;
-                }
-                isVariadic = true;
+                error(param,
+                      "spread parameter is only allowed in extern declarations");
+                // Keep registering the function as non-variadic so we avoid
+                // cascading errors (undefined variable/call) in the same file.
+                continue;
             }
         }
     }
@@ -4303,11 +4303,7 @@ void Checker::checkFunction(LuxParser::FunctionDeclContext* func) {
                 continue;
             }
 
-            // Variadic param is treated as array inside the function
-            if (param->SPREAD())
-                locals_[paramName] = {pType, 1, true, true, nullptr};
-            else
-                locals_[paramName] = {pType, pDims, true, true, nullptr};
+            locals_[paramName] = {pType, pDims, true, true, nullptr};
         }
     }
 
