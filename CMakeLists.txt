@@ -271,6 +271,12 @@ target_include_directories(lux PRIVATE
     ${LIBCLANG_INCLUDE_DIR}
 )
 
+if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+    target_compile_options(lux PRIVATE
+        -include ${CMAKE_SOURCE_DIR}/src/antlr/AntlrRuntimeCompat.h
+    )
+endif()
+
 # Compatibility flags for LLVM API differences across versions
 if(LLVM_VERSION_MAJOR GREATER_EQUAL 15)
     target_compile_definitions(lux PRIVATE LLVM_VERSION_15_OR_NEWER)
