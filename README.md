@@ -23,6 +23,7 @@ int32 main() {
 - [Install dependencies](#install-dependencies)
 - [Configure and build (recommended)](#configure-and-build-recommended)
 - [Alternative: pure CMake](#alternative-pure-cmake)
+- [Regenerate grammar manually (optional)](#regenerate-grammar-manually-optional)
 - [Dependency discovery notes](#dependency-discovery-notes)
 - [Troubleshooting](#troubleshooting)
 - [Usage](#usage)
@@ -109,6 +110,25 @@ make configure CMAKE_FLAGS="-DCMAKE_PREFIX_PATH=/opt/custom"
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug -DLUX_ENABLE_SANITIZERS=ON
 cmake --build build --parallel
 ```
+
+### Regenerate grammar manually (optional)
+
+Grammar generation is available as a manual Make target and is not part of the normal build pipeline.
+
+```bash
+# Uses the default jar in project root
+make grammar
+
+# Or pass an explicit jar path
+make grammar ANTLR_JAR=/path/to/antlr-4.13.2-complete.jar
+```
+
+This regenerates C++ ANTLR sources into `src/generated/` from:
+
+- `grammar/LuxLexer.g4`
+- `grammar/LuxParser.g4`
+
+Use this only when grammar files change or when you intentionally want to refresh generated sources.
 
 ### Dependency discovery notes
 

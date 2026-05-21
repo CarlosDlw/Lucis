@@ -6,8 +6,11 @@ BUILD_TYPE ?= Debug
 SANITIZERS ?= ON
 GENERATOR  ?=
 CMAKE_FLAGS ?=
+ANTLR_JAR ?= antlr-4.13.2-complete.jar
+GRAMMAR_DIR ?= grammar
+GENERATED_DIR ?= src/generated
 
-.PHONY: all build configure clean rebuild run help
+.PHONY: all build configure clean rebuild run grammar help
 
 # Default target
 all: build
@@ -49,6 +52,19 @@ else
 	@$(BINARY) $(FILE) $(ARGS)
 endif
 
+## grammar  — regenera lexer/parser ANTLR manualmente (não faz parte do build)
+grammar:
+	@if [ ! -f "$(ANTLR_JAR)" ]; then \
+		echo "Missing $(ANTLR_JAR)."; \
+		echo "Set ANTLR_JAR=/path/to/antlr-4.13.2-complete.jar or place the jar at project root."; \
+		exit 1; \
+	fi
+	@mkdir -p $(GENERATED_DIR)
+	@java -jar "$(ANTLR_JAR)" -Dlanguage=Cpp -visitor -no-listener \
+		-o "$(GENERATED_DIR)" \
+		"$(GRAMMAR_DIR)/LuxLexer.g4" "$(GRAMMAR_DIR)/LuxParser.g4"
+	@echo "ANTLR generated sources updated in $(GENERATED_DIR)."
+
 ## help  — lista os targets disponíveis
 help:
 	@echo ""
@@ -57,4 +73,5 @@ help:
 	@grep -E '^##' Makefile | sed 's/## /  make /g'
 	@echo "  make configure BUILD_TYPE=Release SANITIZERS=OFF"
 	@echo "  make configure GENERATOR='Ninja' CMAKE_FLAGS='-DCMAKE_PREFIX_PATH=/opt/custom'"
+	@echo "  make grammar ANTLR_JAR=antlr-4.13.2-complete.jar"
 	@echo ""
