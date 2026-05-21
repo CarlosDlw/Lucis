@@ -7475,6 +7475,67 @@ std::any IRGen::visitDerefCompoundAssignStmt(LuxParser::DerefCompoundAssignStmtC
 std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
     auto* baseExpr = ctx->expression();
 
+    auto cleanupTempArg = [&](LuxParser::ExpressionContext* argExpr,
+                              llvm::Value* argVal,
+                              llvm::Type* expectedParamTy) {
+        if (!argExpr || !argVal) return;
+        if (dynamic_cast<LuxParser::IdentExprContext*>(argExpr)) return;
+
+        auto* argTI = resolveExprTypeInfo(argExpr);
+        if (resolveExprArrayDims(argExpr) > 0) return;
+
+        auto* voidTy = llvm::Type::getVoidTy(*context_);
+        auto* ptrTy = llvm::PointerType::getUnqual(*context_);
+        auto* usizeTy = module_->getDataLayout().getIntPtrType(*context_);
+
+        bool isStringArg = false;
+        if (argTI && argTI->kind == TypeKind::String) {
+            isStringArg = true;
+        } else if (!argTI && expectedParamTy && expectedParamTy->isStructTy()) {
+            auto* st = llvm::cast<llvm::StructType>(expectedParamTy);
+            if (st->getNumElements() == 2 &&
+                st->getElementType(0)->isPointerTy() &&
+                st->getElementType(1)->isIntegerTy()) {
+                isStringArg = true;
+            }
+        }
+
+        if (isStringArg) {
+            if (isBorrowedStringExpr(argExpr)) return;
+            auto* strPtr = builder_->CreateExtractValue(argVal, 0, "tmp_arg_ptr");
+            auto* strLen = builder_->CreateExtractValue(argVal, 1, "tmp_arg_len");
+            auto callee = declareBuiltin("lux_freeStr", voidTy, {ptrTy, usizeTy});
+            builder_->CreateCall(callee, {strPtr, strLen});
+            return;
+        }
+
+        if (!argTI) return;
+
+        if (argTI->kind != TypeKind::Extended) return;
+
+        std::string freeFuncName;
+        if (argTI->extendedKind == "Vec") {
+            auto suffix = getVecSuffix(argTI->elementType ? argTI->elementType : argTI);
+            freeFuncName = "lux_vec_free_" + suffix;
+        } else if (argTI->extendedKind == "Map") {
+            freeFuncName = "lux_map_free_" + argTI->builtinSuffix;
+        } else if (argTI->extendedKind == "Set") {
+            auto suffix = argTI->elementType
+                              ? (argTI->elementType->builtinSuffix.empty()
+                                     ? "raw" : argTI->elementType->builtinSuffix)
+                              : argTI->builtinSuffix;
+            freeFuncName = "lux_set_free_" + suffix;
+        } else {
+            return;
+        }
+
+        auto* extTy = argTI->toLLVMType(*context_, module_->getDataLayout());
+        auto* tmpAlloca = builder_->CreateAlloca(extTy, nullptr, "tmp_arg_ext");
+        builder_->CreateStore(argVal, tmpAlloca);
+        auto callee = declareBuiltin(freeFuncName, voidTy, {ptrTy});
+        builder_->CreateCall(callee, {tmpAlloca});
+    };
+
     // Resolve the function TypeInfo from the base expression
     const TypeInfo* fnTI = nullptr;
     llvm::Function* directFn = nullptr;
@@ -10573,6 +10634,17 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
         auto* callResult = builder_->CreateCall(directFn, args,
             directFn->getReturnType()->isVoidTy() ? "" : "call");
 
+        if (auto* argList = ctx->argList()) {
+            auto exprs = argList->expression();
+            size_t n = std::min(exprs.size(), args.size());
+            for (size_t i = 0; i < n; i++) {
+                llvm::Type* expectedTy = (i < fnType->getNumParams())
+                    ? fnType->getParamType(static_cast<unsigned>(i))
+                    : nullptr;
+                cleanupTempArg(exprs[i], args[i], expectedTy);
+            }
+        }
+
         // ABI return coercion: convert coerced return back to original struct
         if (abi) {
             if (abi->returnInfo.kind == ABIArgKind::Indirect) {
@@ -10633,6 +10705,16 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
 
     auto* result = builder_->CreateCall(
         llvm::FunctionCallee(fnType, fnPtr), args, "fncall");
+
+    if (auto* argList = ctx->argList()) {
+        auto exprs = argList->expression();
+        size_t n = std::min(exprs.size(), args.size());
+        for (size_t i = 0; i < n; i++) {
+            llvm::Type* expectedTy = (i < paramLLVM.size()) ? paramLLVM[i] : nullptr;
+            cleanupTempArg(exprs[i], args[i], expectedTy);
+        }
+    }
+
     return static_cast<llvm::Value*>(result);
 }
 

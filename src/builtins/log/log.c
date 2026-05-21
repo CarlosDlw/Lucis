@@ -1,4 +1,5 @@
 #include "log.h"
+#include "string/string.h"
 
 #include <stdio.h>
 #include <stdint.h>
@@ -291,7 +292,7 @@ lux_str_slice lux_sprintf(const char* fmt, unsigned long fmtLen,
     }
 
     // Allocate output buffer
-    char* out = (char*)malloc(outLen + 1);
+    char* out = (char*)lux_allocString(outLen + 1);
     if (!out) {
         lux_str_slice empty = { "", 0 };
         return empty;
