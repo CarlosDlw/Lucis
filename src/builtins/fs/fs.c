@@ -1,6 +1,7 @@
 #define _POSIX_C_SOURCE 200809L
 
 #include "fs.h"
+#include "../string/string.h"
 
 #include <errno.h>
 #include <stdio.h>
@@ -36,7 +37,7 @@ lux_fs_str_result lux_readFile(const char* path, size_t path_len) {
 
     if (sz < 0) { fclose(f); return res; }
 
-    char* buf = (char*)malloc((size_t)sz);
+    char* buf = (char*)lux_allocString((size_t)sz);
     if (!buf) { fclose(f); return res; }
 
     size_t nread = fread(buf, 1, (size_t)sz, f);
@@ -184,7 +185,7 @@ lux_fs_str_result lux_cwd(void) {
     char buf[PATH_MAX];
     if (getcwd(buf, sizeof(buf))) {
         size_t len = strlen(buf);
-        char* out = (char*)malloc(len);
+        char* out = (char*)lux_allocString(len);
         if (out) {
             memcpy(out, buf, len);
             res.ptr = out;
@@ -208,7 +209,7 @@ lux_fs_str_result lux_tempDir(void) {
     const char* tmp = getenv("TMPDIR");
     if (!tmp) tmp = "/tmp";
     size_t len = strlen(tmp);
-    char* out = (char*)malloc(len);
+    char* out = (char*)lux_allocString(len);
     lux_fs_str_result res;
     if (out) {
         memcpy(out, tmp, len);
