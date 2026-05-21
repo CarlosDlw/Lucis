@@ -122,6 +122,7 @@ public:
     std::any visitBitOrExpr(LuxParser::BitOrExprContext* ctx)         override;
     std::pair<llvm::Value*, llvm::Type*>
         resolveIncrDecrTarget(LuxParser::ExpressionContext* expr);
+    llvm::Value* resolveMethodReceiverAddress(LuxParser::ExpressionContext* expr);
     std::any visitPreIncrExpr(LuxParser::PreIncrExprContext* ctx)     override;
     std::any visitPreDecrExpr(LuxParser::PreDecrExprContext* ctx)     override;
     std::any visitPostIncrExpr(LuxParser::PostIncrExprContext* ctx)   override;

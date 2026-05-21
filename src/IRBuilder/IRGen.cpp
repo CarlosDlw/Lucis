@@ -614,6 +614,21 @@ std::any IRGen::visitExtendDecl(LuxParser::ExtendDeclContext* ctx) {
     auto* structLLTy = structTI->toLLVMType(*context_, module_->getDataLayout());
     auto* ptrTy = llvm::PointerType::getUnqual(*context_);
 
+    struct ExtendMethodLoweringInfo {
+        LuxParser::ExtendMethodContext* method;
+        bool isStatic;
+        std::vector<LuxParser::ParamContext*> params;
+        std::vector<const TypeInfo*> paramTIs;
+        std::vector<llvm::Type*> paramLLTypes;
+        llvm::Type* retLLTy = nullptr;
+        llvm::Function* fn = nullptr;
+    };
+
+    std::vector<ExtendMethodLoweringInfo> loweringInfos;
+    loweringInfos.reserve(ctx->extendMethod().size());
+
+    // Pass 1: declare every method before lowering any body.
+    // This allows forward calls between methods inside the same extend block.
     for (auto* method : ctx->extendMethod()) {
         auto methodName = method->IDENTIFIER(0)->getText();
         auto* retTI = resolveTypeInfo(method->typeSpec());
@@ -621,15 +636,12 @@ std::any IRGen::visitExtendDecl(LuxParser::ExtendDeclContext* ctx) {
 
         bool isStatic = (method->AMPERSAND() == nullptr);
 
-        // Collect parameter types and TypeInfos
         std::vector<llvm::Type*> paramLLTypes;
         std::vector<const TypeInfo*> paramTIs;
 
-        if (!isStatic) {
+        if (!isStatic)
             paramLLTypes.push_back(ptrTy); // &self as first param
-        }
 
-        // Get param list from the correct source
         std::vector<LuxParser::ParamContext*> params;
         if (isStatic) {
             if (auto* pl = method->paramList())
@@ -644,17 +656,36 @@ std::any IRGen::visitExtendDecl(LuxParser::ExtendDeclContext* ctx) {
             paramLLTypes.push_back(pTI->toLLVMType(*context_, module_->getDataLayout()));
         }
 
-        // Create the function: StructName__methodName
         auto funcName = structName + "__" + methodName;
         auto* fnType = llvm::FunctionType::get(retLLTy, paramLLTypes, false);
-        auto* fn = llvm::Function::Create(
-            fnType, llvm::Function::ExternalLinkage, funcName, module_);
+        auto* fn = module_->getFunction(funcName);
+        if (!fn) {
+            fn = llvm::Function::Create(
+                fnType, llvm::Function::ExternalLinkage, funcName, module_);
+        }
 
-        // Register in the appropriate map
         if (isStatic)
             staticStructMethods_[structName][methodName] = fn;
         else
             structMethods_[structName][methodName] = fn;
+
+        loweringInfos.push_back(ExtendMethodLoweringInfo{
+            method,
+            isStatic,
+            std::move(params),
+            std::move(paramTIs),
+            std::move(paramLLTypes),
+            retLLTy,
+            fn
+        });
+    }
+
+    // Pass 2: lower method bodies.
+    for (auto& info : loweringInfos) {
+        auto* method = info.method;
+        auto* fn = info.fn;
+        bool isStatic = info.isStatic;
+        auto* retLLTy = info.retLLTy;
 
         // Save state
         auto* savedFunc = currentFunction_;
@@ -691,14 +722,14 @@ std::any IRGen::visitExtendDecl(LuxParser::ExtendDeclContext* ctx) {
 
         // Set up parameters
         size_t argOffset = isStatic ? 0 : 1;
-        for (size_t i = 0; i < params.size(); i++) {
-            auto paramName = params[i]->IDENTIFIER()->getText();
+        for (size_t i = 0; i < info.params.size(); i++) {
+            auto paramName = info.params[i]->IDENTIFIER()->getText();
             auto* arg = fn->getArg(i + argOffset);
             arg->setName(paramName);
-            auto* paramLLTy = paramLLTypes[i + argOffset];
+            auto* paramLLTy = info.paramLLTypes[i + argOffset];
             auto* alloca = builder_->CreateAlloca(paramLLTy, nullptr, paramName);
             builder_->CreateStore(arg, alloca);
-            locals_[paramName] = { alloca, paramTIs[i], 0, /*isParam=*/true };
+            locals_[paramName] = { alloca, info.paramTIs[i], 0, /*isParam=*/true };
         }
 
         // Visit the method body statements directly
@@ -722,6 +753,69 @@ std::any IRGen::visitExtendDecl(LuxParser::ExtendDeclContext* ctx) {
     }
 
     return {};
+}
+
+llvm::Value* IRGen::resolveMethodReceiverAddress(LuxParser::ExpressionContext* expr) {
+    if (!expr)
+        return nullptr;
+
+    if (auto* paren = dynamic_cast<LuxParser::ParenExprContext*>(expr))
+        return resolveMethodReceiverAddress(paren->expression());
+
+    if (auto* ident = dynamic_cast<LuxParser::IdentExprContext*>(expr)) {
+        auto it = locals_.find(ident->IDENTIFIER()->getText());
+        if (it == locals_.end() || !it->second.typeInfo)
+            return nullptr;
+
+        auto* ti = it->second.typeInfo;
+        if (ti->kind == TypeKind::Pointer)
+            return builder_->CreateLoad(llvm::PointerType::getUnqual(*context_),
+                                        it->second.alloca,
+                                        ident->IDENTIFIER()->getText() + "_recvptr");
+        return it->second.alloca;
+    }
+
+    if (auto* deref = dynamic_cast<LuxParser::DerefExprContext*>(expr))
+        return castValue(visit(deref->expression()));
+
+    if (auto* field = dynamic_cast<LuxParser::FieldAccessExprContext*>(expr)) {
+        auto* baseExpr = field->expression();
+        auto* basePtr = resolveMethodReceiverAddress(baseExpr);
+        if (!basePtr)
+            return nullptr;
+
+        auto* baseTI = resolveExprTypeInfo(baseExpr);
+        if (!baseTI)
+            return nullptr;
+        if (baseTI->kind == TypeKind::Pointer && baseTI->pointeeType)
+            baseTI = baseTI->pointeeType;
+        if (!baseTI || (baseTI->kind != TypeKind::Struct && baseTI->kind != TypeKind::Union))
+            return nullptr;
+
+        int fieldIdx = -1;
+        for (size_t i = 0; i < baseTI->fields.size(); i++) {
+            if (baseTI->fields[i].name == field->IDENTIFIER()->getText()) {
+                fieldIdx = static_cast<int>(i);
+                break;
+            }
+        }
+        if (fieldIdx < 0)
+            return nullptr;
+
+        auto* structTy = llvm::dyn_cast<llvm::StructType>(
+            baseTI->toLLVMType(*context_, module_->getDataLayout()));
+        if (!structTy)
+            return nullptr;
+
+        if (baseTI->kind == TypeKind::Union)
+            return basePtr;
+
+        return builder_->CreateStructGEP(structTy, basePtr,
+                                         static_cast<unsigned>(fieldIdx),
+                                         field->IDENTIFIER()->getText() + "_recvptr");
+    }
+
+    return nullptr;
 }
 
 // ── FFI: extern function declarations ─────────────────────────────────────────
@@ -6067,9 +6161,20 @@ std::any IRGen::visitStructLitExpr(LuxParser::StructLitExprContext* ctx) {
             continue;
         }
 
-        auto* val = castValue(visit(exprs[i]));
         auto* fieldTI = ti->fields[fieldIdx].typeInfo;
         auto* fieldTy = fieldTI->toLLVMType(*context_, module_->getDataLayout());
+        llvm::Value* val = nullptr;
+
+        if (fieldTI && fieldTI->kind == TypeKind::Extended &&
+            fieldTI->extendedKind == "Vec") {
+            if (auto* arrLit = dynamic_cast<LuxParser::ArrayLitExprContext*>(exprs[i])) {
+                val = buildVecValueFromArrayLiteral(arrLit, fieldTI,
+                                                    typeName + "_" + fieldName + "_vec");
+            }
+        }
+
+        if (!val)
+            val = castValue(visit(exprs[i]));
 
         // Cast if needed
         if (val->getType() != fieldTy) {
@@ -13450,12 +13555,7 @@ IRGen::visitMethodCallExpr(LuxParser::MethodCallExprContext* ctx) {
         auto cFuncName = extDesc->cPrefix + "_" + cMethodName + "_" + suffix;
 
         // Get the alloca pointer for the receiver variable
-        llvm::Value* recvPtr = nullptr;
-        if (!receiverVarName.empty()) {
-            auto it = locals_.find(receiverVarName);
-            if (it != locals_.end())
-                recvPtr = it->second.alloca;
-        }
+        llvm::Value* recvPtr = resolveMethodReceiverAddress(baseExpr);
         if (!recvPtr) {
             std::cerr << "lux: cannot get address of extended type for method call\n";
             return static_cast<llvm::Value*>(
@@ -13633,24 +13733,12 @@ IRGen::visitMethodCallExpr(LuxParser::MethodCallExprContext* ctx) {
                 std::vector<llvm::Value*> callArgs;
 
                 // First arg: pointer to the struct instance (&self)
-                auto it = locals_.find(receiverVarName);
-                if (it != locals_.end()) {
-                    // If receiver is already a pointer to struct (e.g. self inside extend),
-                    // load the pointer value; otherwise pass the alloca as &struct.
-                    if (it->second.typeInfo &&
-                        it->second.typeInfo->kind == TypeKind::Pointer &&
-                        it->second.typeInfo->pointeeType &&
-                        it->second.typeInfo->pointeeType->kind == TypeKind::Struct) {
-                        auto* ptrTy = llvm::PointerType::getUnqual(*context_);
-                        callArgs.push_back(
-                            builder_->CreateLoad(ptrTy, it->second.alloca, "self_load"));
-                    } else {
-                        callArgs.push_back(it->second.alloca);
-                    }
-                } else {
-                    // Fallback: evaluate and take address
-                    auto* receiverVal = castValue(visit(ctx->expression()));
+                auto* recvPtr = resolveMethodReceiverAddress(baseExpr);
+                if (!recvPtr) {
+                    auto* receiverVal = castValue(visit(baseExpr));
                     callArgs.push_back(receiverVal);
+                } else {
+                    callArgs.push_back(recvPtr);
                 }
 
                 // Remaining args
@@ -17591,7 +17679,16 @@ std::any IRGen::visitGenericStructLitExpr(LuxParser::GenericStructLitExprContext
         auto* gep = builder_->CreateStructGEP(structLLTy, alloca, it->second);
         auto* fieldTI = instanceTI->fields[it->second].typeInfo;
         auto* fieldLLTy = fieldTI->toLLVMType(*context_, module_->getDataLayout());
-        auto* val = castValue(visit(exprs[i]));
+        llvm::Value* val = nullptr;
+        if (fieldTI && fieldTI->kind == TypeKind::Extended &&
+            fieldTI->extendedKind == "Vec") {
+            if (auto* arrLit = dynamic_cast<LuxParser::ArrayLitExprContext*>(exprs[i])) {
+                val = buildVecValueFromArrayLiteral(arrLit, fieldTI,
+                                                    mangledName + "_" + fieldName + "_vec");
+            }
+        }
+        if (!val)
+            val = castValue(visit(exprs[i]));
         if (val->getType() != fieldLLTy) {
             if (val->getType()->isIntegerTy() && fieldLLTy->isIntegerTy())
                 val = builder_->CreateIntCast(val, fieldLLTy, true);
