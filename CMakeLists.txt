@@ -9,6 +9,12 @@ option(LUX_ENABLE_SANITIZERS
     "Enable ASan/UBSan in debug-like builds"
     ON)
 
+option(LUX_PREFER_PKG_CONFIG
+    "Prefer pkg-config for third-party dependency discovery when available"
+    ON)
+
+find_package(PkgConfig QUIET)
+
 # ─── LLVM ─────────────────────────────────────────────────────────────────────
 find_package(LLVM REQUIRED CONFIG)
 message(STATUS "Found LLVM ${LLVM_PACKAGE_VERSION} at ${LLVM_DIR}")
@@ -19,12 +25,38 @@ add_definitions(${LLVM_DEFINITIONS})
 # Detect whether LLVM was installed as a monolithic shared library (e.g. LLVM 15+
 # on Debian/Ubuntu ships as libLLVM-<ver>.so instead of individual component .a files).
 execute_process(
-    COMMAND llvm-config --libs core support irreader passes native nativecodegen
+    COMMAND ${LLVM_TOOLS_BINARY_DIR}/llvm-config --libs core support irreader passes native nativecodegen
                               mc mcparser target analysis transformutils scalaropts
                               instcombine ipo linker bitwriter
-    OUTPUT_VARIABLE LLVM_LIBS_RAW
+    OUTPUT_VARIABLE LLVM_LIBS_RAW_FROM_TOOLS_DIR
     OUTPUT_STRIP_TRAILING_WHITESPACE
+    ERROR_QUIET
 )
+
+if(LLVM_LIBS_RAW_FROM_TOOLS_DIR)
+    set(LLVM_LIBS_RAW "${LLVM_LIBS_RAW_FROM_TOOLS_DIR}")
+else()
+    find_program(LLVM_CONFIG_EXECUTABLE
+        NAMES
+            llvm-config
+            llvm-config-${LLVM_VERSION_MAJOR}
+        HINTS
+            ${LLVM_TOOLS_BINARY_DIR}
+        PATH_SUFFIXES
+            bin
+    )
+
+    if(LLVM_CONFIG_EXECUTABLE)
+        execute_process(
+            COMMAND ${LLVM_CONFIG_EXECUTABLE} --libs core support irreader passes native nativecodegen
+                                            mc mcparser target analysis transformutils scalaropts
+                                            instcombine ipo linker bitwriter
+            OUTPUT_VARIABLE LLVM_LIBS_RAW
+            OUTPUT_STRIP_TRAILING_WHITESPACE
+            ERROR_QUIET
+        )
+    endif()
+endif()
 
 if(LLVM_LIBS_RAW MATCHES "^-lLLVM-")
     # Monolithic build — link against the single shared lib
@@ -41,43 +73,107 @@ else()
 endif()
 
 # ─── ANTLR4 Runtime ───────────────────────────────────────────────────────────
-find_path(ANTLR4_INCLUDE_DIR
-    NAMES antlr4-runtime.h
-    HINTS
-        /usr/include/antlr4-runtime
-        /usr/local/include/antlr4-runtime
-        /usr/include
-        /usr/local/include
-)
+if(LUX_PREFER_PKG_CONFIG AND PkgConfig_FOUND)
+    pkg_check_modules(ANTLR4_PC QUIET antlr4-runtime)
+    if(ANTLR4_PC_FOUND)
+        if(ANTLR4_PC_INCLUDE_DIRS)
+            set(ANTLR4_INCLUDE_DIR ${ANTLR4_PC_INCLUDE_DIRS})
+        endif()
+        if(ANTLR4_PC_LINK_LIBRARIES)
+            set(ANTLR4_LIB ${ANTLR4_PC_LINK_LIBRARIES})
+        elseif(ANTLR4_PC_LIBRARIES)
+            set(ANTLR4_LIB ${ANTLR4_PC_LIBRARIES})
+        endif()
+    endif()
+endif()
 
-find_library(ANTLR4_LIB
-    NAMES antlr4-runtime
-    HINTS /usr/lib /usr/local/lib /usr/lib/x86_64-linux-gnu
-)
+if(NOT ANTLR4_INCLUDE_DIR)
+    find_path(ANTLR4_INCLUDE_DIR
+        NAMES antlr4-runtime.h
+        PATHS
+            /usr/include/antlr4-runtime
+            /usr/local/include/antlr4-runtime
+            /opt/local/include/antlr4-runtime
+            /usr/include
+            /usr/local/include
+    )
+endif()
+
+if(NOT ANTLR4_LIB)
+    find_library(ANTLR4_LIB
+        NAMES
+            antlr4-runtime
+            antlr4-runtime4
+        HINTS
+            /usr/lib
+            /usr/local/lib
+            /usr/lib/x86_64-linux-gnu
+            /usr/lib64
+            /opt/local/lib
+            /usr/lib/llvm-${LLVM_VERSION_MAJOR}/lib
+    )
+endif()
 
 if(NOT ANTLR4_INCLUDE_DIR OR NOT ANTLR4_LIB)
     message(FATAL_ERROR
         "ANTLR4 C++ runtime not found.\n"
-        "Install with: sudo apt install libantlr4-runtime-dev"
+        "Tried pkg-config and common system paths.\n"
+        "Please install ANTLR4 runtime development files and/or set CMAKE_PREFIX_PATH."
     )
 endif()
 message(STATUS "Found ANTLR4: ${ANTLR4_LIB}")
 
 # ─── libclang (C API for parsing C headers) ───────────────────────────────────
-find_path(LIBCLANG_INCLUDE_DIR
-    NAMES clang-c/Index.h
-    HINTS /usr/include /usr/local/include
-)
+if(LUX_PREFER_PKG_CONFIG AND PkgConfig_FOUND)
+    pkg_check_modules(LIBCLANG_PC QUIET libclang)
+    if(LIBCLANG_PC_FOUND)
+        if(LIBCLANG_PC_INCLUDE_DIRS)
+            set(LIBCLANG_INCLUDE_DIR ${LIBCLANG_PC_INCLUDE_DIRS})
+        endif()
+        if(LIBCLANG_PC_LINK_LIBRARIES)
+            set(LIBCLANG_LIB ${LIBCLANG_PC_LINK_LIBRARIES})
+        elseif(LIBCLANG_PC_LIBRARIES)
+            set(LIBCLANG_LIB ${LIBCLANG_PC_LIBRARIES})
+        endif()
+    endif()
+endif()
 
-find_library(LIBCLANG_LIB
-    NAMES clang
-    HINTS /usr/lib /usr/local/lib /usr/lib/x86_64-linux-gnu
-)
+if(NOT LIBCLANG_INCLUDE_DIR)
+    find_path(LIBCLANG_INCLUDE_DIR
+        NAMES clang-c/Index.h
+        PATHS
+            /usr/include
+            /usr/local/include
+            /opt/local/include
+            /usr/lib/llvm-${LLVM_VERSION_MAJOR}/include
+            /usr/lib64/llvm/include
+    )
+endif()
+
+if(NOT LIBCLANG_LIB)
+    find_library(LIBCLANG_LIB
+        NAMES
+            clang
+            libclang
+            clang-${LLVM_VERSION_MAJOR}
+            libclang-${LLVM_VERSION_MAJOR}
+        HINTS
+            /usr/lib
+            /usr/local/lib
+            /usr/lib/x86_64-linux-gnu
+            /usr/lib64
+            /opt/local/lib
+            /usr/lib/llvm-${LLVM_VERSION_MAJOR}/lib
+            /usr/lib64/llvm-${LLVM_VERSION_MAJOR}/lib
+            ${LLVM_LIBRARY_DIRS}
+    )
+endif()
 
 if(NOT LIBCLANG_INCLUDE_DIR OR NOT LIBCLANG_LIB)
     message(FATAL_ERROR
         "libclang not found.\n"
-        "Install with: sudo pacman -S clang  (or equivalent for your distro)"
+        "Tried pkg-config and common system paths.\n"
+        "Please install libclang development files and/or set CMAKE_PREFIX_PATH."
     )
 endif()
 message(STATUS "Found libclang: ${LIBCLANG_LIB}")
