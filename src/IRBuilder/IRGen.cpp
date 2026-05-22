@@ -6,6 +6,13 @@
 #include <llvm/IR/Intrinsics.h>
 #include <llvm/IR/Verifier.h>
 
+// getDefaultTargetTriple moved in LLVM 15
+#ifdef LLVM_VERSION_15_OR_NEWER
+#  include <llvm/TargetParser/Host.h>
+#else
+#  include <llvm/Support/Host.h>
+#endif
+
 #include "generated/LuxLexer.h"
 #include "namespace/NamespaceRegistry.h"
 #include "ffi/CBindings.h"
@@ -226,6 +233,10 @@ std::unique_ptr<IRModule> IRGen::generate(LuxParser::ProgramContext* tree,
                                           const std::string& moduleName) {
     auto ctx = std::make_unique<llvm::LLVMContext>();
     auto mod = std::make_unique<llvm::Module>(moduleName, *ctx);
+    
+    // Set target triple early to avoid LLVM warnings about overriding it later
+    mod->setTargetTriple(llvm::Triple(llvm::sys::getDefaultTargetTriple()));
+    
     llvm::IRBuilder<> builder(*ctx);
 
     context_ = ctx.get();
