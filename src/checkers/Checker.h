@@ -104,6 +104,9 @@ private:
     // Module-level function signatures (name → function TypeInfo)
     std::unordered_map<std::string, const TypeInfo*> functions_;
 
+    // Function declarations (for error reporting with location of first definition)
+    std::unordered_map<std::string, LuxParser::FunctionDeclContext*> functionDecls_;
+
     // Global builtin names (always available, no import needed)
     std::unordered_set<std::string> globalBuiltins_;
 

@@ -1078,10 +1078,20 @@ bool Checker::check(LuxParser::ProgramContext* tree) {
         return false;
 
     // Pass 4: register function signatures (before checking bodies)
-    for (auto* decl : tree->topLevelDecl()) {
-        if (auto* func = decl->functionDecl()) {
-            registerFunctionSignature(func);
+    // Skip if in namespace mode — functions were already registered in Phase C
+    if (!nsRegistry_) {
+        for (auto* decl : tree->topLevelDecl()) {
+            if (auto* func = decl->functionDecl()) {
+                registerFunctionSignature(func);
+            }
+            if (auto* ext = decl->externDecl()) {
+                checkExternDecl(ext);
+            }
         }
+    }
+
+    // Register extern functions even in namespace mode
+    for (auto* decl : tree->topLevelDecl()) {
         if (auto* ext = decl->externDecl()) {
             checkExternDecl(ext);
         }
@@ -4505,7 +4515,12 @@ void Checker::registerFunctionSignature(LuxParser::FunctionDeclContext* func) {
 
     // Detect duplicate function definitions (skip builtins/externs)
     if (functions_.count(funcName) && !globalBuiltins_.count(funcName)) {
-        error(func, "function '" + funcName + "' already defined");
+        std::string errorMsg = "function '" + funcName + "' already defined";
+        if (auto prevDecl = functionDecls_[funcName]) {
+            auto prevLine = prevDecl->getStart()->getLine();
+            errorMsg += " (first defined at line " + std::to_string(prevLine) + ")";
+        }
+        error(func, errorMsg);
         return;
     }
 
@@ -4536,6 +4551,7 @@ void Checker::registerFunctionSignature(LuxParser::FunctionDeclContext* func) {
 
     auto* funcType = makeFunctionType(retType, paramTypes, isVariadic);
     functions_[funcName] = funcType;
+    functionDecls_[funcName] = func;
 }
 
 // ═══════════════════════════════════════════════════════════════════════
