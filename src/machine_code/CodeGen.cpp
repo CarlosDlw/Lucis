@@ -119,6 +119,8 @@ static bool tryLink(const char*        linker,
         argv.push_back("-lm");
         argv.push_back("-lz");
         argv.push_back("-lpthread");
+        if (std::string(linker) == "clang")
+            argv.push_back("-Wno-override-module");
         argv.push_back("-o");
         argv.push_back(outputPath.c_str());
         argv.push_back(nullptr);
@@ -171,6 +173,8 @@ static bool tryLinkMulti(const char*                      linker,
         argv.push_back("-lpthread");
         for (auto& lf : extraLinkerFlags)
             argv.push_back(lf.c_str());
+        if (std::string(linker) == "clang")
+            argv.push_back("-Wno-override-module");
         argv.push_back("-o");
         argv.push_back(outputPath.c_str());
         argv.push_back(nullptr);

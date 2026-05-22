@@ -808,6 +808,53 @@ bool Checker::check(LuxParser::ProgramContext* tree) {
         auto extSyms = nsRegistry_->getExternalSymbols(
             currentNamespace_, currentFile_);
 
+        // Pre-register skeletons for external structs and unions so recursive
+        // dependencies do not trigger duplicate full type registration.
+        for (auto* sym : extSyms) {
+            if (sym->kind == ExportedSymbol::Struct &&
+                !typeRegistry_.lookup(sym->name) &&
+                !genericStructTemplates_.count(sym->name)) {
+                TypeInfo skeleton;
+                skeleton.name = sym->name;
+                skeleton.kind = TypeKind::Struct;
+                skeleton.bitWidth = 0;
+                skeleton.isSigned = false;
+                typeRegistry_.registerType(std::move(skeleton));
+            } else if (sym->kind == ExportedSymbol::Union &&
+                       !typeRegistry_.lookup(sym->name) &&
+                       !genericUnionTemplates_.count(sym->name)) {
+                TypeInfo skeleton;
+                skeleton.name = sym->name;
+                skeleton.kind = TypeKind::Union;
+                skeleton.bitWidth = 0;
+                skeleton.isSigned = false;
+                typeRegistry_.registerType(std::move(skeleton));
+            }
+        }
+        for (auto& [symName, ns] : userImports_) {
+            auto* sym = nsRegistry_->findSymbol(ns, symName);
+            if (!sym) continue;
+            if (sym->kind == ExportedSymbol::Struct &&
+                !typeRegistry_.lookup(sym->name) &&
+                !genericStructTemplates_.count(sym->name)) {
+                TypeInfo skeleton;
+                skeleton.name = sym->name;
+                skeleton.kind = TypeKind::Struct;
+                skeleton.bitWidth = 0;
+                skeleton.isSigned = false;
+                typeRegistry_.registerType(std::move(skeleton));
+            } else if (sym->kind == ExportedSymbol::Union &&
+                       !typeRegistry_.lookup(sym->name) &&
+                       !genericUnionTemplates_.count(sym->name)) {
+                TypeInfo skeleton;
+                skeleton.name = sym->name;
+                skeleton.kind = TypeKind::Union;
+                skeleton.bitWidth = 0;
+                skeleton.isSigned = false;
+                typeRegistry_.registerType(std::move(skeleton));
+            }
+        }
+
         // Imported function signatures may reference generic types (e.g. Result<T>)
         // that were not explicitly imported via `use`. Ensure those type templates
         // are registered before function signature/type resolution.
@@ -3093,9 +3140,34 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
         }
 
         auto importedModule = userImports_.find(structName);
-        if (importedModule != userImports_.end() &&
-            NamespaceRegistry::isStdModule(importedModule->second)) {
-            return checkStdModuleCall(importedModule->second);
+        if (importedModule != userImports_.end()) {
+            if (NamespaceRegistry::isStdModule(importedModule->second)) {
+                return checkStdModuleCall(importedModule->second);
+            }
+            if (nsRegistry_ && nsRegistry_->hasNamespace(importedModule->second)) {
+                auto* sym = nsRegistry_->findSymbol(importedModule->second, methodName);
+                if (sym) {
+                    if (sym->kind == ExportedSymbol::Function) {
+                        auto* funcDecl = static_cast<LuxParser::FunctionDeclContext*>(sym->decl);
+                        unsigned retDims = 0;
+                        auto* retType = resolveTypeSpec(funcDecl->typeSpec(), retDims);
+                        if (!retType) return nullptr;
+
+                        std::vector<const TypeInfo*> paramTypes;
+                        if (auto* paramList = funcDecl->paramList()) {
+                            for (auto* param : paramList->param()) {
+                                unsigned pDims = 0;
+                                auto* pType = resolveTypeSpec(param->typeSpec(), pDims);
+                                if (!pType) return nullptr;
+                                paramTypes.push_back(pType);
+                            }
+                        }
+                        return makeFunctionType(retType, paramTypes, false);
+                    }
+                    error(expr, "module '" + importedModule->second + "' does not export callable symbol '" + methodName + "'");
+                    return nullptr;
+                }
+            }
         }
 
         std::vector<const TypeInfo*> argTypes;

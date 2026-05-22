@@ -524,7 +524,6 @@ std::any IRGen::visitUnionDecl(LuxParser::UnionDeclContext* ctx) {
     }
 
     auto unionName = ctx->IDENTIFIER()->getText();
-
     if (auto* existing = typeRegistry_.lookup(unionName)) {
         bool alreadyComplete = existing->kind == TypeKind::Union && !existing->fields.empty();
         bool isSkeleton = existing->kind == TypeKind::Union && existing->fields.empty();
@@ -550,7 +549,12 @@ std::any IRGen::visitUnionDecl(LuxParser::UnionDeclContext* ctx) {
     // Create LLVM struct with a single [maxSize x i8] body
     auto* i8Ty = llvm::Type::getInt8Ty(*context_);
     auto* bodyTy = llvm::ArrayType::get(i8Ty, maxSize);
-    auto* unionType = llvm::StructType::create(*context_, { bodyTy }, unionName);
+    auto* unionType = llvm::StructType::getTypeByName(*context_, unionName);
+    if (!unionType) {
+        unionType = llvm::StructType::create(*context_, { bodyTy }, unionName);
+    } else if (unionType->isOpaque()) {
+        unionType->setBody({ bodyTy });
+    }
     (void)unionType;
 
     // Register in TypeRegistry
@@ -7300,10 +7304,40 @@ std::any IRGen::visitStaticMethodCallExpr(
     }
 
     auto importIt = userImports_.find(structName);
-    if (importIt != userImports_.end() &&
-        NamespaceRegistry::isStdModule(importIt->second)) {
-        if (auto* moduleResult = emitStdModuleCall(importIt->second)) {
-            return static_cast<llvm::Value*>(moduleResult);
+    if (importIt != userImports_.end()) {
+        if (NamespaceRegistry::isStdModule(importIt->second)) {
+            if (auto* moduleResult = emitStdModuleCall(importIt->second)) {
+                return static_cast<llvm::Value*>(moduleResult);
+            }
+        } else if (nsRegistry_) {
+            auto* sym = nsRegistry_->findSymbol(importIt->second, methodName);
+            if (sym && sym->kind == ExportedSymbol::Function) {
+                auto* funcDecl = static_cast<LuxParser::FunctionDeclContext*>(sym->decl);
+                auto mangledName = NamespaceRegistry::mangle(importIt->second, methodName);
+                if (!module_->getFunction(mangledName))
+                    declareExternFunction(mangledName, funcDecl);
+
+                auto* fn = module_->getFunction(mangledName);
+                if (!fn) {
+                    std::cerr << "lux: module '" << importIt->second
+                              << "' does not export callable symbol '" << methodName << "'\n";
+                    return static_cast<llvm::Value*>(
+                        llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
+                }
+
+                std::vector<llvm::Value*> callArgs;
+                if (auto* argList = ctx->argList()) {
+                    for (auto* argExpr : argList->expression())
+                        callArgs.push_back(castValue(visit(argExpr)));
+                }
+
+                if (fn->getReturnType()->isVoidTy()) {
+                    builder_->CreateCall(fn, callArgs);
+                    return static_cast<llvm::Value*>(
+                        llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
+                }
+                return static_cast<llvm::Value*>(builder_->CreateCall(fn, callArgs, "static_call"));
+            }
         }
     }
 
