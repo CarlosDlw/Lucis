@@ -1078,15 +1078,18 @@ bool Checker::check(LuxParser::ProgramContext* tree) {
         return false;
 
     // Pass 4: register function signatures (before checking bodies)
-    // Skip if in namespace mode — functions were already registered in Phase C
-    if (!nsRegistry_) {
-        for (auto* decl : tree->topLevelDecl()) {
-            if (auto* func = decl->functionDecl()) {
+    // In namespace mode Phase C registers external symbols from the project
+    // registry, but we must still ensure local file functions are registered
+    // (avoid double-registration by checking `functions_`).
+    for (auto* decl : tree->topLevelDecl()) {
+        if (auto* func = decl->functionDecl()) {
+            auto funcName = func->IDENTIFIER()->getText();
+            if (!nsRegistry_ || !functions_.count(funcName)) {
                 registerFunctionSignature(func);
             }
-            if (auto* ext = decl->externDecl()) {
-                checkExternDecl(ext);
-            }
+        }
+        if (auto* ext = decl->externDecl()) {
+            checkExternDecl(ext);
         }
     }
 
