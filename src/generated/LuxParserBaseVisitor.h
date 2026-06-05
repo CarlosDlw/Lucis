@@ -1,5 +1,5 @@
 
-// Generated from /home/carlos/Projects/Cpp/Lux/grammar/LuxParser.g4 by ANTLR 4.13.2
+// Generated from LuxParser.g4 by ANTLR 4.13.2
 
 #pragma once
 
@@ -291,6 +291,10 @@ public:
     return visitChildren(ctx);
   }
 
+  virtual std::any visitStructPosInitExpr(LuxParser::StructPosInitExprContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
   virtual std::any visitFieldAccessExpr(LuxParser::FieldAccessExprContext *ctx) override {
     return visitChildren(ctx);
   }
@@ -435,6 +439,10 @@ public:
     return visitChildren(ctx);
   }
 
+  virtual std::any visitGenericStructPosInitExpr(LuxParser::GenericStructPosInitExprContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
   virtual std::any visitCastExpr(LuxParser::CastExprContext *ctx) override {
     return visitChildren(ctx);
   }
@@ -471,10 +479,6 @@ public:
     return visitChildren(ctx);
   }
 
-  virtual std::any visitEnumNamedVariantExpr(LuxParser::EnumNamedVariantExprContext *ctx) override {
-    return visitChildren(ctx);
-  }
-
   virtual std::any visitStructLitExpr(LuxParser::StructLitExprContext *ctx) override {
     return visitChildren(ctx);
   }
@@ -503,11 +507,19 @@ public:
     return visitChildren(ctx);
   }
 
+  virtual std::any visitQualifiedStructPosInitExpr(LuxParser::QualifiedStructPosInitExprContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
   virtual std::any visitStrLitExpr(LuxParser::StrLitExprContext *ctx) override {
     return visitChildren(ctx);
   }
 
   virtual std::any visitAwaitExpr(LuxParser::AwaitExprContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual std::any visitQualifiedStructNamedInitExpr(LuxParser::QualifiedStructNamedInitExprContext *ctx) override {
     return visitChildren(ctx);
   }
 
@@ -544,6 +556,10 @@ public:
   }
 
   virtual std::any visitPostIncrExpr(LuxParser::PostIncrExprContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual std::any visitGenericEnumPosVariantExpr(LuxParser::GenericEnumPosVariantExprContext *ctx) override {
     return visitChildren(ctx);
   }
 

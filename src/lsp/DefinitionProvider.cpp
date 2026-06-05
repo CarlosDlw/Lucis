@@ -305,7 +305,7 @@ std::optional<DefinitionResult> DefinitionProvider::resolveAtPosition(
     for (auto* tld : tree->topLevelDecl()) {
         // Function name → jump to self
         if (auto* func = tld->functionDecl()) {
-            if (func->IDENTIFIER() && func->IDENTIFIER()->getSymbol() == hoveredToken)
+            if (!func->IDENTIFIER().empty() && func->IDENTIFIER(0)->getSymbol() == hoveredToken)
                 return makeResult(hoveredToken, filePath);
             // Parameter type spec → resolve type name
             if (auto* params = func->paramList()) {
@@ -496,7 +496,7 @@ std::optional<DefinitionResult> DefinitionProvider::resolveIdent(
     // 2) User-defined function
     auto* funcDecl = findFunctionDecl(tree, name);
     if (funcDecl)
-        return makeResult(funcDecl->IDENTIFIER()->getSymbol(), filePath);
+        return makeResult(funcDecl->IDENTIFIER(0)->getSymbol(), filePath);
 
     // 3) Extern declaration
     auto* externDecl = findExternDecl(tree, name);
@@ -1746,7 +1746,7 @@ DefinitionProvider::findFunctionDecl(LuxParser::ProgramContext* tree,
                                      const std::string& name) {
     for (auto* tld : tree->topLevelDecl()) {
         if (auto* func = tld->functionDecl())
-            if (func->IDENTIFIER()->getText() == name)
+            if (func->IDENTIFIER(0)->getText() == name)
                 return func;
     }
     return nullptr;

@@ -108,7 +108,7 @@ externParam
 // int32 main() { ... }
 // T max<T>(T a, T b) { ... }
 functionDecl
-    : typeSpec IDENTIFIER typeParamList? LPAREN paramList? RPAREN block
+    : (IDENTIFIER SCOPE)? typeSpec IDENTIFIER typeParamList? LPAREN paramList? RPAREN block
     ;
 
 // extend Point { ... }
@@ -214,10 +214,11 @@ exprStmt
 
 
 // int32 x = 42;  or  int32 x;
+// Qualified type: LIB::Point p = ...;
 varDeclStmt
-    : typeSpec LPAREN IDENTIFIER (COMMA IDENTIFIER)* RPAREN ASSIGN expression SEMI  // auto (x, y) = expr;
-    | typeSpec IDENTIFIER ASSIGN expression SEMI
-    | typeSpec IDENTIFIER SEMI
+    : (IDENTIFIER SCOPE)? typeSpec LPAREN IDENTIFIER (COMMA IDENTIFIER)* RPAREN ASSIGN expression SEMI  // auto (x, y) = expr;
+    | (IDENTIFIER SCOPE)? typeSpec IDENTIFIER ASSIGN expression SEMI
+    | (IDENTIFIER SCOPE)? typeSpec IDENTIFIER SEMI
     ;
 
 // x = 42;  or  arr[i] = val;   arr[i][j] = val;
@@ -410,11 +411,23 @@ expression
     | expression INCR                                          # postIncrExpr
     | expression DECR                                          # postDecrExpr
     // Special syntax
+    // Positional struct/union init (no field names)
+    | IDENTIFIER LBRACE expression (COMMA expression)* RBRACE   # structPosInitExpr
+    // Qualified positional struct/union init (also handles enum variant init at runtime)
+    | IDENTIFIER SCOPE IDENTIFIER LBRACE expression (COMMA expression)* RBRACE # qualifiedStructPosInitExpr
+    // Named struct/union init
     | IDENTIFIER LBRACE (IDENTIFIER COLON expression (COMMA IDENTIFIER COLON expression)*)? RBRACE  # structLitExpr
+    // Qualified named struct/union init (also handles enum named variant init at runtime)
+    | IDENTIFIER SCOPE IDENTIFIER LBRACE (IDENTIFIER COLON expression (COMMA IDENTIFIER COLON expression)*)? RBRACE # qualifiedStructNamedInitExpr
+    // Positional generic struct/union init
+    | IDENTIFIER LT typeSpec (COMMA typeSpec)* GT LBRACE expression (COMMA expression)* RBRACE  # genericStructPosInitExpr
+    // Named generic struct/union init
     | IDENTIFIER LT typeSpec (COMMA typeSpec)* GT LBRACE (IDENTIFIER COLON expression (COMMA IDENTIFIER COLON expression)*)? RBRACE  # genericStructLitExpr
     | IDENTIFIER (SCOPE IDENTIFIER)+ LPAREN argList? RPAREN     # staticMethodCallExpr
     | IDENTIFIER LT typeSpec (COMMA typeSpec)* GT SCOPE IDENTIFIER  # genericEnumAccessExpr
-    | IDENTIFIER SCOPE IDENTIFIER LBRACE (IDENTIFIER COLON expression (COMMA IDENTIFIER COLON expression)*)? RBRACE # enumNamedVariantExpr
+    // Positional generic enum variant init
+    | IDENTIFIER LT typeSpec (COMMA typeSpec)* GT SCOPE IDENTIFIER LBRACE expression (COMMA expression)* RBRACE # genericEnumPosVariantExpr
+    // Named generic enum variant init
     | IDENTIFIER LT typeSpec (COMMA typeSpec)* GT SCOPE IDENTIFIER LBRACE (IDENTIFIER COLON expression (COMMA IDENTIFIER COLON expression)*)? RBRACE # genericEnumNamedVariantExpr
     | IDENTIFIER SCOPE IDENTIFIER                              # enumAccessExpr
     // Unary prefix

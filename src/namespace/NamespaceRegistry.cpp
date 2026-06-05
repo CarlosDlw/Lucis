@@ -14,7 +14,7 @@ void NamespaceRegistry::registerFile(const std::string& namespaceName,
         if (auto* funcDecl = topLevel->functionDecl()) {
             ExportedSymbol sym;
             sym.kind          = ExportedSymbol::Function;
-            sym.name          = funcDecl->IDENTIFIER()->getText();
+            sym.name          = funcDecl->IDENTIFIER(0)->getText();
             sym.namespaceName = namespaceName;
             sym.sourceFile    = filePath;
             sym.decl          = funcDecl;

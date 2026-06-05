@@ -296,7 +296,7 @@ findFunctionDeclForInference(const std::string &name,
   if (flc->tree) {
     for (auto *tld : flc->tree->topLevelDecl()) {
       auto *fd = tld->functionDecl();
-      if (fd && fd->IDENTIFIER() && fd->IDENTIFIER()->getText() == name)
+      if (fd && !fd->IDENTIFIER().empty() && fd->IDENTIFIER(0)->getText() == name)
         return fd;
     }
   }
@@ -495,7 +495,7 @@ static std::string lookupFuncReturnType(const std::string &funcName,
   if (flc->tree) {
     for (auto *tld : flc->tree->topLevelDecl()) {
       if (auto *fd = tld->functionDecl()) {
-        if (fd->IDENTIFIER() && fd->IDENTIFIER()->getText() == funcName &&
+        if (!fd->IDENTIFIER().empty() && fd->IDENTIFIER(0)->getText() == funcName &&
             fd->typeSpec())
           return fd->typeSpec()->getText();
       }
@@ -2200,9 +2200,9 @@ void CompletionProvider::addLocalDecls(std::vector<CompletionItem> &items,
   for (auto *tld : tree->topLevelDecl()) {
     // Functions
     if (auto *func = tld->functionDecl()) {
-      if (!func->IDENTIFIER())
+      if (func->IDENTIFIER().empty())
         continue;
-      std::string name = func->IDENTIFIER()->getText();
+      std::string name = func->IDENTIFIER(0)->getText();
       if (!matchesPrefix(name, prefix))
         continue;
       CompletionItem item;
@@ -4393,7 +4393,7 @@ std::string CompletionProvider::inferVarType(const std::string &varName,
 std::string
 CompletionProvider::formatFuncSignature(LuxParser::FunctionDeclContext *func) {
   std::string sig = typeSpecToString(func->typeSpec()) + " " +
-                    func->IDENTIFIER()->getText() + "(";
+                    func->IDENTIFIER(0)->getText() + "(";
   if (auto *params = func->paramList()) {
     bool first = true;
     for (auto *p : params->param()) {

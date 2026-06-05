@@ -129,6 +129,9 @@ private:
     const TypeInfo* resolveTypeSpec(LuxParser::TypeSpecContext* ctx,
                                    unsigned& arrayDims);
     const TypeInfo* resolveExprType(LuxParser::ExpressionContext* expr);
+    const TypeInfo* tryResolveQualifiedType(antlr4::ParserRuleContext* ctx,
+                                           const std::string& first,
+                                           const std::string& second);
     const TypeInfo* getPointerType(const TypeInfo* pointee);
     const TypeInfo* makeFunctionType(const TypeInfo* returnType,
                                      const std::vector<const TypeInfo*>& paramTypes,

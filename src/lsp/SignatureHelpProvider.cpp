@@ -219,7 +219,7 @@ SignatureInfo SignatureHelpProvider::buildFromFunction(
     SignatureInfo sig;
 
     std::string retType = typeSpecToString(func->typeSpec());
-    std::string name = func->IDENTIFIER()->getText();
+    std::string name = func->IDENTIFIER(0)->getText();
 
     std::ostringstream label;
     label << retType << " " << name << "(";
@@ -678,7 +678,7 @@ SignatureHelpProvider::signatureHelp(
     // 1) User-defined function in current file
     for (auto* tld : parsed.tree->topLevelDecl()) {
         if (auto* func = tld->functionDecl()) {
-            if (func->IDENTIFIER()->getText() == name) {
+            if (func->IDENTIFIER(0)->getText() == name) {
                 auto sig = buildFromFunction(func, docs);
                 sig.activeParameter = site->activeParam;
                 result.signatures.push_back(std::move(sig));

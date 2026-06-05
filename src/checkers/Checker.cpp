@@ -940,7 +940,10 @@ bool Checker::check(LuxParser::ProgramContext* tree) {
         // Phase B: structs and unions (may reference enums/aliases from phase A)
         for (auto* sym : extSyms) {
             if (sym->kind == ExportedSymbol::Struct) {
-                if (typeRegistry_.lookup(sym->name) || genericStructTemplates_.count(sym->name))
+                if (genericStructTemplates_.count(sym->name))
+                    continue;
+                auto* existing = typeRegistry_.lookup(sym->name);
+                if (existing && !(existing->kind == TypeKind::Struct && existing->fields.empty() && existing->bitWidth == 0))
                     continue;
                 auto* decl = static_cast<LuxParser::StructDeclContext*>(sym->decl);
                 for (auto* field : decl->structField())
@@ -948,7 +951,10 @@ bool Checker::check(LuxParser::ProgramContext* tree) {
                         ensureTypeDependencyFromSpec, field->typeSpec(), currentNamespace_);
                 checkStructDecl(decl);
             } else if (sym->kind == ExportedSymbol::Union) {
-                if (typeRegistry_.lookup(sym->name) || genericUnionTemplates_.count(sym->name))
+                if (genericUnionTemplates_.count(sym->name))
+                    continue;
+                auto* existing = typeRegistry_.lookup(sym->name);
+                if (existing && !(existing->kind == TypeKind::Union && existing->fields.empty() && existing->bitWidth == 0))
                     continue;
                 auto* decl = static_cast<LuxParser::UnionDeclContext*>(sym->decl);
                 for (auto* field : decl->unionField())
@@ -961,7 +967,10 @@ bool Checker::check(LuxParser::ProgramContext* tree) {
             auto* sym = nsRegistry_->findSymbol(ns, symName);
             if (!sym) continue;
             if (sym->kind == ExportedSymbol::Struct) {
-                if (typeRegistry_.lookup(sym->name) || genericStructTemplates_.count(sym->name))
+                if (genericStructTemplates_.count(sym->name))
+                    continue;
+                auto* existing = typeRegistry_.lookup(sym->name);
+                if (existing && !(existing->kind == TypeKind::Struct && existing->fields.empty() && existing->bitWidth == 0))
                     continue;
                 auto* decl = static_cast<LuxParser::StructDeclContext*>(sym->decl);
                 for (auto* field : decl->structField())
@@ -969,7 +978,10 @@ bool Checker::check(LuxParser::ProgramContext* tree) {
                         ensureTypeDependencyFromSpec, field->typeSpec(), ns);
                 checkStructDecl(decl);
             } else if (sym->kind == ExportedSymbol::Union) {
-                if (typeRegistry_.lookup(sym->name) || genericUnionTemplates_.count(sym->name))
+                if (genericUnionTemplates_.count(sym->name))
+                    continue;
+                auto* existing = typeRegistry_.lookup(sym->name);
+                if (existing && !(existing->kind == TypeKind::Union && existing->fields.empty() && existing->bitWidth == 0))
                     continue;
                 auto* decl = static_cast<LuxParser::UnionDeclContext*>(sym->decl);
                 for (auto* field : decl->unionField())
@@ -1083,7 +1095,7 @@ bool Checker::check(LuxParser::ProgramContext* tree) {
     // (avoid double-registration by checking `functions_`).
     for (auto* decl : tree->topLevelDecl()) {
         if (auto* func = decl->functionDecl()) {
-            auto funcName = func->IDENTIFIER()->getText();
+            auto funcName = func->IDENTIFIER(0)->getText();
             if (!nsRegistry_ || !functions_.count(funcName)) {
                 registerFunctionSignature(func);
             }
@@ -3077,6 +3089,177 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
         return typeInfo;
     }
 
+    // ── Struct / Union positional init: Name { expr, expr, ... } ────
+    if (auto* spi = dynamic_cast<LuxParser::StructPosInitExprContext*>(expr)) {
+        auto typeName = spi->IDENTIFIER()->getText();
+        auto* typeInfo = typeRegistry_.lookup(typeName);
+
+        if (!typeInfo) {
+            error(expr, "unknown type '" + typeName + "'");
+            return nullptr;
+        }
+        if (typeInfo->kind != TypeKind::Struct && typeInfo->kind != TypeKind::Union) {
+            error(expr, "'" + typeName + "' is not a struct or union type");
+            return nullptr;
+        }
+
+        auto fieldExprs = spi->expression();
+        if (typeInfo->kind == TypeKind::Union) {
+            if (fieldExprs.size() != 1) {
+                error(expr, "union '" + typeName +
+                             "' literal must initialize exactly 1 field, got " +
+                             std::to_string(fieldExprs.size()));
+            }
+        } else {
+            size_t requiredFields = 0;
+            for (auto& sf : typeInfo->fields) {
+                if (!sf.autoFill) requiredFields++;
+            }
+            if (fieldExprs.size() < requiredFields) {
+                error(expr, "struct '" + typeName + "' requires at least " +
+                             std::to_string(requiredFields) +
+                             " fields, got " + std::to_string(fieldExprs.size()));
+            } else if (fieldExprs.size() > typeInfo->fields.size()) {
+                error(expr, "struct '" + typeName + "' has " +
+                             std::to_string(typeInfo->fields.size()) +
+                             " fields, got " + std::to_string(fieldExprs.size()));
+            }
+        }
+
+        for (size_t i = 0; i < fieldExprs.size(); i++) {
+            if (i >= typeInfo->fields.size()) break;
+            auto& sf = typeInfo->fields[i];
+            auto* valType = resolveExprType(fieldExprs[i]);
+            if (valType && sf.typeInfo &&
+                !isAssignable(sf.typeInfo, valType)) {
+                error(expr, "field '" + sf.name + "' expects type '" +
+                             sf.typeInfo->name + "', got '" +
+                             valType->name + "'");
+            }
+        }
+        return typeInfo;
+    }
+
+    // ── Qualified positional struct/union init or enum variant init: LIB::Point { x, y } or Shape::Circle { 1, 2 } ───
+    if (auto* qspi = dynamic_cast<LuxParser::QualifiedStructPosInitExprContext*>(expr)) {
+        auto first = qspi->IDENTIFIER(0)->getText();
+        auto second = qspi->IDENTIFIER(1)->getText();
+        auto* typeInfo = tryResolveQualifiedType(expr, first, second);
+        if (!typeInfo) return nullptr;
+
+        if (typeInfo->kind == TypeKind::Enum) {
+            return typeInfo;
+        }
+
+        if (typeInfo->kind != TypeKind::Struct && typeInfo->kind != TypeKind::Union) {
+            error(expr, "'" + first + "::" + second + "' is not a struct or union type");
+            return nullptr;
+        }
+
+        auto fieldExprs = qspi->expression();
+        if (typeInfo->kind == TypeKind::Union) {
+            if (fieldExprs.size() != 1) {
+                error(expr, "union '" + first + "::" + second +
+                             "' literal must initialize exactly 1 field, got " +
+                             std::to_string(fieldExprs.size()));
+            }
+        } else {
+            size_t requiredFields = 0;
+            for (auto& sf : typeInfo->fields) {
+                if (!sf.autoFill) requiredFields++;
+            }
+            if (fieldExprs.size() < requiredFields) {
+                error(expr, "struct '" + first + "::" + second + "' requires at least " +
+                             std::to_string(requiredFields) +
+                             " fields, got " + std::to_string(fieldExprs.size()));
+            } else if (fieldExprs.size() > typeInfo->fields.size()) {
+                error(expr, "struct '" + first + "::" + second + "' has " +
+                             std::to_string(typeInfo->fields.size()) +
+                             " fields, got " + std::to_string(fieldExprs.size()));
+            }
+        }
+
+        for (size_t i = 0; i < fieldExprs.size(); i++) {
+            if (i >= typeInfo->fields.size()) break;
+            auto& sf = typeInfo->fields[i];
+            auto* valType = resolveExprType(fieldExprs[i]);
+            if (valType && sf.typeInfo &&
+                !isAssignable(sf.typeInfo, valType)) {
+                error(expr, "field '" + sf.name + "' expects type '" +
+                             sf.typeInfo->name + "', got '" +
+                             valType->name + "'");
+            }
+        }
+        return typeInfo;
+    }
+
+    // ── Qualified named struct/union init or enum variant init: LIB::Point { x: 10, y: 20 } or Shape::Circle { r: 4.0 } ───
+    if (auto* qsni = dynamic_cast<LuxParser::QualifiedStructNamedInitExprContext*>(expr)) {
+        auto first = qsni->IDENTIFIER(0)->getText();
+        auto second = qsni->IDENTIFIER(1)->getText();
+        auto* typeInfo = tryResolveQualifiedType(expr, first, second);
+        if (!typeInfo) return nullptr;
+
+        if (typeInfo->kind == TypeKind::Enum) {
+            return typeInfo;
+        }
+
+        if (typeInfo->kind != TypeKind::Struct && typeInfo->kind != TypeKind::Union) {
+            error(expr, "'" + first + "::" + second + "' is not a struct or union type");
+            return nullptr;
+        }
+
+        auto fieldExprs = qsni->expression();
+        auto ids = qsni->IDENTIFIER();
+        size_t fieldCount = fieldExprs.size();
+
+        if (typeInfo->kind == TypeKind::Union) {
+            if (fieldCount != 1) {
+                error(expr, "union '" + first + "::" + second +
+                             "' literal must initialize exactly 1 field");
+            }
+        } else {
+            size_t requiredFields = 0;
+            for (auto& sf : typeInfo->fields) {
+                if (!sf.autoFill) requiredFields++;
+            }
+            if (fieldCount < requiredFields) {
+                error(expr, "struct '" + first + "::" + second + "' requires at least " +
+                             std::to_string(requiredFields) +
+                             " fields, got " + std::to_string(fieldCount));
+            } else if (fieldCount > typeInfo->fields.size()) {
+                error(expr, "struct '" + first + "::" + second + "' has " +
+                             std::to_string(typeInfo->fields.size()) +
+                             " fields, got " + std::to_string(fieldCount));
+            }
+        }
+
+        for (size_t i = 0; i < fieldCount; i++) {
+            auto fieldName = ids[i + 2]->getText();
+            bool found = false;
+            for (auto& sf : typeInfo->fields) {
+                if (sf.name == fieldName) {
+                    found = true;
+                    if (i < fieldExprs.size()) {
+                        auto* valType = resolveExprType(fieldExprs[i]);
+                        if (valType && sf.typeInfo &&
+                            !isAssignable(sf.typeInfo, valType)) {
+                            error(expr, "field '" + fieldName +
+                                             "' expects type '" +
+                                             sf.typeInfo->name + "', got '" +
+                                             valType->name + "'");
+                        }
+                    }
+                    break;
+                }
+            }
+            if (!found)
+                error(expr, "'" + first + "::" + second +
+                                 "' has no field '" + fieldName + "'");
+        }
+        return typeInfo;
+    }
+
     // ── Static method call: Struct::method(args) ─────────────────────
     if (auto* smc = dynamic_cast<LuxParser::StaticMethodCallExprContext*>(expr)) {
         auto ids = smc->IDENTIFIER();
@@ -3145,6 +3328,46 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
 
             if (NamespaceRegistry::isStdModule(modulePath)) {
                 return checkStdModuleCall(modulePath);
+            }
+
+            // Qualified static method call on user type: LIB::User::new(args)
+            if (ids.size() == 3) {
+                auto nsName = ids[0]->getText();
+                auto typeName = ids[1]->getText();
+                auto methodName2 = ids[2]->getText();
+
+                // Validate type exists in namespace
+                if (nsRegistry_) {
+                    if (!nsRegistry_->hasNamespace(nsName)) {
+                        error(expr, "unknown namespace '" + nsName + "'");
+                        return nullptr;
+                    }
+                    auto* sym = nsRegistry_->findSymbol(nsName, typeName);
+                    if (!sym) {
+                        error(expr, "'" + nsName + "::" + typeName + "' is not a known type");
+                        return nullptr;
+                    }
+                }
+                auto* ti = typeRegistry_.lookup(typeName);
+                if (!ti || (ti->kind != TypeKind::Struct && ti->kind != TypeKind::Union)) {
+                    error(expr, "'" + nsName + "::" + typeName + "' does not support static methods");
+                    return nullptr;
+                }
+
+                // Look up static method from struct methods
+                auto smIt = structMethods_.find(typeName);
+                if (smIt != structMethods_.end()) {
+                    for (auto& sm : smIt->second) {
+                        if (sm.name == methodName2 && sm.isStatic) {
+                            if (auto* argList = smc->argList())
+                                for (auto* a : argList->expression()) resolveExprType(a);
+                            return sm.returnType;
+                        }
+                    }
+                }
+                error(expr, "type '" + nsName + "::" + typeName +
+                             "' has no static method '" + methodName2 + "'");
+                return nullptr;
             }
 
             error(expr, "unsupported qualified static call '" + modulePath +
@@ -3626,76 +3849,61 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
         return instanceTI;
     }
 
-    // ── Enum named variant literal: Enum::Variant { field: value } ──────
-    if (auto* env = dynamic_cast<LuxParser::EnumNamedVariantExprContext*>(expr)) {
-        auto ids = env->IDENTIFIER();
-        auto enumName = ids[0]->getText();
-        auto variantName = ids[1]->getText();
+    // ── Generic struct positional init: Node<int32> { expr, expr, ... } ─
+    if (auto* gspi = dynamic_cast<LuxParser::GenericStructPosInitExprContext*>(expr)) {
+        auto baseName = gspi->IDENTIFIER()->getText();
+        auto typeParamSpecs = gspi->typeSpec();
 
-        auto* enumType = typeRegistry_.lookup(enumName);
-        if (!enumType) {
-            error(expr, "unknown enum type '" + enumName + "'");
+        std::vector<const TypeInfo*> typeArgs;
+        for (auto* ts : typeParamSpecs) {
+            unsigned dims = 0;
+            auto* argTI = resolveTypeSpecInContext(ts, dims);
+            if (!argTI) return nullptr;
+            typeArgs.push_back(argTI);
+        }
+
+        auto structIt = genericStructTemplates_.find(baseName);
+        auto unionIt = genericUnionTemplates_.find(baseName);
+        if (structIt == genericStructTemplates_.end() &&
+            unionIt == genericUnionTemplates_.end()) {
+            error(expr, "'" + baseName + "' is not a generic struct or union");
             return nullptr;
         }
-        if (enumType->kind != TypeKind::Enum) {
-            error(expr, "'" + enumName + "' is not an enum type");
-            return nullptr;
+
+        const TypeInfo* instanceTI = nullptr;
+        if (structIt != genericStructTemplates_.end()) {
+            instanceTI = instantiateGenericStruct(baseName, structIt->second,
+                                                  typeArgs, expr);
+        } else {
+            instanceTI = instantiateGenericUnion(baseName, unionIt->second,
+                                                 typeArgs, expr);
+        }
+        if (!instanceTI) return nullptr;
+
+        auto mangledName = mangleGenericName(baseName, typeArgs);
+        auto fieldExprs = gspi->expression();
+
+        if (instanceTI->kind == TypeKind::Union && fieldExprs.size() != 1) {
+            error(expr, "union '" + mangledName +
+                         "' literal must initialize exactly 1 field, got " +
+                         std::to_string(fieldExprs.size()));
         }
 
-        auto* variantInfo = findEnumVariantInfo(enumType, variantName);
-        if (!variantInfo) {
-            error(expr, "enum '" + enumName + "' has no variant '" + variantName + "'");
-            return enumType;
-        }
-        if (variantInfo->payloadKind != EnumPayloadKind::Named) {
-            error(expr, "variant '" + enumName + "::" + variantName +
-                         "' does not use named payload");
-            return enumType;
-        }
-
-        auto fieldExprs = env->expression();
-        std::unordered_set<std::string> provided;
         for (size_t i = 0; i < fieldExprs.size(); i++) {
-            auto fieldName = ids[i + 2]->getText();
-            if (!provided.insert(fieldName).second) {
-                error(expr, "duplicate payload field '" + fieldName +
-                             "' in variant '" + enumName + "::" + variantName + "'");
-                continue;
-            }
-
-            const FieldInfo* expectedField = nullptr;
-            for (const auto& field : variantInfo->payloadFields) {
-                if (field.name == fieldName) {
-                    expectedField = &field;
-                    break;
-                }
-            }
-            if (!expectedField) {
-                error(expr, "unknown payload field '" + fieldName +
-                             "' in variant '" + enumName + "::" + variantName + "'");
-                continue;
-            }
-
+            if (i >= instanceTI->fields.size()) break;
+            auto& sf = instanceTI->fields[i];
             auto* exprType = resolveExprType(fieldExprs[i]);
-            if (exprType && expectedField->typeInfo &&
-                !isAssignable(expectedField->typeInfo, exprType)) {
-                error(expr, "payload field '" + fieldName +
-                             "' type mismatch: expected '" + expectedField->typeInfo->name +
-                             "', got '" + exprType->name + "'");
+            if (exprType && sf.typeInfo &&
+                !isAssignable(sf.typeInfo, exprType)) {
+                error(expr, "field '" + sf.name + "' type mismatch: expected '" +
+                           sf.typeInfo->name + "', got '" + exprType->name + "'");
             }
         }
 
-        if (provided.size() != variantInfo->payloadFields.size()) {
-            for (const auto& field : variantInfo->payloadFields) {
-                if (!provided.count(field.name)) {
-                    error(expr, "missing payload field '" + field.name +
-                                 "' in variant '" + enumName + "::" + variantName + "'");
-                }
-            }
-        }
-
-        return enumType;
+        return instanceTI;
     }
+
+
 
     // ── Generic enum named variant literal: Enum<T>::Variant { ... } ─────
     if (auto* genv = dynamic_cast<LuxParser::GenericEnumNamedVariantExprContext*>(expr)) {
@@ -3769,6 +3977,57 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
                     error(expr, "missing payload field '" + field.name +
                                  "' in variant '" + enumType->name + "::" + variantName + "'");
                 }
+            }
+        }
+
+        return enumType;
+    }
+
+    // ── Generic enum positional variant: Enum<T>::Variant { expr, ... } ─
+    if (auto* gepv = dynamic_cast<LuxParser::GenericEnumPosVariantExprContext*>(expr)) {
+        auto ids = gepv->IDENTIFIER();
+        auto baseName = ids[0]->getText();
+        auto variantName = ids[1]->getText();
+
+        std::vector<const TypeInfo*> typeArgs;
+        for (auto* ts : gepv->typeSpec()) {
+            unsigned dims = 0;
+            auto* argTI = resolveTypeSpecInContext(ts, dims);
+            if (!argTI) return nullptr;
+            typeArgs.push_back(argTI);
+        }
+
+        auto enumIt = genericEnumTemplates_.find(baseName);
+        if (enumIt == genericEnumTemplates_.end()) {
+            error(expr, "'" + baseName + "' is not a generic enum");
+            return nullptr;
+        }
+
+        auto* enumType = instantiateGenericEnum(baseName, enumIt->second, typeArgs, expr);
+        if (!enumType) return nullptr;
+
+        auto* variantInfo = findEnumVariantInfo(enumType, variantName);
+        if (!variantInfo) {
+            error(expr, "enum '" + enumType->name + "' has no variant '" + variantName + "'");
+            return enumType;
+        }
+
+        auto fieldExprs = gepv->expression();
+        if (fieldExprs.size() != variantInfo->payloadFields.size()) {
+            error(expr, "variant '" + enumType->name + "::" + variantName +
+                         "' expects " + std::to_string(variantInfo->payloadFields.size()) +
+                         " payload fields, got " + std::to_string(fieldExprs.size()));
+        }
+
+        for (size_t i = 0; i < fieldExprs.size(); i++) {
+            if (i >= variantInfo->payloadFields.size()) break;
+            const auto& expectedField = variantInfo->payloadFields[i];
+            auto* exprType = resolveExprType(fieldExprs[i]);
+            if (exprType && expectedField.typeInfo &&
+                !isAssignable(expectedField.typeInfo, exprType)) {
+                error(expr, "payload field '" + expectedField.name +
+                             "' type mismatch: expected '" + expectedField.typeInfo->name +
+                             "', got '" + exprType->name + "'");
             }
         }
 
@@ -4500,7 +4759,7 @@ void Checker::checkExtendMethodBodies(LuxParser::ExtendDeclContext* decl) {
 }
 
 void Checker::registerFunctionSignature(LuxParser::FunctionDeclContext* func) {
-    auto funcName = func->IDENTIFIER()->getText();
+    auto funcName = func->IDENTIFIER(0)->getText();
 
     // Generic function template — register as template, not as a concrete function
     if (auto* tpl = func->typeParamList()) {
@@ -4596,7 +4855,7 @@ void Checker::checkFunction(LuxParser::FunctionDeclContext* func) {
 
     if (retType->kind != TypeKind::Void) {
         if (!blockAlwaysReturns(func->block())) {
-            error(func, "function '" + func->IDENTIFIER()->getText() +
+            error(func, "function '" + func->IDENTIFIER(0)->getText() +
                         "' must return a value of type '" + retType->name +
                         "' on all code paths");
         }
@@ -5213,7 +5472,12 @@ void Checker::checkVarDeclStmt(LuxParser::VarDeclStmtContext* stmt) {
         return;
     }
 
-    auto name = stmt->IDENTIFIER(0)->getText();
+    // ── Detect namespace prefix (qualified type: LIB::Point) ────────
+    bool hasNsPrefix = stmt->SCOPE() != nullptr;
+    size_t identOffset = hasNsPrefix ? 1 : 0;
+    std::string nsPrefix = hasNsPrefix ? stmt->IDENTIFIER(0)->getText() : "";
+
+    auto name = stmt->IDENTIFIER(identOffset)->getText();
 
     {
         auto it = locals_.find(name);
@@ -5276,8 +5540,8 @@ void Checker::checkVarDeclStmt(LuxParser::VarDeclStmtContext* stmt) {
         }
 
         VarInfo vi{initType, arrayDims, true, false, nullptr};
-        if (!stmt->IDENTIFIER().empty() && stmt->IDENTIFIER(0)->getSymbol())
-            vi.declToken = stmt->IDENTIFIER(0)->getSymbol();
+        if (stmt->IDENTIFIER().size() > identOffset && stmt->IDENTIFIER(identOffset)->getSymbol())
+            vi.declToken = stmt->IDENTIFIER(identOffset)->getSymbol();
         vi.scopeDepth = scopeDepth_;
         updateOwnershipOnInitialization(vi, stmt->expression());
         locals_[name] = vi;
@@ -5292,6 +5556,27 @@ void Checker::checkVarDeclStmt(LuxParser::VarDeclStmtContext* stmt) {
     auto* typeInfo = [&]() -> const TypeInfo* {
         if (!activeTypeSubst_.empty())
             return resolveTypeSpecWithSubst(stmt->typeSpec(), activeTypeSubst_, arrayDims);
+        if (hasNsPrefix) {
+            // Look up the type in the specified namespace
+            auto* ts = stmt->typeSpec();
+            if (ts && ts->IDENTIFIER()) {
+                auto typeName = ts->IDENTIFIER()->getText();
+                if (nsRegistry_) {
+                    auto* sym = nsRegistry_->findSymbol(nsPrefix, typeName);
+                    if (!sym) {
+                        error(stmt, "'" + nsPrefix + "::" + typeName + "' is not exported");
+                        return nullptr;
+                    }
+                }
+                auto* ti = typeRegistry_.lookup(typeName);
+                if (!ti) {
+                    error(stmt, "type '" + typeName + "' from namespace '" + nsPrefix +
+                                 "' is not imported; add 'use " + nsPrefix + "::" + typeName + ";'");
+                    return nullptr;
+                }
+                return ti;
+            }
+        }
         return resolveTypeSpec(stmt->typeSpec(), arrayDims);
     }();
     if (!typeInfo) return;
@@ -5304,8 +5589,8 @@ void Checker::checkVarDeclStmt(LuxParser::VarDeclStmtContext* stmt) {
                          typeInfo->kind == TypeKind::Struct ||
                          arrayDims > 0);
         VarInfo vi{typeInfo, arrayDims, autoInit, false, nullptr};
-        if (!stmt->IDENTIFIER().empty() && stmt->IDENTIFIER(0)->getSymbol())
-            vi.declToken = stmt->IDENTIFIER(0)->getSymbol();
+        if (stmt->IDENTIFIER().size() > identOffset && stmt->IDENTIFIER(identOffset)->getSymbol())
+            vi.declToken = stmt->IDENTIFIER(identOffset)->getSymbol();
         vi.scopeDepth = scopeDepth_;
         vi.ownership = autoInit && isDropTrackedType(typeInfo, arrayDims)
             ? VarInfo::OwnershipState::Owned
@@ -5348,8 +5633,8 @@ void Checker::checkVarDeclStmt(LuxParser::VarDeclStmtContext* stmt) {
     checkNegativeToUnsigned(typeInfo, stmt->expression(), stmt);
 
     VarInfo vi{typeInfo, arrayDims, true, false, nullptr};
-    if (stmt->IDENTIFIER(0) && stmt->IDENTIFIER(0)->getSymbol())
-        vi.declToken = stmt->IDENTIFIER(0)->getSymbol();
+    if (stmt->IDENTIFIER().size() > identOffset && stmt->IDENTIFIER(identOffset)->getSymbol())
+        vi.declToken = stmt->IDENTIFIER(identOffset)->getSymbol();
     vi.scopeDepth = scopeDepth_;
     updateOwnershipOnInitialization(vi, stmt->expression());
     locals_[name] = vi;
@@ -6271,6 +6556,32 @@ std::string Checker::mangleGenericName(const std::string& baseName,
         }
     }
     return name;
+}
+
+const TypeInfo* Checker::tryResolveQualifiedType(antlr4::ParserRuleContext* ctx,
+                                                const std::string& first,
+                                                const std::string& second) {
+    // Try as namespace::type
+    if (nsRegistry_ && nsRegistry_->hasNamespace(first)) {
+        auto* sym = nsRegistry_->findSymbol(first, second);
+        if (sym) {
+            if (auto* ti = typeRegistry_.lookup(second))
+                return ti;
+        }
+    }
+
+    // Try as enum_type::variant (e.g. Shape::Circle)
+    if (auto* enumTI = typeRegistry_.lookup(first)) {
+        if (enumTI->kind == TypeKind::Enum) {
+            for (const auto& variant : enumTI->enumVariantInfos) {
+                if (variant.name == second)
+                    return enumTI;
+            }
+        }
+    }
+
+    error(ctx, "'" + first + "::" + second + "' is not a known type or enum variant");
+    return nullptr;
 }
 
 const TypeInfo* Checker::resolveTypeSpecWithSubst(

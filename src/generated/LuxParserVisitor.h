@@ -1,5 +1,5 @@
 
-// Generated from /home/carlos/Projects/Cpp/Lux/grammar/LuxParser.g4 by ANTLR 4.13.2
+// Generated from LuxParser.g4 by ANTLR 4.13.2
 
 #pragma once
 
@@ -157,6 +157,8 @@ public:
 
     virtual std::any visitDefaultClause(LuxParser::DefaultClauseContext *context) = 0;
 
+    virtual std::any visitStructPosInitExpr(LuxParser::StructPosInitExprContext *context) = 0;
+
     virtual std::any visitFieldAccessExpr(LuxParser::FieldAccessExprContext *context) = 0;
 
     virtual std::any visitTypeofExpr(LuxParser::TypeofExprContext *context) = 0;
@@ -229,6 +231,8 @@ public:
 
     virtual std::any visitNullCoalExpr(LuxParser::NullCoalExprContext *context) = 0;
 
+    virtual std::any visitGenericStructPosInitExpr(LuxParser::GenericStructPosInitExprContext *context) = 0;
+
     virtual std::any visitCastExpr(LuxParser::CastExprContext *context) = 0;
 
     virtual std::any visitGenericFnCallExpr(LuxParser::GenericFnCallExprContext *context) = 0;
@@ -247,8 +251,6 @@ public:
 
     virtual std::any visitLeadingDotFloatLitExpr(LuxParser::LeadingDotFloatLitExprContext *context) = 0;
 
-    virtual std::any visitEnumNamedVariantExpr(LuxParser::EnumNamedVariantExprContext *context) = 0;
-
     virtual std::any visitStructLitExpr(LuxParser::StructLitExprContext *context) = 0;
 
     virtual std::any visitPostDecrExpr(LuxParser::PostDecrExprContext *context) = 0;
@@ -263,9 +265,13 @@ public:
 
     virtual std::any visitLogicalAndExpr(LuxParser::LogicalAndExprContext *context) = 0;
 
+    virtual std::any visitQualifiedStructPosInitExpr(LuxParser::QualifiedStructPosInitExprContext *context) = 0;
+
     virtual std::any visitStrLitExpr(LuxParser::StrLitExprContext *context) = 0;
 
     virtual std::any visitAwaitExpr(LuxParser::AwaitExprContext *context) = 0;
+
+    virtual std::any visitQualifiedStructNamedInitExpr(LuxParser::QualifiedStructNamedInitExprContext *context) = 0;
 
     virtual std::any visitCStrLitExpr(LuxParser::CStrLitExprContext *context) = 0;
 
@@ -284,6 +290,8 @@ public:
     virtual std::any visitTryExpr(LuxParser::TryExprContext *context) = 0;
 
     virtual std::any visitPostIncrExpr(LuxParser::PostIncrExprContext *context) = 0;
+
+    virtual std::any visitGenericEnumPosVariantExpr(LuxParser::GenericEnumPosVariantExprContext *context) = 0;
 
     virtual std::any visitBoolLitExpr(LuxParser::BoolLitExprContext *context) = 0;
 

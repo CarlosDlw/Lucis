@@ -298,8 +298,8 @@ std::optional<HoverResult> HoverProvider::hover(const std::string& source,
     // ── Check if hovering a function name in a functionDecl ─────────
     for (auto* tld : parsed.tree->topLevelDecl()) {
         if (auto* func = tld->functionDecl()) {
-            if (!func->IDENTIFIER()) continue;
-            auto* nameToken = func->IDENTIFIER()->getSymbol();
+            if (func->IDENTIFIER().empty()) continue;
+            auto* nameToken = func->IDENTIFIER(0)->getSymbol();
             if (nameToken == hoveredToken) {
                 return makeResult(nameToken, withDoc(formatFunctionDecl(func), func->getStart()->getLine() - 1));
             }
@@ -1307,7 +1307,7 @@ std::optional<HoverResult> HoverProvider::walkExprForHover(
 
                 for (auto* tld : tree->topLevelDecl()) {
                     auto* fd = tld->functionDecl();
-                    if (!fd || !fd->IDENTIFIER() || fd->IDENTIFIER()->getText() != funcName)
+                    if (!fd || fd->IDENTIFIER().empty() || fd->IDENTIFIER(0)->getText() != funcName)
                         continue;
                     if (auto h = buildCallHover(fd)) return h;
                 }
@@ -1434,7 +1434,7 @@ std::optional<HoverResult> HoverProvider::walkExprForHover(
             std::string funcName = fnId->getText();
             for (auto* tld : tree->topLevelDecl()) {
                 auto* fd = tld->functionDecl();
-                if (!fd || !fd->IDENTIFIER() || fd->IDENTIFIER()->getText() != funcName)
+                if (!fd || fd->IDENTIFIER().empty() || fd->IDENTIFIER(0)->getText() != funcName)
                     continue;
 
                 if (!fd->typeParamList()) {
@@ -3811,7 +3811,7 @@ static std::string lookupFuncReturnType(
     if (flc->tree) {
         for (auto* tld : flc->tree->topLevelDecl()) {
             if (auto* fd = tld->functionDecl()) {
-                if (fd->IDENTIFIER()->getText() == funcName)
+                if (fd->IDENTIFIER(0)->getText() == funcName)
                     return fd->typeSpec()->getText();
             }
             if (auto* ext = tld->externDecl()) {
@@ -3851,7 +3851,7 @@ static LuxParser::FunctionDeclContext* findFunctionDeclForInference(
     if (flc->tree) {
         for (auto* tld : flc->tree->topLevelDecl()) {
             auto* fd = tld->functionDecl();
-            if (fd && fd->IDENTIFIER() && fd->IDENTIFIER()->getText() == name)
+            if (fd && !fd->IDENTIFIER().empty() && fd->IDENTIFIER(0)->getText() == name)
                 return fd;
         }
     }
@@ -4834,7 +4834,7 @@ HoverProvider::findFunctionDecl(LuxParser::ProgramContext* tree,
                                 const std::string& name) {
     for (auto* tld : tree->topLevelDecl()) {
         if (auto* func = tld->functionDecl()) {
-            if (func->IDENTIFIER()->getText() == name)
+            if (func->IDENTIFIER(0)->getText() == name)
                 return func;
         }
     }
@@ -4914,7 +4914,7 @@ std::string HoverProvider::typeSpecToString(LuxParser::TypeSpecContext* ctx) {
 std::string HoverProvider::formatFunctionDecl(LuxParser::FunctionDeclContext* func) {
     std::ostringstream ss;
     ss << "```lux\n";
-    ss << typeSpecToString(func->typeSpec()) << " " << func->IDENTIFIER()->getText() << "(";
+    ss << typeSpecToString(func->typeSpec()) << " " << func->IDENTIFIER(0)->getText() << "(";
     if (auto* params = func->paramList()) {
         bool first = true;
         for (auto* p : params->param()) {

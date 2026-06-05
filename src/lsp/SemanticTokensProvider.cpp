@@ -244,9 +244,10 @@ static void walkTree(IdentMap& map, antlr4::tree::ParseTree* node) {
 
     // ── function decl ──
     else if (auto* ctx = dynamic_cast<LuxParser::FunctionDeclContext*>(node)) {
-        classifyIdent(map, ctx->IDENTIFIER(), SemanticTokenType::Function,
-                      static_cast<uint32_t>(SemanticTokenMod::Declaration) |
-                      static_cast<uint32_t>(SemanticTokenMod::Definition));
+        if (!ctx->IDENTIFIER().empty())
+            classifyIdent(map, ctx->IDENTIFIER(0), SemanticTokenType::Function,
+                          static_cast<uint32_t>(SemanticTokenMod::Declaration) |
+                          static_cast<uint32_t>(SemanticTokenMod::Definition));
         // Generic type params
         if (ctx->typeParamList()) {
             for (auto* tp : ctx->typeParamList()->typeParam()) {
@@ -438,12 +439,19 @@ static void walkTree(IdentMap& map, antlr4::tree::ParseTree* node) {
         }
     }
 
-    // ── enum named variant literals ──
-    else if (auto* ctx = dynamic_cast<LuxParser::EnumNamedVariantExprContext*>(node)) {
+    // ── qualified struct/enum init lexpr ──
+    else if (auto* ctx = dynamic_cast<LuxParser::QualifiedStructPosInitExprContext*>(node)) {
         auto ids = ctx->IDENTIFIER();
         if (ids.size() >= 2) {
-            classifyIdent(map, ids[0], SemanticTokenType::Enum);
-            classifyIdent(map, ids[1], SemanticTokenType::EnumMember);
+            classifyIdent(map, ids[0], SemanticTokenType::Namespace);
+            classifyIdent(map, ids[1], SemanticTokenType::Type);
+        }
+    }
+    else if (auto* ctx = dynamic_cast<LuxParser::QualifiedStructNamedInitExprContext*>(node)) {
+        auto ids = ctx->IDENTIFIER();
+        if (ids.size() >= 2) {
+            classifyIdent(map, ids[0], SemanticTokenType::Namespace);
+            classifyIdent(map, ids[1], SemanticTokenType::Type);
             for (size_t i = 2; i < ids.size(); ++i)
                 classifyIdent(map, ids[i], SemanticTokenType::Property);
         }

@@ -1,5 +1,5 @@
 
-// Generated from /home/carlos/Projects/Cpp/Lux/grammar/LuxParser.g4 by ANTLR 4.13.2
+// Generated from LuxParser.g4 by ANTLR 4.13.2
 
 #pragma once
 
@@ -501,10 +501,12 @@ public:
     FunctionDeclContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
     TypeSpecContext *typeSpec();
-    antlr4::tree::TerminalNode *IDENTIFIER();
+    std::vector<antlr4::tree::TerminalNode *> IDENTIFIER();
+    antlr4::tree::TerminalNode* IDENTIFIER(size_t i);
     antlr4::tree::TerminalNode *LPAREN();
     antlr4::tree::TerminalNode *RPAREN();
     BlockContext *block();
+    antlr4::tree::TerminalNode *SCOPE();
     TypeParamListContext *typeParamList();
     ParamListContext *paramList();
 
@@ -807,6 +809,7 @@ public:
     antlr4::tree::TerminalNode *ASSIGN();
     ExpressionContext *expression();
     antlr4::tree::TerminalNode *SEMI();
+    antlr4::tree::TerminalNode *SCOPE();
     std::vector<antlr4::tree::TerminalNode *> COMMA();
     antlr4::tree::TerminalNode* COMMA(size_t i);
 
@@ -1445,6 +1448,21 @@ public:
    
   };
 
+  class  StructPosInitExprContext : public ExpressionContext {
+  public:
+    StructPosInitExprContext(ExpressionContext *ctx);
+
+    antlr4::tree::TerminalNode *IDENTIFIER();
+    antlr4::tree::TerminalNode *LBRACE();
+    std::vector<ExpressionContext *> expression();
+    ExpressionContext* expression(size_t i);
+    antlr4::tree::TerminalNode *RBRACE();
+    std::vector<antlr4::tree::TerminalNode *> COMMA();
+    antlr4::tree::TerminalNode* COMMA(size_t i);
+
+    virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+  };
+
   class  FieldAccessExprContext : public ExpressionContext {
   public:
     FieldAccessExprContext(ExpressionContext *ctx);
@@ -1886,6 +1904,25 @@ public:
     virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
   };
 
+  class  GenericStructPosInitExprContext : public ExpressionContext {
+  public:
+    GenericStructPosInitExprContext(ExpressionContext *ctx);
+
+    antlr4::tree::TerminalNode *IDENTIFIER();
+    antlr4::tree::TerminalNode *LT();
+    std::vector<TypeSpecContext *> typeSpec();
+    TypeSpecContext* typeSpec(size_t i);
+    antlr4::tree::TerminalNode *GT();
+    antlr4::tree::TerminalNode *LBRACE();
+    std::vector<ExpressionContext *> expression();
+    ExpressionContext* expression(size_t i);
+    antlr4::tree::TerminalNode *RBRACE();
+    std::vector<antlr4::tree::TerminalNode *> COMMA();
+    antlr4::tree::TerminalNode* COMMA(size_t i);
+
+    virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+  };
+
   class  CastExprContext : public ExpressionContext {
   public:
     CastExprContext(ExpressionContext *ctx);
@@ -2002,25 +2039,6 @@ public:
     virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
   };
 
-  class  EnumNamedVariantExprContext : public ExpressionContext {
-  public:
-    EnumNamedVariantExprContext(ExpressionContext *ctx);
-
-    std::vector<antlr4::tree::TerminalNode *> IDENTIFIER();
-    antlr4::tree::TerminalNode* IDENTIFIER(size_t i);
-    antlr4::tree::TerminalNode *SCOPE();
-    antlr4::tree::TerminalNode *LBRACE();
-    antlr4::tree::TerminalNode *RBRACE();
-    std::vector<antlr4::tree::TerminalNode *> COLON();
-    antlr4::tree::TerminalNode* COLON(size_t i);
-    std::vector<ExpressionContext *> expression();
-    ExpressionContext* expression(size_t i);
-    std::vector<antlr4::tree::TerminalNode *> COMMA();
-    antlr4::tree::TerminalNode* COMMA(size_t i);
-
-    virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
-  };
-
   class  StructLitExprContext : public ExpressionContext {
   public:
     StructLitExprContext(ExpressionContext *ctx);
@@ -2106,6 +2124,23 @@ public:
     virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
   };
 
+  class  QualifiedStructPosInitExprContext : public ExpressionContext {
+  public:
+    QualifiedStructPosInitExprContext(ExpressionContext *ctx);
+
+    std::vector<antlr4::tree::TerminalNode *> IDENTIFIER();
+    antlr4::tree::TerminalNode* IDENTIFIER(size_t i);
+    antlr4::tree::TerminalNode *SCOPE();
+    antlr4::tree::TerminalNode *LBRACE();
+    std::vector<ExpressionContext *> expression();
+    ExpressionContext* expression(size_t i);
+    antlr4::tree::TerminalNode *RBRACE();
+    std::vector<antlr4::tree::TerminalNode *> COMMA();
+    antlr4::tree::TerminalNode* COMMA(size_t i);
+
+    virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+  };
+
   class  StrLitExprContext : public ExpressionContext {
   public:
     StrLitExprContext(ExpressionContext *ctx);
@@ -2121,6 +2156,25 @@ public:
 
     antlr4::tree::TerminalNode *AWAIT();
     ExpressionContext *expression();
+
+    virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+  };
+
+  class  QualifiedStructNamedInitExprContext : public ExpressionContext {
+  public:
+    QualifiedStructNamedInitExprContext(ExpressionContext *ctx);
+
+    std::vector<antlr4::tree::TerminalNode *> IDENTIFIER();
+    antlr4::tree::TerminalNode* IDENTIFIER(size_t i);
+    antlr4::tree::TerminalNode *SCOPE();
+    antlr4::tree::TerminalNode *LBRACE();
+    antlr4::tree::TerminalNode *RBRACE();
+    std::vector<antlr4::tree::TerminalNode *> COLON();
+    antlr4::tree::TerminalNode* COLON(size_t i);
+    std::vector<ExpressionContext *> expression();
+    ExpressionContext* expression(size_t i);
+    std::vector<antlr4::tree::TerminalNode *> COMMA();
+    antlr4::tree::TerminalNode* COMMA(size_t i);
 
     virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
   };
@@ -2218,6 +2272,27 @@ public:
 
     ExpressionContext *expression();
     antlr4::tree::TerminalNode *INCR();
+
+    virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+  };
+
+  class  GenericEnumPosVariantExprContext : public ExpressionContext {
+  public:
+    GenericEnumPosVariantExprContext(ExpressionContext *ctx);
+
+    std::vector<antlr4::tree::TerminalNode *> IDENTIFIER();
+    antlr4::tree::TerminalNode* IDENTIFIER(size_t i);
+    antlr4::tree::TerminalNode *LT();
+    std::vector<TypeSpecContext *> typeSpec();
+    TypeSpecContext* typeSpec(size_t i);
+    antlr4::tree::TerminalNode *GT();
+    antlr4::tree::TerminalNode *SCOPE();
+    antlr4::tree::TerminalNode *LBRACE();
+    std::vector<ExpressionContext *> expression();
+    ExpressionContext* expression(size_t i);
+    antlr4::tree::TerminalNode *RBRACE();
+    std::vector<antlr4::tree::TerminalNode *> COMMA();
+    antlr4::tree::TerminalNode* COMMA(size_t i);
 
     virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
   };

@@ -93,12 +93,15 @@ public:
     std::any visitListCompExpr(LuxParser::ListCompExprContext* ctx)   override;
     std::any visitIndexExpr(LuxParser::IndexExprContext* ctx)         override;
     std::any visitStructLitExpr(LuxParser::StructLitExprContext* ctx) override;
+    std::any visitStructPosInitExpr(LuxParser::StructPosInitExprContext* ctx) override;
     std::any visitFieldAccessExpr(LuxParser::FieldAccessExprContext* ctx) override;
     std::any visitArrowAccessExpr(LuxParser::ArrowAccessExprContext* ctx) override;
     std::any visitEnumAccessExpr(LuxParser::EnumAccessExprContext* ctx) override;
     std::any visitGenericEnumAccessExpr(LuxParser::GenericEnumAccessExprContext* ctx) override;
-    std::any visitEnumNamedVariantExpr(LuxParser::EnumNamedVariantExprContext* ctx) override;
+    std::any visitQualifiedStructPosInitExpr(LuxParser::QualifiedStructPosInitExprContext* ctx) override;
+    std::any visitQualifiedStructNamedInitExpr(LuxParser::QualifiedStructNamedInitExprContext* ctx) override;
     std::any visitGenericEnumNamedVariantExpr(LuxParser::GenericEnumNamedVariantExprContext* ctx) override;
+    std::any visitGenericEnumPosVariantExpr(LuxParser::GenericEnumPosVariantExprContext* ctx) override;
     std::any visitStaticMethodCallExpr(LuxParser::StaticMethodCallExprContext* ctx) override;
     std::any visitNullLitExpr(LuxParser::NullLitExprContext* ctx)     override;
     std::any visitAddrOfExpr(LuxParser::AddrOfExprContext* ctx)       override;
@@ -159,6 +162,7 @@ public:
     std::any visitGenericFnCallExpr(LuxParser::GenericFnCallExprContext* ctx) override;
     std::any visitGenericStaticMethodCallExpr(LuxParser::GenericStaticMethodCallExprContext* ctx) override;
     std::any visitGenericStructLitExpr(LuxParser::GenericStructLitExprContext* ctx) override;
+    std::any visitGenericStructPosInitExpr(LuxParser::GenericStructPosInitExprContext* ctx) override;
 
 private:
     // Non-owning pointers valid only during generate().

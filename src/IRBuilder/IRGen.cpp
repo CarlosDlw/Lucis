@@ -963,7 +963,7 @@ std::any IRGen::visitTypeAliasDecl(LuxParser::TypeAliasDeclContext* ctx) {
 void IRGen::forwardDeclareFunction(LuxParser::FunctionDeclContext* ctx) {
     // Generic function templates are not forward-declared — only instantiations are
     if (ctx->typeParamList()) {
-        auto funcName = ctx->IDENTIFIER()->getText();
+        auto funcName = ctx->IDENTIFIER(0)->getText();
         GenericFuncTemplate tmpl;
         for (auto* tp : ctx->typeParamList()->typeParam())
             tmpl.typeParams.push_back(tp->IDENTIFIER(0)->getText());
@@ -975,7 +975,7 @@ void IRGen::forwardDeclareFunction(LuxParser::FunctionDeclContext* ctx) {
     auto* retInfo    = resolveTypeInfo(ctx->typeSpec());
     auto retArrayDims = countArrayDims(ctx->typeSpec());
     auto* returnType = retInfo->toLLVMType(*context_, module_->getDataLayout());
-    auto  funcName   = ctx->IDENTIFIER()->getText();
+    auto  funcName   = ctx->IDENTIFIER(0)->getText();
 
     bool isMainWithArgs = (funcName == "main" && ctx->paramList() != nullptr);
 
@@ -1046,7 +1046,7 @@ std::any IRGen::visitFunctionDecl(LuxParser::FunctionDeclContext* ctx) {
 
     auto* retInfo    = resolveTypeInfo(ctx->typeSpec());
     auto* returnType = retInfo->toLLVMType(*context_, module_->getDataLayout());
-    auto  funcName   = ctx->IDENTIFIER()->getText();
+    auto  funcName   = ctx->IDENTIFIER(0)->getText();
 
     // ── Special handling: main(Vec<string> args) ────────────────────────
     // When main has parameters, we generate:
@@ -1706,7 +1706,9 @@ std::any IRGen::visitVarDeclStmt(LuxParser::VarDeclStmtContext* ctx) {
         return {};
     }
 
-    auto  name = ctx->IDENTIFIER(0)->getText();
+    bool hasNsPrefix = ctx->SCOPE() != nullptr;
+    size_t identOffset = hasNsPrefix ? 1 : 0;
+    auto  name = ctx->IDENTIFIER(identOffset)->getText();
 
     // ── Auto type inference: auto x = expr; ──────────────────────────
     if (ctx->typeSpec() && ctx->typeSpec()->AUTO()) {
@@ -6324,6 +6326,85 @@ std::any IRGen::visitStructLitExpr(LuxParser::StructLitExprContext* ctx) {
     return static_cast<llvm::Value*>(agg);
 }
 
+// ── Struct positional init: Name { expr, expr, ... } ─────────────────
+
+std::any IRGen::visitStructPosInitExpr(LuxParser::StructPosInitExprContext* ctx) {
+    auto typeName = ctx->IDENTIFIER()->getText();
+    auto* ti = typeRegistry_.lookup(typeName);
+    if (!ti || (ti->kind != TypeKind::Struct && ti->kind != TypeKind::Union)) {
+        std::cerr << "lux: unknown struct/union type '" << typeName << "'\n";
+        return static_cast<llvm::Value*>(
+            llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
+    }
+
+    auto exprs = ctx->expression();
+
+    // ── Union positional init ────────────────────────────────────
+    if (ti->kind == TypeKind::Union) {
+        auto* unionTy = ti->toLLVMType(*context_, module_->getDataLayout());
+        auto* alloca = builder_->CreateAlloca(unionTy, nullptr, typeName + "_tmp");
+        if (!exprs.empty()) {
+            auto* fieldTI = ti->fields[0].typeInfo;
+            if (fieldTI) {
+                auto* val = castValue(visit(exprs[0]));
+                auto* fieldLLTy = fieldTI->toLLVMType(*context_, module_->getDataLayout());
+                if (val->getType() != fieldLLTy) {
+                    if (val->getType()->isIntegerTy() && fieldLLTy->isIntegerTy())
+                        val = builder_->CreateIntCast(val, fieldLLTy, fieldTI->isSigned);
+                    else if (val->getType()->isFloatingPointTy() && fieldLLTy->isFloatingPointTy()) {
+                        if (val->getType()->getPrimitiveSizeInBits() > fieldLLTy->getPrimitiveSizeInBits())
+                            val = builder_->CreateFPTrunc(val, fieldLLTy);
+                        else
+                            val = builder_->CreateFPExt(val, fieldLLTy);
+                    }
+                }
+                builder_->CreateStore(val, alloca);
+            }
+        }
+        return static_cast<llvm::Value*>(
+            builder_->CreateLoad(unionTy, alloca, typeName + "_val"));
+    }
+
+    // ── Struct positional init ─────────────────────────────────────
+    auto* structTy = ti->toLLVMType(*context_, module_->getDataLayout());
+    llvm::Value* agg = llvm::ConstantAggregateZero::get(structTy);
+
+    for (size_t i = 0; i < exprs.size(); i++) {
+        if (i >= ti->fields.size()) break;
+
+        auto& field = ti->fields[i];
+        auto* fieldTI = field.typeInfo;
+        auto* fieldTy = fieldTI->toLLVMType(*context_, module_->getDataLayout());
+        llvm::Value* val = nullptr;
+
+        if (fieldTI && fieldTI->kind == TypeKind::Extended &&
+            fieldTI->extendedKind == "Vec") {
+            if (auto* arrLit = dynamic_cast<LuxParser::ArrayLitExprContext*>(exprs[i])) {
+                val = buildVecValueFromArrayLiteral(
+                    arrLit, fieldTI, typeName + "_" + field.name + "_vec");
+            }
+        }
+
+        if (!val)
+            val = castValue(visit(exprs[i]));
+
+        if (val->getType() != fieldTy) {
+            if (val->getType()->isIntegerTy() && fieldTy->isIntegerTy())
+                val = builder_->CreateIntCast(val, fieldTy, fieldTI->isSigned);
+            else if (val->getType()->isFloatingPointTy() && fieldTy->isFloatingPointTy()) {
+                if (val->getType()->getPrimitiveSizeInBits() > fieldTy->getPrimitiveSizeInBits())
+                    val = builder_->CreateFPTrunc(val, fieldTy);
+                else
+                    val = builder_->CreateFPExt(val, fieldTy);
+            }
+        }
+
+        agg = builder_->CreateInsertValue(agg, val, {static_cast<unsigned>(i)});
+    }
+
+    return static_cast<llvm::Value*>(agg);
+}
+
 std::any IRGen::visitFieldAccessExpr(LuxParser::FieldAccessExprContext* ctx) {
     auto fieldName = ctx->IDENTIFIER()->getText();
 
@@ -6962,57 +7043,226 @@ std::any IRGen::visitGenericEnumAccessExpr(LuxParser::GenericEnumAccessExprConte
     return static_cast<llvm::Value*>(buildEnumVariantValue(enumType, *variantInfo, {}));
 }
 
-std::any IRGen::visitEnumNamedVariantExpr(LuxParser::EnumNamedVariantExprContext* ctx) {
-    auto ids = ctx->IDENTIFIER();
-    auto enumName = ids[0]->getText();
-    auto variantName = ids[1]->getText();
+// ── Qualified struct/union positional init: LIB::Point { x, y } or enum variant: Shape::Circle { 1, 2 } ─────
 
-    auto* enumType = typeRegistry_.lookup(enumName);
-    if (!enumType || enumType->kind != TypeKind::Enum) {
-        std::cerr << "lux: unknown enum type '" << enumName << "'\n";
-        return static_cast<llvm::Value*>(
-            llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
-    }
+std::any IRGen::visitQualifiedStructPosInitExpr(LuxParser::QualifiedStructPosInitExprContext* ctx) {
+    auto first = ctx->IDENTIFIER(0)->getText();
+    auto second = ctx->IDENTIFIER(1)->getText();
 
-    const EnumVariantInfo* variantInfo = nullptr;
-    for (const auto& info : enumType->enumVariantInfos) {
-        if (info.name == variantName) {
-            variantInfo = &info;
-            break;
-        }
-    }
-    if (!variantInfo) {
-        std::cerr << "lux: enum '" << enumName
-                  << "' has no variant '" << variantName << "'\n";
-        return static_cast<llvm::Value*>(
-            llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
-    }
+    // Try as qualified struct/union init: namespace::type
+    auto* ti = typeRegistry_.lookup(second);
+    if (ti && (ti->kind == TypeKind::Struct || ti->kind == TypeKind::Union)) {
+        auto exprs = ctx->expression();
 
-    std::vector<llvm::Value*> payloadValues(variantInfo->payloadFields.size());
-    for (size_t i = 0; i < ctx->expression().size(); i++) {
-        auto fieldName = ids[i + 2]->getText();
-        for (size_t fieldIdx = 0; fieldIdx < variantInfo->payloadFields.size(); fieldIdx++) {
-            if (variantInfo->payloadFields[fieldIdx].name == fieldName) {
-                auto* argExpr = ctx->expression(i);
-                auto* expectedTI = variantInfo->payloadFields[fieldIdx].typeInfo;
-                if (expectedTI && expectedTI->kind == TypeKind::Extended &&
-                    expectedTI->extendedKind == "Vec") {
-                    if (auto* arrLit = dynamic_cast<LuxParser::ArrayLitExprContext*>(argExpr)) {
-                        payloadValues[fieldIdx] = buildVecValueFromArrayLiteral(
-                            arrLit, expectedTI, "enum_named_vec_payload");
-                        break;
+        if (ti->kind == TypeKind::Union) {
+            auto* unionTy = ti->toLLVMType(*context_, module_->getDataLayout());
+            auto* alloca = builder_->CreateAlloca(unionTy, nullptr, second + "_tmp");
+            if (!exprs.empty()) {
+                auto* fieldTI = ti->fields[0].typeInfo;
+                if (fieldTI) {
+                    auto* val = castValue(visit(exprs[0]));
+                    auto* fieldLLTy = fieldTI->toLLVMType(*context_, module_->getDataLayout());
+                    if (val->getType() != fieldLLTy) {
+                        if (val->getType()->isIntegerTy() && fieldLLTy->isIntegerTy())
+                            val = builder_->CreateIntCast(val, fieldLLTy, fieldTI->isSigned);
+                        else if (val->getType()->isFloatingPointTy() && fieldLLTy->isFloatingPointTy()) {
+                            if (val->getType()->getPrimitiveSizeInBits() > fieldLLTy->getPrimitiveSizeInBits())
+                                val = builder_->CreateFPTrunc(val, fieldLLTy);
+                            else
+                                val = builder_->CreateFPExt(val, fieldLLTy);
+                        }
                     }
+                    builder_->CreateStore(val, alloca);
                 }
-                payloadValues[fieldIdx] = castValue(visit(argExpr));
+            }
+            return static_cast<llvm::Value*>(
+                builder_->CreateLoad(unionTy, alloca, second + "_val"));
+        }
+
+        auto* structTy = ti->toLLVMType(*context_, module_->getDataLayout());
+        llvm::Value* agg = llvm::ConstantAggregateZero::get(structTy);
+
+        for (size_t i = 0; i < exprs.size(); i++) {
+            if (i >= ti->fields.size()) break;
+
+            auto& field = ti->fields[i];
+            auto* fieldTI = field.typeInfo;
+            auto* fieldTy = fieldTI->toLLVMType(*context_, module_->getDataLayout());
+            llvm::Value* val = nullptr;
+
+            if (fieldTI && fieldTI->kind == TypeKind::Extended &&
+                fieldTI->extendedKind == "Vec") {
+                if (auto* arrLit = dynamic_cast<LuxParser::ArrayLitExprContext*>(exprs[i])) {
+                    val = buildVecValueFromArrayLiteral(
+                        arrLit, fieldTI, second + "_" + field.name + "_vec");
+                }
+            }
+
+            if (!val)
+                val = castValue(visit(exprs[i]));
+
+            if (val->getType() != fieldTy) {
+                if (val->getType()->isIntegerTy() && fieldTy->isIntegerTy())
+                    val = builder_->CreateIntCast(val, fieldTy, fieldTI->isSigned);
+                else if (val->getType()->isFloatingPointTy() && fieldTy->isFloatingPointTy()) {
+                    if (val->getType()->getPrimitiveSizeInBits() > fieldTy->getPrimitiveSizeInBits())
+                        val = builder_->CreateFPTrunc(val, fieldTy);
+                    else
+                        val = builder_->CreateFPExt(val, fieldTy);
+                }
+            }
+
+            agg = builder_->CreateInsertValue(agg, val, i, second + "_" + field.name);
+        }
+
+        for (auto* e : exprs)
+            consumeExprIfOwnedLocal(e);
+        return static_cast<llvm::Value*>(agg);
+    }
+
+    // Try as enum variant init: enum_type::VariantName { ... }
+    ti = typeRegistry_.lookup(first);
+    if (ti && ti->kind == TypeKind::Enum) {
+        auto variantName = second;
+        auto exprs = ctx->expression();
+
+        const EnumVariantInfo* variantInfo = nullptr;
+        for (const auto& info : ti->enumVariantInfos) {
+            if (info.name == variantName) {
+                variantInfo = &info;
                 break;
             }
         }
+        if (!variantInfo) {
+            std::cerr << "lux: enum '" << ti->name << "' has no variant '" << variantName << "'\n";
+            return static_cast<llvm::Value*>(
+                llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
+        }
+
+        std::vector<llvm::Value*> payloadValues(variantInfo->payloadFields.size());
+        for (size_t i = 0; i < exprs.size() && i < payloadValues.size(); i++) {
+            auto* argExpr = exprs[i];
+            auto* expectedTI = variantInfo->payloadFields[i].typeInfo;
+            if (expectedTI && expectedTI->kind == TypeKind::Extended &&
+                expectedTI->extendedKind == "Vec") {
+                if (auto* arrLit = dynamic_cast<LuxParser::ArrayLitExprContext*>(argExpr)) {
+                    payloadValues[i] = buildVecValueFromArrayLiteral(
+                        arrLit, expectedTI, "enum_pos_vec_payload");
+                } else {
+                    payloadValues[i] = castValue(visit(argExpr));
+                }
+            } else {
+                payloadValues[i] = castValue(visit(argExpr));
+            }
+        }
+
+        auto* enumValue = buildEnumVariantValue(ti, *variantInfo, payloadValues);
+        for (auto* payloadExpr : exprs)
+            consumeExprIfOwnedLocal(payloadExpr);
+        return static_cast<llvm::Value*>(enumValue);
     }
 
-    auto* enumValue = buildEnumVariantValue(enumType, *variantInfo, payloadValues);
-    for (auto* payloadExpr : ctx->expression())
-        consumeExprIfOwnedLocal(payloadExpr);
-    return static_cast<llvm::Value*>(enumValue);
+    std::cerr << "lux: unknown type '" << first << "::" << second << "'\n";
+    return static_cast<llvm::Value*>(
+        llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
+}
+
+// ── Qualified struct/union named init: LIB::Point { x: 10, y: 20 } or enum variant: Shape::Circle { r: 4.0 } ─
+
+std::any IRGen::visitQualifiedStructNamedInitExpr(LuxParser::QualifiedStructNamedInitExprContext* ctx) {
+    auto first = ctx->IDENTIFIER(0)->getText();
+    auto second = ctx->IDENTIFIER(1)->getText();
+
+    // Try as qualified struct/union init: namespace::type
+    auto* ti = typeRegistry_.lookup(second);
+    if (ti && (ti->kind == TypeKind::Struct || ti->kind == TypeKind::Union)) {
+        auto ids = ctx->IDENTIFIER();
+        auto exprs = ctx->expression();
+
+        auto* structTy = ti->toLLVMType(*context_, module_->getDataLayout());
+        llvm::Value* agg = llvm::ConstantAggregateZero::get(structTy);
+
+        for (size_t i = 0; i < exprs.size(); i++) {
+            auto fieldName = ids[i + 2]->getText();
+            int fieldIdx = -1;
+            for (int j = 0; j < (int)ti->fields.size(); j++) {
+                if (ti->fields[j].name == fieldName) { fieldIdx = j; break; }
+            }
+            if (fieldIdx < 0) continue;
+
+            auto* fieldTI = ti->fields[fieldIdx].typeInfo;
+            auto* fieldTy = fieldTI->toLLVMType(*context_, module_->getDataLayout());
+            auto* val = castValue(visit(exprs[i]));
+
+            if (val->getType() != fieldTy) {
+                if (val->getType()->isIntegerTy() && fieldTy->isIntegerTy())
+                    val = builder_->CreateIntCast(val, fieldTy, fieldTI->isSigned);
+                else if (val->getType()->isFloatingPointTy() && fieldTy->isFloatingPointTy()) {
+                    if (val->getType()->getPrimitiveSizeInBits() > fieldTy->getPrimitiveSizeInBits())
+                        val = builder_->CreateFPTrunc(val, fieldTy);
+                    else
+                        val = builder_->CreateFPExt(val, fieldTy);
+                }
+            }
+
+            agg = builder_->CreateInsertValue(agg, val, fieldIdx, second + "_" + fieldName);
+        }
+
+        for (auto* e : exprs)
+            consumeExprIfOwnedLocal(e);
+        return static_cast<llvm::Value*>(agg);
+    }
+
+    // Try as enum variant init: enum_type::VariantName { ... }
+    ti = typeRegistry_.lookup(first);
+    if (ti && ti->kind == TypeKind::Enum) {
+        auto variantName = second;
+        auto ids = ctx->IDENTIFIER();
+        auto exprs = ctx->expression();
+
+        const EnumVariantInfo* variantInfo = nullptr;
+        for (const auto& info : ti->enumVariantInfos) {
+            if (info.name == variantName) {
+                variantInfo = &info;
+                break;
+            }
+        }
+        if (!variantInfo) {
+            std::cerr << "lux: enum '" << ti->name << "' has no variant '" << variantName << "'\n";
+            return static_cast<llvm::Value*>(
+                llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
+        }
+
+        std::vector<llvm::Value*> payloadValues(variantInfo->payloadFields.size());
+        for (size_t i = 0; i < exprs.size(); i++) {
+            auto fieldName = ids[i + 2]->getText();
+            for (size_t fieldIdx = 0; fieldIdx < variantInfo->payloadFields.size(); fieldIdx++) {
+                if (variantInfo->payloadFields[fieldIdx].name == fieldName) {
+                    auto* argExpr = exprs[i];
+                    auto* expectedTI = variantInfo->payloadFields[fieldIdx].typeInfo;
+                    if (expectedTI && expectedTI->kind == TypeKind::Extended &&
+                        expectedTI->extendedKind == "Vec") {
+                        if (auto* arrLit = dynamic_cast<LuxParser::ArrayLitExprContext*>(argExpr)) {
+                            payloadValues[fieldIdx] = buildVecValueFromArrayLiteral(
+                                arrLit, expectedTI, "enum_named_vec_payload");
+                            break;
+                        }
+                    }
+                    payloadValues[fieldIdx] = castValue(visit(argExpr));
+                    break;
+                }
+            }
+        }
+
+        auto* enumValue = buildEnumVariantValue(ti, *variantInfo, payloadValues);
+        for (auto* payloadExpr : exprs)
+            consumeExprIfOwnedLocal(payloadExpr);
+        return static_cast<llvm::Value*>(enumValue);
+    }
+
+    std::cerr << "lux: unknown type '" << first << "::" << second << "'\n";
+    return static_cast<llvm::Value*>(
+        llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
 }
 
 std::any IRGen::visitGenericEnumNamedVariantExpr(LuxParser::GenericEnumNamedVariantExprContext* ctx) {
@@ -7073,6 +7323,68 @@ std::any IRGen::visitGenericEnumNamedVariantExpr(LuxParser::GenericEnumNamedVari
                 break;
             }
         }
+    }
+
+    auto* enumValue = buildEnumVariantValue(enumType, *variantInfo, payloadValues);
+    for (auto* payloadExpr : ctx->expression())
+        consumeExprIfOwnedLocal(payloadExpr);
+    return static_cast<llvm::Value*>(enumValue);
+}
+
+// ── Generic enum positional variant: Enum<T>::Variant { expr, ... } ──────
+
+std::any IRGen::visitGenericEnumPosVariantExpr(LuxParser::GenericEnumPosVariantExprContext* ctx) {
+    auto ids = ctx->IDENTIFIER();
+    auto baseName = ids[0]->getText();
+    auto variantName = ids[1]->getText();
+
+    std::vector<const TypeInfo*> typeArgs;
+    for (auto* ts : ctx->typeSpec()) {
+        auto* argTI = resolveTypeInfo(ts);
+        if (!argTI) argTI = typeRegistry_.lookup("int32");
+        typeArgs.push_back(argTI);
+    }
+
+    auto enumIt = genericEnumTemplates_.find(baseName);
+    if (enumIt == genericEnumTemplates_.end()) {
+        std::cerr << "lux: unknown generic enum '" << baseName << "'\n";
+        return static_cast<llvm::Value*>(
+            llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
+    }
+
+    auto* enumType = instantiateGenericEnum(baseName, enumIt->second, typeArgs);
+    if (!enumType) {
+        return static_cast<llvm::Value*>(
+            llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
+    }
+
+    const EnumVariantInfo* variantInfo = nullptr;
+    for (const auto& info : enumType->enumVariantInfos) {
+        if (info.name == variantName) {
+            variantInfo = &info;
+            break;
+        }
+    }
+    if (!variantInfo) {
+        std::cerr << "lux: enum '" << enumType->name
+                  << "' has no variant '" << variantName << "'\n";
+        return static_cast<llvm::Value*>(
+            llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
+    }
+
+    std::vector<llvm::Value*> payloadValues(variantInfo->payloadFields.size());
+    for (size_t i = 0; i < ctx->expression().size() && i < variantInfo->payloadFields.size(); i++) {
+        auto* argExpr = ctx->expression(i);
+        auto* expectedTI = variantInfo->payloadFields[i].typeInfo;
+        if (expectedTI && expectedTI->kind == TypeKind::Extended &&
+            expectedTI->extendedKind == "Vec") {
+            if (auto* arrLit = dynamic_cast<LuxParser::ArrayLitExprContext*>(argExpr)) {
+                payloadValues[i] = buildVecValueFromArrayLiteral(
+                    arrLit, expectedTI, "gen_enum_pos_vec_payload");
+                continue;
+            }
+        }
+        payloadValues[i] = castValue(visit(argExpr));
     }
 
     auto* enumValue = buildEnumVariantValue(enumType, *variantInfo, payloadValues);
@@ -7304,6 +7616,67 @@ std::any IRGen::visitStaticMethodCallExpr(
         }
 
         if (!NamespaceRegistry::isStdModule(modulePath)) {
+            // Qualified static method call on user type: LIB::User::new(args)
+            if (ids.size() == 3) {
+                auto nsName = ids[0]->getText();
+                auto typeName = ids[1]->getText();
+                auto methodName2 = ids[2]->getText();
+
+                auto* ti = typeRegistry_.lookup(typeName);
+                if (!ti || (ti->kind != TypeKind::Struct && ti->kind != TypeKind::Union)) {
+                    std::cerr << "lux: '" << nsName << "::" << typeName
+                              << "' does not support static methods\n";
+                    return static_cast<llvm::Value*>(
+                        llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
+                }
+
+                auto smIt = staticStructMethods_.find(typeName);
+                if (smIt == staticStructMethods_.end()) {
+                    std::cerr << "lux: type '" << nsName << "::" << typeName
+                              << "' has no static methods\n";
+                    return static_cast<llvm::Value*>(
+                        llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
+                }
+
+                auto mIt = smIt->second.find(methodName2);
+                if (mIt == smIt->second.end()) {
+                    std::cerr << "lux: type '" << nsName << "::" << typeName
+                              << "' has no static method '" << methodName2 << "'\n";
+                    return static_cast<llvm::Value*>(
+                        llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
+                }
+
+                auto* fn = mIt->second;
+                std::vector<llvm::Value*> callArgs;
+                if (auto* argList = ctx->argList()) {
+                    auto* fnType = fn->getFunctionType();
+                    size_t paramIdx = 0;
+                    for (auto* argExpr : argList->expression()) {
+                        auto* argVal = castValue(visit(argExpr));
+                        if (paramIdx < fnType->getNumParams()) {
+                            auto* paramTy = fnType->getParamType(paramIdx);
+                            if (argVal->getType() != paramTy) {
+                                if (argVal->getType()->isIntegerTy() && paramTy->isIntegerTy())
+                                    argVal = builder_->CreateIntCast(argVal, paramTy, true);
+                                else if (argVal->getType()->isFloatingPointTy() && paramTy->isFloatingPointTy())
+                                    argVal = builder_->CreateFPCast(argVal, paramTy);
+                            }
+                        }
+                        callArgs.push_back(argVal);
+                        paramIdx++;
+                    }
+                }
+
+                auto* retTy = fn->getReturnType();
+                if (retTy->isVoidTy()) {
+                    builder_->CreateCall(fn, callArgs);
+                    return static_cast<llvm::Value*>(
+                        llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
+                }
+                return static_cast<llvm::Value*>(
+                    builder_->CreateCall(fn, callArgs, "qualified_static_call"));
+            }
+
             std::cerr << "lux: unsupported qualified static call '"
                       << modulePath << "::" << methodName << "'\n";
             return static_cast<llvm::Value*>(
@@ -12371,6 +12744,7 @@ const TypeInfo* IRGen::resolveTypeInfo(LuxParser::TypeSpecContext* ctx) {
     // Generic extended type: Task<int32>, or user-defined generic struct: Node<int32>
     if (ctx->LT()) {
         std::string baseName;
+        std::string nsPrefix;
         if (ctx->VEC()) baseName = "Vec";
         else if (ctx->MAP()) baseName = "Map";
         else if (ctx->SET()) baseName = "Set";
@@ -12716,6 +13090,11 @@ const TypeInfo* IRGen::resolveExprTypeInfo(LuxParser::ExpressionContext* ctx) {
         return nullptr;
     }
 
+    // ── Struct positional init: Type { expr, expr, ... } ────────────
+    if (auto* spi = dynamic_cast<LuxParser::StructPosInitExprContext*>(ctx)) {
+        return typeRegistry_.lookup(spi->IDENTIFIER()->getText());
+    }
+
     // ── Generic struct/union literal: Type<T, ...> { fields } ──────
     if (auto* gsl = dynamic_cast<LuxParser::GenericStructLitExprContext*>(ctx)) {
         auto baseName = gsl->IDENTIFIER(0)->getText();
@@ -12744,9 +13123,36 @@ const TypeInfo* IRGen::resolveExprTypeInfo(LuxParser::ExpressionContext* ctx) {
         return nullptr;
     }
 
-    if (auto* env = dynamic_cast<LuxParser::EnumNamedVariantExprContext*>(ctx)) {
-        auto ids = env->IDENTIFIER();
-        if (ids.size() >= 2) return typeRegistry_.lookup(ids[0]->getText());
+    // ── Generic struct positional init: Type<T> { expr, ... } ──────
+    if (auto* gspi = dynamic_cast<LuxParser::GenericStructPosInitExprContext*>(ctx)) {
+        auto baseName = gspi->IDENTIFIER()->getText();
+        std::vector<const TypeInfo*> typeArgs;
+        for (auto* ts : gspi->typeSpec()) {
+            auto* argTI = resolveTypeInfo(ts);
+            if (!argTI) argTI = typeRegistry_.lookup("int32");
+            typeArgs.push_back(argTI);
+        }
+
+        auto structIt = genericStructTemplates_.find(baseName);
+        if (structIt != genericStructTemplates_.end()) {
+            return instantiateGenericStruct(baseName, structIt->second, typeArgs);
+        }
+
+        auto unionIt = genericUnionTemplates_.find(baseName);
+        if (unionIt != genericUnionTemplates_.end()) {
+            return instantiateGenericUnion(baseName, unionIt->second, typeArgs);
+        }
+
+        return nullptr;
+    }
+
+    if (auto* qspi = dynamic_cast<LuxParser::QualifiedStructPosInitExprContext*>(ctx)) {
+        if (qspi->IDENTIFIER().size() >= 2) return typeRegistry_.lookup(qspi->IDENTIFIER(1)->getText());
+        return nullptr;
+    }
+
+    if (auto* qsni = dynamic_cast<LuxParser::QualifiedStructNamedInitExprContext*>(ctx)) {
+        if (qsni->IDENTIFIER().size() >= 2) return typeRegistry_.lookup(qsni->IDENTIFIER(1)->getText());
         return nullptr;
     }
 
@@ -12755,6 +13161,23 @@ const TypeInfo* IRGen::resolveExprTypeInfo(LuxParser::ExpressionContext* ctx) {
         auto baseName = ids[0]->getText();
         std::vector<const TypeInfo*> typeArgs;
         for (auto* ts : genv->typeSpec()) {
+            auto* argTI = resolveTypeInfo(ts);
+            if (!argTI) argTI = typeRegistry_.lookup("int32");
+            typeArgs.push_back(argTI);
+        }
+        auto enumIt = genericEnumTemplates_.find(baseName);
+        if (enumIt != genericEnumTemplates_.end()) {
+            return instantiateGenericEnum(baseName, enumIt->second, typeArgs);
+        }
+
+        return nullptr;
+    }
+
+    if (auto* gepv = dynamic_cast<LuxParser::GenericEnumPosVariantExprContext*>(ctx)) {
+        auto ids = gepv->IDENTIFIER();
+        auto baseName = ids[0]->getText();
+        std::vector<const TypeInfo*> typeArgs;
+        for (auto* ts : gepv->typeSpec()) {
             auto* argTI = resolveTypeInfo(ts);
             if (!argTI) argTI = typeRegistry_.lookup("int32");
             typeArgs.push_back(argTI);
@@ -18206,6 +18629,114 @@ std::any IRGen::visitGenericStructLitExpr(LuxParser::GenericStructLitExprContext
     }
 
     // Return the value by loading the struct
+    return static_cast<llvm::Value*>(
+        builder_->CreateLoad(structLLTy, alloca, "generic_struct_lit"));
+}
+
+// ── Generic struct positional init: Name<T> { expr, expr, ... } ──────
+
+std::any IRGen::visitGenericStructPosInitExpr(LuxParser::GenericStructPosInitExprContext* ctx) {
+    auto baseName = ctx->IDENTIFIER()->getText();
+
+    std::vector<const TypeInfo*> typeArgs;
+    for (auto* ts : ctx->typeSpec()) {
+        auto* argTI = resolveTypeInfo(ts);
+        if (!argTI) argTI = typeRegistry_.lookup("int32");
+        typeArgs.push_back(argTI);
+    }
+
+    auto structIt = genericStructTemplates_.find(baseName);
+    auto unionIt = genericUnionTemplates_.find(baseName);
+    if (structIt == genericStructTemplates_.end() &&
+        unionIt == genericUnionTemplates_.end()) {
+        std::cerr << "lux: '" << baseName << "' is not a generic struct or union\n";
+        return static_cast<llvm::Value*>(
+            llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
+    }
+    const TypeInfo* instanceTI = nullptr;
+    if (structIt != genericStructTemplates_.end())
+        instanceTI = instantiateGenericStruct(baseName, structIt->second, typeArgs);
+    else
+        instanceTI = instantiateGenericUnion(baseName, unionIt->second, typeArgs);
+    if (!instanceTI) {
+        return static_cast<llvm::Value*>(
+            llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
+    }
+
+    auto mangledName = mangleGenericName(baseName, typeArgs);
+    auto* structLLTy = llvm::StructType::getTypeByName(*context_, mangledName);
+    if (!structLLTy && instanceTI->kind == TypeKind::Struct) {
+        structLLTy = ensureGenericStructType(mangledName, instanceTI);
+    }
+
+    auto exprs = ctx->expression();
+
+    if (instanceTI->kind == TypeKind::Union) {
+        if (!structLLTy) {
+            std::cerr << "lux: generic union LLVM type missing for '" << mangledName << "'\n";
+            return static_cast<llvm::Value*>(
+                llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
+        }
+
+        auto* alloca = builder_->CreateAlloca(structLLTy, nullptr, mangledName + ".tmp");
+        if (!exprs.empty()) {
+            auto* fieldTI = instanceTI->fields[0].typeInfo;
+            if (fieldTI) {
+                auto* val = castValue(visit(exprs[0]));
+                auto* fieldLLTy = fieldTI->toLLVMType(*context_, module_->getDataLayout());
+                if (val->getType() != fieldLLTy) {
+                    if (val->getType()->isIntegerTy() && fieldLLTy->isIntegerTy())
+                        val = builder_->CreateIntCast(val, fieldLLTy, true);
+                    else if (val->getType()->isFloatingPointTy() && fieldLLTy->isFloatingPointTy()) {
+                        if (val->getType()->getPrimitiveSizeInBits() > fieldLLTy->getPrimitiveSizeInBits())
+                            val = builder_->CreateFPTrunc(val, fieldLLTy);
+                        else
+                            val = builder_->CreateFPExt(val, fieldLLTy);
+                    }
+                }
+                builder_->CreateStore(val, alloca);
+            }
+        }
+
+        return static_cast<llvm::Value*>(
+            builder_->CreateLoad(structLLTy, alloca, "generic_union_lit"));
+    }
+
+    // Allocate the struct on the stack
+    auto* alloca = builder_->CreateAlloca(structLLTy, nullptr, mangledName + ".tmp");
+
+    // Initialize all fields to zero first
+    for (unsigned i = 0; i < instanceTI->fields.size(); i++) {
+        auto* fieldTI = instanceTI->fields[i].typeInfo;
+        auto* fieldLLTy = fieldTI->toLLVMType(*context_, module_->getDataLayout());
+        auto* gep = builder_->CreateStructGEP(structLLTy, alloca, i);
+        builder_->CreateStore(llvm::Constant::getNullValue(fieldLLTy), gep);
+    }
+
+    // Apply provided field initializers by position
+    for (size_t i = 0; i < exprs.size() && i < instanceTI->fields.size(); i++) {
+        auto* fieldTI = instanceTI->fields[i].typeInfo;
+        auto* fieldLLTy = fieldTI->toLLVMType(*context_, module_->getDataLayout());
+        auto* gep = builder_->CreateStructGEP(structLLTy, alloca, static_cast<unsigned>(i));
+        llvm::Value* val = nullptr;
+        if (fieldTI && fieldTI->kind == TypeKind::Extended &&
+            fieldTI->extendedKind == "Vec") {
+            if (auto* arrLit = dynamic_cast<LuxParser::ArrayLitExprContext*>(exprs[i])) {
+                val = buildVecValueFromArrayLiteral(arrLit, fieldTI,
+                                                    mangledName + "_pos_vec");
+            }
+        }
+        if (!val)
+            val = castValue(visit(exprs[i]));
+        if (val->getType() != fieldLLTy) {
+            if (val->getType()->isIntegerTy() && fieldLLTy->isIntegerTy())
+                val = builder_->CreateIntCast(val, fieldLLTy, true);
+            else if (val->getType()->isPointerTy() && fieldLLTy->isPointerTy())
+                ; // ok — opaque pointers
+        }
+        builder_->CreateStore(val, gep);
+    }
+
     return static_cast<llvm::Value*>(
         builder_->CreateLoad(structLLTy, alloca, "generic_struct_lit"));
 }
