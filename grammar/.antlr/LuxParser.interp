@@ -2,7 +2,7 @@ token literal names:
 null
 'namespace'
 'use'
-'ret'
+null
 'struct'
 'union'
 'enum'

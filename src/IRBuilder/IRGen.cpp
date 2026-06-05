@@ -428,14 +428,15 @@ std::any IRGen::visitProgram(LuxParser::ProgramContext* ctx) {
                 visit(decl);
         }
     }
+    // Register extern (FFI) function declarations
+    // Must come BEFORE extend blocks so methods can call extern functions.
+    for (auto* decl : ctx->topLevelDecl()) {
+        if (decl->externDecl())
+            visit(decl);
+    }
     // Register struct methods via `extend` blocks
     for (auto* decl : ctx->topLevelDecl()) {
         if (decl->extendDecl())
-            visit(decl);
-    }
-    // Register extern (FFI) function declarations
-    for (auto* decl : ctx->topLevelDecl()) {
-        if (decl->externDecl())
             visit(decl);
     }
     // Forward-declare all user functions (signatures only)
