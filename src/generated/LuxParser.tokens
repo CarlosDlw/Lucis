@@ -131,7 +131,6 @@ LINE_COMMENT=130
 BLOCK_COMMENT=131
 'namespace'=1
 'use'=2
-'ret'=3
 'struct'=4
 'union'=5
 'enum'=6

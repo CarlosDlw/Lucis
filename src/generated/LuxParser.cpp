@@ -1,5 +1,5 @@
 
-// Generated from /home/carlos/Projects/Cpp/Lux/grammar/LuxParser.g4 by ANTLR 4.13.2
+// Generated from LuxParser.g4 by ANTLR 4.13.2
 
 
 #include "LuxParserVisitor.h"
@@ -69,9 +69,9 @@ void luxparserParserInitialize() {
       "typeSpec", "fnTypeSpec", "primitiveType"
     },
     std::vector<std::string>{
-      "", "'namespace'", "'use'", "'ret'", "'struct'", "'union'", "'enum'", 
-      "'null'", "'fn'", "'type'", "'as'", "'is'", "'sizeof'", "'typeof'", 
-      "'if'", "'else'", "'for'", "'in'", "'loop'", "'while'", "'do'", "'break'", 
+      "", "'namespace'", "'use'", "", "'struct'", "'union'", "'enum'", "'null'", 
+      "'fn'", "'type'", "'as'", "'is'", "'sizeof'", "'typeof'", "'if'", 
+      "'else'", "'for'", "'in'", "'loop'", "'while'", "'do'", "'break'", 
       "'continue'", "'switch'", "'case'", "'default'", "'spawn'", "'await'", 
       "'lock'", "'extend'", "'try'", "'catch'", "'finally'", "'throw'", 
       "'defer'", "'extern'", "'auto'", "'vec'", "'map'", "'set'", "'tuple'", 

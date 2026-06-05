@@ -3,7 +3,7 @@ lexer grammar LuxLexer;
 // Keywords
 NAMESPACE : 'namespace';
 USE       : 'use';
-RET       : 'ret';
+RET       : 'ret' | 'return';
 STRUCT    : 'struct';
 UNION     : 'union';
 ENUM      : 'enum';
