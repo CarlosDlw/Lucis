@@ -1384,7 +1384,8 @@ static CompletionItem buildMethodItem(const MethodDescriptor &md,
 std::vector<CompletionItem>
 CompletionProvider::complete(const std::string &source, size_t line, size_t col,
                              const std::string &filePath,
-                             const ProjectContext *project) {
+                             const ProjectContext *project,
+                             ParseResult* preParsed) {
 
   // 1) Analyze context from raw text (works even with incomplete code)
   auto req = analyzeContext(source, line, col, nullptr);
@@ -1410,25 +1411,32 @@ CompletionProvider::complete(const std::string &source, size_t line, size_t col,
     return items;
   }
 
-  // 2) Try parsing raw source first (fast path). Fallback to a patched source
-  //    only when the current line is incomplete and breaks parsing.
-  auto parsed = Parser::parseString(source);
-  if (!parsed.tree) {
-    std::string patchedSource;
-    std::istringstream ss(source);
-    std::string ln;
-    size_t lineIdx = 0;
-    while (std::getline(ss, ln)) {
-      if (lineIdx == line)
-        patchedSource += "// <completion>\n";
-      else
-        patchedSource += ln + "\n";
-      lineIdx++;
+  // 2) Parse (use cached result if available)
+  ParseResult localParseStorage;
+  ParseResult* parsed;
+  if (preParsed) {
+    parsed = preParsed;
+  } else {
+    localParseStorage = Parser::parseString(source);
+    parsed = &localParseStorage;
+    if (!parsed->tree) {
+      // Fallback: patch the incomplete line with a comment to avoid syntax errors
+      std::string patchedSource;
+      std::istringstream ss(source);
+      std::string ln;
+      size_t lineIdx = 0;
+      while (std::getline(ss, ln)) {
+        if (lineIdx == line)
+          patchedSource += "// <completion>\n";
+        else
+          patchedSource += ln + "\n";
+        lineIdx++;
+      }
+      localParseStorage = Parser::parseString(patchedSource);
+      parsed = &localParseStorage;
+      if (!parsed->tree)
+        return {};
     }
-
-    parsed = Parser::parseString(patchedSource);
-    if (!parsed.tree)
-      return {};
   }
 
   // Resolve C headers
@@ -1437,7 +1445,7 @@ CompletionProvider::complete(const std::string &source, size_t line, size_t col,
   if (project && project->isValid()) {
     cBindingsPtr = &project->cBindings();
   } else {
-    auto includeFingerprint = buildIncludeFingerprint(parsed.tree);
+    auto includeFingerprint = buildIncludeFingerprint(parsed->tree);
     if (hasIncludeBindingsCache_ &&
         includeFingerprint == includeFingerprintCache_) {
       cBindingsPtr = &includeBindingsCache_;
@@ -1445,7 +1453,7 @@ CompletionProvider::complete(const std::string &source, size_t line, size_t col,
       CBindings localBindings;
       TypeRegistry cTypeReg;
       std::vector<LuxParser::IncludeDeclContext *> includes;
-      for (auto *pre : parsed.tree->preambleDecl())
+      for (auto *pre : parsed->tree->preambleDecl())
         if (auto *inc = pre->includeDecl())
           includes.push_back(inc);
 
@@ -1480,11 +1488,11 @@ CompletionProvider::complete(const std::string &source, size_t line, size_t col,
     if (req.receiverType.empty()) {
       std::string varType;
       if (!req.receiverVar.empty()) {
-        varType = inferVarType(req.receiverVar, parsed.tree, line, cBindingsPtr,
+        varType = inferVarType(req.receiverVar, parsed->tree, line, cBindingsPtr,
                                project);
       } else if (!req.receiverCall.empty()) {
         FuncLookupCtx flc;
-        flc.tree = parsed.tree;
+        flc.tree = parsed->tree;
         flc.bindings = cBindingsPtr;
         flc.builtinReg = &builtinRegistry_;
         flc.extTypeReg = &extTypeRegistry_;
@@ -1498,7 +1506,7 @@ CompletionProvider::complete(const std::string &source, size_t line, size_t col,
         // First, resolve type alias to its underlying type string
         // by checking type alias declarations in the tree
         std::string resolved = varType;
-        for (auto *tld : parsed.tree->topLevelDecl()) {
+        for (auto *tld : parsed->tree->topLevelDecl()) {
           if (auto *ta = tld->typeAliasDecl()) {
             if (ta->IDENTIFIER() && ta->IDENTIFIER()->getText() == resolved &&
                 ta->typeSpec()) {
@@ -1523,9 +1531,9 @@ CompletionProvider::complete(const std::string &source, size_t line, size_t col,
       if (!req.methodChain.empty() && !varType.empty()) {
         for (auto &memberName : req.methodChain) {
           std::string retType = resolveMethodReturnType(varType, memberName,
-                                                        parsed.tree, project);
+                                                        parsed->tree, project);
           if (retType.empty()) {
-            retType = resolveFieldType(varType, memberName, parsed.tree,
+            retType = resolveFieldType(varType, memberName, parsed->tree,
                                        cBindingsPtr, project);
           }
           if (retType.empty())
@@ -1548,31 +1556,31 @@ CompletionProvider::complete(const std::string &source, size_t line, size_t col,
   switch (req.context) {
   case CompletionContext::DotAccess:
   case CompletionContext::ArrowAccess: {
-    addStructFields(items, req.receiverType, parsed.tree, *cBindingsPtr,
+    addStructFields(items, req.receiverType, parsed->tree, *cBindingsPtr,
                     project);
-    addExtendMethods(items, req.receiverType, parsed.tree, project);
+    addExtendMethods(items, req.receiverType, parsed->tree, project);
     addTypeMethods(items, req.receiverType, req.prefix);
     break;
   }
   case CompletionContext::ScopeAccess: {
-    addEnumVariants(items, req.scopeName, parsed.tree, *cBindingsPtr, project,
+    addEnumVariants(items, req.scopeName, parsed->tree, *cBindingsPtr, project,
                     req.prefix);
-    addStaticMethods(items, req.scopeName, parsed.tree, project, req.prefix);
+    addStaticMethods(items, req.scopeName, parsed->tree, project, req.prefix);
     break;
   }
   case CompletionContext::TypePosition: {
-    addTypeNames(items, parsed.tree, *cBindingsPtr, project, req.prefix);
+    addTypeNames(items, parsed->tree, *cBindingsPtr, project, req.prefix);
     break;
   }
   case CompletionContext::General: {
-    addLocals(items, parsed.tree, line, *cBindingsPtr, req.prefix);
-    addLocalDecls(items, parsed.tree, req.prefix);
+    addLocals(items, parsed->tree, line, *cBindingsPtr, req.prefix);
+    addLocalDecls(items, parsed->tree, req.prefix);
     addProjectSymbols(items, project, filePath, req.prefix);
-    addImportedSymbols(items, parsed.tree, project, req.prefix);
+    addImportedSymbols(items, parsed->tree, project, req.prefix);
     addGlobalBuiltins(items, req.prefix);
     addCSymbols(items, *cBindingsPtr, req.prefix);
     addKeywords(items, req.prefix);
-    addTypeNames(items, parsed.tree, *cBindingsPtr, project, req.prefix);
+    addTypeNames(items, parsed->tree, *cBindingsPtr, project, req.prefix);
     break;
   }
   }

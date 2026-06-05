@@ -4,6 +4,8 @@
 #include <vector>
 #include <cstdint>
 
+struct ParseResult;
+
 // LSP Semantic Token Types (indices into the legend array)
 enum class SemanticTokenType : uint32_t {
     Namespace  = 0,
@@ -48,7 +50,8 @@ struct RawSemanticToken {
 class SemanticTokensProvider {
 public:
     // Returns delta-encoded semantic tokens for the full document.
-    std::vector<uint32_t> tokenize(const std::string& source);
+    std::vector<uint32_t> tokenize(const std::string& source,
+                                   ParseResult* preParsed = nullptr);
 
     // Token type legend (order must match SemanticTokenType enum).
     static const std::vector<std::string>& tokenTypes();

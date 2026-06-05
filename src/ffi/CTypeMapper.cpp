@@ -231,11 +231,37 @@ const TypeInfo* CTypeMapper::mapStruct(CXCursor structCursor) {
         registry_.registerType(skeleton);
     }
 
-    // For unions: use byte-size representation (unions have overlapping fields
-    // that cannot be represented as a flat LLVM struct)
+    // For unions: use byte-size representation for codegen (overlapping fields),
+    // but still extract field metadata so the checker can resolve field access
+    // like `event.type`.
     if (isUnion) {
         long long byteSize = clang_Type_getSizeOf(
             clang_getCursorType(structCursor));
+
+        // Extract fields for name/type resolution
+        std::vector<FieldInfo> fields;
+        struct UnionFieldData {
+            CTypeMapper* mapper;
+            std::vector<FieldInfo>* fields;
+        };
+        UnionFieldData ufd = { this, &fields };
+        clang_visitChildren(structCursor,
+            [](CXCursor child, CXCursor /*parent*/, CXClientData data)
+                -> CXChildVisitResult {
+                auto* ufd = static_cast<UnionFieldData*>(data);
+                if (clang_getCursorKind(child) != CXCursor_FieldDecl)
+                    return CXChildVisit_Continue;
+                CXType fieldType = clang_getCursorType(child);
+                CXString cxFieldName = clang_getCursorSpelling(child);
+                std::string fieldName = clang_getCString(cxFieldName);
+                clang_disposeString(cxFieldName);
+                const TypeInfo* fieldTI = ufd->mapper->map(fieldType);
+                if (fieldTI)
+                    ufd->fields->push_back({fieldName, fieldTI});
+                return CXChildVisit_Continue;
+            },
+            &ufd
+        );
 
         TypeInfo ti;
         ti.name = name;
@@ -249,6 +275,7 @@ const TypeInfo* CTypeMapper::mapStruct(CXCursor structCursor) {
         cs.name = name;
         cs.byteSize = (byteSize > 0)
                           ? static_cast<unsigned>(byteSize) : 0;
+        cs.fields = std::move(fields);
         bindings_.addStruct(std::move(cs));
 
         return registry_.lookup(name);

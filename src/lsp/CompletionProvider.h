@@ -14,6 +14,7 @@
 #include "types/ExtendedTypeRegistry.h"
 #include "imports/ImportResolver.h"
 
+struct ParseResult;
 class ProjectContext;
 
 // LSP CompletionItemKind values
@@ -69,7 +70,8 @@ public:
     // Returns completions at the given 0-based line:col.
     std::vector<CompletionItem> complete(
         const std::string& source, size_t line, size_t col,
-        const std::string& filePath, const ProjectContext* project);
+        const std::string& filePath, const ProjectContext* project,
+        ParseResult* preParsed = nullptr);
 
     // Lightweight variable info.
     struct LocalVar {

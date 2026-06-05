@@ -472,13 +472,15 @@ SignatureInfo SignatureHelpProvider::buildFromExtMethod(
 std::optional<SignatureHelpResult>
 SignatureHelpProvider::signatureHelp(
         const std::string& source, size_t line, size_t col,
-        const std::string& filePath, const ProjectContext* project) {
+        const std::string& filePath, const ProjectContext* project,
+        ParseResult* preParsed) {
     // Analyze call site from raw text.
     auto site = analyzeCallSite(source, line, col);
     if (!site) return std::nullopt;
 
     // Parse the source for AST-based lookups.
-    auto parsed = Parser::parseString(source);
+    ParseResult localParseStorage;
+    auto& parsed = preParsed ? *preParsed : (localParseStorage = Parser::parseString(source), localParseStorage);
     if (!parsed.tree) return std::nullopt;
 
     // Parse doc-comments.

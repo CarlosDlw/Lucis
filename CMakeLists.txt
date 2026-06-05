@@ -255,6 +255,7 @@ set(SOURCES
     src/lsp/DefinitionProvider.cpp
     src/lsp/CompletionProvider.cpp
     src/lsp/DocComment.cpp
+    src/lsp/ParseCache.cpp
     src/lsp/SignatureHelpProvider.cpp
     src/lsp/SemanticTokensProvider.cpp
     src/lsp/ProjectContext.cpp

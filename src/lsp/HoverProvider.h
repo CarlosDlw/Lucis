@@ -15,6 +15,7 @@
 #include "ffi/CBindings.h"
 #include "lsp/DocComment.h"
 
+struct ParseResult;
 class ProjectContext;
 
 // Result of a hover query — markdown content + token range.
@@ -32,13 +33,15 @@ class HoverProvider {
 public:
     // Returns hover info for the given 0-based line:col position.
     std::optional<HoverResult> hover(const std::string& source,
-                                     size_t line, size_t col);
+                                     size_t line, size_t col,
+                                     ParseResult* preParsed = nullptr);
 
     // Returns hover info with full project context (cross-file symbols).
     std::optional<HoverResult> hover(const std::string& source,
                                      size_t line, size_t col,
                                      const std::string& filePath,
-                                     const ProjectContext* project);
+                                     const ProjectContext* project,
+                                     ParseResult* preParsed = nullptr);
 
     // Lightweight variable info collected from AST (no Checker needed).
     struct LocalVar {

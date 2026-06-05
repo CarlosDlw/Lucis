@@ -7,6 +7,7 @@
 #include "generated/LuxParser.h"
 #include "ffi/CBindings.h"
 
+struct ParseResult;
 class ProjectContext;
 
 // Result of a go-to-definition query — target location.
@@ -26,7 +27,8 @@ public:
     std::optional<DefinitionResult> definition(
         const std::string& source, size_t line, size_t col,
         const std::string& filePath,
-        const ProjectContext* project);
+        const ProjectContext* project,
+        ParseResult* preParsed = nullptr);
 
     // Lightweight variable info (reused from HoverProvider pattern).
     struct LocalVar {

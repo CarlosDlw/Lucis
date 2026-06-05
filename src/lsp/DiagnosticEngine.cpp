@@ -41,11 +41,13 @@ static Diagnostic parseCheckerError(const std::string& err) {
     return d;
 }
 
-std::vector<Diagnostic> DiagnosticEngine::run(const std::string& source) {
+std::vector<Diagnostic> DiagnosticEngine::run(const std::string& source,
+                                               ParseResult* preParsed) {
     std::vector<Diagnostic> result;
 
     // Step 1: Parse
-    auto parsed = Parser::parseString(source);
+    ParseResult localParseStorage;
+    auto& parsed = preParsed ? *preParsed : (localParseStorage = Parser::parseString(source), localParseStorage);
 
     // Collect parse errors (syntax errors are always valid without project context)
     for (auto& d : parsed.diagnostics) {
@@ -94,14 +96,16 @@ std::vector<Diagnostic> DiagnosticEngine::run(const std::string& source) {
 
 std::vector<Diagnostic> DiagnosticEngine::run(const std::string& source,
                                                const std::string& filePath,
-                                               const ProjectContext* project) {
+                                               const ProjectContext* project,
+                                               ParseResult* preParsed) {
     if (!project || !project->isValid())
-        return run(source);
+        return run(source, preParsed);
 
     std::vector<Diagnostic> result;
 
     // Step 1: Parse
-    auto parsed = Parser::parseString(source);
+    ParseResult localParseStorage;
+    auto& parsed = preParsed ? *preParsed : (localParseStorage = Parser::parseString(source), localParseStorage);
 
     for (auto& d : parsed.diagnostics) {
         result.push_back(std::move(d));
@@ -118,29 +122,29 @@ std::vector<Diagnostic> DiagnosticEngine::run(const std::string& source,
         // Use project-wide C bindings.
         checker.setCBindings(&project->cBindings());
 
-        // Also resolve C headers from the current file's source
-        // (in case the in-memory source has new includes not yet in the project).
-        CBindings localBindings;
-        TypeRegistry localTypeReg;
-        std::vector<LuxParser::IncludeDeclContext*> includes;
-        for (auto* pre : parsed.tree->preambleDecl())
-            if (auto* inc = pre->includeDecl()) includes.push_back(inc);
-        if (!includes.empty()) {
-            CHeaderResolver resolver(localTypeReg, localBindings);
-            for (auto* incl : includes) {
-                auto text = incl->getText();
-                if (incl->INCLUDE_SYS()) {
-                    auto header = CHeaderResolver::extractSystemHeader(text);
-                    if (!header.empty())
-                        resolver.resolveSystemHeader(header);
-                } else if (incl->INCLUDE_LOCAL()) {
-                    auto header = CHeaderResolver::extractLocalHeader(text);
-                    if (!header.empty())
-                        resolver.resolveLocalHeader(header, ".");
+        // Only resolve C headers locally if the project doesn't already have bindings.
+        // This avoids re-parsing C headers on every keystroke when the project
+        // context already scanned them.
+        if (project->cBindings().functions().empty()) {
+            CBindings localBindings;
+            TypeRegistry localTypeReg;
+            std::vector<LuxParser::IncludeDeclContext*> includes;
+            for (auto* pre : parsed.tree->preambleDecl())
+                if (auto* inc = pre->includeDecl()) includes.push_back(inc);
+            if (!includes.empty()) {
+                CHeaderResolver resolver(localTypeReg, localBindings);
+                for (auto* incl : includes) {
+                    auto text = incl->getText();
+                    if (incl->INCLUDE_SYS()) {
+                        auto header = CHeaderResolver::extractSystemHeader(text);
+                        if (!header.empty())
+                            resolver.resolveSystemHeader(header);
+                    } else if (incl->INCLUDE_LOCAL()) {
+                        auto header = CHeaderResolver::extractLocalHeader(text);
+                        if (!header.empty())
+                            resolver.resolveLocalHeader(header, ".");
+                    }
                 }
-            }
-            // If we didn't get project-level bindings, use local ones.
-            if (project->cBindings().functions().empty()) {
                 checker.setCBindings(&localBindings);
             }
         }

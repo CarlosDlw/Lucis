@@ -159,8 +159,9 @@ static void collectLocalsFromBlock(
 // ═══════════════════════════════════════════════════════════════════════
 
 std::optional<HoverResult> HoverProvider::hover(const std::string& source,
-                                                 size_t line, size_t col) {
-    return hover(source, line, col, "", nullptr);
+                                                 size_t line, size_t col,
+                                                 ParseResult* preParsed) {
+    return hover(source, line, col, "", nullptr, preParsed);
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -170,8 +171,10 @@ std::optional<HoverResult> HoverProvider::hover(const std::string& source,
 std::optional<HoverResult> HoverProvider::hover(const std::string& source,
                                                  size_t line, size_t col,
                                                  const std::string& filePath,
-                                                 const ProjectContext* project) {
-    auto parsed = Parser::parseString(source);
+                                                 const ProjectContext* project,
+                                                 ParseResult* preParsed) {
+    ParseResult localParseStorage;
+    auto& parsed = preParsed ? *preParsed : (localParseStorage = Parser::parseString(source), localParseStorage);
     if (!parsed.tree) return std::nullopt;
 
     // Parse doc-comments from raw source for hover enrichment.

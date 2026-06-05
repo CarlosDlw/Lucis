@@ -9,6 +9,7 @@
 #include "lsp/SemanticTokensProvider.h"
 #include "lsp/SignatureHelpProvider.h"
 #include "lsp/ProjectContext.h"
+#include "lsp/ParseCache.h"
 
 #include <stdio.h>
 #ifndef EOF
@@ -16,6 +17,7 @@
 #endif
 #include <nlohmann/json.hpp>
 #include <string>
+#include <unordered_map>
 
 using json = nlohmann::json;
 
@@ -34,6 +36,15 @@ private:
     SemanticTokensProvider semanticTokensProvider_;
     SignatureHelpProvider signatureHelpProvider_;
     ProjectContext   projectContext_;
+    ParseCache       parseCache_;
+
+    // Semantic tokens cache: URI → {source, tokens}
+    struct CachedTokens {
+        std::string source;
+        std::vector<uint32_t> tokens;
+    };
+    std::unordered_map<std::string, CachedTokens> cachedTokens_;
+
     bool             initialized_ = false;
     bool             shutdown_    = false;
 

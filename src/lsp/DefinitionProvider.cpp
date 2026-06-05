@@ -173,9 +173,11 @@ static void collectLocalsFromBlock(
 
 std::optional<DefinitionResult> DefinitionProvider::definition(
     const std::string& source, size_t line, size_t col,
-    const std::string& filePath, const ProjectContext* project) {
+    const std::string& filePath, const ProjectContext* project,
+    ParseResult* preParsed) {
 
-    auto parsed = Parser::parseString(source);
+    ParseResult localParseStorage;
+    auto& parsed = preParsed ? *preParsed : (localParseStorage = Parser::parseString(source), localParseStorage);
     if (!parsed.tree) return std::nullopt;
 
     // Resolve C headers

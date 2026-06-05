@@ -26,4 +26,10 @@ public:
 
     // Parse from a string in memory (LSP mode — errors collected in result.diagnostics).
     static ParseResult parseString(const std::string& source);
+
+private:
+    // After lexing, change TYPE tokens to IDENTIFIER when they appear after
+    // DOT (.) or ARROW (->). This lets `event.type` parse correctly without
+    // making `type` a fully unreserved keyword.
+    static void fixContextualKeywords(antlr4::CommonTokenStream* tokens);
 };

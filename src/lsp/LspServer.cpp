@@ -242,6 +242,7 @@ void LspServer::handleDidOpen(const json& msg) {
     std::string text = td["text"];
 
     documents_.open(uri, text);
+    parseCache_.invalidate(uri);
     std::cerr << "[lux-lsp] opened: " << uri << "\n";
 
     std::string filePath = DocumentStore::uriToPath(uri);
@@ -259,6 +260,8 @@ void LspServer::handleDidSave(const json& msg) {
     if (params.contains("text")) {
         text = params["text"];
         documents_.update(uri, text);
+        parseCache_.invalidate(uri);
+        cachedTokens_.erase(uri);
     } else {
         text = documents_.get(uri);
     }
@@ -282,6 +285,8 @@ void LspServer::handleDidChange(const json& msg) {
 
     std::string text = changes[0]["text"];
     documents_.update(uri, text);
+    parseCache_.invalidate(uri);
+    cachedTokens_.erase(uri);
 
     publishDiagnostics(uri, text);
 }
@@ -291,6 +296,8 @@ void LspServer::handleDidClose(const json& msg) {
     std::string uri = params["textDocument"]["uri"];
 
     documents_.close(uri);
+    parseCache_.invalidate(uri);
+    cachedTokens_.erase(uri);
     std::cerr << "[lux-lsp] closed: " << uri << "\n";
 
     // Clear diagnostics for the closed file
@@ -307,9 +314,11 @@ void LspServer::handleDidClose(const json& msg) {
 void LspServer::publishDiagnostics(const std::string& uri,
                                     const std::string& source) {
     std::string filePath = DocumentStore::uriToPath(uri);
+    auto* cached = parseCache_.getOrParse(uri, source);
     auto diags = diagnosticEngine_.run(source, filePath,
                                         projectContext_.isValid()
-                                            ? &projectContext_ : nullptr);
+                                            ? &projectContext_ : nullptr,
+                                        cached);
 
     json lspDiags = json::array();
     for (auto& d : diags) {
@@ -357,9 +366,11 @@ void LspServer::handleHover(const json& msg) {
     if (filePath.rfind("file://", 0) == 0)
         filePath = filePath.substr(7);
 
+    auto* cached = parseCache_.getOrParse(uri, source);
     auto result = hoverProvider_.hover(source, line, col, filePath,
-                                       projectContext_.isValid()
-                                           ? &projectContext_ : nullptr);
+                                        projectContext_.isValid()
+                                            ? &projectContext_ : nullptr,
+                                        cached);
     if (!result) {
         sendResponse(msg["id"], nullptr);
         return;
@@ -396,9 +407,11 @@ void LspServer::handleDefinition(const json& msg) {
         if (filePath.rfind("file://", 0) == 0)
             filePath = filePath.substr(7);
 
+        auto* cached = parseCache_.getOrParse(uri, source);
         auto result = definitionProvider_.definition(source, line, col, filePath,
-                                                     projectContext_.isValid()
-                                                         ? &projectContext_ : nullptr);
+                                                      projectContext_.isValid()
+                                                          ? &projectContext_ : nullptr,
+                                                      cached);
         if (!result) {
             sendResponse(msg["id"], nullptr);
             return;
@@ -439,9 +452,11 @@ void LspServer::handleCompletion(const json& msg) {
         if (filePath.rfind("file://", 0) == 0)
             filePath = filePath.substr(7);
 
+        auto* cached = parseCache_.getOrParse(uri, source);
         auto items = completionProvider_.complete(
             source, line, col, filePath,
-            projectContext_.isValid() ? &projectContext_ : nullptr);
+            projectContext_.isValid() ? &projectContext_ : nullptr,
+            cached);
 
         json result = json::array();
         for (auto& item : items) {
@@ -498,9 +513,11 @@ void LspServer::handleSignatureHelp(const json& msg) {
         if (filePath.rfind("file://", 0) == 0)
             filePath = filePath.substr(7);
 
+        auto* cached = parseCache_.getOrParse(uri, source);
         auto result = signatureHelpProvider_.signatureHelp(
             source, line, col, filePath,
-            projectContext_.isValid() ? &projectContext_ : nullptr);
+            projectContext_.isValid() ? &projectContext_ : nullptr,
+            cached);
 
         if (!result) {
             sendResponse(msg["id"], nullptr);
@@ -558,7 +575,17 @@ void LspServer::handleSemanticTokensFull(const json& msg) {
             return;
         }
 
-        auto data = semanticTokensProvider_.tokenize(source);
+        // Check semantic tokens cache first
+        auto tokIt = cachedTokens_.find(uri);
+        if (tokIt != cachedTokens_.end() && tokIt->second.source == source) {
+            sendResponse(msg["id"], {{"data", tokIt->second.tokens}});
+            return;
+        }
+
+        // Parse and tokenize, then cache
+        auto* cached = parseCache_.getOrParse(uri, source);
+        auto data = semanticTokensProvider_.tokenize(source, cached);
+        cachedTokens_[uri] = {source, data};
 
         sendResponse(msg["id"], {{"data", data}});
     } catch (const std::exception& e) {

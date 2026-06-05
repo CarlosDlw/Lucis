@@ -650,13 +650,15 @@ static void collectComments(std::vector<RawSemanticToken>& out,
 //  Main tokenize
 // ═══════════════════════════════════════════════════════════════════════
 
-std::vector<uint32_t> SemanticTokensProvider::tokenize(const std::string& source) {
+std::vector<uint32_t> SemanticTokensProvider::tokenize(const std::string& source,
+                                                        ParseResult* preParsed) {
     if (source.empty()) return {};
 
     std::vector<RawSemanticToken> raw;
 
     // 1. Parse with ANTLR
-    auto pr = Parser::parseString(source);
+    ParseResult localParseStorage;
+    auto& pr = preParsed ? *preParsed : (localParseStorage = Parser::parseString(source), localParseStorage);
     if (!pr.tree) return {};
 
     // 2. Walk parse tree to classify identifiers by context

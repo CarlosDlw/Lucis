@@ -12,6 +12,7 @@
 #include "ffi/CBindings.h"
 #include "lsp/DocComment.h"
 
+struct ParseResult;
 class ProjectContext;
 
 // A single parameter in a signature.
@@ -39,7 +40,8 @@ class SignatureHelpProvider {
 public:
     std::optional<SignatureHelpResult> signatureHelp(
         const std::string& source, size_t line, size_t col,
-        const std::string& filePath, const ProjectContext* project);
+        const std::string& filePath, const ProjectContext* project,
+        ParseResult* preParsed = nullptr);
 
 private:
     BuiltinRegistry      builtinRegistry_;

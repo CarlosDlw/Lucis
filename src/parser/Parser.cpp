@@ -26,12 +26,29 @@ ParseResult Parser::parse(const std::string& filePath) {
     result.parser->removeErrorListeners();
     result.parser->addErrorListener(&errorListener);
 
+    fixContextualKeywords(result.tokens.get());
+
     result.tree = result.parser->program();
 
     result.hasErrors = result.parser->getNumberOfSyntaxErrors() > 0
                     || result.lexer->getNumberOfSyntaxErrors()  > 0;
 
     return result;
+}
+
+void Parser::fixContextualKeywords(antlr4::CommonTokenStream* tokens) {
+    tokens->fill();
+    auto allTokens = tokens->getTokens();
+    for (size_t i = 1; i < allTokens.size(); i++) {
+        auto* curr = allTokens[i];
+        if (curr->getType() != LuxLexer::TYPE) continue;
+        auto* prev = allTokens[i - 1];
+        if (prev->getType() == LuxLexer::DOT || prev->getType() == LuxLexer::ARROW) {
+            if (auto* w = dynamic_cast<antlr4::WritableToken*>(curr)) {
+                w->setType(LuxLexer::IDENTIFIER);
+            }
+        }
+    }
 }
 
 ParseResult Parser::parseString(const std::string& source) {
@@ -41,6 +58,8 @@ ParseResult Parser::parseString(const std::string& source) {
     result.lexer  = std::make_unique<LuxLexer>(result.input.get());
     result.tokens = std::make_unique<antlr4::CommonTokenStream>(result.lexer.get());
     result.parser = std::make_unique<LuxParser>(result.tokens.get());
+
+    fixContextualKeywords(result.tokens.get());
 
     // Collect-mode listener: errors stored in result.diagnostics
     auto errorListener = std::make_unique<DiagnosticErrorListener>();
