@@ -14334,14 +14334,101 @@ void IRGen::emitCleanupForLocal(const std::string& name, const VarInfo& info) {
         return;
     }
 
+    // ── Struct cleanup: free owned string fields ──────────────────────────
+    if (info.typeInfo->kind == TypeKind::Struct) {
+        auto* structLLTy = info.typeInfo->toLLVMType(*context_, module_->getDataLayout());
+        for (size_t fieldIdx = 0; fieldIdx < info.typeInfo->fields.size(); fieldIdx++) {
+            auto& field = info.typeInfo->fields[fieldIdx];
+            if (field.typeInfo && field.typeInfo->kind == TypeKind::String && field.arrayDims == 0) {
+                auto* fieldPtr = builder_->CreateStructGEP(structLLTy, info.alloca, fieldIdx, field.name + "_gep");
+                auto* fieldLLTy = field.typeInfo->toLLVMType(*context_, module_->getDataLayout());
+                auto* fieldVal = builder_->CreateLoad(fieldLLTy, fieldPtr, field.name + "_val");
+                auto* strPtr = builder_->CreateExtractValue(fieldVal, 0, field.name + "_ptr");
+                auto* strLen = builder_->CreateExtractValue(fieldVal, 1, field.name + "_len");
+                auto callee = declareBuiltin("lux_freeStr", voidTy, {ptrTy, usizeTy});
+                builder_->CreateCall(callee, {strPtr, strLen});
+            }
+        }
+        return;
+    }
+
     if (info.typeInfo->kind != TypeKind::Extended) return;
 
+    // ── Vec/Map/Set cleanup ───────────────────────────────────────────────
     std::string freeFuncName;
     if (info.typeInfo->extendedKind == "Vec") {
-        auto suffix = getVecSuffix(info.typeInfo->elementType
+        auto elemTI = info.typeInfo->elementType
                           ? info.typeInfo->elementType
-                          : info.typeInfo);
-        freeFuncName = "lux_vec_free_" + suffix;
+                          : info.typeInfo;
+        auto suffix = getVecSuffix(elemTI);
+
+        // For Vec<struct_with_strings>: generate per-element string cleanup
+        if (suffix == "raw" && elemTI->kind == TypeKind::Struct) {
+            bool hasStringField = false;
+            for (auto& field : elemTI->fields) {
+                if (field.typeInfo && field.typeInfo->kind == TypeKind::String && field.arrayDims == 0) {
+                    hasStringField = true;
+                    break;
+                }
+            }
+            if (hasStringField) {
+                auto& dl = module_->getDataLayout();
+                auto* elemLLTy = elemTI->toLLVMType(*context_, dl);
+                auto  elemSz = dl.getTypeAllocSize(elemLLTy);
+                auto* elemSzVal = llvm::ConstantInt::get(usizeTy, elemSz);
+                auto* i1Ty = llvm::Type::getInt1Ty(*context_);
+                auto  structFields = elemTI->fields;
+
+                // Load vec header fields
+                auto* vecTy = getOrCreateVecStructType();
+                auto* vecVal = builder_->CreateLoad(vecTy, info.alloca, name + "_vec");
+                auto* vecPtr = builder_->CreateExtractValue(vecVal, 0, name + "_vec_ptr");
+                auto* vecLen = builder_->CreateExtractValue(vecVal, 1, name + "_vec_len");
+
+                auto* condBB  = llvm::BasicBlock::Create(*context_, "vec.cln.cond", currentFunction_);
+                auto* bodyBB  = llvm::BasicBlock::Create(*context_, "vec.cln.body", currentFunction_);
+                auto* endBB   = llvm::BasicBlock::Create(*context_, "vec.cln.end", currentFunction_);
+
+                auto* zero = llvm::ConstantInt::get(usizeTy, 0);
+                auto* one  = llvm::ConstantInt::get(usizeTy, 1);
+                auto* idxPtr = builder_->CreateAlloca(usizeTy, nullptr, name + "_vec_cln_idx");
+                builder_->CreateStore(zero, idxPtr);
+                builder_->CreateBr(condBB);
+
+                builder_->SetInsertPoint(condBB);
+                auto* idx = builder_->CreateLoad(usizeTy, idxPtr, "cln_idx");
+                auto* done = builder_->CreateICmpEQ(idx, vecLen, "cln_done");
+                builder_->CreateCondBr(done, endBB, bodyBB);
+
+                builder_->SetInsertPoint(bodyBB);
+                auto* bytePtr = builder_->CreateGEP(llvm::Type::getInt8Ty(*context_), vecPtr,
+                    builder_->CreateMul(idx, elemSzVal), "cln_elem_byte");
+                auto* elemPtr = builder_->CreateBitCast(bytePtr, llvm::PointerType::getUnqual(*context_), "cln_elem_ptr");
+                auto* elemVal = builder_->CreateLoad(elemLLTy, elemPtr, "cln_elem");
+
+                for (size_t fieldIdx = 0; fieldIdx < structFields.size(); fieldIdx++) {
+                    auto& f = structFields[fieldIdx];
+                    if (f.typeInfo && f.typeInfo->kind == TypeKind::String && f.arrayDims == 0) {
+                        auto* fv = builder_->CreateExtractValue(elemVal, fieldIdx, f.name + "_fval");
+                        auto* fp = builder_->CreateExtractValue(fv, 0, f.name + "_fptr");
+                        auto* fl = builder_->CreateExtractValue(fv, 1, f.name + "_flen");
+                        auto callee = declareBuiltin("lux_freeStr", voidTy, {ptrTy, usizeTy});
+                        builder_->CreateCall(callee, {fp, fl});
+                    }
+                }
+
+                auto* nextIdx = builder_->CreateAdd(idx, one, "cln_next");
+                builder_->CreateStore(nextIdx, idxPtr);
+                builder_->CreateBr(condBB);
+
+                builder_->SetInsertPoint(endBB);
+                freeFuncName = "lux_vec_free_raw";
+            } else {
+                freeFuncName = "lux_vec_free_raw";
+            }
+        } else {
+            freeFuncName = "lux_vec_free_" + suffix;
+        }
     } else if (info.typeInfo->extendedKind == "Map") {
         freeFuncName = "lux_map_free_" + info.typeInfo->builtinSuffix;
     } else if (info.typeInfo->extendedKind == "Set") {
@@ -14479,9 +14566,24 @@ bool IRGen::isBorrowedStringValueExpr(LuxParser::ExpressionContext* expr) const 
 void IRGen::consumeLocalByName(const std::string& name) {
     auto it = locals_.find(name);
     if (it == locals_.end()) return;
-    if (!isDropTrackedLocal(it->second)) return;
-    auto* nullVal = llvm::Constant::getNullValue(it->second.alloca->getAllocatedType());
-    builder_->CreateStore(nullVal, it->second.alloca);
+    if (isDropTrackedLocal(it->second)) {
+        auto* nullVal = llvm::Constant::getNullValue(it->second.alloca->getAllocatedType());
+        builder_->CreateStore(nullVal, it->second.alloca);
+        return;
+    }
+    // Struct with owned string fields: null out string fields only
+    if (it->second.typeInfo && it->second.typeInfo->kind == TypeKind::Struct) {
+        auto* structLLTy = it->second.typeInfo->toLLVMType(*context_, module_->getDataLayout());
+        for (size_t fieldIdx = 0; fieldIdx < it->second.typeInfo->fields.size(); fieldIdx++) {
+            auto& field = it->second.typeInfo->fields[fieldIdx];
+            if (field.typeInfo && field.typeInfo->kind == TypeKind::String && field.arrayDims == 0) {
+                auto* fieldPtr = builder_->CreateStructGEP(structLLTy, it->second.alloca, fieldIdx, field.name + "_gep");
+                auto* fieldTy = field.typeInfo->toLLVMType(*context_, module_->getDataLayout());
+                auto* nullField = llvm::Constant::getNullValue(fieldTy);
+                builder_->CreateStore(nullField, fieldPtr);
+            }
+        }
+    }
 }
 
 void IRGen::consumeExprIfOwnedLocal(LuxParser::ExpressionContext* expr) {
