@@ -13510,6 +13510,10 @@ const TypeInfo* IRGen::resolveExprTypeInfo(LuxParser::ExpressionContext* ctx) {
                     if (st->hasName())
                         return typeRegistry_.lookup(st->getName().str());
             }
+
+            // Builtin string-returning functions (cwd, tempDir)
+            if (fname == "cwd" || fname == "tempDir")
+                return typeRegistry_.lookup("string");
         }
         return nullptr;
     }
