@@ -5178,7 +5178,10 @@ std::string HoverProvider::formatBuiltinSignature(const BuiltinSignature& sig) {
     }
     ss << ")\n```";
     if (sig.returnsOwned) {
-        ss << "\nReturns owned memory.";
+        ss << "\n\nReturns owned memory.";
+    }
+    if (!sig.description.empty()) {
+        ss << "\n\n" << sig.description;
     }
     return ss.str();
 }

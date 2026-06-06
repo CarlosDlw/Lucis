@@ -23,6 +23,7 @@ struct BuiltinSignature {
     bool returnsOwned  = false; // return transfers ownership to caller
     std::vector<size_t> consumingArgs; // argument indexes consumed (move)
     std::vector<size_t> borrowedArgs;  // argument indexes borrowed-only
+    std::string         description;   // markdown hover documentation
 };
 
 // Central registry of all stdlib function signatures and constant types.
@@ -48,7 +49,8 @@ private:
              std::vector<std::string> params, bool poly = false,
              bool variadic = false, bool returnsOwned = false,
              std::vector<size_t> consumingArgs = {},
-             std::vector<size_t> borrowedArgs = {});
+             std::vector<size_t> borrowedArgs = {},
+             std::string description = {});
     void addConstant(std::string name, std::string typeName);
 
     std::unordered_map<std::string, BuiltinSignature> signatures_;

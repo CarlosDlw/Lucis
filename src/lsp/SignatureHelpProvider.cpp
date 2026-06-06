@@ -328,7 +328,10 @@ SignatureInfo SignatureHelpProvider::buildFromBuiltin(const BuiltinSignature& bs
     label << ")";
     sig.label = label.str();
     if (bs.returnsOwned) {
-        sig.documentation = "Returns owned memory (caller/language autodrop owns this value).";
+        sig.documentation = "Returns owned memory (caller/language autodrop owns this value).\n\n";
+    }
+    if (!bs.description.empty()) {
+        sig.documentation += bs.description;
     }
 
     return sig;

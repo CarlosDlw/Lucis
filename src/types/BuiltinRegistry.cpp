@@ -4,7 +4,8 @@ void BuiltinRegistry::add(std::string name, std::string returnType,
                            std::vector<std::string> params, bool poly,
                            bool variadic, bool returnsOwned,
                            std::vector<size_t> consumingArgs,
-                           std::vector<size_t> borrowedArgs) {
+                           std::vector<size_t> borrowedArgs,
+                           std::string description) {
     BuiltinSignature sig;
     sig.name = name;
     sig.returnType = returnType;
@@ -14,6 +15,7 @@ void BuiltinRegistry::add(std::string name, std::string returnType,
     sig.returnsOwned = returnsOwned;
     sig.consumingArgs = std::move(consumingArgs);
     sig.borrowedArgs = std::move(borrowedArgs);
+    sig.description = std::move(description);
     signatures_[std::move(name)] = std::move(sig);
 }
 
@@ -479,9 +481,29 @@ BuiltinRegistry::BuiltinRegistry() {
     add("toFloat",       "float64", {"string"});
     add("toBool",        "bool",    {"string"});
     add("toString",      "string",  {"_any"}, true);
-    add("cstr",          "*char",   {"string"});
-    add("fromCStr",      "string",  {"*char"});
-    add("fromCStrCopy",  "string",  {"*char"});
-    add("fromCStrLen",   "string",  {"*char", "usize"});
-    add("freeStr",       "void",    {"string"}, false, false, false, {0});
+    add("cstr",          "*char",   {"string"},
+        false, false, false, {}, {},
+        "Allocate and return a null-terminated C copy of a Lux string. "
+        "The caller **owns** the returned `*char` and must `free()` it when done.");
+    add("fromCStr",      "string",  {"*char"},
+        false, false, false, {}, {0},
+        "Create a string from a null-terminated C string **without copying**. "
+        "The returned string **borrows** the pointer — do not free the original "
+        "while the string is in use. Use `fromCStrCopy` instead if you need an "
+        "owned copy.");
+    add("fromCStrCopy",  "string",  {"*char"},
+        false, false, true, {}, {},
+        "Create a string by copying a null-terminated C string. "
+        "The returned string **owns** its memory and will be freed automatically.");
+    add("fromCStrLen",   "string",  {"*char", "usize"},
+        false, false, false, {}, {0},
+        "Create a string from a C string with explicit length, **without copying**. "
+        "The returned string **borrows** the pointer — do not free the original "
+        "while the string is in use. Use `fromCStrCopy` instead if you need an "
+        "owned copy.");
+    add("freeStr",       "void",    {"string"}, false, false, false, {0},
+        {}, "Free the underlying buffer of a Lux string. "
+        "Only needed for strings whose memory must be reclaimed before scope exit. "
+        "Calling `freeStr` on a borrowed string (literal, `fromCStr`, `fromCStrLen`) "
+        "is undefined behaviour.");
 }
