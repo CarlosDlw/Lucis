@@ -2972,13 +2972,21 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
         auto* baseType = resolveExprType(fa->expression());
         auto fieldName = fa->IDENTIFIER()->getText();
 
-        // .len on array/variadic params → int64
-        if (fieldName == "len") {
+        // .len/.length on array/variadic params → int64
+        if (fieldName == "len" || fieldName == "length") {
             if (auto* ident = dynamic_cast<LuxParser::IdentExprContext*>(fa->expression())) {
                 auto it = locals_.find(ident->IDENTIFIER()->getText());
                 if (it != locals_.end() && it->second.arrayDims > 0)
                     return typeRegistry_.lookup("int64");
             }
+            // .len/.length on string → usize
+            if (baseType && baseType->kind == TypeKind::String)
+                return typeRegistry_.lookup("usize");
+            // .len/.length on Vec<T> → usize
+            if (baseType && baseType->kind == TypeKind::Extended &&
+                (baseType->extendedKind == "Vec" || baseType->extendedKind == "Set" ||
+                 baseType->extendedKind == "Map"))
+                return typeRegistry_.lookup("usize");
         }
 
         if (baseType && baseType->kind == TypeKind::Pointer &&
@@ -2993,6 +3001,9 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
                 if (field.name == fieldName)
                     return field.typeInfo;
             }
+            error(expr, "'" + baseType->name +
+                             "' has no field '" + fieldName + "'");
+        } else if (baseType) {
             error(expr, "'" + baseType->name +
                              "' has no field '" + fieldName + "'");
         }

@@ -2298,6 +2298,18 @@ std::any IRGen::visitAssignStmt(LuxParser::AssignStmtContext* ctx) {
             }
         }
 
+        if (suffix == "raw") {
+            auto& dl     = module_->getDataLayout();
+            auto  elemSz = dl.getTypeAllocSize(elemLLTy);
+            auto* elemSzVal = llvm::ConstantInt::get(usizeTy, elemSz);
+            auto ptrFn = declareBuiltin("lux_vec_ptr_raw", ptrTy,
+                                        {ptrTy, usizeTy, usizeTy});
+            auto* elemPtr = builder_->CreateCall(ptrFn,
+                { alloca, idx, elemSzVal }, "vec_elem_ptr");
+            builder_->CreateStore(val, elemPtr);
+            return {};
+        }
+
         auto callee = declareBuiltin(
             "lux_vec_set_" + suffix,
             llvm::Type::getVoidTy(*context_),
@@ -6154,7 +6166,7 @@ std::any IRGen::visitIndexExpr(LuxParser::IndexExprContext* ctx) {
             return static_cast<llvm::Value*>(result);
         }
 
-        // Vec<T> subscript: v[i] → lux_vec_at_<suffix>
+        // Vec<T> subscript: v[i] → lux_vec_at_<suffix> (or ptr_raw for struct)
         auto* elemLLTy = ti->elementType->toLLVMType(
             *context_, module_->getDataLayout());
         auto suffix = getVecSuffix(ti->elementType);
@@ -6162,6 +6174,18 @@ std::any IRGen::visitIndexExpr(LuxParser::IndexExprContext* ctx) {
         auto* idx = castValue(visit(indexExprs[0]));
         if (idx->getType() != usizeTy)
             idx = builder_->CreateIntCast(idx, usizeTy, false);
+
+        if (suffix == "raw") {
+            auto& dl     = module_->getDataLayout();
+            auto  elemSz = dl.getTypeAllocSize(elemLLTy);
+            auto* elemSzVal = llvm::ConstantInt::get(usizeTy, elemSz);
+            auto ptrFn = declareBuiltin("lux_vec_ptr_raw", ptrTy,
+                                        {ptrTy, usizeTy, usizeTy});
+            auto* elemPtr = builder_->CreateCall(ptrFn,
+                { it->second.alloca, idx, elemSzVal }, "vec_elem_ptr");
+            auto* val = builder_->CreateLoad(elemLLTy, elemPtr, "vec_at");
+            return static_cast<llvm::Value*>(val);
+        }
 
         auto callee = declareBuiltin(
             "lux_vec_at_" + suffix, elemLLTy, { ptrTy, usizeTy });
@@ -6366,6 +6390,9 @@ std::any IRGen::visitStructLitExpr(LuxParser::StructLitExprContext* ctx) {
         agg = builder_->CreateInsertValue(agg, val, {static_cast<unsigned>(fieldIdx)});
     }
 
+    // Consume owned string field values (move semantics)
+    for (auto* e : exprs) consumeExprIfOwnedLocal(e);
+
     return static_cast<llvm::Value*>(agg);
 }
 
@@ -6528,6 +6555,26 @@ std::any IRGen::visitFieldAccessExpr(LuxParser::FieldAccessExprContext* ctx) {
 
         auto* alloca   = it->second.alloca;
         auto* structTI = it->second.typeInfo;
+
+        // ── .len / .length on string { ptr, len } ───────────────
+        if (structTI && structTI->kind == TypeKind::String &&
+            (fieldName == "len" || fieldName == "length")) {
+            auto* strTy  = alloca->getAllocatedType();
+            auto* strVal = builder_->CreateLoad(strTy, alloca, varName + "_str");
+            return static_cast<llvm::Value*>(
+                builder_->CreateExtractValue(strVal, 1, varName + "_len"));
+        }
+
+        // ── .len / .length on Vec<T>/Set<T>/Map<T> ─────────────
+        if (structTI && structTI->kind == TypeKind::Extended &&
+            (fieldName == "len" || fieldName == "length") &&
+            (structTI->extendedKind == "Vec" || structTI->extendedKind == "Set" ||
+             structTI->extendedKind == "Map")) {
+            auto* extTy  = alloca->getAllocatedType();
+            auto* extVal = builder_->CreateLoad(extTy, alloca, varName + "_val");
+            return static_cast<llvm::Value*>(
+                builder_->CreateExtractValue(extVal, 1, varName + "_len"));
+        }
 
         // Auto-dereference: if variable is a pointer to struct, load it first
         if (structTI && structTI->kind == TypeKind::Pointer && structTI->pointeeType &&
@@ -6791,6 +6838,23 @@ std::any IRGen::visitFieldAccessExpr(LuxParser::FieldAccessExprContext* ctx) {
         auto* baseVal = castValue(visit(baseExpr));
         if (baseVal && baseVal->getType()->isStructTy()) {
             auto* baseTI = resolveExprTypeInfo(baseExpr);
+
+            // .len / .length on string expression
+            if (baseTI && baseTI->kind == TypeKind::String &&
+                (fieldName == "len" || fieldName == "length")) {
+                return static_cast<llvm::Value*>(
+                    builder_->CreateExtractValue(baseVal, 1, "expr_len"));
+            }
+
+            // .len / .length on Vec<T>/Set<T>/Map<T> expression
+            if (baseTI && baseTI->kind == TypeKind::Extended &&
+                (fieldName == "len" || fieldName == "length") &&
+                (baseTI->extendedKind == "Vec" || baseTI->extendedKind == "Set" ||
+                 baseTI->extendedKind == "Map")) {
+                return static_cast<llvm::Value*>(
+                    builder_->CreateExtractValue(baseVal, 1, "expr_len"));
+            }
+
             if (baseTI && (baseTI->kind == TypeKind::Struct || baseTI->kind == TypeKind::Union)) {
                 const TypeInfo* fieldTI = nullptr;
                 int fieldIdx = -1;
@@ -7691,10 +7755,12 @@ std::any IRGen::visitStaticMethodCallExpr(
 
                 auto* fn = mIt->second;
                 std::vector<llvm::Value*> callArgs;
+                std::vector<LuxParser::ExpressionContext*> argExprs;
                 if (auto* argList = ctx->argList()) {
+                    argExprs = argList->expression();
                     auto* fnType = fn->getFunctionType();
                     size_t paramIdx = 0;
-                    for (auto* argExpr : argList->expression()) {
+                    for (auto* argExpr : argExprs) {
                         auto* argVal = castValue(visit(argExpr));
                         if (paramIdx < fnType->getNumParams()) {
                             auto* paramTy = fnType->getParamType(paramIdx);
@@ -7713,11 +7779,13 @@ std::any IRGen::visitStaticMethodCallExpr(
                 auto* retTy = fn->getReturnType();
                 if (retTy->isVoidTy()) {
                     builder_->CreateCall(fn, callArgs);
+                    for (auto* e : argExprs) consumeExprIfOwnedLocal(e);
                     return static_cast<llvm::Value*>(
                         llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
                 }
-                return static_cast<llvm::Value*>(
-                    builder_->CreateCall(fn, callArgs, "qualified_static_call"));
+                auto* result = builder_->CreateCall(fn, callArgs, "qualified_static_call");
+                for (auto* e : argExprs) consumeExprIfOwnedLocal(e);
+                return static_cast<llvm::Value*>(result);
             }
 
             std::cerr << "lux: unsupported qualified static call '"
@@ -7754,17 +7822,22 @@ std::any IRGen::visitStaticMethodCallExpr(
                 }
 
                 std::vector<llvm::Value*> callArgs;
+                std::vector<LuxParser::ExpressionContext*> modArgExprs;
                 if (auto* argList = ctx->argList()) {
-                    for (auto* argExpr : argList->expression())
+                    modArgExprs = argList->expression();
+                    for (auto* argExpr : modArgExprs)
                         callArgs.push_back(castValue(visit(argExpr)));
                 }
 
                 if (fn->getReturnType()->isVoidTy()) {
                     builder_->CreateCall(fn, callArgs);
+                    for (auto* e : modArgExprs) consumeExprIfOwnedLocal(e);
                     return static_cast<llvm::Value*>(
                         llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
                 }
-                return static_cast<llvm::Value*>(builder_->CreateCall(fn, callArgs, "static_call"));
+                auto* modResult = builder_->CreateCall(fn, callArgs, "static_call");
+                for (auto* e : modArgExprs) consumeExprIfOwnedLocal(e);
+                return static_cast<llvm::Value*>(modResult);
             }
         }
     }
@@ -7904,10 +7977,12 @@ std::any IRGen::visitStaticMethodCallExpr(
 
             auto* fn = mIt->second;
             std::vector<llvm::Value*> callArgs;
+            std::vector<LuxParser::ExpressionContext*> genArgExprs;
             if (auto* argList = ctx->argList()) {
+                genArgExprs = argList->expression();
                 auto* fnType = fn->getFunctionType();
                 size_t paramIdx = 0;
-                for (auto* argExpr : argList->expression()) {
+                for (auto* argExpr : genArgExprs) {
                     auto* argVal = castValue(visit(argExpr));
                     if (paramIdx < fnType->getNumParams()) {
                         auto* paramTy = fnType->getParamType(paramIdx);
@@ -7926,11 +8001,13 @@ std::any IRGen::visitStaticMethodCallExpr(
             auto* retTy = fn->getReturnType();
             if (retTy->isVoidTy()) {
                 builder_->CreateCall(fn, callArgs);
+                for (auto* e : genArgExprs) consumeExprIfOwnedLocal(e);
                 return static_cast<llvm::Value*>(
                     llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
             }
-            return static_cast<llvm::Value*>(
-                builder_->CreateCall(fn, callArgs, "static_call"));
+            auto* genResult = builder_->CreateCall(fn, callArgs, "static_call");
+            for (auto* e : genArgExprs) consumeExprIfOwnedLocal(e);
+            return static_cast<llvm::Value*>(genResult);
         }
     }
 
@@ -7952,10 +8029,12 @@ std::any IRGen::visitStaticMethodCallExpr(
 
     // Collect arguments
     std::vector<llvm::Value*> callArgs;
+    std::vector<LuxParser::ExpressionContext*> argExprs;
     if (auto* argList = ctx->argList()) {
+        argExprs = argList->expression();
         auto* fnType = fn->getFunctionType();
         size_t paramIdx = 0;
-        for (auto* argExpr : argList->expression()) {
+        for (auto* argExpr : argExprs) {
             auto* argVal = castValue(visit(argExpr));
             if (paramIdx < fnType->getNumParams()) {
                 auto* paramTy = fnType->getParamType(paramIdx);
@@ -7974,11 +8053,13 @@ std::any IRGen::visitStaticMethodCallExpr(
     auto* retTy = fn->getReturnType();
     if (retTy->isVoidTy()) {
         builder_->CreateCall(fn, callArgs);
+        for (auto* e : argExprs) consumeExprIfOwnedLocal(e);
         return static_cast<llvm::Value*>(
             llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
     }
-    return static_cast<llvm::Value*>(
-        builder_->CreateCall(fn, callArgs, "static_call"));
+    auto* result = builder_->CreateCall(fn, callArgs, "static_call");
+    for (auto* e : argExprs) consumeExprIfOwnedLocal(e);
+    return static_cast<llvm::Value*>(result);
 }
 
 std::any IRGen::visitTypeSpec(LuxParser::TypeSpecContext* ctx) {
@@ -14494,8 +14575,10 @@ IRGen::visitMethodCallExpr(LuxParser::MethodCallExprContext* ctx) {
 
         // Collect argument values
         std::vector<llvm::Value*> args;
+        std::vector<LuxParser::ExpressionContext*> extArgExprs;
         if (auto* argList = ctx->argList()) {
-            for (auto* argExpr : argList->expression()) {
+            extArgExprs = argList->expression();
+            for (auto* argExpr : extArgExprs) {
                 args.push_back(castValue(visit(argExpr)));
             }
         }
@@ -14685,6 +14768,7 @@ IRGen::visitMethodCallExpr(LuxParser::MethodCallExprContext* ctx) {
 
         if (retTy->isVoidTy()) {
             builder_->CreateCall(callee, callArgs);
+            for (auto* e : extArgExprs) consumeExprIfOwnedLocal(e);
             return static_cast<llvm::Value*>(
                 llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
         }
@@ -14697,6 +14781,7 @@ IRGen::visitMethodCallExpr(LuxParser::MethodCallExprContext* ctx) {
                 builder_->CreateICmpNE(result,
                     llvm::ConstantInt::get(llvm::Type::getInt32Ty(*context_), 0)));
 
+        for (auto* e : extArgExprs) consumeExprIfOwnedLocal(e);
         return static_cast<llvm::Value*>(result);
     }
 
@@ -14723,10 +14808,12 @@ IRGen::visitMethodCallExpr(LuxParser::MethodCallExprContext* ctx) {
                 }
 
                 // Remaining args
+                std::vector<LuxParser::ExpressionContext*> extArgExprs;
                 if (auto* argList = ctx->argList()) {
+                    extArgExprs = argList->expression();
                     auto* fnType = fn->getFunctionType();
                     size_t paramIdx = 1; // skip &self
-                    for (auto* argExpr : argList->expression()) {
+                    for (auto* argExpr : extArgExprs) {
                         auto* argVal = castValue(visit(argExpr));
                         if (paramIdx < fnType->getNumParams()) {
                             auto* paramTy = fnType->getParamType(paramIdx);
@@ -14745,11 +14832,13 @@ IRGen::visitMethodCallExpr(LuxParser::MethodCallExprContext* ctx) {
                 auto* retTy = fn->getReturnType();
                 if (retTy->isVoidTy()) {
                     builder_->CreateCall(fn, callArgs);
+                    for (auto* e : extArgExprs) consumeExprIfOwnedLocal(e);
                     return static_cast<llvm::Value*>(
                         llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
                 }
-                return static_cast<llvm::Value*>(
-                    builder_->CreateCall(fn, callArgs, "method_result"));
+                auto* extResult = builder_->CreateCall(fn, callArgs, "method_result");
+                for (auto* e : extArgExprs) consumeExprIfOwnedLocal(e);
+                return static_cast<llvm::Value*>(extResult);
             }
         }
     }
