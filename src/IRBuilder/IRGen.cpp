@@ -944,9 +944,12 @@ std::any IRGen::visitTypeAliasDecl(LuxParser::TypeAliasDeclContext* ctx) {
         // All typeSpecs from fnTypeSpec: params are [0..n-2], return is [n-1]
         auto specs = fnSpec->typeSpec();
         ti.returnType = resolveTypeInfo(specs.back());
+        if (!ti.returnType) ti.returnType = typeRegistry_.lookup("int32");
 
         for (size_t i = 0; i + 1 < specs.size(); i++) {
-            ti.paramTypes.push_back(resolveTypeInfo(specs[i]));
+            auto* pti = resolveTypeInfo(specs[i]);
+            if (!pti) pti = typeRegistry_.lookup("int32");
+            ti.paramTypes.push_back(pti);
         }
 
         typeRegistry_.registerType(std::move(ti));
@@ -1181,6 +1184,7 @@ std::any IRGen::visitFunctionDecl(LuxParser::FunctionDeclContext* ctx) {
         for (size_t i = 0; i < paramList.size(); i++) {
             auto* param = paramList[i];
             auto* pInfo = resolveTypeInfo(param->typeSpec());
+            if (!pInfo) pInfo = typeRegistry_.lookup("int32");
             auto pDims  = countArrayDims(param->typeSpec());
             auto  pName = param->IDENTIFIER()->getText();
 
@@ -1528,6 +1532,7 @@ void IRGen::registerCrossFileSymbols(LuxParser::ProgramContext* ctx) {
                 if (module_->getFunction(funcName)) continue;
 
                 auto* retTI = resolveTypeInfo(method->typeSpec());
+                if (!retTI) continue;
                 auto* retLLTy = retTI->toLLVMType(*context_, module_->getDataLayout());
 
                 bool isStatic = (method->AMPERSAND() == nullptr);
@@ -1549,7 +1554,8 @@ void IRGen::registerCrossFileSymbols(LuxParser::ProgramContext* ctx) {
                 for (auto* param : params) {
                     auto* pTI = resolveTypeInfo(param->typeSpec());
                     paramLLTypes.push_back(
-                        pTI->toLLVMType(*context_, module_->getDataLayout()));
+                        pTI ? pTI->toLLVMType(*context_, module_->getDataLayout())
+                            : llvm::Type::getInt32Ty(*context_));
                 }
 
                 auto* fnType = llvm::FunctionType::get(
@@ -1632,6 +1638,7 @@ void IRGen::registerCrossFileSymbols(LuxParser::ProgramContext* ctx) {
 void IRGen::declareExternFunction(const std::string& mangledName,
                                    LuxParser::FunctionDeclContext* decl) {
     auto* retTI     = resolveTypeInfo(decl->typeSpec());
+    if (!retTI) return;
     auto* retLLType = retTI->toLLVMType(*context_, module_->getDataLayout());
 
     std::vector<llvm::Type*> paramTypes;
@@ -1647,7 +1654,8 @@ void IRGen::declareExternFunction(const std::string& mangledName,
                 paramTypes.push_back(llvm::PointerType::getUnqual(*context_));
                 paramTypes.push_back(llvm::Type::getInt64Ty(*context_));
             } else {
-                paramTypes.push_back(pTI->toLLVMType(*context_, module_->getDataLayout()));
+                paramTypes.push_back(pTI ? pTI->toLLVMType(*context_, module_->getDataLayout())
+                                         : llvm::Type::getInt32Ty(*context_));
             }
         }
     }
@@ -5691,6 +5699,7 @@ std::any IRGen::visitArrayLitExpr(LuxParser::ArrayLitExprContext* ctx) {
 
 std::any IRGen::visitListCompExpr(LuxParser::ListCompExprContext* ctx) {
     auto* typeInfo = resolveTypeInfo(ctx->typeSpec());
+    if (!typeInfo) return {};
     auto* varType  = typeInfo->toLLVMType(*context_, module_->getDataLayout());
     auto  varName  = ctx->IDENTIFIER()->getText();
     auto* iterExpr = ctx->expression(1);
@@ -7301,8 +7310,8 @@ std::any IRGen::visitQualifiedStructNamedInitExpr(LuxParser::QualifiedStructName
 
 std::any IRGen::visitGenericEnumNamedVariantExpr(LuxParser::GenericEnumNamedVariantExprContext* ctx) {
     auto ids = ctx->IDENTIFIER();
-    auto baseName = ids[0]->getText();
-    auto variantName = ids[1]->getText();
+    auto baseName = ids.size() > 0 ? ids[0]->getText() : "";
+    auto variantName = ids.size() > 1 ? ids[1]->getText() : "";
 
     std::vector<const TypeInfo*> typeArgs;
     for (auto* ts : ctx->typeSpec()) {
@@ -7974,6 +7983,7 @@ std::any IRGen::visitStaticMethodCallExpr(
 
 std::any IRGen::visitTypeSpec(LuxParser::TypeSpecContext* ctx) {
     auto* ti = resolveTypeInfo(ctx);
+    if (!ti) return static_cast<llvm::Type*>(llvm::Type::getInt32Ty(*context_));
     return static_cast<llvm::Type*>(ti->toLLVMType(*context_, module_->getDataLayout()));
 }
 
@@ -11872,6 +11882,7 @@ std::any IRGen::visitPostDecrExpr(LuxParser::PostDecrExprContext* ctx) {
 std::any IRGen::visitCastExpr(LuxParser::CastExprContext* ctx) {
     auto* val = castValue(visit(ctx->expression()));
     auto* ti = resolveTypeInfo(ctx->typeSpec());
+    if (!ti) return static_cast<llvm::Value*>(val);
     auto* targetTy = ti->toLLVMType(*context_, module_->getDataLayout());
     auto* srcTy = val->getType();
 
@@ -11955,6 +11966,7 @@ std::any IRGen::visitSizeofExpr(LuxParser::SizeofExprContext* ctx) {
     }
 
     auto* ti = resolveTypeInfo(spec);
+    if (!ti) return {};
     auto* llvmTy = ti->toLLVMType(*context_, module_->getDataLayout());
     for (auto it = arraySizes.rbegin(); it != arraySizes.rend(); ++it)
         llvmTy = llvm::ArrayType::get(llvmTy, *it);
