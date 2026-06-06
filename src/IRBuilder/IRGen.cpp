@@ -1537,6 +1537,21 @@ void IRGen::registerCrossFileSymbols(LuxParser::ProgramContext* ctx) {
                 // Skip if already declared
                 if (module_->getFunction(funcName)) continue;
 
+                // Pre-register types referenced in method signatures
+                // (e.g. ReadFileResult as return type) before resolving them.
+                ensureTypeDependencyFromSpec(
+                    ensureTypeDependencyFromSpec, method->typeSpec(), ns);
+                for (auto* p : method->param()) {
+                    ensureTypeDependencyFromSpec(
+                        ensureTypeDependencyFromSpec, p->typeSpec(), ns);
+                }
+                if (auto* pl = method->paramList()) {
+                    for (auto* p : pl->param()) {
+                        ensureTypeDependencyFromSpec(
+                            ensureTypeDependencyFromSpec, p->typeSpec(), ns);
+                    }
+                }
+
                 auto* retTI = resolveTypeInfo(method->typeSpec());
                 if (!retTI) continue;
                 auto* retLLTy = retTI->toLLVMType(*context_, module_->getDataLayout());
@@ -4649,12 +4664,21 @@ std::any IRGen::visitIfStmt(LuxParser::IfStmtContext* ctx) {
     auto emitIfBody = [&](LuxParser::IfBodyContext* body) {
         if (!body) return;
         auto savedLocals = locals_;
+        size_t savedDeferBase = deferStack_.size();
         if (auto* b = body->block()) {
             for (auto* stmt : b->statement())
                 visit(stmt);
         } else if (auto* s = body->statement()) {
             visit(s);
         }
+        // On normal block exit, emit deferred cleanups registered in this scope
+        // (scope-guard semantics for `defer` inside conditional branches).
+        auto* bb = builder_->GetInsertBlock();
+        if (bb && !bb->getTerminator()) {
+            for (size_t i = deferStack_.size(); i-- > savedDeferBase;)
+                emitOneDeferred(deferStack_[i]);
+        }
+        deferStack_.resize(savedDeferBase);
         emitBlockExitCleanups(savedLocals);
         locals_ = savedLocals;
     };
@@ -14110,13 +14134,17 @@ void IRGen::emitDivByZeroGuard(llvm::Value* divisor, antlr4::Token* opToken) {
 
 void IRGen::emitDeferredCleanups() {
     for (auto it = deferStack_.rbegin(); it != deferStack_.rend(); ++it) {
-        if (it->callCtx)
-            visit(it->callCtx);
-        else if (it->exprCtx)
-            visit(it->exprCtx);
-        else if (it->scopeCbCtx)
-            emitScopeCallback(it->scopeCbCtx);
+        emitOneDeferred(*it);
     }
+}
+
+void IRGen::emitOneDeferred(const DeferredStmt& ds) {
+    if (ds.callCtx)
+        visit(ds.callCtx);
+    else if (ds.exprCtx)
+        visit(ds.exprCtx);
+    else if (ds.scopeCbCtx)
+        emitScopeCallback(ds.scopeCbCtx);
 }
 
 // ── Structural Blocks ────────────────────────────────────────────────────────
@@ -14124,8 +14152,15 @@ void IRGen::emitDeferredCleanups() {
 // { statements }  —  lexical scope block (no callbacks, just inline statements)
 std::any IRGen::visitNakedBlockStmt(LuxParser::NakedBlockStmtContext* ctx) {
     auto savedLocals = locals_;
+    size_t savedDeferBase = deferStack_.size();
     for (auto* stmt : ctx->statement())
         visit(stmt);
+    auto* bb = builder_->GetInsertBlock();
+    if (bb && !bb->getTerminator()) {
+        for (size_t i = deferStack_.size(); i-- > savedDeferBase;)
+            emitOneDeferred(deferStack_[i]);
+    }
+    deferStack_.resize(savedDeferBase);
     emitBlockExitCleanups(savedLocals);
     locals_ = savedLocals;
     return {};

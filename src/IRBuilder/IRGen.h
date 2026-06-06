@@ -417,6 +417,7 @@ private:
     llvm::StructType*   getOrCreateSetStructType();
     std::string         getVecSuffix(const TypeInfo* elemTI);
     void                emitDeferredCleanups();
+    void                emitOneDeferred(const DeferredStmt& ds);
     void                emitAutoCleanups(const std::string& skipVar = "");
     void                emitAllCleanups(const std::string& skipVar = "");
     void                emitCleanupForLocal(const std::string& name, const VarInfo& info);
