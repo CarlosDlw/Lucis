@@ -52,6 +52,18 @@ public class LuxParserBaseListener implements LuxParserListener {
 	 *
 	 * <p>The default implementation does nothing.</p>
 	 */
+	@Override public void enterUseRoot(LuxParser.UseRootContext ctx) { }
+	/**
+	 * {@inheritDoc}
+	 *
+	 * <p>The default implementation does nothing.</p>
+	 */
+	@Override public void exitUseRoot(LuxParser.UseRootContext ctx) { }
+	/**
+	 * {@inheritDoc}
+	 *
+	 * <p>The default implementation does nothing.</p>
+	 */
 	@Override public void enterUseItem(LuxParser.UseItemContext ctx) { }
 	/**
 	 * {@inheritDoc}
@@ -532,6 +544,18 @@ public class LuxParserBaseListener implements LuxParserListener {
 	 *
 	 * <p>The default implementation does nothing.</p>
 	 */
+	@Override public void enterDerefCompoundAssignStmt(LuxParser.DerefCompoundAssignStmtContext ctx) { }
+	/**
+	 * {@inheritDoc}
+	 *
+	 * <p>The default implementation does nothing.</p>
+	 */
+	@Override public void exitDerefCompoundAssignStmt(LuxParser.DerefCompoundAssignStmtContext ctx) { }
+	/**
+	 * {@inheritDoc}
+	 *
+	 * <p>The default implementation does nothing.</p>
+	 */
 	@Override public void enterArrowAssignStmt(LuxParser.ArrowAssignStmtContext ctx) { }
 	/**
 	 * {@inheritDoc}
@@ -820,6 +844,18 @@ public class LuxParserBaseListener implements LuxParserListener {
 	 *
 	 * <p>The default implementation does nothing.</p>
 	 */
+	@Override public void enterStructPosInitExpr(LuxParser.StructPosInitExprContext ctx) { }
+	/**
+	 * {@inheritDoc}
+	 *
+	 * <p>The default implementation does nothing.</p>
+	 */
+	@Override public void exitStructPosInitExpr(LuxParser.StructPosInitExprContext ctx) { }
+	/**
+	 * {@inheritDoc}
+	 *
+	 * <p>The default implementation does nothing.</p>
+	 */
 	@Override public void enterFieldAccessExpr(LuxParser.FieldAccessExprContext ctx) { }
 	/**
 	 * {@inheritDoc}
@@ -1031,6 +1067,18 @@ public class LuxParserBaseListener implements LuxParserListener {
 	 * <p>The default implementation does nothing.</p>
 	 */
 	@Override public void exitTupleLitExpr(LuxParser.TupleLitExprContext ctx) { }
+	/**
+	 * {@inheritDoc}
+	 *
+	 * <p>The default implementation does nothing.</p>
+	 */
+	@Override public void enterPropagateExpr(LuxParser.PropagateExprContext ctx) { }
+	/**
+	 * {@inheritDoc}
+	 *
+	 * <p>The default implementation does nothing.</p>
+	 */
+	@Override public void exitPropagateExpr(LuxParser.PropagateExprContext ctx) { }
 	/**
 	 * {@inheritDoc}
 	 *
@@ -1252,6 +1300,18 @@ public class LuxParserBaseListener implements LuxParserListener {
 	 *
 	 * <p>The default implementation does nothing.</p>
 	 */
+	@Override public void enterGenericStructPosInitExpr(LuxParser.GenericStructPosInitExprContext ctx) { }
+	/**
+	 * {@inheritDoc}
+	 *
+	 * <p>The default implementation does nothing.</p>
+	 */
+	@Override public void exitGenericStructPosInitExpr(LuxParser.GenericStructPosInitExprContext ctx) { }
+	/**
+	 * {@inheritDoc}
+	 *
+	 * <p>The default implementation does nothing.</p>
+	 */
 	@Override public void enterCastExpr(LuxParser.CastExprContext ctx) { }
 	/**
 	 * {@inheritDoc}
@@ -1348,13 +1408,13 @@ public class LuxParserBaseListener implements LuxParserListener {
 	 *
 	 * <p>The default implementation does nothing.</p>
 	 */
-	@Override public void enterEnumNamedVariantExpr(LuxParser.EnumNamedVariantExprContext ctx) { }
+	@Override public void enterLeadingDotFloatLitExpr(LuxParser.LeadingDotFloatLitExprContext ctx) { }
 	/**
 	 * {@inheritDoc}
 	 *
 	 * <p>The default implementation does nothing.</p>
 	 */
-	@Override public void exitEnumNamedVariantExpr(LuxParser.EnumNamedVariantExprContext ctx) { }
+	@Override public void exitLeadingDotFloatLitExpr(LuxParser.LeadingDotFloatLitExprContext ctx) { }
 	/**
 	 * {@inheritDoc}
 	 *
@@ -1444,6 +1504,18 @@ public class LuxParserBaseListener implements LuxParserListener {
 	 *
 	 * <p>The default implementation does nothing.</p>
 	 */
+	@Override public void enterQualifiedStructPosInitExpr(LuxParser.QualifiedStructPosInitExprContext ctx) { }
+	/**
+	 * {@inheritDoc}
+	 *
+	 * <p>The default implementation does nothing.</p>
+	 */
+	@Override public void exitQualifiedStructPosInitExpr(LuxParser.QualifiedStructPosInitExprContext ctx) { }
+	/**
+	 * {@inheritDoc}
+	 *
+	 * <p>The default implementation does nothing.</p>
+	 */
 	@Override public void enterStrLitExpr(LuxParser.StrLitExprContext ctx) { }
 	/**
 	 * {@inheritDoc}
@@ -1463,6 +1535,18 @@ public class LuxParserBaseListener implements LuxParserListener {
 	 * <p>The default implementation does nothing.</p>
 	 */
 	@Override public void exitAwaitExpr(LuxParser.AwaitExprContext ctx) { }
+	/**
+	 * {@inheritDoc}
+	 *
+	 * <p>The default implementation does nothing.</p>
+	 */
+	@Override public void enterQualifiedStructNamedInitExpr(LuxParser.QualifiedStructNamedInitExprContext ctx) { }
+	/**
+	 * {@inheritDoc}
+	 *
+	 * <p>The default implementation does nothing.</p>
+	 */
+	@Override public void exitQualifiedStructNamedInitExpr(LuxParser.QualifiedStructNamedInitExprContext ctx) { }
 	/**
 	 * {@inheritDoc}
 	 *
@@ -1571,6 +1655,18 @@ public class LuxParserBaseListener implements LuxParserListener {
 	 * <p>The default implementation does nothing.</p>
 	 */
 	@Override public void exitPostIncrExpr(LuxParser.PostIncrExprContext ctx) { }
+	/**
+	 * {@inheritDoc}
+	 *
+	 * <p>The default implementation does nothing.</p>
+	 */
+	@Override public void enterGenericEnumPosVariantExpr(LuxParser.GenericEnumPosVariantExprContext ctx) { }
+	/**
+	 * {@inheritDoc}
+	 *
+	 * <p>The default implementation does nothing.</p>
+	 */
+	@Override public void exitGenericEnumPosVariantExpr(LuxParser.GenericEnumPosVariantExprContext ctx) { }
 	/**
 	 * {@inheritDoc}
 	 *

@@ -37,6 +37,18 @@ public interface LuxParserListener extends ParseTreeListener {
 	 */
 	void exitNamespaceDecl(LuxParser.NamespaceDeclContext ctx);
 	/**
+	 * Enter a parse tree produced by the {@code useRoot}
+	 * labeled alternative in {@link LuxParser#useDecl}.
+	 * @param ctx the parse tree
+	 */
+	void enterUseRoot(LuxParser.UseRootContext ctx);
+	/**
+	 * Exit a parse tree produced by the {@code useRoot}
+	 * labeled alternative in {@link LuxParser#useDecl}.
+	 * @param ctx the parse tree
+	 */
+	void exitUseRoot(LuxParser.UseRootContext ctx);
+	/**
 	 * Enter a parse tree produced by the {@code useItem}
 	 * labeled alternative in {@link LuxParser#useDecl}.
 	 * @param ctx the parse tree
@@ -441,6 +453,16 @@ public interface LuxParserListener extends ParseTreeListener {
 	 */
 	void exitDerefAssignStmt(LuxParser.DerefAssignStmtContext ctx);
 	/**
+	 * Enter a parse tree produced by {@link LuxParser#derefCompoundAssignStmt}.
+	 * @param ctx the parse tree
+	 */
+	void enterDerefCompoundAssignStmt(LuxParser.DerefCompoundAssignStmtContext ctx);
+	/**
+	 * Exit a parse tree produced by {@link LuxParser#derefCompoundAssignStmt}.
+	 * @param ctx the parse tree
+	 */
+	void exitDerefCompoundAssignStmt(LuxParser.DerefCompoundAssignStmtContext ctx);
+	/**
 	 * Enter a parse tree produced by {@link LuxParser#arrowAssignStmt}.
 	 * @param ctx the parse tree
 	 */
@@ -685,6 +707,18 @@ public interface LuxParserListener extends ParseTreeListener {
 	 */
 	void exitDefaultClause(LuxParser.DefaultClauseContext ctx);
 	/**
+	 * Enter a parse tree produced by the {@code structPosInitExpr}
+	 * labeled alternative in {@link LuxParser#expression}.
+	 * @param ctx the parse tree
+	 */
+	void enterStructPosInitExpr(LuxParser.StructPosInitExprContext ctx);
+	/**
+	 * Exit a parse tree produced by the {@code structPosInitExpr}
+	 * labeled alternative in {@link LuxParser#expression}.
+	 * @param ctx the parse tree
+	 */
+	void exitStructPosInitExpr(LuxParser.StructPosInitExprContext ctx);
+	/**
 	 * Enter a parse tree produced by the {@code fieldAccessExpr}
 	 * labeled alternative in {@link LuxParser#expression}.
 	 * @param ctx the parse tree
@@ -900,6 +934,18 @@ public interface LuxParserListener extends ParseTreeListener {
 	 * @param ctx the parse tree
 	 */
 	void exitTupleLitExpr(LuxParser.TupleLitExprContext ctx);
+	/**
+	 * Enter a parse tree produced by the {@code propagateExpr}
+	 * labeled alternative in {@link LuxParser#expression}.
+	 * @param ctx the parse tree
+	 */
+	void enterPropagateExpr(LuxParser.PropagateExprContext ctx);
+	/**
+	 * Exit a parse tree produced by the {@code propagateExpr}
+	 * labeled alternative in {@link LuxParser#expression}.
+	 * @param ctx the parse tree
+	 */
+	void exitPropagateExpr(LuxParser.PropagateExprContext ctx);
 	/**
 	 * Enter a parse tree produced by the {@code addSubExpr}
 	 * labeled alternative in {@link LuxParser#expression}.
@@ -1117,6 +1163,18 @@ public interface LuxParserListener extends ParseTreeListener {
 	 */
 	void exitNullCoalExpr(LuxParser.NullCoalExprContext ctx);
 	/**
+	 * Enter a parse tree produced by the {@code genericStructPosInitExpr}
+	 * labeled alternative in {@link LuxParser#expression}.
+	 * @param ctx the parse tree
+	 */
+	void enterGenericStructPosInitExpr(LuxParser.GenericStructPosInitExprContext ctx);
+	/**
+	 * Exit a parse tree produced by the {@code genericStructPosInitExpr}
+	 * labeled alternative in {@link LuxParser#expression}.
+	 * @param ctx the parse tree
+	 */
+	void exitGenericStructPosInitExpr(LuxParser.GenericStructPosInitExprContext ctx);
+	/**
 	 * Enter a parse tree produced by the {@code castExpr}
 	 * labeled alternative in {@link LuxParser#expression}.
 	 * @param ctx the parse tree
@@ -1213,17 +1271,17 @@ public interface LuxParserListener extends ParseTreeListener {
 	 */
 	void exitMethodCallExpr(LuxParser.MethodCallExprContext ctx);
 	/**
-	 * Enter a parse tree produced by the {@code enumNamedVariantExpr}
+	 * Enter a parse tree produced by the {@code leadingDotFloatLitExpr}
 	 * labeled alternative in {@link LuxParser#expression}.
 	 * @param ctx the parse tree
 	 */
-	void enterEnumNamedVariantExpr(LuxParser.EnumNamedVariantExprContext ctx);
+	void enterLeadingDotFloatLitExpr(LuxParser.LeadingDotFloatLitExprContext ctx);
 	/**
-	 * Exit a parse tree produced by the {@code enumNamedVariantExpr}
+	 * Exit a parse tree produced by the {@code leadingDotFloatLitExpr}
 	 * labeled alternative in {@link LuxParser#expression}.
 	 * @param ctx the parse tree
 	 */
-	void exitEnumNamedVariantExpr(LuxParser.EnumNamedVariantExprContext ctx);
+	void exitLeadingDotFloatLitExpr(LuxParser.LeadingDotFloatLitExprContext ctx);
 	/**
 	 * Enter a parse tree produced by the {@code structLitExpr}
 	 * labeled alternative in {@link LuxParser#expression}.
@@ -1309,6 +1367,18 @@ public interface LuxParserListener extends ParseTreeListener {
 	 */
 	void exitLogicalAndExpr(LuxParser.LogicalAndExprContext ctx);
 	/**
+	 * Enter a parse tree produced by the {@code qualifiedStructPosInitExpr}
+	 * labeled alternative in {@link LuxParser#expression}.
+	 * @param ctx the parse tree
+	 */
+	void enterQualifiedStructPosInitExpr(LuxParser.QualifiedStructPosInitExprContext ctx);
+	/**
+	 * Exit a parse tree produced by the {@code qualifiedStructPosInitExpr}
+	 * labeled alternative in {@link LuxParser#expression}.
+	 * @param ctx the parse tree
+	 */
+	void exitQualifiedStructPosInitExpr(LuxParser.QualifiedStructPosInitExprContext ctx);
+	/**
 	 * Enter a parse tree produced by the {@code strLitExpr}
 	 * labeled alternative in {@link LuxParser#expression}.
 	 * @param ctx the parse tree
@@ -1332,6 +1402,18 @@ public interface LuxParserListener extends ParseTreeListener {
 	 * @param ctx the parse tree
 	 */
 	void exitAwaitExpr(LuxParser.AwaitExprContext ctx);
+	/**
+	 * Enter a parse tree produced by the {@code qualifiedStructNamedInitExpr}
+	 * labeled alternative in {@link LuxParser#expression}.
+	 * @param ctx the parse tree
+	 */
+	void enterQualifiedStructNamedInitExpr(LuxParser.QualifiedStructNamedInitExprContext ctx);
+	/**
+	 * Exit a parse tree produced by the {@code qualifiedStructNamedInitExpr}
+	 * labeled alternative in {@link LuxParser#expression}.
+	 * @param ctx the parse tree
+	 */
+	void exitQualifiedStructNamedInitExpr(LuxParser.QualifiedStructNamedInitExprContext ctx);
 	/**
 	 * Enter a parse tree produced by the {@code cStrLitExpr}
 	 * labeled alternative in {@link LuxParser#expression}.
@@ -1440,6 +1522,18 @@ public interface LuxParserListener extends ParseTreeListener {
 	 * @param ctx the parse tree
 	 */
 	void exitPostIncrExpr(LuxParser.PostIncrExprContext ctx);
+	/**
+	 * Enter a parse tree produced by the {@code genericEnumPosVariantExpr}
+	 * labeled alternative in {@link LuxParser#expression}.
+	 * @param ctx the parse tree
+	 */
+	void enterGenericEnumPosVariantExpr(LuxParser.GenericEnumPosVariantExprContext ctx);
+	/**
+	 * Exit a parse tree produced by the {@code genericEnumPosVariantExpr}
+	 * labeled alternative in {@link LuxParser#expression}.
+	 * @param ctx the parse tree
+	 */
+	void exitGenericEnumPosVariantExpr(LuxParser.GenericEnumPosVariantExprContext ctx);
 	/**
 	 * Enter a parse tree produced by the {@code boolLitExpr}
 	 * labeled alternative in {@link LuxParser#expression}.
