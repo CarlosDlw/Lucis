@@ -1,0 +1,59 @@
+namespace Main;
+
+use std::log::println;
+use std::test::{ assertEqual };
+
+enum PResult<V, E> {
+    Ok(V),
+    Err(E),
+}
+
+PResult<int32, string> pdiv(int32 a, int32 b) {
+    if b == 0 {
+        ret PResult<int32, string>::Err("division by zero");
+    }
+    ret PResult<int32, string>::Ok(a / b);
+}
+
+PResult<int32, string> pprocess(int32 a, int32 b) {
+    auto val = pdiv(a, b)?;
+    ret PResult<int32, string>::Ok(val);
+}
+
+PResult<int32, string> deepProcess(int32 a, int32 b) {
+    auto val = pprocess(a, b)?;
+    ret PResult<int32, string>::Ok(val);
+}
+
+int32 testPropagateOperator() {
+    println("[Testing error handling: ? propagate operator...]");
+
+    // ── Test 1: ? operator success path (single level) ──
+    auto val1 = pprocess(10, 2) catch {
+        ret 1;
+    };
+    assertEqual(val1, 5);
+
+    // ── Test 2: ? operator error path ──
+    auto val2 = pprocess(10, 0) catch {
+        assertEqual(it, "division by zero");
+        ret -1;
+    };
+    assertEqual(val2, -1);
+
+    // ── Test 3: ? operator success (deep propagation) ──
+    auto val3 = deepProcess(20, 4) catch {
+        ret 1;
+    };
+    assertEqual(val3, 5);
+
+    // ── Test 4: ? operator error (deep propagation) ──
+    auto val4 = deepProcess(20, 0) catch {
+        assertEqual(it, "division by zero");
+        ret -1;
+    };
+    assertEqual(val4, -1);
+
+    println("✔ propagate operator tests passed");
+    ret 0;
+}

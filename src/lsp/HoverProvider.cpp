@@ -4567,6 +4567,62 @@ static std::string inferExprTypeName(
     return "";
 }
 
+static std::string inferCatchUnwrapItType(
+        LuxParser::ExpressionContext* sourceExpr,
+        LuxParser::ProgramContext* tree,
+        const std::unordered_map<std::string, HoverProvider::LocalVar>& locals,
+        const FuncLookupCtx* flc) {
+    if (!sourceExpr) return "";
+
+    auto enumTypeName = inferExprTypeName(sourceExpr, locals, flc);
+    if (enumTypeName.empty()) return "";
+
+    auto baseName = enumTypeName;
+    auto lt = baseName.find('<');
+    if (lt != std::string::npos)
+        baseName = baseName.substr(0, lt);
+
+    auto* enumDecl = findEnumDeclForInference(baseName, flc);
+    if (!enumDecl && tree) {
+        for (auto* tld : tree->topLevelDecl()) {
+            if (auto* ed = tld->enumDecl();
+                ed && ed->IDENTIFIER() && ed->IDENTIFIER()->getText() == baseName) {
+                enumDecl = ed;
+                break;
+            }
+        }
+    }
+    if (!enumDecl) return "";
+
+    std::unordered_map<std::string, std::string> subst;
+    if (enumDecl->typeParamList()) {
+        std::vector<std::string> sourceArgs;
+        std::string parsedBase = enumTypeName;
+        parseGenericInstance(enumTypeName, parsedBase, sourceArgs);
+        auto tps = enumDecl->typeParamList()->typeParam();
+        for (size_t i = 0; i < std::min(tps.size(), sourceArgs.size()); i++) {
+            auto ids = tps[i]->IDENTIFIER();
+            if (!ids.empty())
+                subst[ids[0]->getText()] = sourceArgs[i];
+        }
+    }
+
+    std::string errType;
+    for (auto* variant : enumDecl->enumVariant()) {
+        if (!variant || variant->typeSpec().size() != 1) continue;
+        auto payloadName = variant->typeSpec(0)->getText();
+        auto variantName = variant->IDENTIFIER() ? variant->IDENTIFIER()->getText() : "";
+        bool isErrName = variantName == "Err" || variantName == "Error" ||
+                         variantName == "Failure" || variantName == "Fail" ||
+                         variantName == "None";
+        if (isErrName || payloadName == "Error") {
+            errType = substituteTypeParams(payloadName, subst);
+        }
+    }
+
+    return errType.empty() ? "Error" : errType;
+}
+
 static void collectLocalsFromStmts(
         const std::vector<LuxParser::StatementContext*>& stmts,
         size_t beforeLine,
@@ -4659,7 +4715,8 @@ static void collectLocalsFromStmts(
 
             if (auto* cu = dynamic_cast<LuxParser::CatchUnwrapExprContext*>(vd->expression())) {
                 if (cursorInsideNode(cu->block(), beforeLine)) {
-                    out["it"] = {"Error", 0};
+                    auto itType = inferCatchUnwrapItType(cu->expression(), flc ? flc->tree : nullptr, out, flc);
+                    out["it"] = {itType, 0};
                     collectLocalsFromBlock(cu->block(), beforeLine, out, flc);
                 }
             }

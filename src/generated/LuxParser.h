@@ -1,5 +1,5 @@
 
-// Generated from LuxParser.g4 by ANTLR 4.13.2
+// Generated from /home/carlos/Projects/Cpp/Lux/grammar/LuxParser.g4 by ANTLR 4.13.2
 
 #pragma once
 
@@ -1678,6 +1678,16 @@ public:
     std::vector<antlr4::tree::TerminalNode *> COMMA();
     antlr4::tree::TerminalNode* COMMA(size_t i);
     antlr4::tree::TerminalNode *RPAREN();
+
+    virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+  };
+
+  class  PropagateExprContext : public ExpressionContext {
+  public:
+    PropagateExprContext(ExpressionContext *ctx);
+
+    ExpressionContext *expression();
+    antlr4::tree::TerminalNode *QUESTION();
 
     virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
   };

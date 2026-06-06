@@ -1,0 +1,67 @@
+namespace Main;
+
+use std::log::println;
+use std::test::{ assertEqual };
+
+enum CResult<V, E> {
+    Ok(V),
+    Err(E),
+}
+
+struct HttpError {
+    string message;
+    int32 code;
+}
+
+enum Response {
+    Ok(string),
+    Err(HttpError),
+}
+
+CResult<int32, string> cdiv(int32 a, int32 b) {
+    if b == 0 {
+        ret CResult<int32, string>::Err("division by zero");
+    }
+    ret CResult<int32, string>::Ok(a / b);
+}
+
+Response cfetch(string url) {
+    if url == "" {
+        ret Response::Err(HttpError { message: "empty url", code: 400 });
+    }
+    ret Response::Ok("data received");
+}
+
+int32 testErrorHandlingCustomTypes() {
+    println("[Testing error handling: custom error types in expr catch...]");
+
+    // ── Test 1: Custom error payload type (string instead of Error) ──
+    auto val1 = cdiv(10, 2) catch {
+        ret 1;
+    };
+    assertEqual(val1, 5);
+
+    // ── Test 2: Error path with string payload ──
+    auto val2 = cdiv(10, 0) catch {
+        assertEqual(it, "division by zero");
+        ret -1;
+    };
+    assertEqual(val2, -1);
+
+    // ── Test 3: Custom struct error type ──
+    auto val3 = cfetch("https://example.com") catch {
+        ret 1;
+    };
+    assertEqual(val3, "data received");
+
+    // ── Test 4: Custom struct error path ──
+    cfetch("") catch {
+        assertEqual(it.message, "empty url");
+        assertEqual(it.code, 400);
+        println("✔ error handling custom types tests passed");
+        ret 0;
+    };
+
+    println("(should not print)");
+    ret 1;
+}

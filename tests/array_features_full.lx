@@ -10,8 +10,8 @@ int32 arrayParamLenAndFirst([]string names) {
     assertEqual(names.at(0), "carlos");
     assertEqual(names.first(), "carlos");
     assertEqual(names.last(), "lux");
-    assertEqual(names[1], "dlw");
-    assertEqual(names[2], "lux");
+    assertEqual(names.at(1), "dlw");
+    assertEqual(names.at(2), "lux");
     assertEqual(typeof(names), "[]string");
 
     // Full string-array method coverage using a local array value.

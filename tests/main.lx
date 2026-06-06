@@ -40,5 +40,7 @@ int32 main() {
     testStructsCore();
     testStructsPointers();
     testStructsMethodsAndExtend();
+    testErrorHandlingCustomTypes();
+    testPropagateOperator();
     ret 0;
 }

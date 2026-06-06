@@ -82,15 +82,20 @@ static bool classifyUnwrapCatchEnum(const TypeInfo* enumType,
             return false;
         }
 
-        if (payloadTI->name == "Error") {
+        bool isErrName = variant.name == "Err" || variant.name == "Error" ||
+                         variant.name == "Failure" || variant.name == "Fail" ||
+                         variant.name == "None";
+        if (isErrName || payloadTI->name == "Error") {
             if (out.errVariant) {
-                reason = "unwrap-catch requires exactly one Error variant in enum '" + enumType->name + "'";
+                reason = "unwrap-catch requires exactly one error variant in enum '" +
+                         enumType->name + "'";
                 return false;
             }
             out.errVariant = &variant;
         } else {
             if (out.okVariant) {
-                reason = "unwrap-catch requires exactly one non-Error success variant in enum '" + enumType->name + "'";
+                reason = "unwrap-catch requires exactly one success variant in enum '" +
+                         enumType->name + "'";
                 return false;
             }
             out.okVariant = &variant;
@@ -98,7 +103,8 @@ static bool classifyUnwrapCatchEnum(const TypeInfo* enumType,
     }
 
     if (!out.errVariant || !out.okVariant) {
-        reason = "unwrap-catch requires one Error variant and one success variant in enum '" + enumType->name + "'";
+        reason = "unwrap-catch requires one error variant and one success variant in enum '" +
+                 enumType->name + "'";
         return false;
     }
 
@@ -17856,6 +17862,73 @@ std::any IRGen::visitCatchUnwrapExpr(LuxParser::CatchUnwrapExprContext* ctx) {
     }
 
     return static_cast<llvm::Value*>(okPayloadVal);
+}
+
+std::any IRGen::visitPropagateExpr(LuxParser::PropagateExprContext* ctx) {
+    auto* fn = currentFunction_;
+    auto* sourceVal = castValue(visit(ctx->expression()));
+    auto* sourceTI = resolveExprTypeInfo(ctx->expression());
+
+    UnwrapCatchPatternInfo pattern;
+    std::string reason;
+    if (!classifyUnwrapCatchEnum(sourceTI, pattern, reason)) {
+        std::cerr << "lux: " << reason << "\n";
+        return static_cast<llvm::Value*>(llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
+    }
+
+    auto* enumLLTy = sourceTI->toLLVMType(*context_, module_->getDataLayout());
+    auto* okPayloadTy = getEnumVariantPayloadType(*pattern.okVariant);
+    auto* errPayloadTy = getEnumVariantPayloadType(*pattern.errVariant);
+    if (!okPayloadTy || !errPayloadTy) {
+        std::cerr << "lux: invalid propagate enum payload layout\n";
+        return static_cast<llvm::Value*>(llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
+    }
+
+    auto* tempAlloca = builder_->CreateAlloca(enumLLTy, nullptr, "prop.tmp");
+    builder_->CreateStore(sourceVal, tempAlloca);
+
+    auto* tagPtr = builder_->CreateStructGEP(enumLLTy, tempAlloca, 0, "prop.tag.ptr");
+    auto* tagVal = builder_->CreateLoad(llvm::Type::getInt32Ty(*context_), tagPtr, "prop.tag");
+    auto* isErr = builder_->CreateICmpEQ(
+        tagVal,
+        llvm::ConstantInt::get(llvm::Type::getInt32Ty(*context_), pattern.errVariant->discriminant),
+        "prop.is_err");
+
+    auto* okBB  = llvm::BasicBlock::Create(*context_, "prop.ok",  fn);
+    auto* errBB = llvm::BasicBlock::Create(*context_, "prop.err", fn);
+    auto* mergeBB = llvm::BasicBlock::Create(*context_, "prop.merge", fn);
+    builder_->CreateCondBr(isErr, errBB, okBB);
+
+    // Error path: construct error variant and return it
+    builder_->SetInsertPoint(errBB);
+    auto* rawErrPayloadPtr = builder_->CreateStructGEP(enumLLTy, tempAlloca, 1, "prop.err.payload.ptr");
+    auto* errPayloadPtr = builder_->CreateBitCast(
+        rawErrPayloadPtr,
+        llvm::PointerType::getUnqual(*context_),
+        "prop.err.payload.cast");
+    auto* errPayloadVal = builder_->CreateLoad(errPayloadTy, errPayloadPtr, "prop.err.payload");
+
+    // Build the full enum value from the error variant tag + payload
+    std::vector<llvm::Value*> payloads = {errPayloadVal};
+    auto* errEnumVal = buildEnumVariantValue(sourceTI, *pattern.errVariant, payloads);
+    emitAllCleanups();
+    builder_->CreateRet(errEnumVal);
+
+    // Success path: extract payload and continue
+    builder_->SetInsertPoint(okBB);
+    auto* rawOkPayloadPtr = builder_->CreateStructGEP(enumLLTy, tempAlloca, 1, "prop.ok.payload.ptr");
+    auto* okPayloadPtr = builder_->CreateBitCast(
+        rawOkPayloadPtr,
+        llvm::PointerType::getUnqual(*context_),
+        "prop.ok.payload.cast");
+    auto* okPayloadVal = builder_->CreateLoad(okPayloadTy, okPayloadPtr, "prop.ok.payload");
+    builder_->CreateBr(mergeBB);
+    auto* okEndBB = builder_->GetInsertBlock();
+
+    builder_->SetInsertPoint(mergeBB);
+    auto* phi = builder_->CreatePHI(okPayloadTy, 1, "prop.value");
+    phi->addIncoming(okPayloadVal, okEndBB);
+    return static_cast<llvm::Value*>(phi);
 }
 
 std::pair<llvm::Value*, llvm::Value*>

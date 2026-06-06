@@ -1,5 +1,5 @@
 
-// Generated from LuxParser.g4 by ANTLR 4.13.2
+// Generated from /home/carlos/Projects/Cpp/Lux/grammar/LuxParser.g4 by ANTLR 4.13.2
 
 #pragma once
 
@@ -364,6 +364,10 @@ public:
   }
 
   virtual std::any visitTupleLitExpr(LuxParser::TupleLitExprContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual std::any visitPropagateExpr(LuxParser::PropagateExprContext *ctx) override {
     return visitChildren(ctx);
   }
 

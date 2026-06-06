@@ -153,6 +153,7 @@ public:
     std::any visitThrowStmt(LuxParser::ThrowStmtContext* ctx)         override;
     std::any visitTryExpr(LuxParser::TryExprContext* ctx)             override;
     std::any visitCatchUnwrapExpr(LuxParser::CatchUnwrapExprContext* ctx) override;
+    std::any visitPropagateExpr(LuxParser::PropagateExprContext* ctx) override;
     std::any visitExtendDecl(LuxParser::ExtendDeclContext* ctx)        override;
     std::any visitDeferStmt(LuxParser::DeferStmtContext* ctx)           override;
     std::any visitNakedBlockStmt(LuxParser::NakedBlockStmtContext* ctx) override;

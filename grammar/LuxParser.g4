@@ -470,6 +470,8 @@ expression
     | expression RANGE_INCL expression                         # rangeInclExpr
     // Ternary (right-associative for chaining: a ? b : c ? d : e)
     | <assoc=right> expression QUESTION expression COLON expression  # ternaryExpr
+    // Propagate operator: expr? — unwraps Result-shaped enum or returns error
+    | expression QUESTION                                       # propagateExpr
     // Unwrap-catch expression: expr catch { ... }
     | expression CATCH block                                    # catchUnwrapExpr
     // Try expression (lowest precedence – wraps entire sub-expression)

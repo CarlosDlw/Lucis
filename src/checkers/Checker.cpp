@@ -48,16 +48,20 @@ static bool classifyUnwrapCatchEnum(const TypeInfo* enumType,
             return false;
         }
 
-        if (payloadTI->name == "Error") {
+        // "error" variant naming convention: any variant whose name suggests error
+        bool isErrName = variant.name == "Err" || variant.name == "Error" ||
+                         variant.name == "Failure" || variant.name == "Fail" ||
+                         variant.name == "None";
+        if (isErrName || payloadTI->name == "Error") {
             if (out.errVariant) {
-                reason = "unwrap-catch requires exactly one Error variant in enum '" +
+                reason = "unwrap-catch requires exactly one error variant in enum '" +
                          enumType->name + "'";
                 return false;
             }
             out.errVariant = &variant;
         } else {
             if (out.okVariant) {
-                reason = "unwrap-catch requires exactly one non-Error success variant in enum '" +
+                reason = "unwrap-catch requires exactly one success variant in enum '" +
                          enumType->name + "'";
                 return false;
             }
@@ -66,7 +70,7 @@ static bool classifyUnwrapCatchEnum(const TypeInfo* enumType,
     }
 
     if (!out.errVariant || !out.okVariant) {
-        reason = "unwrap-catch requires one Error variant and one success variant in enum '" +
+        reason = "unwrap-catch requires one error variant and one success variant in enum '" +
                  enumType->name + "'";
         return false;
     }
@@ -765,21 +769,9 @@ bool Checker::check(LuxParser::ProgramContext* tree) {
 
     // Pass 1.5: register cross-file structs, enums, and functions
     // from same namespace and user imports, so type resolution works.
-    // Process in dependency order: enums/typeAliases first, then structs/unions, then functions.
+    // Process in dependency order: struct/union skeletons first, then enums/typeAliases.
     if (nsRegistry_) {
-        // Pre-register local enums/aliases and struct/union skeletons first so
-        // cross-file declarations can resolve current-file type names.
-        for (auto* decl : tree->topLevelDecl()) {
-            if (auto* ed = decl->enumDecl()) {
-                auto name = ed->IDENTIFIER()->getText();
-                if (!typeRegistry_.lookup(name) && !genericEnumTemplates_.count(name))
-                    checkEnumDecl(ed);
-            } else if (auto* ta = decl->typeAliasDecl()) {
-                auto name = ta->IDENTIFIER()->getText();
-                if (!typeRegistry_.lookup(name))
-                    checkTypeAliasDecl(ta);
-            }
-        }
+        // First pass: register struct/union skeletons so enum payloads can reference them
         for (auto* decl : tree->topLevelDecl()) {
             if (auto* sd = decl->structDecl()) {
                 auto name = sd->IDENTIFIER()->getText();
@@ -801,6 +793,18 @@ bool Checker::check(LuxParser::ProgramContext* tree) {
                     skeleton.isSigned = false;
                     typeRegistry_.registerType(std::move(skeleton));
                 }
+            }
+        }
+        // Second pass: enums and type aliases (struct/union skeletons now available)
+        for (auto* decl : tree->topLevelDecl()) {
+            if (auto* ed = decl->enumDecl()) {
+                auto name = ed->IDENTIFIER()->getText();
+                if (!typeRegistry_.lookup(name) && !genericEnumTemplates_.count(name))
+                    checkEnumDecl(ed);
+            } else if (auto* ta = decl->typeAliasDecl()) {
+                auto name = ta->IDENTIFIER()->getText();
+                if (!typeRegistry_.lookup(name))
+                    checkTypeAliasDecl(ta);
             }
         }
 
@@ -1942,6 +1946,27 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
     if (auto* te = dynamic_cast<LuxParser::TryExprContext*>(expr))
         return resolveExprType(te->expression());
 
+    // ── Propagate operator: expr? — unwrap Result or return error ─────
+    if (auto* pe = dynamic_cast<LuxParser::PropagateExprContext*>(expr)) {
+        auto* sourceType = resolveExprType(pe->expression());
+        if (!sourceType) return nullptr;
+
+        UnwrapCatchPatternInfo pattern;
+        std::string reason;
+        if (!classifyUnwrapCatchEnum(sourceType, pattern, reason)) {
+            error(pe, reason);
+            return nullptr;
+        }
+        // '?' requires the function return type to match the source enum type
+        if (currentReturnType_ && currentReturnType_ != sourceType) {
+            error(pe, "cannot use '?' propagate: function return type '" +
+                       currentReturnType_->name + "' does not match enum type '" +
+                       sourceType->name + "'");
+            return nullptr;
+        }
+        return singlePayloadType(*pattern.okVariant);
+    }
+
     // ── Catch unwrap expression: expr catch { ... } ───────────────────
     if (auto* cu = dynamic_cast<LuxParser::CatchUnwrapExprContext*>(expr)) {
         auto* sourceType = resolveExprType(cu->expression());
@@ -1954,14 +1979,15 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
             return nullptr;
         }
 
-        auto* errorTI = typeRegistry_.lookup("Error");
+        auto* errPayloadTI = pattern.errVariant
+            ? singlePayloadType(*pattern.errVariant) : nullptr;
+        if (!errPayloadTI) errPayloadTI = typeRegistry_.lookup("Error");
         auto saved = locals_.find("it");
         bool hadSaved = saved != locals_.end();
         VarInfo savedInfo;
         if (hadSaved) savedInfo = saved->second;
 
-        if (errorTI)
-            locals_["it"] = {errorTI, 0, true, true, nullptr};
+        locals_["it"] = {errPayloadTI, 0, true, true, nullptr};
 
         ++unwrapCatchItDepth_;
         auto* retCtx = currentReturnType_ ? currentReturnType_ : typeRegistry_.lookup("void");
@@ -2944,6 +2970,49 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
                     }
                 }
 
+                // Cross-parameter validation for polymorphic builtins
+                if (sig->isPolymorphic && argTypes.size() >= 2) {
+                    auto isNumeric = [](const TypeInfo* t) {
+                        return t && (t->kind == TypeKind::Integer ||
+                                     t->kind == TypeKind::Float);
+                    };
+                    auto isScalar = [](const TypeInfo* t) {
+                        return t && (t->kind == TypeKind::Integer ||
+                                     t->kind == TypeKind::Float ||
+                                     t->kind == TypeKind::Bool ||
+                                     t->kind == TypeKind::Char);
+                    };
+                    bool allAny = true, allNumeric = true;
+                    for (auto& p : sig->paramTypes) {
+                        if (p != "_any") allAny = false;
+                        if (p != "_numeric") allNumeric = false;
+                    }
+                    if (allAny) {
+                        auto* firstType = argTypes[0];
+                        for (size_t i = 1; i < argTypes.size(); i++) {
+                            if (!argTypes[i] || !firstType) continue;
+                            bool stringVsScalar =
+                                (firstType->kind == TypeKind::String && isScalar(argTypes[i])) ||
+                                (argTypes[i]->kind == TypeKind::String && isScalar(firstType));
+                            if (stringVsScalar) {
+                                error(expr, "'" + calleeName + "' argument " +
+                                    std::to_string(i + 1) + ": type mismatch, expected '" +
+                                    firstType->name + "', got '" + argTypes[i]->name + "'");
+                            }
+                        }
+                    }
+                    if (allNumeric) {
+                        for (size_t i = 0; i < argTypes.size(); i++) {
+                            if (!argTypes[i]) continue;
+                            if (!isNumeric(argTypes[i])) {
+                                error(expr, "'" + calleeName + "' argument " +
+                                    std::to_string(i + 1) + ": expected numeric type, got '" +
+                                    argTypes[i]->name + "'");
+                            }
+                        }
+                    }
+                }
+
                 // Resolve return type
                 auto& retName = sig->returnType;
                 if (retName == "_any" || retName == "_numeric") {
@@ -3347,6 +3416,66 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
                              std::to_string(sig->paramTypes.size()) +
                              " argument(s) " + formatParamTypes(sig->paramTypes) +
                              ", got " + std::to_string(moduleArgTypes.size()));
+            }
+
+            // Validate argument types for non-polymorphic builtins
+            if (!sig->isPolymorphic) {
+                for (size_t i = 0; i < moduleArgTypes.size(); i++) {
+                    if (!moduleArgTypes[i]) continue;
+                    auto& expected = sig->paramTypes[i];
+                    if (expected == "_any" || expected == "_numeric" ||
+                        expected == "_integer" || expected == "_float")
+                        continue;
+                    auto* expectedTI = resolveBuiltinReturnType(expected);
+                    if (expectedTI && !isAssignable(expectedTI, moduleArgTypes[i])) {
+                        error(expr, "'" + methodName + "' argument " +
+                            std::to_string(i + 1) + ": expected '" +
+                            expected + "', got '" + moduleArgTypes[i]->name + "'");
+                    }
+                }
+            }
+
+            // Cross-parameter validation for polymorphic builtins
+            if (sig->isPolymorphic && moduleArgTypes.size() >= 2) {
+                auto isNumeric = [](const TypeInfo* t) {
+                    return t && (t->kind == TypeKind::Integer ||
+                                 t->kind == TypeKind::Float);
+                };
+                auto isScalar = [](const TypeInfo* t) {
+                    return t && (t->kind == TypeKind::Integer ||
+                                 t->kind == TypeKind::Float ||
+                                 t->kind == TypeKind::Bool ||
+                                 t->kind == TypeKind::Char);
+                };
+                bool allAny = true, allNumeric = true;
+                for (auto& p : sig->paramTypes) {
+                    if (p != "_any") allAny = false;
+                    if (p != "_numeric") allNumeric = false;
+                }
+                if (allAny) {
+                    auto* firstType = moduleArgTypes[0];
+                    for (size_t i = 1; i < moduleArgTypes.size(); i++) {
+                        if (!moduleArgTypes[i] || !firstType) continue;
+                        bool stringVsScalar =
+                            (firstType->kind == TypeKind::String && isScalar(moduleArgTypes[i])) ||
+                            (moduleArgTypes[i]->kind == TypeKind::String && isScalar(firstType));
+                        if (stringVsScalar) {
+                            error(expr, "'" + methodName + "' argument " +
+                                std::to_string(i + 1) + ": type mismatch, expected '" +
+                                firstType->name + "', got '" + moduleArgTypes[i]->name + "'");
+                        }
+                    }
+                }
+                if (allNumeric) {
+                    for (size_t i = 0; i < moduleArgTypes.size(); i++) {
+                        if (!moduleArgTypes[i]) continue;
+                        if (!isNumeric(moduleArgTypes[i])) {
+                            error(expr, "'" + methodName + "' argument " +
+                                std::to_string(i + 1) + ": expected numeric type, got '" +
+                                moduleArgTypes[i]->name + "'");
+                        }
+                    }
+                }
             }
 
             auto& retName = sig->returnType;
@@ -6504,6 +6633,49 @@ void Checker::checkCallStmt(LuxParser::CallStmtContext* stmt) {
         }
     }
 
+    // Cross-parameter validation for polymorphic builtins
+    if (sig->isPolymorphic && argCount >= 2) {
+        auto isNumeric = [](const TypeInfo* t) {
+            return t && (t->kind == TypeKind::Integer ||
+                         t->kind == TypeKind::Float);
+        };
+        auto isScalar = [](const TypeInfo* t) {
+            return t && (t->kind == TypeKind::Integer ||
+                         t->kind == TypeKind::Float ||
+                         t->kind == TypeKind::Bool ||
+                         t->kind == TypeKind::Char);
+        };
+        bool allAny = true, allNumeric = true;
+        for (auto& p : sig->paramTypes) {
+            if (p != "_any") allAny = false;
+            if (p != "_numeric") allNumeric = false;
+        }
+        if (allAny) {
+            auto* firstType = argTypes[0];
+            for (size_t i = 1; i < argCount; i++) {
+                if (!argTypes[i] || !firstType) continue;
+                bool stringVsScalar =
+                    (firstType->kind == TypeKind::String && isScalar(argTypes[i])) ||
+                    (argTypes[i]->kind == TypeKind::String && isScalar(firstType));
+                if (stringVsScalar) {
+                    error(stmt, "'" + name + "' argument " +
+                        std::to_string(i + 1) + ": type mismatch, expected '" +
+                        firstType->name + "', got '" + argTypes[i]->name + "'");
+                }
+            }
+        }
+        if (allNumeric) {
+            for (size_t i = 0; i < argCount; i++) {
+                if (!argTypes[i]) continue;
+                if (!isNumeric(argTypes[i])) {
+                    error(stmt, "'" + name + "' argument " +
+                        std::to_string(i + 1) + ": expected numeric type, got '" +
+                        argTypes[i]->name + "'");
+                }
+            }
+        }
+    }
+
     analyzeUnsafeCBufferCall(name, stmt, argExprs);
     applyCallOwnershipEffects(name, argExprs, stmt);
 }
@@ -6568,6 +6740,16 @@ unsigned Checker::resolveExprArrayDims(LuxParser::ExpressionContext* expr) {
         return resolveExprArrayDims(deref->expression());
     if (auto* cu = dynamic_cast<LuxParser::CatchUnwrapExprContext*>(expr)) {
         auto* sourceType = resolveExprType(cu->expression());
+        UnwrapCatchPatternInfo pattern;
+        std::string reason;
+        if (!classifyUnwrapCatchEnum(sourceType, pattern, reason))
+            return 0;
+        if (!pattern.okVariant || pattern.okVariant->payloadFields.empty())
+            return 0;
+        return pattern.okVariant->payloadFields[0].arrayDims;
+    }
+    if (auto* pe = dynamic_cast<LuxParser::PropagateExprContext*>(expr)) {
+        auto* sourceType = resolveExprType(pe->expression());
         UnwrapCatchPatternInfo pattern;
         std::string reason;
         if (!classifyUnwrapCatchEnum(sourceType, pattern, reason))

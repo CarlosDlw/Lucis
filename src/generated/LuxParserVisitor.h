@@ -1,5 +1,5 @@
 
-// Generated from LuxParser.g4 by ANTLR 4.13.2
+// Generated from /home/carlos/Projects/Cpp/Lux/grammar/LuxParser.g4 by ANTLR 4.13.2
 
 #pragma once
 
@@ -194,6 +194,8 @@ public:
     virtual std::any visitLshiftExpr(LuxParser::LshiftExprContext *context) = 0;
 
     virtual std::any visitTupleLitExpr(LuxParser::TupleLitExprContext *context) = 0;
+
+    virtual std::any visitPropagateExpr(LuxParser::PropagateExprContext *context) = 0;
 
     virtual std::any visitAddSubExpr(LuxParser::AddSubExprContext *context) = 0;
 

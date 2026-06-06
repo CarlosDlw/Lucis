@@ -1,6 +1,6 @@
 # Error Handling
 
-T provides structured error handling with `try`/`catch`/`finally`, `throw`, and the built-in `Error` struct. For immediate program termination, global builtins `panic`, `assert`, `assertMsg`, and `unreachable` are also available.
+T provides structured error handling with `try`/`catch`/`finally`, `throw`, custom enum-based error types, the `?` propagate operator, and the built-in `Error` struct. For immediate program termination, global builtins `panic`, `assert`, `assertMsg`, and `unreachable` are also available.
 
 ---
 
@@ -105,16 +105,17 @@ auto value = divide(10, 0) catch {
 1. `divide(10, 0)` is evaluated.
 2. If it is the success variant, the success payload becomes the value of the full expression.
 3. If it is the error variant, the `catch` block runs.
-4. Inside that block, `it` is the implicit `Error` payload.
+4. Inside that block, `it` is the implicit error payload.
 
 ### Required enum shape
 
 `expr catch { ... }` is accepted only if the expression type is an enum with this exact structure:
 
 1. Exactly 2 variants total.
-2. One variant has exactly one payload and this payload type is `Error`.
+2. One variant has exactly one payload — this is the error variant.
 3. The other variant has exactly one payload of any type (the success payload).
-4. Variant names do not matter. Only shape and payload types are checked.
+4. The error payload type can be `Error` (the built-in struct) or any other type. The variant must follow the naming convention `Err`, `Error`, `Failure`, `Fail`, or `None`.
+5. Variant names other than the error variant do not matter. Only shape, error-variant naming convention, and payload types are checked.
 
 ### Type inference
 
@@ -130,17 +131,42 @@ auto value = divide(10, 2) catch {
 ### Scope of `it`
 
 - `it` exists only inside the `catch` block of `expr catch { ... }`.
-- Using `it` outside this block is a checker error.
+- Using `it` outside this block is a checker error. The type of `it` is the error variant's payload type.
 
 ### Valid and invalid patterns
 
-Valid:
+Valid (built-in `Error` payload):
 
 ```tm
 enum Response {
     Ok(int32),
     Err(Error)
 }
+```
+
+Valid (custom string payload):
+
+```tm
+enum HttpResult {
+    Success(string),
+    Err(string)
+}
+// Inside catch, it is typed as string
+```
+
+Valid (custom struct payload):
+
+```tm
+struct HttpError {
+    status int32;
+    message string;
+}
+
+enum HttpResponse {
+    Ok(string),
+    Err(HttpError)
+}
+// Inside catch, it is typed as HttpError
 ```
 
 Also valid (different names, same shape):
@@ -162,16 +188,17 @@ enum Bad {
 }
 ```
 
-Invalid (error payload is not exactly `Error`):
+Invalid (error variant name does not follow convention):
 
 ```tm
 enum Bad {
     Ok(int32),
-    Err(string)
+    /// 'Abc' is not recognized as an error variant
+    Abc(string)
 }
 ```
 
-### Complete example (from examples/main.lx)
+### Complete example — built-in Error
 
 ```tm
 namespace Main;
@@ -206,6 +233,158 @@ int32 main() {
     ret 0;
 }
 ```
+
+### Complete example — custom error payload with `?`
+
+```tm
+namespace Main;
+
+struct HttpError {
+    status int32;
+    message string;
+}
+
+enum HttpResponse {
+    Ok(string),
+    Err(HttpError)
+}
+
+/// Simulates an HTTP GET that may fail.
+HttpResponse httpGet(string url) {
+    if url == "" {
+        ret HttpResponse::Err(HttpError { status: 400, message: "empty url" });
+    }
+    // On success, return body as string.
+    ret HttpResponse::Ok("<html>...</html>");
+}
+
+/// Fetches a URL and returns the body length.
+/// Propagates any HttpError to the caller.
+int32 fetchAndMeasure(string url) ? {
+    string body = httpGet(url) ?;
+    ret body.len();
+}
+
+int32 main() {
+    int32 len = fetchAndMeasure("https://example.com") catch {
+        println("HTTP error: " + it.status + " " + it.message);
+        ret 0;
+    };
+    println("body length: " + len);
+    ret 0;
+}
+```
+
+---
+
+## The `?` Propagate Operator
+
+The `?` (propagate) operator is a shorthand for "unwrap the success payload or return the error variant early from the current function". It works with any two-variant enum that follows the same convention as `expr catch`.
+
+### Syntax
+
+Place `?` after a call expression that returns a compatible enum:
+
+```tm
+auto value = fallibleFunction() ?;
+```
+
+This is equivalent to:
+
+```tm
+auto tmp = fallibleFunction();
+auto value = tmp catch { ret tmp; };
+```
+
+### Requirements
+
+1. The expression must have an enum type with exactly 2 variants.
+2. One variant follows the error-variant naming convention (`Err`, `Error`, `Failure`, `Fail`, `None`).
+3. The success payload type must be assignable to the inferred result variable.
+4. The current function's return type must match the source enum type (because the error variant is returned directly).
+
+### Custom payloads
+
+The `?` operator works with any error payload type, just like `expr catch`:
+
+```tm
+enum HttpResult {
+    Success(string),
+    Err(int32)
+}
+
+string fetchData(bool fail) {
+    // htttpGet returns HttpResult;
+    // if Err, the int32 code propagates up
+    // if Success, body gets the string
+    string body = httpGet("https://example.com") ?;
+    ret body;
+}
+```
+
+### Simple propagation example
+
+```tm
+enum Result {
+    Ok(int32),
+    Err(Error)
+}
+
+Result inner() {
+    // Returns Ok(42) or Err(Error{...})
+    ret ...
+}
+
+int32 outer() {
+    int32 val = inner() ?;
+    // If inner() returned Err, outer() returns that Err immediately.
+    // If inner() returned Ok(42), val = 42.
+    ret val;
+}
+```
+
+### Deep propagation
+
+Multiple `?` operators can chain across functions. At each level the error variant propagates up immediately, while the success payload continues as the normal value:
+
+```tm
+enum FileResult {
+    Ok(string),        // file contents
+    Err(Error)
+}
+
+FileResult readFile(string path) { ... }
+
+enum ProcessResult {
+    Ok(int32),
+    Err(Error)
+}
+
+ProcessResult process() {
+    string contents = readFile("input.txt") ?;
+    // If readFile failed, process() returns the Err variant immediately.
+    // Otherwise contents holds the file data.
+    int32 lines = countLines(contents);
+    ret ProcessResult::Ok(lines);
+}
+
+int32 main() {
+    int32 result = process() ?;
+    // If process() failed, main() returns the Err variant.
+    // Otherwise result holds the line count.
+    println("lines: " + result);
+    ret 0;
+}
+```
+
+### Key differences from `expr catch`
+
+| Aspect | `expr catch` | `?` operator |
+|--------|-------------|--------------|
+| Purpose | Handle the error inline | Propagate the error to the caller |
+| Requires a catch block | Yes | No |
+| Allows recovery | Yes | No |
+| Return type constraint | None | Must match enclosing function return type |
 
 ---
 
