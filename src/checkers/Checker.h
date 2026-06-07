@@ -241,6 +241,13 @@ private:
     // User imports: symbol name → namespace it was imported from
     std::unordered_map<std::string, std::string> userImports_;
 
+    // Injected enum variant names from `use EnumType::*;`
+    struct InjectedVariant {
+        const TypeInfo* enumType;
+        const EnumVariantInfo* variantInfo;
+    };
+    std::unordered_map<std::string, InjectedVariant> enumVariantImports_;
+
     // C bindings from parsed #include headers
     const CBindings* cBindings_ = nullptr;
 

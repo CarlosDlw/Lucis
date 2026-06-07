@@ -1809,6 +1809,12 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
 
         // User namespace import or same-namespace symbol
         if (userImports_.count(name)) return nullptr;
+
+        // Enum variant imported via `use EnumType::*;`
+        auto evIt = enumVariantImports_.find(name);
+        if (evIt != enumVariantImports_.end())
+            return evIt->second.enumType;
+
         if (nsRegistry_ && !currentNamespace_.empty()) {
             auto* sym = nsRegistry_->findSymbol(currentNamespace_, name);
             if (sym && sym->sourceFile != currentFile_)
@@ -2895,6 +2901,37 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
 
                 applyCallOwnershipEffects(calleeName, argExprs, expr);
                 return instantiateGenericFunc(calleeName, funcIt->second, *inferred, expr);
+            }
+        }
+
+        // Bare enum variant call via `use EnumType::*;`
+        if (!calleeName.empty()) {
+            auto evIt = enumVariantImports_.find(calleeName);
+            if (evIt != enumVariantImports_.end()) {
+                auto* enumType = evIt->second.enumType;
+                auto* variantInfo = evIt->second.variantInfo;
+
+                if (variantInfo->payloadKind == EnumPayloadKind::Named) {
+                    error(expr, "variant '" + calleeName +
+                                 "' uses named payload; use braces instead of parentheses");
+                    return enumType;
+                }
+                if (argTypes.size() != variantInfo->payloadFields.size()) {
+                    error(expr, "variant '" + calleeName +
+                                 "' expects " + std::to_string(variantInfo->payloadFields.size()) +
+                                 " argument(s), got " + std::to_string(argTypes.size()));
+                    return enumType;
+                }
+                for (size_t i = 0; i < argTypes.size(); i++) {
+                    auto* expected = variantInfo->payloadFields[i].typeInfo;
+                    if (argTypes[i] && expected && !isAssignable(expected, argTypes[i])) {
+                        error(expr, "variant '" + calleeName +
+                                     "' argument " + std::to_string(i + 1) +
+                                     " type mismatch: expected '" + expected->name +
+                                     "', got '" + argTypes[i]->name + "'");
+                    }
+                }
+                return enumType;
             }
         }
 
@@ -4515,6 +4552,27 @@ void Checker::checkUseDecls(LuxParser::ProgramContext* tree) {
             } else {
                 error(grp, "unknown module or namespace '" + path + "'");
             }
+        } else if (auto* ew = dynamic_cast<LuxParser::UseEnumWildcardContext*>(useDecl)) {
+            unsigned arrayDims = 0;
+            auto* enumType = resolveTypeSpec(ew->typeSpec(), arrayDims);
+            if (!enumType) {
+                error(ew, "unknown type in 'use' wildcard");
+            } else if (enumType->kind != TypeKind::Enum) {
+                error(ew, "type '" + enumType->name + "' is not an enum");
+            } else if (arrayDims > 0) {
+                error(ew, "cannot use array type in 'use' wildcard");
+            } else {
+                for (const auto& vi : enumType->enumVariantInfos) {
+                    auto [it, inserted] = enumVariantImports_.try_emplace(
+                        vi.name,
+                        InjectedVariant{ enumType, &vi });
+                    if (!inserted) {
+                        error(ew, "ambiguous variant name '" + vi.name +
+                                   "': already imported from '" +
+                                   it->second.enumType->name + "'");
+                    }
+                }
+            }
         }
     };
 
@@ -5219,6 +5277,7 @@ void Checker::checkBlock(LuxParser::BlockContext* block,
                          const TypeInfo* retType,
                          std::unordered_set<std::string>* initCapture) {
     auto savedLocals = locals_;
+    auto savedEnumImports = enumVariantImports_;
     ++scopeDepth_;
     bool terminated = false;
     for (auto* stmt : block->statement()) {
@@ -5241,11 +5300,38 @@ void Checker::checkBlock(LuxParser::BlockContext* block,
     }
     // Full restore: removes inner-scope variables and restores outer values.
     locals_ = savedLocals;
+    enumVariantImports_ = savedEnumImports;
 }
 
 void Checker::checkStmt(LuxParser::StatementContext* stmt,
                         const TypeInfo* retType,
                         bool& terminated) {
+    if (auto* ud = stmt->useDecl()) {
+        if (auto* ew = dynamic_cast<LuxParser::UseEnumWildcardContext*>(ud)) {
+            unsigned arrayDims = 0;
+            auto* enumType = resolveTypeSpec(ew->typeSpec(), arrayDims);
+            if (!enumType) {
+                error(ew, "unknown type in 'use' wildcard");
+            } else if (enumType->kind != TypeKind::Enum) {
+                error(ew, "type '" + enumType->name + "' is not an enum");
+            } else if (arrayDims > 0) {
+                error(ew, "cannot use array type in 'use' wildcard");
+            } else {
+                for (const auto& vi : enumType->enumVariantInfos) {
+                    auto [it, inserted] = enumVariantImports_.try_emplace(
+                        vi.name,
+                        InjectedVariant{ enumType, &vi });
+                    if (!inserted) {
+                        error(ew, "ambiguous variant name '" + vi.name +
+                                   "': already imported from '" +
+                                   it->second.enumType->name + "'");
+                    }
+                }
+            }
+        }
+        return;
+    }
+
     if (auto* varDecl = stmt->varDeclStmt()) {
         checkVarDeclStmt(varDecl);
     } else if (auto* assign = stmt->assignStmt()) {
@@ -5350,6 +5436,7 @@ void Checker::checkStmt(LuxParser::StatementContext* stmt,
     } else if (auto* nb = stmt->nakedBlockStmt()) {
         // {} — lexical scope: variables declared inside do NOT leak out
         auto savedLocals = locals_;
+        auto savedEnumImports = enumVariantImports_;
         ++scopeDepth_;
         bool innerTerminated = false;
         for (auto* inner : nb->statement()) {
@@ -5365,6 +5452,7 @@ void Checker::checkStmt(LuxParser::StatementContext* stmt,
             if (it != locals_.end()) info.used = info.used || it->second.used;
         }
         locals_ = savedLocals;
+        enumVariantImports_ = savedEnumImports;
 
     } else if (auto* ib = stmt->inlineBlockStmt()) {
         // #inline {} — variables are injected into parent scope
@@ -5381,6 +5469,7 @@ void Checker::checkStmt(LuxParser::StatementContext* stmt,
         // reference variables declared inside the body. Process body first, then
         // validate callbacks with body locals visible.
         auto savedLocals = locals_;
+        auto savedEnumImports = enumVariantImports_;
         ++scopeDepth_;
         bool innerTerminated = false;
         for (auto* inner : sb->statement()) {
@@ -5416,6 +5505,7 @@ void Checker::checkStmt(LuxParser::StatementContext* stmt,
             if (it != locals_.end()) info.used = info.used || it->second.used;
         }
         locals_ = savedLocals;
+        enumVariantImports_ = savedEnumImports;
     }
 
     if (isTerminatorStmt(stmt))

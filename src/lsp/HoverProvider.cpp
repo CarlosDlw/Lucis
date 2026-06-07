@@ -54,6 +54,16 @@ static std::string safeText(antlr4::tree::TerminalNode *n) {
 static std::string safeText(antlr4::ParserRuleContext *ctx) {
     return ctx ? ctx->getText() : "";
 }
+
+static std::string extractBaseTypeName(LuxParser::TypeSpecContext* typeSpec) {
+    auto text = typeSpec->getText();
+    auto pos = text.find('<');
+    if (pos != std::string::npos)
+        text.resize(pos);
+    while (!text.empty() && text.back() == ' ') text.pop_back();
+    return text;
+}
+
 template<typename T>
 static std::string safeIdAt(T *ctx, size_t i) {
     if (!ctx) return "";
@@ -831,6 +841,42 @@ std::optional<HoverResult> HoverProvider::hoverIdent(
     if (typeInfo) {
         std::string md = "```lux\n(type) " + typeInfo->name + "\n```";
         return makeResult(token, md);
+    }
+
+    // 18) Enum variant from `use EnumType::*;`
+    auto tryEnumWildcardHover = [&](LuxParser::UseDeclContext* useDecl) -> std::optional<HoverResult> {
+        auto* ew = dynamic_cast<LuxParser::UseEnumWildcardContext*>(useDecl);
+        if (!ew) return std::nullopt;
+        auto baseName = extractBaseTypeName(ew->typeSpec());
+        if (baseName.empty()) return std::nullopt;
+        auto* ed = findEnumDecl(tree, baseName);
+        if (!ed) return std::nullopt;
+        for (auto* variant : ed->enumVariant()) {
+            auto* v = variant->IDENTIFIER();
+            if (v && v->getText() == name) {
+                std::string md = "```lux\n(variant) " + baseName + "::" + name + "\n```";
+                return makeResult(token, withDoc(md, ed->getStart()->getLine() - 1));
+            }
+        }
+        return std::nullopt;
+    };
+    for (auto* pre : tree->preambleDecl()) {
+        auto* useDecl = pre->useDecl();
+        if (!useDecl) continue;
+        auto r = tryEnumWildcardHover(useDecl);
+        if (r) return r;
+    }
+    // Also check in-function use EnumType::*; statements before cursor
+    auto* enclosingFunc = findEnclosingFunction(tree, cursorLine);
+    if (enclosingFunc && enclosingFunc->block()) {
+        for (auto* stmt : enclosingFunc->block()->statement()) {
+            auto* start = stmt->getStart();
+            if (start && start->getLine() - 1 > cursorLine) break;
+            if (auto* useDecl = stmt->useDecl()) {
+                auto r = tryEnumWildcardHover(useDecl);
+                if (r) return r;
+            }
+        }
     }
 
     return std::nullopt;

@@ -1345,6 +1345,16 @@ std::any IRGen::visitUseGroup(LuxParser::UseGroupContext* ctx) {
     return {};
 }
 
+// use Response<int32>::*;
+std::any IRGen::visitUseEnumWildcard(LuxParser::UseEnumWildcardContext* ctx) {
+    auto* ti = resolveTypeInfo(ctx->typeSpec());
+    if (!ti || ti->kind != TypeKind::Enum) return {};
+    for (const auto& vi : ti->enumVariantInfos) {
+        enumVariantImports_.try_emplace(vi.name, InjectedEnumVariant{ ti, &vi });
+    }
+    return {};
+}
+
 // ═══════════════════════════════════════════════════════════════════════
 //  Cross-file symbol registration (namespace support)
 // ═══════════════════════════════════════════════════════════════════════
@@ -11239,6 +11249,27 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                 auto callee = declareBuiltin("lux_joinAllVec", strTy, {ptrTy});
                 auto* ret = builder_->CreateCall(callee, {vecArgAlloca}, "joinAll");
                 return static_cast<llvm::Value*>(buildString(ret));
+            }
+        }
+
+        // Bare enum variant call via `use EnumType::*;`
+        if (!calleeName.empty()) {
+            auto evIt = enumVariantImports_.find(calleeName);
+            if (evIt != enumVariantImports_.end()) {
+                auto* enumType = evIt->second.enumType;
+                auto* variantInfo = evIt->second.variantInfo;
+                std::vector<llvm::Value*> payloadValues(variantInfo->payloadFields.size());
+                if (auto* argList = ctx->argList()) {
+                    auto exprs = argList->expression();
+                    for (size_t i = 0; i < exprs.size() && i < payloadValues.size(); i++) {
+                        payloadValues[i] = castValue(visit(exprs[i]));
+                    }
+                }
+                for (auto* expr : ctx->argList() ? ctx->argList()->expression()
+                                                  : std::vector<LuxParser::ExpressionContext*>{})
+                    consumeExprIfOwnedLocal(expr);
+                return static_cast<llvm::Value*>(
+                    buildEnumVariantValue(enumType, *variantInfo, payloadValues));
             }
         }
 

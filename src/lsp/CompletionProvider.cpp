@@ -7,6 +7,7 @@
 #include "parser/Parser.h"
 
 #include <algorithm>
+#include <functional>
 #include <sstream>
 
 // Normalize lowercase native keywords (vec, map, set) to registry CamelCase
@@ -1649,6 +1650,7 @@ CompletionProvider::complete(const std::string &source, size_t line, size_t col,
     addLocalDecls(items, parsed->tree, req.prefix);
     addProjectSymbols(items, project, filePath, req.prefix);
     addImportedSymbols(items, parsed->tree, project, req.prefix);
+    addEnumWildcardVariants(items, parsed->tree, project, req.prefix, line);
     addGlobalBuiltins(items, req.prefix);
     addCSymbols(items, *cBindingsPtr, req.prefix);
     addKeywords(items, req.prefix);
@@ -2655,6 +2657,189 @@ void CompletionProvider::addImportedSymbols(std::vector<CompletionItem> &items,
       items.push_back(std::move(ci));
     }
   }
+}
+
+static std::string extractBaseTypeName(LuxParser::TypeSpecContext* typeSpec) {
+    auto text = typeSpec->getText();
+    auto pos = text.find('<');
+    if (pos != std::string::npos)
+        text.resize(pos);
+    while (!text.empty() && text.back() == ' ') text.pop_back();
+    return text;
+}
+
+void CompletionProvider::addEnumWildcardVariants(std::vector<CompletionItem>& items,
+                                                  LuxParser::ProgramContext* tree,
+                                                  const ProjectContext* project,
+                                                  const std::string& prefix,
+                                                  size_t cursorLine) {
+    auto process = [&](LuxParser::UseDeclContext* useDecl) {
+        auto* ew = dynamic_cast<LuxParser::UseEnumWildcardContext*>(useDecl);
+        if (!ew) return;
+        auto baseName = extractBaseTypeName(ew->typeSpec());
+        if (baseName.empty()) return;
+
+        auto addVariants = [&](LuxParser::EnumDeclContext* ed) {
+            for (auto* variant : ed->enumVariant()) {
+                auto* v = variant->IDENTIFIER();
+                if (!v) continue;
+                if (!matchesPrefix(v->getText(), prefix)) continue;
+                CompletionItem ci;
+                ci.label = v->getText();
+                ci.kind = CompletionKind::EnumMember;
+                ci.detail = baseName + "::" + v->getText();
+                items.push_back(std::move(ci));
+            }
+        };
+
+        auto* ed = findEnumDecl(tree, baseName);
+        if (ed) {
+            addVariants(ed);
+            return;
+        }
+
+        if (project && project->isValid()) {
+            for (auto& ns : project->registry().allNamespaces()) {
+                auto* sym = project->registry().findSymbol(ns, baseName);
+                if (!sym || sym->kind != ExportedSymbol::Enum) continue;
+                auto* decl = dynamic_cast<LuxParser::EnumDeclContext*>(sym->decl);
+                if (!decl) continue;
+                addVariants(decl);
+                return;
+            }
+        }
+    };
+
+    // Preamble-level use EnumType::*;
+    for (auto* pre : tree->preambleDecl()) {
+        auto* useDecl = pre->useDecl();
+        if (!useDecl) continue;
+        process(useDecl);
+    }
+    // Top-level use EnumType::*;
+    for (auto* tld : tree->topLevelDecl()) {
+        auto* useDecl = tld->useDecl();
+        if (!useDecl) continue;
+        process(useDecl);
+    }
+    // In-function use EnumType::*; statements
+    auto* func = findEnclosingFunction(tree, cursorLine);
+    if (!func || !func->block()) return;
+
+    // Recursive lambda to walk statements for useEnumWildcard
+    std::function<void(const std::vector<LuxParser::StatementContext*>&, size_t)>
+        scanStmts;
+    std::function<void(LuxParser::StatementContext*, size_t)> scanStmt;
+
+    auto cursorInside = [](antlr4::ParserRuleContext* node, size_t beforeLine) {
+        if (!node) return false;
+        auto* s = node->getStart();
+        auto* e = node->getStop();
+        if (!s || !e) return false;
+        return s->getLine() - 1 <= beforeLine && e->getLine() - 1 >= beforeLine;
+    };
+
+    scanStmt = [&](LuxParser::StatementContext* stmt, size_t bline) {
+        auto* start = stmt->getStart();
+        if (start && start->getLine() - 1 > bline) return;
+
+        if (auto* useDecl = stmt->useDecl()) {
+            process(useDecl);
+        }
+
+        if (auto* ns = stmt->nakedBlockStmt()) {
+            if (cursorInside(ns, bline))
+                scanStmts(ns->statement(), bline);
+        }
+        if (auto* is = stmt->inlineBlockStmt()) {
+            if (cursorInside(is, bline))
+                scanStmts(is->statement(), bline);
+        }
+        if (auto* sb = stmt->scopeBlockStmt()) {
+            if (cursorInside(sb, bline))
+                scanStmts(sb->statement(), bline);
+        }
+        if (auto* ifs = stmt->ifStmt()) {
+            if (ifs->ifBody()) {
+                if (auto* b = ifs->ifBody()->block()) {
+                    if (cursorInside(b, bline))
+                        scanStmts(b->statement(), bline);
+                } else if (auto* s = ifs->ifBody()->statement()) {
+                    if (cursorInside(s, bline))
+                        scanStmt(s, bline);
+                }
+            }
+            for (auto* elif : ifs->elseIfClause()) {
+                if (elif->ifBody()) {
+                    if (auto* b = elif->ifBody()->block()) {
+                        if (cursorInside(b, bline))
+                            scanStmts(b->statement(), bline);
+                    } else if (auto* s = elif->ifBody()->statement()) {
+                        if (cursorInside(s, bline))
+                            scanStmt(s, bline);
+                    }
+                }
+            }
+            if (ifs->elseClause()) {
+                if (auto* eb = ifs->elseClause()->ifBody()) {
+                    if (auto* b = eb->block()) {
+                        if (cursorInside(b, bline))
+                            scanStmts(b->statement(), bline);
+                    } else if (auto* s = eb->statement()) {
+                        if (cursorInside(s, bline))
+                            scanStmt(s, bline);
+                    }
+                }
+            }
+        }
+        if (auto* fs = stmt->forStmt()) {
+            if (auto* fin = dynamic_cast<LuxParser::ForInStmtContext*>(fs)) {
+                if (cursorInside(fin->block(), bline))
+                    scanStmts(fin->block()->statement(), bline);
+            }
+            if (auto* fc = dynamic_cast<LuxParser::ForClassicStmtContext*>(fs)) {
+                if (cursorInside(fc->block(), bline))
+                    scanStmts(fc->block()->statement(), bline);
+            }
+        }
+        if (auto* ws = stmt->whileStmt()) {
+            if (cursorInside(ws->block(), bline))
+                scanStmts(ws->block()->statement(), bline);
+        }
+        if (auto* dw = stmt->doWhileStmt()) {
+            if (cursorInside(dw->block(), bline))
+                scanStmts(dw->block()->statement(), bline);
+        }
+        if (auto* ls = stmt->loopStmt()) {
+            if (cursorInside(ls->block(), bline))
+                scanStmts(ls->block()->statement(), bline);
+        }
+        if (auto* sw = stmt->switchStmt()) {
+            for (auto* cc : sw->caseClause()) {
+                if (cursorInside(cc->block(), bline))
+                    scanStmts(cc->block()->statement(), bline);
+            }
+            if (sw->defaultClause() && cursorInside(sw->defaultClause()->block(), bline))
+                scanStmts(sw->defaultClause()->block()->statement(), bline);
+        }
+        if (auto* tc = stmt->tryCatchStmt()) {
+            if (cursorInside(tc->block(), bline))
+                scanStmts(tc->block()->statement(), bline);
+            for (auto* cc : tc->catchClause()) {
+                if (cursorInside(cc->block(), bline))
+                    scanStmts(cc->block()->statement(), bline);
+            }
+            if (tc->finallyClause() && cursorInside(tc->finallyClause()->block(), bline))
+                scanStmts(tc->finallyClause()->block()->statement(), bline);
+        }
+    };
+
+    scanStmts = [&](const std::vector<LuxParser::StatementContext*>& stmts, size_t bline) {
+        for (auto* stmt : stmts)
+            scanStmt(stmt, bline);
+    };
+
+    scanStmts(func->block()->statement(), cursorLine);
 }
 
 void CompletionProvider::addProjectSymbols(std::vector<CompletionItem> &items,

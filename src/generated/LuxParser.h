@@ -250,6 +250,19 @@ public:
     virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
   };
 
+  class  UseEnumWildcardContext : public UseDeclContext {
+  public:
+    UseEnumWildcardContext(UseDeclContext *ctx);
+
+    antlr4::tree::TerminalNode *USE();
+    TypeSpecContext *typeSpec();
+    antlr4::tree::TerminalNode *SCOPE();
+    antlr4::tree::TerminalNode *STAR();
+    antlr4::tree::TerminalNode *SEMI();
+
+    virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+  };
+
   UseDeclContext* useDecl();
 
   class  ModulePathContext : public antlr4::ParserRuleContext {
@@ -646,6 +659,7 @@ public:
   public:
     StatementContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
+    UseDeclContext *useDecl();
     VarDeclStmtContext *varDeclStmt();
     AssignStmtContext *assignStmt();
     CompoundAssignStmtContext *compoundAssignStmt();

@@ -39,6 +39,10 @@ public:
     return visitChildren(ctx);
   }
 
+  virtual std::any visitUseEnumWildcard(LuxParser::UseEnumWildcardContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
   virtual std::any visitModulePath(LuxParser::ModulePathContext *ctx) override {
     return visitChildren(ctx);
   }

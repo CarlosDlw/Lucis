@@ -181,6 +181,10 @@ static void walkTree(IdentMap& map, antlr4::tree::ParseTree* node) {
     else if (auto* ctx = dynamic_cast<LuxParser::UseRootContext*>(node)) {
         classifyIdent(map, ctx->IDENTIFIER(), SemanticTokenType::Namespace);
     }
+    else if (auto* ctx = dynamic_cast<LuxParser::UseEnumWildcardContext*>(node)) {
+        if (ctx->typeSpec() && ctx->typeSpec()->IDENTIFIER())
+            classifyIdent(map, ctx->typeSpec()->IDENTIFIER(), SemanticTokenType::Enum);
+    }
 
     // ── struct ──
     else if (auto* ctx = dynamic_cast<LuxParser::StructDeclContext*>(node)) {

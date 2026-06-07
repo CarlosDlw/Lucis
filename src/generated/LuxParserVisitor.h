@@ -31,6 +31,8 @@ public:
 
     virtual std::any visitUseGroup(LuxParser::UseGroupContext *context) = 0;
 
+    virtual std::any visitUseEnumWildcard(LuxParser::UseEnumWildcardContext *context) = 0;
+
     virtual std::any visitModulePath(LuxParser::ModulePathContext *context) = 0;
 
     virtual std::any visitIncludeDecl(LuxParser::IncludeDeclContext *context) = 0;

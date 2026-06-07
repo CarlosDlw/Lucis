@@ -52,6 +52,7 @@ public:
     std::any visitUseRoot(LuxParser::UseRootContext* ctx)             override;
     std::any visitUseItem(LuxParser::UseItemContext* ctx)             override;
     std::any visitUseGroup(LuxParser::UseGroupContext* ctx)           override;
+    std::any visitUseEnumWildcard(LuxParser::UseEnumWildcardContext* ctx) override;
     std::any visitVarDeclStmt(LuxParser::VarDeclStmtContext* ctx)     override;
     std::any visitAssignStmt(LuxParser::AssignStmtContext* ctx)       override;
     std::any visitCompoundAssignStmt(LuxParser::CompoundAssignStmtContext* ctx) override;
@@ -255,6 +256,13 @@ private:
 
     // User imports: symbol name → source namespace
     std::unordered_map<std::string, std::string> userImports_;
+
+    // Injected enum variant names from `use EnumType::*;`
+    struct InjectedEnumVariant {
+        const TypeInfo* enumType;
+        const EnumVariantInfo* variantInfo;
+    };
+    std::unordered_map<std::string, InjectedEnumVariant> enumVariantImports_;
 
     // C bindings from parsed #include headers
     const CBindings* cBindings_ = nullptr;

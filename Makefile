@@ -69,6 +69,9 @@ grammar:
 			LuxLexer.g4 LuxParser.g4
 	@echo "ANTLR generated sources updated in $(GENERATED_DIR)."
 
+test:
+	./build/lux run tests/main.lx -q
+
 ## help  — lista os targets disponíveis
 help:
 	@echo ""
@@ -78,4 +81,5 @@ help:
 	@echo "  make configure BUILD_TYPE=Release SANITIZERS=OFF"
 	@echo "  make configure GENERATOR='Ninja' CMAKE_FLAGS='-DCMAKE_PREFIX_PATH=/opt/custom'"
 	@echo "  make grammar ANTLR_JAR=antlr-4.13.2-complete.jar"
+	@echo "  make test"
 	@echo ""

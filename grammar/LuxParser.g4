@@ -26,6 +26,7 @@ useDecl
     : USE IDENTIFIER SEMI                                                            # useRoot
     | USE modulePath SCOPE IDENTIFIER SEMI                                         # useItem
     | USE modulePath SCOPE LBRACE IDENTIFIER (COMMA IDENTIFIER)* RBRACE SEMI      # useGroup
+    | USE typeSpec SCOPE STAR SEMI                                                 # useEnumWildcard
     ;
 
 // Module path: std::log, std::io, etc.
@@ -149,7 +150,8 @@ block
 
 // Statements
 statement
-    : varDeclStmt
+    : useDecl
+    | varDeclStmt
     | assignStmt
     | compoundAssignStmt
     | derefAssignStmt

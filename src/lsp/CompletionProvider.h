@@ -142,6 +142,13 @@ private:
                             const ProjectContext* project,
                             const std::string& prefix);
 
+    // Add enum variant names from `use EnumType::*;` declarations.
+    void addEnumWildcardVariants(std::vector<CompletionItem>& items,
+                                 LuxParser::ProgramContext* tree,
+                                 const ProjectContext* project,
+                                 const std::string& prefix,
+                                 size_t cursorLine);
+
     // Add cross-file symbols from the project registry.
     void addProjectSymbols(std::vector<CompletionItem>& items,
                            const ProjectContext* project,
