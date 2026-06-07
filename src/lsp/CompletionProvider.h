@@ -73,6 +73,9 @@ public:
         const std::string& filePath, const ProjectContext* project,
         ParseResult* preParsed = nullptr);
 
+    // Pre-warm C header cache (call early to avoid first-completion delay).
+    void warmHeaderCache();
+
     // Lightweight variable info.
     struct LocalVar {
         std::string typeName;

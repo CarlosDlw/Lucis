@@ -4,6 +4,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <thread>
 
 namespace fs = std::filesystem;
 
@@ -143,6 +144,14 @@ void LspServer::handleInitialize(const json& msg) {
 void LspServer::handleInitialized(const json& /*msg*/) {
     try {
         std::cerr << "[lux-lsp] initialized\n";
+
+        // Warm caches in background to avoid blocking first completion.
+        std::thread([] {
+            std::cerr << "[lux-lsp] warming C header cache...\n";
+            CompletionProvider p;
+            p.warmHeaderCache();
+            std::cerr << "[lux-lsp] C header cache ready\n";
+        }).detach();
     } catch (const std::exception& e) {
         std::cerr << "[lux-lsp] initialized error: " << e.what() << "\n";
     } catch (...) {

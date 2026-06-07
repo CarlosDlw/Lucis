@@ -3934,20 +3934,62 @@ void CompletionProvider::addGlobalBuiltins(std::vector<CompletionItem> &items,
   }
 }
 
+void CompletionProvider::warmHeaderCache() {
+  std::vector<CompletionItem> dummy;
+  // The cache is a function-local static inside addHeaderSuggestions.
+  // Create a temporary to trigger the one-time build.
+  CompletionProvider temp;
+  temp.addHeaderSuggestions(dummy, "", false);
+}
+
 void CompletionProvider::addHeaderSuggestions(
     std::vector<CompletionItem> &items, const std::string &prefix,
     bool omitClosingChar) {
   // Cache the header list to avoid re-scanning on every keystroke
   static std::vector<std::string> cachedHeaders;
+  static std::vector<std::string> cachedHeadersLower;
   static bool cached = false;
   if (!cached) {
     cachedHeaders = CHeaderResolver::listSystemHeaders();
+    cachedHeadersLower.reserve(cachedHeaders.size());
+    for (auto &h : cachedHeaders) {
+      std::string lower;
+      lower.reserve(h.size());
+      for (auto c : h) lower += std::tolower(c);
+      cachedHeadersLower.push_back(std::move(lower));
+    }
     cached = true;
   }
 
-  for (auto &h : cachedHeaders) {
-    if (!matchesPrefix(h, prefix))
-      continue;
+  if (prefix.empty()) {
+    // No prefix — show all headers
+    for (auto &h : cachedHeaders) {
+      CompletionItem ci;
+      ci.label = h;
+      ci.kind = CompletionKind::File;
+      ci.detail = "C header";
+      ci.insertText = omitClosingChar ? h : h + ">";
+      items.push_back(std::move(ci));
+    }
+    return;
+  }
+
+  // Binary search on lowercased index
+  std::string prefixLower;
+  prefixLower.reserve(prefix.size());
+  for (auto c : prefix) prefixLower += std::tolower(c);
+
+  auto first = std::lower_bound(cachedHeadersLower.begin(), cachedHeadersLower.end(), prefixLower);
+  // Iterate while elements still match the prefix
+  for (auto it = first; it != cachedHeadersLower.end(); ++it) {
+    if (it->size() < prefixLower.size()) break;
+    bool match = true;
+    for (size_t i = 0; i < prefixLower.size(); i++) {
+      if ((*it)[i] != prefixLower[i]) { match = false; break; }
+    }
+    if (!match) break;
+    size_t idx = it - cachedHeadersLower.begin();
+    auto &h = cachedHeaders[idx];
     CompletionItem ci;
     ci.label = h;
     ci.kind = CompletionKind::File;

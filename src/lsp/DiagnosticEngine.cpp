@@ -125,9 +125,9 @@ std::vector<Diagnostic> DiagnosticEngine::run(const std::string& source,
         // Only resolve C headers locally if the project doesn't already have bindings.
         // This avoids re-parsing C headers on every keystroke when the project
         // context already scanned them.
+        CBindings localBindings;
+        TypeRegistry localTypeReg;
         if (project->cBindings().functions().empty()) {
-            CBindings localBindings;
-            TypeRegistry localTypeReg;
             std::vector<LuxParser::IncludeDeclContext*> includes;
             for (auto* pre : parsed.tree->preambleDecl())
                 if (auto* inc = pre->includeDecl()) includes.push_back(inc);
@@ -145,9 +145,12 @@ std::vector<Diagnostic> DiagnosticEngine::run(const std::string& source,
                             resolver.resolveLocalHeader(header, ".");
                     }
                 }
-                checker.setCBindings(&localBindings);
             }
         }
+        if (!localBindings.functions().empty() || !localBindings.structs().empty())
+            checker.setCBindings(&localBindings);
+        else
+            checker.setCBindings(&project->cBindings());
 
         checker.check(parsed.tree);
         for (auto& d : checker.diagnostics()) {
