@@ -72,6 +72,16 @@ int CLI::run() {
         return HelpC::run(cmd);
     }
 
+    if (first == "--version" || first == "-v") {
+        auto* ver = findCommand("version");
+        if (ver) {
+            ArgParser parser("lux version", ver->description());
+            ver->buildArgs(parser);
+            return ver->run(parser);
+        }
+        return 1;
+    }
+
     // Check if first arg is a registered command
     if (auto* cmd = findCommand(first)) {
         // Build a stripped argv with program name + remaining args
