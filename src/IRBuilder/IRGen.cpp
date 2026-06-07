@@ -4730,9 +4730,7 @@ std::any IRGen::visitIfStmt(LuxParser::IfStmtContext* ctx) {
 
     // ── Emit the if-condition ──────────────────────────────────────
     auto* cond = castValue(visit(ctx->expression()));
-    if (!cond->getType()->isIntegerTy(1))
-        cond = builder_->CreateICmpNE(cond,
-            llvm::ConstantInt::get(cond->getType(), 0), "tobool");
+    cond = toBool(cond, resolveExprTypeInfo(ctx->expression()), "tobool");
 
     auto* falseTarget = !condBlocks.empty() ? condBlocks[0]
                       : elseBlock           ? elseBlock
@@ -4760,11 +4758,9 @@ std::any IRGen::visitIfStmt(LuxParser::IfStmtContext* ctx) {
     for (size_t i = 0; i < elseIfs.size(); i++) {
         // Condition
         builder_->SetInsertPoint(condBlocks[i]);
-        auto* eifCond = castValue(
-            visit(elseIfs[i]->expression()));
-        if (!eifCond->getType()->isIntegerTy(1))
-            eifCond = builder_->CreateICmpNE(eifCond,
-                llvm::ConstantInt::get(eifCond->getType(), 0), "tobool");
+        auto* eifCond = castValue(visit(elseIfs[i]->expression()));
+        eifCond = toBool(eifCond,
+            resolveExprTypeInfo(elseIfs[i]->expression()), "tobool");
 
         auto* nextFalse = (i + 1 < condBlocks.size()) ? condBlocks[i + 1]
                         : elseBlock                    ? elseBlock
@@ -4834,9 +4830,7 @@ std::any IRGen::visitForClassicStmt(LuxParser::ForClassicStmtContext* ctx) {
     // Condition
     builder_->SetInsertPoint(condBB);
     auto* cond = castValue(visit(exprs[1]));
-    if (!cond->getType()->isIntegerTy(1))
-        cond = builder_->CreateICmpNE(cond,
-            llvm::ConstantInt::get(cond->getType(), 0), "tobool");
+    cond = toBool(cond, resolveExprTypeInfo(exprs[1]), "tobool");
     builder_->CreateCondBr(cond, bodyBB, endBB);
 
     // Body
@@ -5349,9 +5343,7 @@ std::any IRGen::visitWhileStmt(LuxParser::WhileStmtContext* ctx) {
     // Condition
     builder_->SetInsertPoint(condBB);
     auto* cond = castValue(visit(ctx->expression()));
-    if (!cond->getType()->isIntegerTy(1))
-        cond = builder_->CreateICmpNE(cond,
-            llvm::ConstantInt::get(cond->getType(), 0), "tobool");
+    cond = toBool(cond, resolveExprTypeInfo(ctx->expression()), "tobool");
     builder_->CreateCondBr(cond, bodyBB, endBB);
 
     // Body
@@ -5400,9 +5392,7 @@ std::any IRGen::visitDoWhileStmt(LuxParser::DoWhileStmtContext* ctx) {
     // Condition
     builder_->SetInsertPoint(condBB);
     auto* cond = castValue(visit(ctx->expression()));
-    if (!cond->getType()->isIntegerTy(1))
-        cond = builder_->CreateICmpNE(cond,
-            llvm::ConstantInt::get(cond->getType(), 0), "tobool");
+    cond = toBool(cond, resolveExprTypeInfo(ctx->expression()), "tobool");
     builder_->CreateCondBr(cond, bodyBB, endBB);
 
     loopStack_.pop_back();
@@ -11788,25 +11778,14 @@ std::any IRGen::visitAddSubExpr(LuxParser::AddSubExprContext* ctx) {
 
 std::any IRGen::visitLogicalNotExpr(LuxParser::LogicalNotExprContext* ctx) {
     auto* val = castValue(visit(ctx->expression()));
-    // Truncate to i1 if not already bool
-    if (!val->getType()->isIntegerTy(1)) {
-        llvm::Value* zero = val->getType()->isPointerTy()
-            ? static_cast<llvm::Value*>(llvm::ConstantPointerNull::get(llvm::cast<llvm::PointerType>(val->getType())))
-            : static_cast<llvm::Value*>(llvm::ConstantInt::get(val->getType(), 0));
-        val = builder_->CreateICmpNE(val, zero, "tobool");
-    }
+    val = toBool(val, resolveExprTypeInfo(ctx->expression()), "tobool");
     return static_cast<llvm::Value*>(builder_->CreateNot(val, "not"));
 }
 
 std::any IRGen::visitLogicalAndExpr(LuxParser::LogicalAndExprContext* ctx) {
     auto* fn = currentFunction_;
     auto* lhs = castValue(visit(ctx->expression(0)));
-    if (!lhs->getType()->isIntegerTy(1)) {
-        llvm::Value* zero = lhs->getType()->isPointerTy()
-            ? static_cast<llvm::Value*>(llvm::ConstantPointerNull::get(llvm::cast<llvm::PointerType>(lhs->getType())))
-            : static_cast<llvm::Value*>(llvm::ConstantInt::get(lhs->getType(), 0));
-        lhs = builder_->CreateICmpNE(lhs, zero, "tobool");
-    }
+    lhs = toBool(lhs, resolveExprTypeInfo(ctx->expression(0)), "tobool");
 
     // Short-circuit: if lhs is false, skip rhs
     auto* rhsBB   = llvm::BasicBlock::Create(*context_, "and.rhs",  fn);
@@ -11816,12 +11795,7 @@ std::any IRGen::visitLogicalAndExpr(LuxParser::LogicalAndExprContext* ctx) {
 
     builder_->SetInsertPoint(rhsBB);
     auto* rhs = castValue(visit(ctx->expression(1)));
-    if (!rhs->getType()->isIntegerTy(1)) {
-        llvm::Value* zero = rhs->getType()->isPointerTy()
-            ? static_cast<llvm::Value*>(llvm::ConstantPointerNull::get(llvm::cast<llvm::PointerType>(rhs->getType())))
-            : static_cast<llvm::Value*>(llvm::ConstantInt::get(rhs->getType(), 0));
-        rhs = builder_->CreateICmpNE(rhs, zero, "tobool");
-    }
+    rhs = toBool(rhs, resolveExprTypeInfo(ctx->expression(1)), "tobool");
     auto* rhsEndBB = builder_->GetInsertBlock();
     builder_->CreateBr(mergeBB);
 
@@ -11835,12 +11809,7 @@ std::any IRGen::visitLogicalAndExpr(LuxParser::LogicalAndExprContext* ctx) {
 std::any IRGen::visitLogicalOrExpr(LuxParser::LogicalOrExprContext* ctx) {
     auto* fn = currentFunction_;
     auto* lhs = castValue(visit(ctx->expression(0)));
-    if (!lhs->getType()->isIntegerTy(1)) {
-        llvm::Value* zero = lhs->getType()->isPointerTy()
-            ? static_cast<llvm::Value*>(llvm::ConstantPointerNull::get(llvm::cast<llvm::PointerType>(lhs->getType())))
-            : static_cast<llvm::Value*>(llvm::ConstantInt::get(lhs->getType(), 0));
-        lhs = builder_->CreateICmpNE(lhs, zero, "tobool");
-    }
+    lhs = toBool(lhs, resolveExprTypeInfo(ctx->expression(0)), "tobool");
 
     // Short-circuit: if lhs is true, skip rhs
     auto* rhsBB   = llvm::BasicBlock::Create(*context_, "or.rhs",  fn);
@@ -11850,12 +11819,7 @@ std::any IRGen::visitLogicalOrExpr(LuxParser::LogicalOrExprContext* ctx) {
 
     builder_->SetInsertPoint(rhsBB);
     auto* rhs = castValue(visit(ctx->expression(1)));
-    if (!rhs->getType()->isIntegerTy(1)) {
-        llvm::Value* zero = rhs->getType()->isPointerTy()
-            ? static_cast<llvm::Value*>(llvm::ConstantPointerNull::get(llvm::cast<llvm::PointerType>(rhs->getType())))
-            : static_cast<llvm::Value*>(llvm::ConstantInt::get(rhs->getType(), 0));
-        rhs = builder_->CreateICmpNE(rhs, zero, "tobool");
-    }
+    rhs = toBool(rhs, resolveExprTypeInfo(ctx->expression(1)), "tobool");
     auto* rhsEndBB = builder_->GetInsertBlock();
     builder_->CreateBr(mergeBB);
 
@@ -12281,10 +12245,7 @@ std::any IRGen::visitTypeofExpr(LuxParser::TypeofExprContext* ctx) {
 
 std::any IRGen::visitTernaryExpr(LuxParser::TernaryExprContext* ctx) {
     auto* cond = castValue(visit(ctx->expression(0)));
-    // Convert to i1 if not already bool
-    if (!cond->getType()->isIntegerTy(1))
-        cond = builder_->CreateICmpNE(cond,
-            llvm::ConstantInt::get(cond->getType(), 0), "tobool");
+    cond = toBool(cond, resolveExprTypeInfo(ctx->expression(0)), "tobool");
 
     auto* currentFn = builder_->GetInsertBlock()->getParent();
     auto* trueBB  = llvm::BasicBlock::Create(*context_, "ternary.true");
@@ -18071,6 +18032,39 @@ IRGen::promoteArithmetic(llvm::Value* lhs, llvm::Value* rhs) {
     }
 
     return {lhs, rhs};
+}
+
+llvm::Value* IRGen::toBool(llvm::Value* value,
+                           const TypeInfo* valueTI,
+                           const std::string& name) {
+    if (value->getType()->isIntegerTy(1))
+        return value;
+
+    if (valueTI && valueTI->kind == TypeKind::String) {
+        // Strings are represented as fat pointers {ptr, len}; truthiness is based on length.
+        auto* len = builder_->CreateExtractValue(value, 1, name + ".len");
+        return builder_->CreateICmpNE(len,
+            llvm::ConstantInt::get(len->getType(), 0), name);
+    }
+
+    if (value->getType()->isPointerTy()) {
+        auto* ptrTy = llvm::cast<llvm::PointerType>(value->getType());
+        return builder_->CreateICmpNE(value,
+            llvm::ConstantPointerNull::get(ptrTy), name);
+    }
+
+    if (value->getType()->isIntegerTy()) {
+        return builder_->CreateICmpNE(value,
+            llvm::ConstantInt::get(value->getType(), 0), name);
+    }
+
+    if (value->getType()->isFloatingPointTy()) {
+        return builder_->CreateFCmpONE(value,
+            llvm::ConstantFP::get(value->getType(), 0.0), name);
+    }
+
+    // Fallback: preserve existing behavior for unexpected non-bool types.
+    return value;
 }
 
 // ═══════════════════════════════════════════════════════════════════════

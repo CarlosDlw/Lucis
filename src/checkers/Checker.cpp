@@ -2353,7 +2353,10 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
     // ── Ternary: cond ? trueExpr : falseExpr ────────────────────────
     if (auto* tern = dynamic_cast<LuxParser::TernaryExprContext*>(expr)) {
         auto exprs = tern->expression();
-        resolveExprType(exprs[0]); // condition
+        auto* condType = resolveExprType(exprs[0]); // condition
+        if (condType && !isConditionType(condType))
+            error(expr, "ternary condition has type '" + condType->name +
+                         "', expected 'bool' or numeric type");
         auto* trueType = resolveExprType(exprs[1]);
         auto* falseType = resolveExprType(exprs[2]);
         if (trueType && falseType && !isAssignable(trueType, falseType))

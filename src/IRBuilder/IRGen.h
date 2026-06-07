@@ -445,6 +445,9 @@ private:
                                     const std::vector<llvm::Value*>& args,
                                     size_t expected);
     llvm::Value*        castValue(std::any result);
+    llvm::Value*        toBool(llvm::Value* value,
+                                const TypeInfo* valueTI = nullptr,
+                                const std::string& name = "tobool");
     std::pair<llvm::Value*, llvm::Value*>
                        promoteArithmetic(llvm::Value* lhs, llvm::Value* rhs);
 };
