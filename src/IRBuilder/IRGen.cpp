@@ -12286,12 +12286,37 @@ std::any IRGen::visitTernaryExpr(LuxParser::TernaryExprContext* ctx) {
         cond = builder_->CreateICmpNE(cond,
             llvm::ConstantInt::get(cond->getType(), 0), "tobool");
 
-    auto* trueVal  = castValue(visit(ctx->expression(1)));
-    auto* falseVal = castValue(visit(ctx->expression(2)));
+    auto* currentFn = builder_->GetInsertBlock()->getParent();
+    auto* trueBB  = llvm::BasicBlock::Create(*context_, "ternary.true");
+    auto* falseBB = llvm::BasicBlock::Create(*context_, "ternary.false");
+    auto* mergeBB = llvm::BasicBlock::Create(*context_, "ternary.merge");
 
-    // Promote to common type
+    builder_->CreateCondBr(cond, trueBB, falseBB);
+
+    // True branch — evaluate only if condition is true
+    currentFn->insert(currentFn->end(), trueBB);
+    builder_->SetInsertPoint(trueBB);
+    auto* trueVal = castValue(visit(ctx->expression(1)));
+    builder_->CreateBr(mergeBB);
+    // Refresh trueBB in case the visit created new blocks after it
+    auto* trueBBFinal = builder_->GetInsertBlock();
+
+    // False branch — evaluate only if condition is false
+    currentFn->insert(currentFn->end(), falseBB);
+    builder_->SetInsertPoint(falseBB);
+    auto* falseVal = castValue(visit(ctx->expression(2)));
+    builder_->CreateBr(mergeBB);
+    auto* falseBBFinal = builder_->GetInsertBlock();
+
+    // Merge block — phi selects the right value
+    currentFn->insert(currentFn->end(), mergeBB);
+    builder_->SetInsertPoint(mergeBB);
+
     auto [t, f] = promoteArithmetic(trueVal, falseVal);
-    return static_cast<llvm::Value*>(builder_->CreateSelect(cond, t, f, "ternary"));
+    auto* phi = builder_->CreatePHI(t->getType(), 2, "ternary");
+    phi->addIncoming(t, trueBBFinal);
+    phi->addIncoming(f, falseBBFinal);
+    return static_cast<llvm::Value*>(phi);
 }
 
 std::any IRGen::visitIsExpr(LuxParser::IsExprContext* ctx) {
