@@ -48,6 +48,20 @@ static bool unifyGenericType(
     const std::unordered_set<std::string>& typeParams,
     std::unordered_map<std::string, std::string>& inferred);
 
+static std::string safeText(antlr4::tree::TerminalNode *n) {
+    return n ? n->getText() : "";
+}
+static std::string safeText(antlr4::ParserRuleContext *ctx) {
+    return ctx ? ctx->getText() : "";
+}
+template<typename T>
+static std::string safeIdAt(T *ctx, size_t i) {
+    if (!ctx) return "";
+    if (i >= ctx->IDENTIFIER().size()) return "";
+    auto *n = ctx->IDENTIFIER(i);
+    return n ? n->getText() : "";
+}
+
 static bool isCHoverType(const std::string& rawType, const CBindings& bindings) {
     std::string t = rawType;
 
@@ -248,7 +262,7 @@ std::optional<HoverResult> HoverProvider::hover(const std::string& source,
         if (!useDecl) continue;
         if (auto* root = dynamic_cast<LuxParser::UseRootContext*>(useDecl)) {
             if (root->IDENTIFIER() && root->IDENTIFIER()->getSymbol() == hoveredToken) {
-                std::string md = "```lux\n(module) " + root->IDENTIFIER()->getText() + "\n```";
+                std::string md = "```lux\n(module) " + safeText(root->IDENTIFIER()) + "\n```";
                 return makeResult(hoveredToken, md);
             }
         }
@@ -256,7 +270,7 @@ std::optional<HoverResult> HoverProvider::hover(const std::string& source,
             if (!item->IDENTIFIER() || !item->modulePath()) continue;
             // Hover on the imported symbol name
             if (item->IDENTIFIER()->getSymbol() == hoveredToken) {
-                auto symbolName = item->IDENTIFIER()->getText();
+                auto symbolName = safeText(item->IDENTIFIER());
                 // Resolve via project context
                 std::string modulePath;
                 for (auto* id : item->modulePath()->IDENTIFIER()) {
@@ -440,7 +454,7 @@ std::optional<HoverResult> HoverProvider::hover(const std::string& source,
 
                 // Method name
                 if (method->IDENTIFIER(0) && method->IDENTIFIER(0)->getSymbol() == hoveredToken) {
-                    std::string structName = ext->IDENTIFIER() ? ext->IDENTIFIER()->getText() : "?";
+                    std::string structName = ext->IDENTIFIER() ? safeText(ext->IDENTIFIER()) : "?";
                     bool isStatic = (method->AMPERSAND() == nullptr);
                     std::string retType = typeSpecToString(method->typeSpec());
                     std::string md = "```lux\n(" + std::string(isStatic ? "static method" : "method")
@@ -458,7 +472,7 @@ std::optional<HoverResult> HoverProvider::hover(const std::string& source,
                         if (!first) md += ", ";
                         first = false;
                         md += typeSpecToString(p->typeSpec()) + " "
-                            + (p->IDENTIFIER() ? p->IDENTIFIER()->getText() : "?");
+                            + (p->IDENTIFIER() ? safeText(p->IDENTIFIER()) : "?");
                     }
                     md += ")\n```";
                     return makeResult(hoveredToken, md);
@@ -484,7 +498,7 @@ std::optional<HoverResult> HoverProvider::hover(const std::string& source,
                         std::string md = formatTypedHover(
                             "parameter",
                             typeSpecToString(p->typeSpec()),
-                            p->IDENTIFIER()->getText(),
+                            safeText(p->IDENTIFIER()),
                             *cBindingsPtr);
                         return makeResult(hoveredToken, md);
                     }
@@ -555,7 +569,7 @@ std::optional<HoverResult> HoverProvider::hoverIdent(
             if (!es || !ee) continue;
             if (tokenLine < es->getLine() || tokenLine > ee->getLine()) continue;
             if (!ext->IDENTIFIER()) continue;
-            std::string structName = ext->IDENTIFIER()->getText();
+            std::string structName = safeText(ext->IDENTIFIER());
             std::string md = "```lux\n(self) *" + structName + "\n```";
             return makeResult(token, md);
         }
@@ -583,7 +597,7 @@ std::optional<HoverResult> HoverProvider::hoverIdent(
                 }
                 for (auto* p : params) {
                     if (!p->IDENTIFIER()) continue;
-                    if (p->IDENTIFIER()->getText() == name) {
+                    if (safeText(p->IDENTIFIER()) == name) {
                         std::string md = formatTypedHover(
                             "parameter",
                             typeSpecToString(p->typeSpec()),
@@ -619,7 +633,7 @@ std::optional<HoverResult> HoverProvider::hoverIdent(
     // 2b) Extern function declaration
     for (auto* tld : tree->topLevelDecl()) {
         if (auto* ext = tld->externDecl()) {
-            if (ext->IDENTIFIER() && ext->IDENTIFIER()->getText() == name) {
+            if (ext->IDENTIFIER() && safeText(ext->IDENTIFIER()) == name) {
                 return makeResult(token, withDoc(formatExternDecl(ext), ext->getStart()->getLine() - 1));
             }
         }
@@ -1055,7 +1069,7 @@ std::optional<HoverResult> HoverProvider::walkExprForHover(
                 auto* sd = findStructDecl(tree, structName);
                 if (sd) {
                     for (auto* f : sd->structField()) {
-                        if (f->IDENTIFIER()->getText() == fieldName) {
+                        if (safeText(f->IDENTIFIER()) == fieldName) {
                             std::string md = "```lux\n(field) "
                                 + typeSpecToString(f->typeSpec()) + " "
                                 + structName + "." + fieldName + "\n```";
@@ -1074,13 +1088,13 @@ std::optional<HoverResult> HoverProvider::walkExprForHover(
                         auto* sd = dynamic_cast<LuxParser::StructDeclContext*>(sym->decl);
                         if (!sd) continue;
                         if (!structName.empty() &&
-                            sd->IDENTIFIER()->getText() != structName)
+                            safeText(sd->IDENTIFIER()) != structName)
                             continue;
                         for (auto* f : sd->structField()) {
-                            if (f->IDENTIFIER()->getText() == fieldName) {
+                            if (safeText(f->IDENTIFIER()) == fieldName) {
                                 std::string md = "```lux\n(field) "
                                     + typeSpecToString(f->typeSpec()) + " "
-                                    + sd->IDENTIFIER()->getText() + "."
+                                    + safeText(sd->IDENTIFIER()) + "."
                                     + fieldName + "\n```";
                                 return makeResult(token, md);
                             }
@@ -1231,7 +1245,7 @@ std::optional<HoverResult> HoverProvider::walkExprForHover(
     if (auto* fc = dynamic_cast<LuxParser::FnCallExprContext*>(expr)) {
         if (auto* calleeIdent = dynamic_cast<LuxParser::IdentExprContext*>(fc->expression())) {
             if (calleeIdent->IDENTIFIER() && calleeIdent->IDENTIFIER()->getSymbol() == hoveredToken) {
-                std::string funcName = calleeIdent->IDENTIFIER()->getText();
+                std::string funcName = safeText(calleeIdent->IDENTIFIER());
                 auto buildCallHover = [&](LuxParser::FunctionDeclContext* fd) -> std::optional<HoverResult> {
                     if (!fd) return std::nullopt;
                     if (!fd->typeParamList()) {
@@ -1275,7 +1289,7 @@ std::optional<HoverResult> HoverProvider::walkExprForHover(
                     std::unordered_map<std::string, std::string> inferred;
                     bool ok = true;
                     for (size_t i = 0; i < formalParams.size(); i++) {
-                        auto formal = formalParams[i]->typeSpec()->getText();
+                        auto formal = safeText(formalParams[i]->typeSpec());
                         auto actual = actualArgTypes[i];
                         if (actual.empty()) { ok = false; break; }
                         if (!unifyGenericType(formal, actual, tps, inferred)) {
@@ -1292,7 +1306,7 @@ std::optional<HoverResult> HoverProvider::walkExprForHover(
                             withDoc(formatFunctionDecl(fd), fd->getStart()->getLine() - 1));
                     }
 
-                    std::string retType = substituteTypeParams(fd->typeSpec()->getText(), inferred);
+                    std::string retType = substituteTypeParams(safeText(fd->typeSpec()), inferred);
                     std::ostringstream ss;
                     ss << "```lux\n(function) " << retType << " " << funcName << "(";
                     bool first = true;
@@ -1300,8 +1314,8 @@ std::optional<HoverResult> HoverProvider::walkExprForHover(
                         for (auto* p : params->param()) {
                             if (!first) ss << ", ";
                             first = false;
-                            ss << substituteTypeParams(p->typeSpec()->getText(), inferred)
-                               << " " << p->IDENTIFIER()->getText();
+                            ss << substituteTypeParams(safeText(p->typeSpec()), inferred)
+                               << " " << safeText(p->IDENTIFIER());
                         }
                     }
                     ss << ")\n```";
@@ -1310,7 +1324,7 @@ std::optional<HoverResult> HoverProvider::walkExprForHover(
 
                 for (auto* tld : tree->topLevelDecl()) {
                     auto* fd = tld->functionDecl();
-                    if (!fd || fd->IDENTIFIER().empty() || fd->IDENTIFIER(0)->getText() != funcName)
+                    if (!fd || fd->IDENTIFIER().empty() || safeIdAt(fd, 0) != funcName)
                         continue;
                     if (auto h = buildCallHover(fd)) return h;
                 }
@@ -1356,7 +1370,7 @@ std::optional<HoverResult> HoverProvider::walkExprForHover(
                 auto* sd = findStructDecl(tree, structName);
                 if (sd) {
                     for (auto* f : sd->structField()) {
-                        if (f->IDENTIFIER()->getText() == fieldName) {
+                        if (safeText(f->IDENTIFIER()) == fieldName) {
                             std::string md = "```lux\n(field) "
                                 + typeSpecToString(f->typeSpec()) + " "
                                 + structName + "." + fieldName + "\n```";
@@ -1374,7 +1388,7 @@ std::optional<HoverResult> HoverProvider::walkExprForHover(
                             auto* rsd = dynamic_cast<LuxParser::StructDeclContext*>(sym->decl);
                             if (!rsd) continue;
                             for (auto* f : rsd->structField()) {
-                                if (f->IDENTIFIER()->getText() == fieldName) {
+                                if (safeText(f->IDENTIFIER()) == fieldName) {
                                     std::string md = "```lux\n(field) "
                                         + typeSpecToString(f->typeSpec()) + " "
                                         + structName + "." + fieldName + "\n```";
@@ -1388,7 +1402,7 @@ std::optional<HoverResult> HoverProvider::walkExprForHover(
                 auto* ud = findUnionDecl(tree, structName);
                 if (ud) {
                     for (auto* f : ud->unionField()) {
-                        if (f->IDENTIFIER()->getText() == fieldName) {
+                        if (safeText(f->IDENTIFIER()) == fieldName) {
                             std::string md = "```lux\n(field) "
                                 + typeSpecToString(f->typeSpec()) + " "
                                 + structName + "." + fieldName + "\n```";
@@ -1437,7 +1451,7 @@ std::optional<HoverResult> HoverProvider::walkExprForHover(
             std::string funcName = fnId->getText();
             for (auto* tld : tree->topLevelDecl()) {
                 auto* fd = tld->functionDecl();
-                if (!fd || fd->IDENTIFIER().empty() || fd->IDENTIFIER(0)->getText() != funcName)
+                if (!fd || fd->IDENTIFIER().empty() || safeIdAt(fd, 0) != funcName)
                     continue;
 
                 if (!fd->typeParamList()) {
@@ -1454,7 +1468,7 @@ std::optional<HoverResult> HoverProvider::walkExprForHover(
                         subst[ids[0]->getText()] = args[i]->getText();
                 }
 
-                std::string retType = substituteTypeParams(fd->typeSpec()->getText(), subst);
+                std::string retType = substituteTypeParams(safeText(fd->typeSpec()), subst);
                 std::ostringstream ss;
                 ss << "```lux\n(function) " << retType << " " << funcName << "(";
                 bool first = true;
@@ -1462,8 +1476,8 @@ std::optional<HoverResult> HoverProvider::walkExprForHover(
                     for (auto* p : pl->param()) {
                         if (!first) ss << ", ";
                         first = false;
-                        ss << substituteTypeParams(p->typeSpec()->getText(), subst)
-                           << " " << p->IDENTIFIER()->getText();
+                        ss << substituteTypeParams(safeText(p->typeSpec()), subst)
+                           << " " << safeText(p->IDENTIFIER());
                     }
                 }
                 ss << ")\n```";
@@ -1503,7 +1517,7 @@ std::optional<HoverResult> HoverProvider::walkExprForHover(
             if (ext) {
                 for (auto* m : ext->extendMethod()) {
                     if (m->IDENTIFIER().empty()) continue;
-                    if (m->IDENTIFIER(0)->getText() == methodName) {
+                    if (safeIdAt(m, 0) == methodName) {
                         std::ostringstream ss;
                         ss << "```lux\n(static method) " << typeSpecToString(m->typeSpec())
                            << " " << structName << "<T>::" << methodName << "(";
@@ -1513,7 +1527,7 @@ std::optional<HoverResult> HoverProvider::walkExprForHover(
                                 if (!first) ss << ", ";
                                 first = false;
                                 ss << typeSpecToString(p->typeSpec())
-                                   << " " << p->IDENTIFIER()->getText();
+                                   << " " << safeText(p->IDENTIFIER());
                             }
                         }
                         ss << ")\n```";
@@ -1549,7 +1563,7 @@ std::optional<HoverResult> HoverProvider::walkExprForHover(
                 std::string fieldName = ids[i]->getText();
                 if (sd) {
                     for (auto* f : sd->structField()) {
-                        if (f->IDENTIFIER()->getText() == fieldName) {
+                        if (safeText(f->IDENTIFIER()) == fieldName) {
                             std::string md = "```lux\n(field) "
                                 + typeSpecToString(f->typeSpec()) + " "
                                 + structName + "." + fieldName + "\n```";
@@ -1588,7 +1602,7 @@ std::optional<HoverResult> HoverProvider::walkExprForHover(
 
         if (isE->SCOPE() && isE->IDENTIFIER(0) &&
             isE->IDENTIFIER(0)->getSymbol() == hoveredToken) {
-            auto variantName = isE->IDENTIFIER(0)->getText();
+            auto variantName = safeIdAt(isE, 0);
             auto* ts = isE->typeSpec();
             std::string fullType = ts ? typeSpecToString(ts) : std::string("?");
 
@@ -1601,8 +1615,8 @@ std::optional<HoverResult> HoverProvider::walkExprForHover(
             isE->IDENTIFIER(1)->getSymbol() == hoveredToken) {
             std::string bindType = "auto";
             if (auto* ts = isE->typeSpec(); ts && ts->IDENTIFIER() && isE->IDENTIFIER(0)) {
-                auto enumName = ts->IDENTIFIER()->getText();
-                auto variantName = isE->IDENTIFIER(0)->getText();
+                auto enumName = safeText(ts->IDENTIFIER());
+                auto variantName = safeIdAt(isE, 0);
                 if (auto* ed = findEnumDecl(tree, enumName)) {
                     for (auto* variant : ed->enumVariant()) {
                         auto* vId = variant->IDENTIFIER();
@@ -1626,7 +1640,7 @@ std::optional<HoverResult> HoverProvider::walkExprForHover(
             }
 
             std::string md = "```lux\n(variable) " + bindType + " " +
-                             isE->IDENTIFIER(1)->getText() + "\n```";
+                             safeIdAt(isE, 1) + "\n```";
             return makeResult(hoveredToken, md);
         }
 
@@ -1927,7 +1941,7 @@ std::optional<HoverResult> HoverProvider::walkStmtForHover(
                     }
                 }
                 for (auto* f : sd->structField()) {
-                    if (f->IDENTIFIER()->getText() == fieldName)
+                    if (safeText(f->IDENTIFIER()) == fieldName)
                         return substituteTypeParams(typeSpecToString(f->typeSpec()), subst);
                 }
             }
@@ -1941,7 +1955,7 @@ std::optional<HoverResult> HoverProvider::walkStmtForHover(
                     }
                 }
                 for (auto* f : ud->unionField()) {
-                    if (f->IDENTIFIER()->getText() == fieldName)
+                    if (safeText(f->IDENTIFIER()) == fieldName)
                         return substituteTypeParams(typeSpecToString(f->typeSpec()), subst);
                 }
             }
@@ -2026,7 +2040,7 @@ std::optional<HoverResult> HoverProvider::walkStmtForHover(
                     }
                 }
                 for (auto* f : sd->structField()) {
-                    if (f->IDENTIFIER()->getText() == fieldName)
+                    if (safeText(f->IDENTIFIER()) == fieldName)
                         return substituteTypeParams(typeSpecToString(f->typeSpec()), subst);
                 }
             }
@@ -2039,7 +2053,7 @@ std::optional<HoverResult> HoverProvider::walkStmtForHover(
                     }
                 }
                 for (auto* f : ud->unionField()) {
-                    if (f->IDENTIFIER()->getText() == fieldName)
+                    if (safeText(f->IDENTIFIER()) == fieldName)
                         return substituteTypeParams(typeSpecToString(f->typeSpec()), subst);
                 }
             }
@@ -2127,7 +2141,7 @@ std::optional<HoverResult> HoverProvider::walkStmtForHover(
                     }
                 }
                 for (auto* f : sd->structField()) {
-                    if (f->IDENTIFIER()->getText() == fieldName)
+                    if (safeText(f->IDENTIFIER()) == fieldName)
                         return substituteTypeParams(typeSpecToString(f->typeSpec()), subst);
                 }
             }
@@ -2140,7 +2154,7 @@ std::optional<HoverResult> HoverProvider::walkStmtForHover(
                     }
                 }
                 for (auto* f : ud->unionField()) {
-                    if (f->IDENTIFIER()->getText() == fieldName)
+                    if (safeText(f->IDENTIFIER()) == fieldName)
                         return substituteTypeParams(typeSpecToString(f->typeSpec()), subst);
                 }
             }
@@ -2182,8 +2196,8 @@ std::optional<HoverResult> HoverProvider::walkStmtForHover(
                         if (!ms || !me) continue;
                         if (tokenLine < ms->getLine() || tokenLine > me->getLine()) continue;
                         if (method->AMPERSAND() && method->IDENTIFIER().size() >= 2 &&
-                            method->IDENTIFIER(1)->getText() == "self") {
-                            currentType = "*" + ext->IDENTIFIER()->getText();
+                            safeIdAt(method, 1) == "self") {
+                            currentType = "*" + safeText(ext->IDENTIFIER());
                             break;
                         }
                     }
@@ -2279,7 +2293,7 @@ std::optional<HoverResult> HoverProvider::walkStmtForHover(
                     }
                 }
                 for (auto* f : sd->structField()) {
-                    if (f->IDENTIFIER()->getText() == fieldName)
+                    if (safeText(f->IDENTIFIER()) == fieldName)
                         return substituteTypeParams(typeSpecToString(f->typeSpec()), subst);
                 }
             }
@@ -2292,7 +2306,7 @@ std::optional<HoverResult> HoverProvider::walkStmtForHover(
                     }
                 }
                 for (auto* f : ud->unionField()) {
-                    if (f->IDENTIFIER()->getText() == fieldName)
+                    if (safeText(f->IDENTIFIER()) == fieldName)
                         return substituteTypeParams(typeSpecToString(f->typeSpec()), subst);
                 }
             }
@@ -2333,8 +2347,8 @@ std::optional<HoverResult> HoverProvider::walkStmtForHover(
                         if (!ms || !me) continue;
                         if (tokenLine < ms->getLine() || tokenLine > me->getLine()) continue;
                         if (method->AMPERSAND() && method->IDENTIFIER().size() >= 2 &&
-                            method->IDENTIFIER(1)->getText() == "self") {
-                            currentType = "*" + ext->IDENTIFIER()->getText();
+                            safeIdAt(method, 1) == "self") {
+                            currentType = "*" + safeText(ext->IDENTIFIER());
                             break;
                         }
                     }
@@ -2541,8 +2555,8 @@ std::optional<HoverResult> HoverProvider::walkStmtForHover(
             if (cc->IDENTIFIER() &&
                 cc->IDENTIFIER()->getSymbol() == hoveredToken) {
                 std::string typeName = cc->typeSpec()
-                                        ? cc->typeSpec()->getText() : "Error";
-                std::string varName = cc->IDENTIFIER()->getText();
+                                        ? safeText(cc->typeSpec()) : "Error";
+                std::string varName = safeText(cc->IDENTIFIER());
                 std::string md = "```lux\n(catch) " + typeName
                                + " " + varName + "\n```";
                 return makeResult(cc->IDENTIFIER()->getSymbol(), md);
@@ -2650,27 +2664,27 @@ std::optional<HoverResult> HoverProvider::walkStmtForHover(
                                               LuxParser::ExtendMethodContext* m,
                                               const std::vector<DocComment>& docs)
                                 -> std::optional<HoverResult> {
-                            if (m->IDENTIFIER(0)->getText() != methodName) return std::nullopt;
+                            if (safeIdAt(m, 0) != methodName) return std::nullopt;
                             if (!receiverTypeName.empty() &&
-                                ext->IDENTIFIER()->getText() != receiverTypeName)
+                                safeText(ext->IDENTIFIER()) != receiverTypeName)
                                 return std::nullopt;
 
                             std::ostringstream ss;
-                            ss << "```lux\n(" << ext->IDENTIFIER()->getText()
+                            ss << "```lux\n(" << safeText(ext->IDENTIFIER())
                                << " method) " << typeSpecToString(m->typeSpec())
                                << " " << methodName << "(";
                             if (m->AMPERSAND()) {
                                 ss << "&self";
                                 for (auto* p : m->param())
                                     ss << ", " << typeSpecToString(p->typeSpec())
-                                       << " " << p->IDENTIFIER()->getText();
+                                       << " " << safeText(p->IDENTIFIER());
                             } else if (auto* pl = m->paramList()) {
                                 bool first = true;
                                 for (auto* p : pl->param()) {
                                     if (!first) ss << ", ";
                                     first = false;
                                     ss << typeSpecToString(p->typeSpec())
-                                       << " " << p->IDENTIFIER()->getText();
+                                       << " " << safeText(p->IDENTIFIER());
                                 }
                             }
                             ss << ")\n```";
@@ -2930,7 +2944,7 @@ std::optional<HoverResult> HoverProvider::hoverMethodCall(
         const CBindings& bindings,
         size_t cursorLine,
         const ProjectContext* project) {
-    std::string methodName = ctx->IDENTIFIER()->getText();
+    std::string methodName = safeText(ctx->IDENTIFIER());
     auto* receiver = ctx->expression();
 
     // ── Step 1: Resolve the receiver's type FIRST (like the Checker does) ──
@@ -2938,7 +2952,7 @@ std::optional<HoverResult> HoverProvider::hoverMethodCall(
     std::string receiverText;
 
     if (auto* ident = dynamic_cast<LuxParser::IdentExprContext*>(receiver)) {
-        receiverText = ident->IDENTIFIER()->getText();
+        receiverText = safeText(ident->IDENTIFIER());
     }
 
     auto* encFunc = findEnclosingFunction(tree, cursorLine);
@@ -3160,14 +3174,14 @@ std::optional<HoverResult> HoverProvider::hoverMethodCall(
                                    LuxParser::ExtendMethodContext* m,
                                    const std::vector<DocComment>& docs) -> std::optional<HoverResult> {
         std::ostringstream ss;
-        ss << "```lux\n(" << ext->IDENTIFIER()->getText()
+        ss << "```lux\n(" << safeText(ext->IDENTIFIER())
            << " method) " << typeSpecToString(m->typeSpec())
            << " " << methodName << "(";
         if (m->AMPERSAND()) {
             ss << "&self";
             for (auto* p : m->param()) {
                 ss << ", " << typeSpecToString(p->typeSpec())
-                   << " " << p->IDENTIFIER()->getText();
+                   << " " << safeText(p->IDENTIFIER());
             }
         } else {
             if (auto* params = m->paramList()) {
@@ -3176,7 +3190,7 @@ std::optional<HoverResult> HoverProvider::hoverMethodCall(
                     if (!first) ss << ", ";
                     first = false;
                     ss << typeSpecToString(p->typeSpec())
-                       << " " << p->IDENTIFIER()->getText();
+                       << " " << safeText(p->IDENTIFIER());
                 }
             }
         }
@@ -3192,7 +3206,7 @@ std::optional<HoverResult> HoverProvider::hoverMethodCall(
         auto* ext = tld->extendDecl();
         if (!ext) continue;
         for (auto* m : ext->extendMethod()) {
-            if (m->IDENTIFIER(0)->getText() == methodName)
+            if (safeIdAt(m, 0) == methodName)
                 return formatExtendMethod(ext, m, docComments_);
         }
     }
@@ -3206,7 +3220,7 @@ std::optional<HoverResult> HoverProvider::hoverMethodCall(
                 auto* ext = dynamic_cast<LuxParser::ExtendDeclContext*>(sym->decl);
                 if (!ext) continue;
                 for (auto* m : ext->extendMethod()) {
-                    if (m->IDENTIFIER(0)->getText() == methodName) {
+                    if (safeIdAt(m, 0) == methodName) {
                         return formatExtendMethod(ext, m,
                             docCommentsForFile(sym->sourceFile));
                     }
@@ -3228,7 +3242,7 @@ std::optional<HoverResult> HoverProvider::hoverFieldAccess(
         const CBindings& bindings,
         size_t cursorLine,
         const ProjectContext* project) {
-    std::string fieldName = ctx->IDENTIFIER()->getText();
+    std::string fieldName = safeText(ctx->IDENTIFIER());
     auto* receiver = ctx->expression();
     auto* token = ctx->IDENTIFIER()->getSymbol();
 
@@ -3258,7 +3272,7 @@ std::optional<HoverResult> HoverProvider::hoverFieldAccess(
     // Search user structs for this field
     for (auto* tld : tree->topLevelDecl()) {
         if (auto* sd = tld->structDecl()) {
-            std::string sName = sd->IDENTIFIER()->getText();
+            std::string sName = safeText(sd->IDENTIFIER());
             if (!lookupReceiverType.empty() && sName != lookupReceiverType)
                 continue;
 
@@ -3271,7 +3285,7 @@ std::optional<HoverResult> HoverProvider::hoverFieldAccess(
                 }
             }
             for (auto* f : sd->structField()) {
-                if (f->IDENTIFIER()->getText() == fieldName) {
+                if (safeText(f->IDENTIFIER()) == fieldName) {
                     std::string md = "```lux\n(field) "
                                    + substituteTypeParams(typeSpecToString(f->typeSpec()), subst)
                                    + " " + sName + "." + fieldName + "\n```";
@@ -3284,7 +3298,7 @@ std::optional<HoverResult> HoverProvider::hoverFieldAccess(
     // Search user unions for this field
     for (auto* tld : tree->topLevelDecl()) {
         if (auto* ud = tld->unionDecl()) {
-            std::string uName = ud->IDENTIFIER()->getText();
+            std::string uName = safeText(ud->IDENTIFIER());
             if (!lookupReceiverType.empty() && uName != lookupReceiverType)
                 continue;
 
@@ -3297,7 +3311,7 @@ std::optional<HoverResult> HoverProvider::hoverFieldAccess(
                 }
             }
             for (auto* f : ud->unionField()) {
-                if (f->IDENTIFIER()->getText() == fieldName) {
+                if (safeText(f->IDENTIFIER()) == fieldName) {
                     std::string md = "```lux\n(field) "
                                    + substituteTypeParams(typeSpecToString(f->typeSpec()), subst)
                                    + " " + uName + "." + fieldName + "\n```";
@@ -3367,7 +3381,7 @@ std::optional<HoverResult> HoverProvider::hoverFieldAccess(
                     auto* sd = dynamic_cast<LuxParser::StructDeclContext*>(sym->decl);
                     if (!sd) continue;
                     if (!lookupReceiverType.empty() &&
-                        sd->IDENTIFIER()->getText() != lookupReceiverType)
+                        safeText(sd->IDENTIFIER()) != lookupReceiverType)
                         continue;
 
                     subst.clear();
@@ -3379,10 +3393,10 @@ std::optional<HoverResult> HoverProvider::hoverFieldAccess(
                         }
                     }
                     for (auto* f : sd->structField()) {
-                        if (f->IDENTIFIER()->getText() == fieldName) {
+                        if (safeText(f->IDENTIFIER()) == fieldName) {
                             std::string md = "```lux\n(field) "
                                            + substituteTypeParams(typeSpecToString(f->typeSpec()), subst)
-                                           + " " + sd->IDENTIFIER()->getText() + "." + fieldName + "\n```";
+                                           + " " + safeText(sd->IDENTIFIER()) + "." + fieldName + "\n```";
                             return makeResult(token, md);
                         }
                     }
@@ -3392,7 +3406,7 @@ std::optional<HoverResult> HoverProvider::hoverFieldAccess(
                     auto* ud = dynamic_cast<LuxParser::UnionDeclContext*>(sym->decl);
                     if (!ud) continue;
                     if (!lookupReceiverType.empty() &&
-                        ud->IDENTIFIER()->getText() != lookupReceiverType)
+                        safeText(ud->IDENTIFIER()) != lookupReceiverType)
                         continue;
 
                     subst.clear();
@@ -3404,10 +3418,10 @@ std::optional<HoverResult> HoverProvider::hoverFieldAccess(
                         }
                     }
                     for (auto* f : ud->unionField()) {
-                        if (f->IDENTIFIER()->getText() == fieldName) {
+                        if (safeText(f->IDENTIFIER()) == fieldName) {
                             std::string md = "```lux\n(field) "
                                            + substituteTypeParams(typeSpecToString(f->typeSpec()), subst)
-                                           + " " + ud->IDENTIFIER()->getText() + "." + fieldName + "\n```";
+                                           + " " + safeText(ud->IDENTIFIER()) + "." + fieldName + "\n```";
                             return makeResult(token, md);
                         }
                     }
@@ -3534,9 +3548,9 @@ std::optional<HoverResult> HoverProvider::hoverStaticMethodCall(
     for (auto* tld : tree->topLevelDecl()) {
         auto* ext = tld->extendDecl();
         if (!ext) continue;
-        if (ext->IDENTIFIER()->getText() != typeName) continue;
+        if (safeText(ext->IDENTIFIER()) != typeName) continue;
         for (auto* m : ext->extendMethod()) {
-            if (m->IDENTIFIER(0)->getText() == methodName) {
+            if (safeIdAt(m, 0) == methodName) {
                 std::ostringstream ss;
                 ss << "```lux\n(static method) " << typeSpecToString(m->typeSpec())
                    << " " << typeName << "::" << methodName << "(";
@@ -3546,7 +3560,7 @@ std::optional<HoverResult> HoverProvider::hoverStaticMethodCall(
                         if (!first) ss << ", ";
                         first = false;
                         ss << typeSpecToString(p->typeSpec())
-                           << " " << p->IDENTIFIER()->getText();
+                           << " " << safeText(p->IDENTIFIER());
                     }
                 }
                 ss << ")\n```";
@@ -3583,9 +3597,9 @@ std::optional<HoverResult> HoverProvider::hoverStaticMethodCall(
             for (auto* sym : syms) {
                 if (sym->kind != ExportedSymbol::ExtendBlock) continue;
                 auto* ext = dynamic_cast<LuxParser::ExtendDeclContext*>(sym->decl);
-                if (!ext || ext->IDENTIFIER()->getText() != typeName) continue;
+                if (!ext || safeText(ext->IDENTIFIER()) != typeName) continue;
                 for (auto* m : ext->extendMethod()) {
-                    if (m->IDENTIFIER(0)->getText() == methodName) {
+                    if (safeIdAt(m, 0) == methodName) {
                         std::ostringstream ss;
                         ss << "```lux\n(static method) " << typeSpecToString(m->typeSpec())
                            << " " << typeName << "::" << methodName << "(";
@@ -3595,7 +3609,7 @@ std::optional<HoverResult> HoverProvider::hoverStaticMethodCall(
                                 if (!first) ss << ", ";
                                 first = false;
                                 ss << typeSpecToString(p->typeSpec())
-                                   << " " << p->IDENTIFIER()->getText();
+                                   << " " << safeText(p->IDENTIFIER());
                             }
                         }
                         ss << ")\n```";
@@ -3633,8 +3647,8 @@ static std::string resolveTupleTypeName(
     if (flc && flc->tree) {
         for (auto* tld : flc->tree->topLevelDecl()) {
             if (auto* ta = tld->typeAliasDecl()) {
-                if (ta->IDENTIFIER()->getText() == typeName) {
-                    auto resolved = ta->typeSpec()->getText();
+                if (safeText(ta->IDENTIFIER()) == typeName) {
+                    auto resolved = safeText(ta->typeSpec());
                     if (resolved.rfind("tuple<", 0) == 0) return resolved;
                 }
             }
@@ -3814,12 +3828,12 @@ static std::string lookupFuncReturnType(
     if (flc->tree) {
         for (auto* tld : flc->tree->topLevelDecl()) {
             if (auto* fd = tld->functionDecl()) {
-                if (fd->IDENTIFIER(0)->getText() == funcName)
-                    return fd->typeSpec()->getText();
+                if (safeIdAt(fd, 0) == funcName)
+                    return safeText(fd->typeSpec());
             }
             if (auto* ext = tld->externDecl()) {
-                if (ext->IDENTIFIER()->getText() == funcName) {
-                    auto ret = ext->typeSpec()->getText();
+                if (safeText(ext->IDENTIFIER()) == funcName) {
+                    auto ret = safeText(ext->typeSpec());
                     if (ret != "auto") return ret;
                 }
             }
@@ -3833,7 +3847,7 @@ static std::string lookupFuncReturnType(
             if (!sym) continue;
             if (sym->kind == ExportedSymbol::Function) {
                 auto* fd = dynamic_cast<LuxParser::FunctionDeclContext*>(sym->decl);
-                if (fd) return fd->typeSpec()->getText();
+                if (fd) return safeText(fd->typeSpec());
             }
         }
     }
@@ -3854,7 +3868,7 @@ static LuxParser::FunctionDeclContext* findFunctionDeclForInference(
     if (flc->tree) {
         for (auto* tld : flc->tree->topLevelDecl()) {
             auto* fd = tld->functionDecl();
-            if (fd && !fd->IDENTIFIER().empty() && fd->IDENTIFIER(0)->getText() == name)
+            if (fd && !fd->IDENTIFIER().empty() && safeIdAt(fd, 0) == name)
                 return fd;
         }
     }
@@ -3876,7 +3890,7 @@ static LuxParser::EnumDeclContext* findEnumDeclForInference(
     if (flc->tree) {
         for (auto* tld : flc->tree->topLevelDecl()) {
             auto* ed = tld->enumDecl();
-            if (ed && ed->IDENTIFIER() && ed->IDENTIFIER()->getText() == name)
+            if (ed && ed->IDENTIFIER() && safeText(ed->IDENTIFIER()) == name)
                 return ed;
         }
     }
@@ -3898,7 +3912,7 @@ static LuxParser::StructDeclContext* findStructDeclForInference(
     if (flc->tree) {
         for (auto* tld : flc->tree->topLevelDecl()) {
             auto* sd = tld->structDecl();
-            if (sd && sd->IDENTIFIER() && sd->IDENTIFIER()->getText() == name)
+            if (sd && sd->IDENTIFIER() && safeText(sd->IDENTIFIER()) == name)
                 return sd;
         }
     }
@@ -3920,7 +3934,7 @@ static LuxParser::UnionDeclContext* findUnionDeclForInference(
     if (flc->tree) {
         for (auto* tld : flc->tree->topLevelDecl()) {
             auto* ud = tld->unionDecl();
-            if (ud && ud->IDENTIFIER() && ud->IDENTIFIER()->getText() == name)
+            if (ud && ud->IDENTIFIER() && safeText(ud->IDENTIFIER()) == name)
                 return ud;
         }
     }
@@ -3956,7 +3970,7 @@ static std::string inferExprTypeName(
 
     // Identifier: look up in collected locals
     if (auto* id = dynamic_cast<LuxParser::IdentExprContext*>(expr)) {
-        auto it = locals.find(id->IDENTIFIER()->getText());
+        auto it = locals.find(safeText(id->IDENTIFIER()));
         if (it != locals.end()) return it->second.typeName;
         return "";
     }
@@ -3982,8 +3996,8 @@ static std::string inferExprTypeName(
                 }
             }
             for (auto* f : sd->structField()) {
-                if (f->IDENTIFIER()->getText() == fieldName)
-                    return substituteTypeParams(f->typeSpec()->getText(), subst);
+                if (safeText(f->IDENTIFIER()) == fieldName)
+                    return substituteTypeParams(safeText(f->typeSpec()), subst);
             }
         }
 
@@ -3996,8 +4010,8 @@ static std::string inferExprTypeName(
                 }
             }
             for (auto* f : ud->unionField()) {
-                if (f->IDENTIFIER()->getText() == fieldName)
-                    return substituteTypeParams(f->typeSpec()->getText(), subst);
+                if (safeText(f->IDENTIFIER()) == fieldName)
+                    return substituteTypeParams(safeText(f->typeSpec()), subst);
             }
         }
 
@@ -4016,19 +4030,19 @@ static std::string inferExprTypeName(
     if (auto* fa = dynamic_cast<LuxParser::FieldAccessExprContext*>(expr)) {
         auto baseType = inferExprTypeName(fa->expression(), locals, flc);
         if (baseType.empty()) return "";
-        return resolveFieldType(baseType, fa->IDENTIFIER()->getText());
+        return resolveFieldType(baseType, safeText(fa->IDENTIFIER()));
     }
 
     if (auto* aa = dynamic_cast<LuxParser::ArrowAccessExprContext*>(expr)) {
         auto baseType = inferExprTypeName(aa->expression(), locals, flc);
         if (baseType.empty() || baseType[0] != '*') return "";
-        return resolveFieldType(baseType.substr(1), aa->IDENTIFIER()->getText());
+        return resolveFieldType(baseType.substr(1), safeText(aa->IDENTIFIER()));
     }
 
     // Address-of: &expr → *type
     if (auto* addr = dynamic_cast<LuxParser::AddrOfExprContext*>(expr)) {
         if (auto* ident = dynamic_cast<LuxParser::IdentExprContext*>(addr->expression())) {
-            auto it = locals.find(ident->IDENTIFIER()->getText());
+            auto it = locals.find(safeText(ident->IDENTIFIER()));
             if (it != locals.end()) return "*" + it->second.typeName;
         }
         return "";
@@ -4037,11 +4051,11 @@ static std::string inferExprTypeName(
     // Function call: resolve return type
     if (auto* fn = dynamic_cast<LuxParser::FnCallExprContext*>(expr)) {
         if (auto* ident = dynamic_cast<LuxParser::IdentExprContext*>(fn->expression())) {
-            auto funcName = ident->IDENTIFIER()->getText();
+            auto funcName = safeText(ident->IDENTIFIER());
 
             if (auto* fd = findFunctionDeclForInference(funcName, flc)) {
                 if (!fd->typeParamList()) {
-                    auto ret = fd->typeSpec()->getText();
+                    auto ret = safeText(fd->typeSpec());
                     if (!ret.empty()) return ret;
                 } else {
                     std::unordered_set<std::string> tps;
@@ -4062,7 +4076,7 @@ static std::string inferExprTypeName(
                         std::unordered_map<std::string, std::string> inferred;
                         bool ok = true;
                         for (size_t i = 0; i < formalParams.size(); i++) {
-                            auto formal = formalParams[i]->typeSpec()->getText();
+                            auto formal = safeText(formalParams[i]->typeSpec());
                             auto actual = actualArgTypes[i];
                             if (actual.empty()) { ok = false; break; }
                             if (!unifyGenericType(formal, actual, tps, inferred)) {
@@ -4074,7 +4088,7 @@ static std::string inferExprTypeName(
                             if (!inferred.count(tp)) { ok = false; break; }
                         }
                         if (ok) {
-                            auto ret = substituteTypeParams(fd->typeSpec()->getText(), inferred);
+                            auto ret = substituteTypeParams(safeText(fd->typeSpec()), inferred);
                             if (!ret.empty()) return ret;
                         }
                     }
@@ -4095,7 +4109,7 @@ static std::string inferExprTypeName(
 
         if (auto* fd = findFunctionDeclForInference(funcName, flc)) {
             if (!fd->typeParamList()) {
-                auto ret = fd->typeSpec()->getText();
+                auto ret = safeText(fd->typeSpec());
                 if (!ret.empty()) return ret;
             } else {
                 std::unordered_map<std::string, std::string> subst;
@@ -4106,7 +4120,7 @@ static std::string inferExprTypeName(
                     if (!ids.empty()) subst[ids[0]->getText()] = args[i]->getText();
                 }
 
-                auto ret = substituteTypeParams(fd->typeSpec()->getText(), subst);
+                auto ret = substituteTypeParams(safeText(fd->typeSpec()), subst);
                 if (!ret.empty()) return ret;
             }
         }
@@ -4165,12 +4179,12 @@ static std::string inferExprTypeName(
                 for (auto* tld : flc->tree->topLevelDecl()) {
                     auto* ext = tld->extendDecl();
                     if (!ext) continue;
-                    if (ext->IDENTIFIER()->getText() != typeName) continue;
+                    if (safeText(ext->IDENTIFIER()) != typeName) continue;
                     for (auto* m : ext->extendMethod()) {
-                        if (m->IDENTIFIER(0)->getText() != methodName) continue;
+                        if (safeIdAt(m, 0) != methodName) continue;
 
                         if (!ext->typeParamList())
-                            return m->typeSpec()->getText();
+                            return safeText(m->typeSpec());
 
                         std::unordered_set<std::string> tps;
                         for (auto* tp : ext->typeParamList()->typeParam()) {
@@ -4187,12 +4201,12 @@ static std::string inferExprTypeName(
                         std::vector<LuxParser::ParamContext*> formalParams;
                         if (auto* pl = m->paramList()) formalParams = pl->param();
                         if (actualArgTypes.size() != formalParams.size())
-                            return m->typeSpec()->getText();
+                            return safeText(m->typeSpec());
 
                         std::unordered_map<std::string, std::string> inferred;
                         bool ok = true;
                         for (size_t i = 0; i < formalParams.size(); i++) {
-                            auto formal = formalParams[i]->typeSpec()->getText();
+                            auto formal = safeText(formalParams[i]->typeSpec());
                             auto actual = actualArgTypes[i];
                             if (actual.empty()) { ok = false; break; }
                             if (!unifyGenericType(formal, actual, tps, inferred)) {
@@ -4205,8 +4219,8 @@ static std::string inferExprTypeName(
                         }
 
                         if (ok)
-                            return substituteTypeParams(m->typeSpec()->getText(), inferred);
-                        return m->typeSpec()->getText();
+                            return substituteTypeParams(safeText(m->typeSpec()), inferred);
+                        return safeText(m->typeSpec());
                     }
                 }
             }
@@ -4218,10 +4232,10 @@ static std::string inferExprTypeName(
                     for (auto* sym : syms) {
                         if (sym->kind != ExportedSymbol::ExtendBlock) continue;
                         auto* ext = dynamic_cast<LuxParser::ExtendDeclContext*>(sym->decl);
-                        if (!ext || ext->IDENTIFIER()->getText() != typeName) continue;
+                        if (!ext || safeText(ext->IDENTIFIER()) != typeName) continue;
                         for (auto* m : ext->extendMethod()) {
-                            if (m->IDENTIFIER(0)->getText() == methodName)
-                                return m->typeSpec()->getText();
+                            if (safeIdAt(m, 0) == methodName)
+                                return safeText(m->typeSpec());
                         }
                     }
                 }
@@ -4244,7 +4258,7 @@ static std::string inferExprTypeName(
     if (auto* mc = dynamic_cast<LuxParser::MethodCallExprContext*>(expr)) {
         auto receiverType = inferExprTypeName(mc->expression(), locals, flc);
         if (!receiverType.empty()) {
-            std::string methodName = mc->IDENTIFIER()->getText();
+            std::string methodName = safeText(mc->IDENTIFIER());
 
             if (!receiverType.empty() && receiverType[0] == '[' && flc && flc->methodReg) {
                 auto* md = flc->methodReg->lookupArrayMethod(methodName);
@@ -4270,10 +4284,10 @@ static std::string inferExprTypeName(
                 for (auto* tld : flc->tree->topLevelDecl()) {
                     auto* ext = tld->extendDecl();
                     if (!ext) continue;
-                    if (ext->IDENTIFIER()->getText() != receiverType) continue;
+                    if (safeText(ext->IDENTIFIER()) != receiverType) continue;
                     for (auto* m : ext->extendMethod()) {
-                        if (m->IDENTIFIER(0)->getText() == methodName)
-                            return m->typeSpec()->getText();
+                        if (safeIdAt(m, 0) == methodName)
+                            return safeText(m->typeSpec());
                     }
                 }
             }
@@ -4285,10 +4299,10 @@ static std::string inferExprTypeName(
                     for (auto* sym : syms) {
                         if (sym->kind != ExportedSymbol::ExtendBlock) continue;
                         auto* ext = dynamic_cast<LuxParser::ExtendDeclContext*>(sym->decl);
-                        if (!ext || ext->IDENTIFIER()->getText() != receiverType) continue;
+                        if (!ext || safeText(ext->IDENTIFIER()) != receiverType) continue;
                         for (auto* m : ext->extendMethod()) {
-                            if (m->IDENTIFIER(0)->getText() == methodName)
-                                return m->typeSpec()->getText();
+                            if (safeIdAt(m, 0) == methodName)
+                                return safeText(m->typeSpec());
                         }
                     }
                 }
@@ -4374,7 +4388,7 @@ static std::string inferExprTypeName(
 
     // Cast: target type
     if (auto* cast = dynamic_cast<LuxParser::CastExprContext*>(expr))
-        return cast->typeSpec()->getText();
+        return safeText(cast->typeSpec());
 
     // Is expression always returns bool
     if (dynamic_cast<LuxParser::IsExprContext*>(expr))
@@ -4443,7 +4457,7 @@ static std::string inferExprTypeName(
     // Generic struct/union literal: Result<int32, string> { ... } → "Result<int32,string>"
     if (auto* gsl = dynamic_cast<LuxParser::GenericStructLitExprContext*>(expr)) {
         if (!gsl->IDENTIFIER().empty()) {
-            std::string base = gsl->IDENTIFIER(0)->getText();
+            std::string base = safeIdAt(gsl, 0);
             std::string outType = base + "<";
             auto args = gsl->typeSpec();
             for (size_t i = 0; i < args.size(); i++) {
@@ -4586,7 +4600,7 @@ static std::string inferCatchUnwrapItType(
     if (!enumDecl && tree) {
         for (auto* tld : tree->topLevelDecl()) {
             if (auto* ed = tld->enumDecl();
-                ed && ed->IDENTIFIER() && ed->IDENTIFIER()->getText() == baseName) {
+                ed && ed->IDENTIFIER() && safeText(ed->IDENTIFIER()) == baseName) {
                 enumDecl = ed;
                 break;
             }
@@ -4611,7 +4625,7 @@ static std::string inferCatchUnwrapItType(
     for (auto* variant : enumDecl->enumVariant()) {
         if (!variant || variant->typeSpec().size() != 1) continue;
         auto payloadName = variant->typeSpec(0)->getText();
-        auto variantName = variant->IDENTIFIER() ? variant->IDENTIFIER()->getText() : "";
+        auto variantName = variant->IDENTIFIER() ? safeText(variant->IDENTIFIER()) : "";
         bool isErrName = variantName == "Err" || variantName == "Error" ||
                          variantName == "Failure" || variantName == "Fail" ||
                          variantName == "None";
@@ -4646,18 +4660,18 @@ static void collectLocalsFromStmts(
         auto* rhsType = isE->typeSpec();
         if (!rhsType || !rhsType->IDENTIFIER() || !flc || !flc->tree) return "";
 
-        auto enumName = rhsType->IDENTIFIER()->getText();
+        auto enumName = safeText(rhsType->IDENTIFIER());
         LuxParser::EnumDeclContext* enumDecl = nullptr;
         for (auto* tld : flc->tree->topLevelDecl()) {
             if (auto* ed = tld->enumDecl(); ed && ed->IDENTIFIER() &&
-                ed->IDENTIFIER()->getText() == enumName) {
+                safeText(ed->IDENTIFIER()) == enumName) {
                 enumDecl = ed;
                 break;
             }
         }
         if (!enumDecl || !isE->IDENTIFIER(0)) return "";
 
-        auto variantName = isE->IDENTIFIER(0)->getText();
+        auto variantName = safeIdAt(isE, 0);
         for (auto* variant : enumDecl->enumVariant()) {
             auto* vId = variant->IDENTIFIER();
             if (!vId || vId->getText() != variantName) continue;
@@ -4702,13 +4716,13 @@ static void collectLocalsFromStmts(
                 // ── Normal variable declaration ──────────────────────
                 std::string typeName;
                 if (vd->typeSpec())
-                    typeName = vd->typeSpec()->getText();
+                    typeName = safeText(vd->typeSpec());
                 // Resolve 'auto' to the inferred type from the initializer
                 if (typeName == "auto" && vd->expression()) {
                     auto inferred = inferExprTypeName(vd->expression(), out, flc);
                     if (!inferred.empty()) typeName = inferred;
                 }
-                std::string varName = !vd->IDENTIFIER().empty() ? vd->IDENTIFIER(0)->getText() : "";
+                std::string varName = !vd->IDENTIFIER().empty() ? safeIdAt(vd, 0) : "";
                 if (!varName.empty())
                     out[varName] = {typeName, 0};
             }
@@ -4730,7 +4744,7 @@ static void collectLocalsFromStmts(
                         if (auto* isE = dynamic_cast<LuxParser::IsExprContext*>(ifS->expression());
                             isE && isE->IDENTIFIER(1)) {
                             auto bindType = inferIsBindingPayloadType(ifS->expression());
-                            out[isE->IDENTIFIER(1)->getText()] = {bindType.empty() ? "auto" : bindType, 0};
+                            out[safeIdAt(isE, 1)] = {bindType.empty() ? "auto" : bindType, 0};
                         }
                         collectLocalsFromBlock(b, beforeLine, out, flc);
                     }
@@ -4739,7 +4753,7 @@ static void collectLocalsFromStmts(
                         if (auto* isE = dynamic_cast<LuxParser::IsExprContext*>(ifS->expression());
                             isE && isE->IDENTIFIER(1)) {
                             auto bindType = inferIsBindingPayloadType(ifS->expression());
-                            out[isE->IDENTIFIER(1)->getText()] = {bindType.empty() ? "auto" : bindType, 0};
+                            out[safeIdAt(isE, 1)] = {bindType.empty() ? "auto" : bindType, 0};
                         }
                         collectLocalsFromStmts({s}, beforeLine, out, flc);
                     }
@@ -4752,7 +4766,7 @@ static void collectLocalsFromStmts(
                             if (auto* isE = dynamic_cast<LuxParser::IsExprContext*>(elif->expression());
                                 isE && isE->IDENTIFIER(1)) {
                                 auto bindType = inferIsBindingPayloadType(elif->expression());
-                                out[isE->IDENTIFIER(1)->getText()] = {bindType.empty() ? "auto" : bindType, 0};
+                                out[safeIdAt(isE, 1)] = {bindType.empty() ? "auto" : bindType, 0};
                             }
                             collectLocalsFromBlock(b, beforeLine, out, flc);
                         }
@@ -4761,7 +4775,7 @@ static void collectLocalsFromStmts(
                             if (auto* isE = dynamic_cast<LuxParser::IsExprContext*>(elif->expression());
                                 isE && isE->IDENTIFIER(1)) {
                                 auto bindType = inferIsBindingPayloadType(elif->expression());
-                                out[isE->IDENTIFIER(1)->getText()] = {bindType.empty() ? "auto" : bindType, 0};
+                                out[safeIdAt(isE, 1)] = {bindType.empty() ? "auto" : bindType, 0};
                             }
                             collectLocalsFromStmts({s}, beforeLine, out, flc);
                         }
@@ -4783,15 +4797,15 @@ static void collectLocalsFromStmts(
         if (auto* forIn = stmt->forStmt()) {
             if (auto* fin = dynamic_cast<LuxParser::ForInStmtContext*>(forIn)) {
                 if (fin->typeSpec() && fin->IDENTIFIER()) {
-                    std::string tname = fin->typeSpec()->getText();
-                    out[fin->IDENTIFIER()->getText()] = {tname, 0};
+                    std::string tname = safeText(fin->typeSpec());
+                    out[safeText(fin->IDENTIFIER())] = {tname, 0};
                 }
                 collectLocalsFromBlock(fin->block(), beforeLine, out, flc);
             }
             if (auto* fc = dynamic_cast<LuxParser::ForClassicStmtContext*>(forIn)) {
                 if (fc->typeSpec() && fc->IDENTIFIER()) {
-                    std::string tname = fc->typeSpec()->getText();
-                    out[fc->IDENTIFIER()->getText()] = {tname, 0};
+                    std::string tname = safeText(fc->typeSpec());
+                    out[safeText(fc->IDENTIFIER())] = {tname, 0};
                 }
                 collectLocalsFromBlock(fc->block(), beforeLine, out, flc);
             }
@@ -4812,7 +4826,7 @@ static void collectLocalsFromStmts(
             collectLocalsFromBlock(tc->block(), beforeLine, out, flc);
             for (auto* cc : tc->catchClause()) {
                 if (cc->IDENTIFIER() && cc->typeSpec())
-                    out[cc->IDENTIFIER()->getText()] = {cc->typeSpec()->getText(), 0};
+                    out[safeText(cc->IDENTIFIER())] = {safeText(cc->typeSpec()), 0};
                 collectLocalsFromBlock(cc->block(), beforeLine, out, flc);
             }
             if (tc->finallyClause())
@@ -4858,8 +4872,8 @@ HoverProvider::collectLocals(LuxParser::FunctionDeclContext* func,
     if (auto* params = func->paramList()) {
         for (auto* p : params->param()) {
             if (!p->typeSpec() || !p->IDENTIFIER()) continue;
-            std::string typeName = p->typeSpec()->getText();
-            std::string paramName = p->IDENTIFIER()->getText();
+            std::string typeName = safeText(p->typeSpec());
+            std::string paramName = safeText(p->IDENTIFIER());
             result[paramName] = {typeName, 0};
         }
     }
@@ -4894,7 +4908,7 @@ HoverProvider::findFunctionDecl(LuxParser::ProgramContext* tree,
                                 const std::string& name) {
     for (auto* tld : tree->topLevelDecl()) {
         if (auto* func = tld->functionDecl()) {
-            if (func->IDENTIFIER(0)->getText() == name)
+            if (safeIdAt(func, 0) == name)
                 return func;
         }
     }
@@ -4906,7 +4920,7 @@ HoverProvider::findStructDecl(LuxParser::ProgramContext* tree,
                               const std::string& name) {
     for (auto* tld : tree->topLevelDecl()) {
         if (auto* sd = tld->structDecl()) {
-            if (sd->IDENTIFIER()->getText() == name)
+            if (safeText(sd->IDENTIFIER()) == name)
                 return sd;
         }
     }
@@ -4918,7 +4932,7 @@ HoverProvider::findEnumDecl(LuxParser::ProgramContext* tree,
                             const std::string& name) {
     for (auto* tld : tree->topLevelDecl()) {
         if (auto* ed = tld->enumDecl()) {
-            if (ed->IDENTIFIER() && ed->IDENTIFIER()->getText() == name)
+            if (ed->IDENTIFIER() && safeText(ed->IDENTIFIER()) == name)
                 return ed;
         }
     }
@@ -4930,7 +4944,7 @@ HoverProvider::findUnionDecl(LuxParser::ProgramContext* tree,
                              const std::string& name) {
     for (auto* tld : tree->topLevelDecl()) {
         if (auto* ud = tld->unionDecl()) {
-            if (ud->IDENTIFIER()->getText() == name)
+            if (safeText(ud->IDENTIFIER()) == name)
                 return ud;
         }
     }
@@ -4942,7 +4956,7 @@ HoverProvider::findTypeAliasDecl(LuxParser::ProgramContext* tree,
                                  const std::string& name) {
     for (auto* tld : tree->topLevelDecl()) {
         if (auto* ta = tld->typeAliasDecl()) {
-            if (ta->IDENTIFIER()->getText() == name)
+            if (safeText(ta->IDENTIFIER()) == name)
                 return ta;
         }
     }
@@ -4954,7 +4968,7 @@ HoverProvider::findExtendDecl(LuxParser::ProgramContext* tree,
                               const std::string& name) {
     for (auto* tld : tree->topLevelDecl()) {
         if (auto* ext = tld->extendDecl()) {
-            if (ext->IDENTIFIER()->getText() == name)
+            if (safeText(ext->IDENTIFIER()) == name)
                 return ext;
         }
     }
@@ -4974,7 +4988,7 @@ std::string HoverProvider::typeSpecToString(LuxParser::TypeSpecContext* ctx) {
 std::string HoverProvider::formatFunctionDecl(LuxParser::FunctionDeclContext* func) {
     std::ostringstream ss;
     ss << "```lux\n";
-    ss << typeSpecToString(func->typeSpec()) << " " << func->IDENTIFIER(0)->getText() << "(";
+    ss << typeSpecToString(func->typeSpec()) << " " << safeIdAt(func, 0) << "(";
     if (auto* params = func->paramList()) {
         bool first = true;
         for (auto* p : params->param()) {
@@ -4983,7 +4997,7 @@ std::string HoverProvider::formatFunctionDecl(LuxParser::FunctionDeclContext* fu
             ss << typeSpecToString(p->typeSpec());
             if (p->SPREAD()) ss << " ...";
             else ss << " ";
-            ss << p->IDENTIFIER()->getText();
+            ss << safeText(p->IDENTIFIER());
         }
     }
     ss << ")\n```";
@@ -4993,7 +5007,7 @@ std::string HoverProvider::formatFunctionDecl(LuxParser::FunctionDeclContext* fu
 std::string HoverProvider::formatExternDecl(LuxParser::ExternDeclContext* ext) {
     std::ostringstream ss;
     ss << "```lux\nextern " << typeSpecToString(ext->typeSpec())
-       << " " << ext->IDENTIFIER()->getText() << "(";
+       << " " << safeText(ext->IDENTIFIER()) << "(";
     if (auto* params = ext->externParamList()) {
         bool first = true;
         for (auto* ep : params->externParam()) {
@@ -5001,7 +5015,7 @@ std::string HoverProvider::formatExternDecl(LuxParser::ExternDeclContext* ext) {
             first = false;
             ss << typeSpecToString(ep->typeSpec());
             if (ep->IDENTIFIER())
-                ss << " " << ep->IDENTIFIER()->getText();
+                ss << " " << safeText(ep->IDENTIFIER());
         }
     }
     if (ext->SPREAD()) {
@@ -5014,7 +5028,7 @@ std::string HoverProvider::formatExternDecl(LuxParser::ExternDeclContext* ext) {
 
 std::string HoverProvider::formatStructDecl(LuxParser::StructDeclContext* decl) {
     std::ostringstream ss;
-    ss << "```lux\nstruct " << decl->IDENTIFIER()->getText();
+    ss << "```lux\nstruct " << safeText(decl->IDENTIFIER());
     if (auto* tpl = decl->typeParamList()) {
         ss << "<";
         bool first = true;
@@ -5030,7 +5044,7 @@ std::string HoverProvider::formatStructDecl(LuxParser::StructDeclContext* decl) 
     ss << " {\n";
     for (auto* f : decl->structField()) {
         ss << "    " << typeSpecToString(f->typeSpec()) << " "
-           << f->IDENTIFIER()->getText() << "\n";
+           << safeText(f->IDENTIFIER()) << "\n";
     }
     ss << "}\n```";
 
@@ -5041,7 +5055,7 @@ std::string HoverProvider::formatStructDecl(LuxParser::StructDeclContext* decl) 
 
 std::string HoverProvider::formatEnumDecl(LuxParser::EnumDeclContext* decl) {
     std::ostringstream ss;
-    ss << "```lux\nenum " << decl->IDENTIFIER()->getText();
+    ss << "```lux\nenum " << safeText(decl->IDENTIFIER());
     if (auto* tpl = decl->typeParamList()) {
         ss << "<";
         bool first = true;
@@ -5058,7 +5072,7 @@ std::string HoverProvider::formatEnumDecl(LuxParser::EnumDeclContext* decl) {
     auto variants = decl->enumVariant();
     for (size_t i = 0; i < variants.size(); i++) {
         auto* v = variants[i];
-        ss << "    " << v->IDENTIFIER()->getText();
+        ss << "    " << safeText(v->IDENTIFIER());
         if (v->LPAREN()) {
             ss << "(";
             auto tys = v->typeSpec();
@@ -5072,7 +5086,7 @@ std::string HoverProvider::formatEnumDecl(LuxParser::EnumDeclContext* decl) {
             auto fields = v->enumPayloadField();
             for (size_t j = 0; j < fields.size(); j++) {
                 if (j) ss << ", ";
-                ss << fields[j]->IDENTIFIER()->getText() << ": "
+                ss << safeText(fields[j]->IDENTIFIER()) << ": "
                    << typeSpecToString(fields[j]->typeSpec());
             }
             ss << " }";
@@ -5086,7 +5100,7 @@ std::string HoverProvider::formatEnumDecl(LuxParser::EnumDeclContext* decl) {
 
 std::string HoverProvider::formatUnionDecl(LuxParser::UnionDeclContext* decl) {
     std::ostringstream ss;
-    ss << "```lux\nunion " << decl->IDENTIFIER()->getText();
+    ss << "```lux\nunion " << safeText(decl->IDENTIFIER());
     if (auto* tpl = decl->typeParamList()) {
         ss << "<";
         bool first = true;
@@ -5102,7 +5116,7 @@ std::string HoverProvider::formatUnionDecl(LuxParser::UnionDeclContext* decl) {
     ss << " {\n";
     for (auto* f : decl->unionField()) {
         ss << "    " << typeSpecToString(f->typeSpec()) << " "
-           << f->IDENTIFIER()->getText() << "\n";
+           << safeText(f->IDENTIFIER()) << "\n";
     }
     ss << "}\n```";
     return ss.str();
@@ -5193,10 +5207,10 @@ std::string HoverProvider::formatTypeInfo(const TypeInfo* ti) {
 
 std::string HoverProvider::formatExtendMethods(LuxParser::ExtendDeclContext* ext) {
     std::ostringstream ss;
-    ss << "```lux\nextend " << ext->IDENTIFIER()->getText() << " {\n";
+    ss << "```lux\nextend " << safeText(ext->IDENTIFIER()) << " {\n";
     for (auto* m : ext->extendMethod()) {
         ss << "    " << typeSpecToString(m->typeSpec()) << " "
-           << m->IDENTIFIER(0)->getText() << "(";
+           << safeIdAt(m, 0) << "(";
 
         // Check if first param is &self
         if (m->AMPERSAND()) {
@@ -5207,7 +5221,7 @@ std::string HoverProvider::formatExtendMethods(LuxParser::ExtendDeclContext* ext
             if (auto* params = m->paramList()) {
                 for (auto* p : params->param()) {
                     ss << ", " << typeSpecToString(p->typeSpec())
-                       << " " << p->IDENTIFIER()->getText();
+                       << " " << safeText(p->IDENTIFIER());
                 }
             }
         } else {
@@ -5218,7 +5232,7 @@ std::string HoverProvider::formatExtendMethods(LuxParser::ExtendDeclContext* ext
                     if (!first) ss << ", ";
                     first = false;
                     ss << typeSpecToString(p->typeSpec())
-                       << " " << p->IDENTIFIER()->getText();
+                       << " " << safeText(p->IDENTIFIER());
                 }
             }
         }
