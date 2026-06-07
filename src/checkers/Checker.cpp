@@ -876,6 +876,12 @@ bool Checker::check(LuxParser::ProgramContext* tree) {
                 if (!ts->IDENTIFIER()) return;
                 auto baseName = ts->IDENTIFIER()->getText();
                 auto* depSym = nsRegistry_->findSymbol(ns, baseName);
+                if (!depSym) {
+                    for (auto& candidateNs : nsRegistry_->allNamespaces()) {
+                        depSym = nsRegistry_->findSymbol(candidateNs, baseName);
+                        if (depSym) break;
+                    }
+                }
                 if (!depSym) return;
                 if (depSym->sourceFile == currentFile_) return;
 
