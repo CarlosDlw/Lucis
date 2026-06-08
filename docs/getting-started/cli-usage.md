@@ -57,12 +57,17 @@ Compiles the project to a native binary. Without `-o`, the output defaults to
 lux build module.lx --shared -o libmodule.so
 
 # Build a static binary
-lux build main.lx --static -o main_static
-```
+**Optimization Levels:**
 - `0-3`: Standard optimization levels.
 - `s`: Optimize for size, balancing performance.
 - `z`: Optimize aggressively for size.
 - `fast`: Enable aggressive optimizations (O3 + fast-math).
+
+**Linkage Control:**
+- `--static`: Produce a statically linked executable.
+    * **Note**: Requires static versions of system dependencies (e.g., `zlib-static`, `glibc-static`) installed on your system.
+- `--shared`: Produce a shared library (`.so`, `.dll`).
+- `--fPIC`: Generate position-independent code (PIC). Automatically enabled with `--shared`.
 
 **Emit Modes:**
 By default, `--emit-llvm` and `--emit-asm` print to **stdout**. If `-o` is provided, the output is redirected to the specified file.
@@ -71,6 +76,12 @@ By default, `--emit-llvm` and `--emit-asm` print to **stdout**. If `-o` is provi
 ```bash
 # Standard build
 lux build main.lx -o ./main -O2
+
+# Build a shared library (automatically enables --fPIC)
+lux build module.lx --shared -o libmodule.so
+
+# Build a static binary
+lux build main.lx --static -o main_static
 
 # Emit Assembly to file
 lux build main.lx --emit-asm -o main.s
