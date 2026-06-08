@@ -9,6 +9,7 @@
 #include "cli/VersionCommand.h"
 #include "helpc/HelpC.h"
 #include "lsp/LspServer.h"
+#include "machine_code/CodeGen.h"
 
 #include <iostream>
 #include <algorithm>
@@ -80,6 +81,11 @@ int CLI::run() {
             return ver->run(parser);
         }
         return 1;
+    }
+
+    if (first == "--print-builtins-path") {
+        std::cout << CodeGen::builtinsLibraryPath() << std::endl;
+        return 0;
     }
 
     // Check if first arg is a registered command
