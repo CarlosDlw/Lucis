@@ -140,6 +140,14 @@ static bool tryLinkMulti(const char*                      linker,
                           const std::vector<std::string>& extraLibPaths,
                           bool withSanitizers,
                           bool quiet) {
+    bool isStatic = false;
+    for (const auto& flag : extraLinkerFlags) {
+        if (flag == "-static") {
+            isStatic = true;
+            break;
+        }
+    }
+
     pid_t pid = ::fork();
     if (pid < 0) return false;
 
@@ -152,32 +160,52 @@ static bool tryLinkMulti(const char*                      linker,
                 if (devNull > STDERR_FILENO) ::close(devNull);
             }
         }
-        // Build argv: linker obj1 obj2 ... builtins -Lpath... -lm -lz -lpthread -lfoo... -o out
+        
         std::vector<const char*> argv;
         argv.push_back(linker);
+
+        // Add object files
         for (auto& obj : objectPaths)
             argv.push_back(obj.c_str());
+        
         argv.push_back(builtinsPath.c_str());
+
         if (withSanitizers) {
 #ifdef LUX_RUNTIME_DIAGNOSTICS
             argv.push_back("-fsanitize=address,undefined");
             argv.push_back("-fno-omit-frame-pointer");
 #endif
         }
+
         for (auto& lp : extraLibPaths) {
             argv.push_back("-L");
             argv.push_back(lp.c_str());
         }
-        argv.push_back("-lm");
-        argv.push_back("-lz");
-        argv.push_back("-lpthread");
+
+        // Add libraries
+        if (isStatic) {
+            argv.push_back("-Wl,--start-group");
+            argv.push_back("-lm");
+            argv.push_back("-lz");
+            argv.push_back("-lpthread");
+            argv.push_back("-lc");
+            argv.push_back("-Wl,--end-group");
+        } else {
+            argv.push_back("-lm");
+            argv.push_back("-lz");
+            argv.push_back("-lpthread");
+        }
+
         for (auto& lf : extraLinkerFlags)
             argv.push_back(lf.c_str());
+
         if (std::string(linker) == "clang")
             argv.push_back("-Wno-override-module");
+        
         argv.push_back("-o");
         argv.push_back(outputPath.c_str());
         argv.push_back(nullptr);
+        
         ::execvp(linker, const_cast<char**>(argv.data()));
         ::_exit(127);
     }
