@@ -30,6 +30,8 @@ void BuildCommand::buildArgs(ArgParser& parser) const {
     parser.addFlag("static", '\0', "Produce a statically linked executable");
     parser.addFlag("shared", '\0', "Produce a shared library");
     parser.addFlag("fPIC",   '\0', "Generate position-independent code");
+    parser.addOption("link-arg", '\0', "FLAG", "Pass argument directly to linker (repeatable)", true);
+    parser.addOption("rpath",    '\0', "DIR", "Add runtime library search path", false);
     parser.addFlag("quiet", 'q', "Suppress pipeline logs");
     parser.addOption("link", 'l', "LIB", "Link against a library (repeatable)", true);
     parser.addOption("lib-path", 'L', "DIR", "Add library search path (repeatable)", true);
@@ -98,6 +100,17 @@ int BuildCommand::run(const ArgParser& parser) {
 
     // ── Generate IR, optimize, emit objects ────────────────────────────────
     std::vector<std::string> objectFiles;
+    
+    // Add positional .o files
+    for (auto& arg : parser.remaining()) {
+        if (fs::path(arg).extension() == ".o") {
+            objectFiles.push_back(fs::canonical(arg).string());
+        } else {
+            std::cerr << "lux: unexpected argument '" << arg << "'\n";
+            return 1;
+        }
+    }
+
     bool anyIRError = false;
     size_t irIdx = 0;
 
@@ -221,6 +234,13 @@ int BuildCommand::run(const ArgParser& parser) {
     }
     if (useShared) {
         finalLinkerFlags.push_back("-shared");
+    }
+    
+    for (auto& arg : parser.getAll("link-arg")) {
+        finalLinkerFlags.push_back(arg);
+    }
+    if (parser.has("rpath")) {
+        finalLinkerFlags.push_back("-Wl,-rpath," + parser.get("rpath"));
     }
 
     if (!CodeGen::linkObjectFiles(objectFiles, outputFile,

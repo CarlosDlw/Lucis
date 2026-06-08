@@ -51,6 +51,8 @@ Compiles the project to a native binary. Without `-o`, the output defaults to
 | `--static` | Produce a statically linked executable |
 | `--shared` | Produce a shared library (`.so`, `.dll`) |
 | `--fPIC` | Generate position-independent code (PIC) |
+| `--link-arg <FLAG>` | Pass argument directly to linker (repeatable) |
+| `--rpath <DIR>` | Add runtime library search path |
 | `-l, --link <LIB>` | Link against a library (repeatable) |
 | `-L, --lib-path <DIR>` | Add library search path (repeatable) |
 | `-I, --include <DIR>` | Add include search path (repeatable) |
