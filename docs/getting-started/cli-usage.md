@@ -22,8 +22,9 @@ removed in a future release. Use `lux build <file> [-o <output>]` instead.
 ## Global Flags
 
 ```
---help, -h     Show help
---version, -v  Show version
+--help, -h               Show help
+--version, -v            Show version
+--print-builtins-path    Print the path to the builtins library
 ```
 
 ## build — Compile to Binary
