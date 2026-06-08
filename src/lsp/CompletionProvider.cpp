@@ -1615,12 +1615,6 @@ CompletionProvider::complete(const std::string &source, size_t line, size_t col,
         }
       }
 
-      if (req.context == CompletionContext::ArrowAccess) {
-        // Strip pointer for arrow access after resolving chain.
-        if (!varType.empty() && varType[0] == '*')
-          varType = varType.substr(1);
-      }
-
       req.receiverType = varType;
     }
   }
@@ -1629,10 +1623,14 @@ CompletionProvider::complete(const std::string &source, size_t line, size_t col,
   switch (req.context) {
   case CompletionContext::DotAccess:
   case CompletionContext::ArrowAccess: {
-    addStructFields(items, req.receiverType, parsed->tree, *cBindingsPtr,
+    // Auto-dereference pointers for method/field lookup
+    std::string receiverType = req.receiverType;
+    while (!receiverType.empty() && receiverType[0] == '*')
+      receiverType = receiverType.substr(1);
+    addStructFields(items, receiverType, parsed->tree, *cBindingsPtr,
                     project);
-    addExtendMethods(items, req.receiverType, parsed->tree, project);
-    addTypeMethods(items, req.receiverType, req.prefix);
+    addExtendMethods(items, receiverType, parsed->tree, project);
+    addTypeMethods(items, receiverType, req.prefix);
     break;
   }
   case CompletionContext::ScopeAccess: {
