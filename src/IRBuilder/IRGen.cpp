@@ -2274,6 +2274,13 @@ std::any IRGen::visitAssignStmt(LuxParser::AssignStmtContext* ctx) {
     // All expressions except the last are indices; the last is the RHS value
 
     // ── Extended type (Vec<T>, Map<K,V>) index assignment ──────────────
+    llvm::Value* containerPtr = alloca;
+    if (elemTI && elemTI->kind == TypeKind::Pointer &&
+        elemTI->pointeeType && elemTI->pointeeType->kind == TypeKind::Extended) {
+        auto* ptrTy = llvm::PointerType::getUnqual(*context_);
+        containerPtr = builder_->CreateLoad(ptrTy, alloca, varName + "_deref");
+        elemTI = elemTI->pointeeType;
+    }
     if (elemTI && elemTI->kind == TypeKind::Extended) {
         auto* ptrTy   = llvm::PointerType::getUnqual(*context_);
         auto* usizeTy = module_->getDataLayout().getIntPtrType(*context_);
@@ -2306,7 +2313,7 @@ std::any IRGen::visitAssignStmt(LuxParser::AssignStmtContext* ctx) {
                 "lux_map_set_" + suffix,
                 llvm::Type::getVoidTy(*context_),
                 { ptrTy, keyLLTy, valLLTy });
-            builder_->CreateCall(callee, { alloca, keyVal, val });
+            builder_->CreateCall(callee, { containerPtr, keyVal, val });
             return {};
         }
 
@@ -2345,7 +2352,7 @@ std::any IRGen::visitAssignStmt(LuxParser::AssignStmtContext* ctx) {
             auto ptrFn = declareBuiltin("lux_vec_ptr_raw", ptrTy,
                                         {ptrTy, usizeTy, usizeTy});
             auto* elemPtr = builder_->CreateCall(ptrFn,
-                { alloca, idx, elemSzVal }, "vec_elem_ptr");
+                { containerPtr, idx, elemSzVal }, "vec_elem_ptr");
             builder_->CreateStore(val, elemPtr);
             return {};
         }
@@ -2354,7 +2361,7 @@ std::any IRGen::visitAssignStmt(LuxParser::AssignStmtContext* ctx) {
             "lux_vec_set_" + suffix,
             llvm::Type::getVoidTy(*context_),
             { ptrTy, usizeTy, elemLLTy });
-        builder_->CreateCall(callee, { alloca, idx, val });
+        builder_->CreateCall(callee, { containerPtr, idx, val });
         return {};
     }
 
@@ -5132,6 +5139,61 @@ std::any IRGen::visitForInStmt(LuxParser::ForInStmtContext* ctx) {
             auto* nextIdx   = builder_->CreateAdd(curIdxUpd,
                 llvm::ConstantInt::get(idxType, 1), "inc");
             builder_->CreateStore(nextIdx, idxAlloca);
+            builder_->CreateBr(condBB);
+
+            loopStack_.pop_back();
+            locals_.erase(varName);
+
+            builder_->SetInsertPoint(endBB);
+        } else if (iterableTI && iterableTI->kind == TypeKind::Integer) {
+            // Integer iteration: for TYPE i in N  =>  iterate 0..N-1
+            auto* nVal = castValue(visit(iterExpr));
+            auto* i64Ty = llvm::Type::getInt64Ty(*context_);
+
+            auto* alloca = builder_->CreateAlloca(varType, nullptr, varName);
+            builder_->CreateStore(llvm::ConstantInt::get(varType, 0), alloca);
+            locals_[varName] = {alloca, typeInfo, 0};
+
+            auto* condBB   = llvm::BasicBlock::Create(*context_, "for.cond", currentFunction_);
+            auto* bodyBB   = llvm::BasicBlock::Create(*context_, "for.body", currentFunction_);
+            auto* updateBB = llvm::BasicBlock::Create(*context_, "for.update", currentFunction_);
+            auto* endBB    = llvm::BasicBlock::Create(*context_, "for.end", currentFunction_);
+
+            loopStack_.push_back({endBB, updateBB});
+            builder_->CreateBr(condBB);
+
+            // Condition: i < N
+            builder_->SetInsertPoint(condBB);
+            auto* cur = builder_->CreateLoad(varType, alloca, varName);
+            auto* castEnd = (nVal->getType() == varType) ? nVal :
+                builder_->CreateIntCast(nVal, varType, typeInfo->isSigned, "cast");
+            llvm::Value* cond;
+            if (typeInfo->isSigned)
+                cond = builder_->CreateICmpSLT(cur, castEnd, "cmp");
+            else
+                cond = builder_->CreateICmpULT(cur, castEnd, "cmp");
+            builder_->CreateCondBr(cond, bodyBB, endBB);
+
+            // Body
+            builder_->SetInsertPoint(bodyBB);
+            {
+                auto savedLocals = locals_;
+                loopBodyLocalsStack_.push_back(savedLocals);
+                for (auto* stmt : ctx->block()->statement())
+                    visit(stmt);
+                emitBlockExitCleanups(savedLocals);
+                loopBodyLocalsStack_.pop_back();
+                locals_ = savedLocals;
+            }
+            if (!builder_->GetInsertBlock()->getTerminator())
+                builder_->CreateBr(updateBB);
+
+            // Update: i++
+            builder_->SetInsertPoint(updateBB);
+            auto* curVal = builder_->CreateLoad(varType, alloca, "cur");
+            auto* next = builder_->CreateAdd(curVal,
+                llvm::ConstantInt::get(varType, 1), "inc");
+            builder_->CreateStore(next, alloca);
             builder_->CreateBr(condBB);
 
             loopStack_.pop_back();

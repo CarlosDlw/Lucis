@@ -3181,17 +3181,22 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
             error(expr, "index must be integer, got '" +
                              indexType->name + "'");
 
-        // Vec<T>[i] returns T
-        if (baseType && baseType->kind == TypeKind::Extended && baseType->elementType)
-            return baseType->elementType;
+        // Dereference pointer if necessary
+        auto* derefType = baseType;
+        if (derefType && derefType->kind == TypeKind::Pointer && derefType->pointeeType)
+            derefType = derefType->pointeeType;
 
-        // *T[i] returns T
-        if (baseType && baseType->kind == TypeKind::Pointer && baseType->pointeeType)
-            return baseType->pointeeType;
+        // Vec<T>[i] returns T
+        if (derefType && derefType->kind == TypeKind::Extended && derefType->elementType)
+            return derefType->elementType;
 
         // string[i] returns char (uint8)
-        if (baseType && baseType->kind == TypeKind::String)
+        if (derefType && derefType->kind == TypeKind::String)
             return typeRegistry_.lookup("char");
+
+        // If original type is pointer and dereferenced type is not handled above, return deref type
+        if (baseType && baseType->kind == TypeKind::Pointer && derefType)
+            return derefType;
 
         return baseType;
     }
@@ -6001,7 +6006,11 @@ void Checker::checkAssignStmt(LuxParser::AssignStmtContext* stmt) {
         for (size_t i = 0; i + 1 < indexExprs.size(); i++) {
             if (!expectedType) break;
 
-            // m[key] = value (non-Map case is handled above)
+            // Auto-dereference pointers before resolving element type
+            if (expectedType->kind == TypeKind::Pointer && expectedType->pointeeType)
+                expectedType = expectedType->pointeeType;
+
+            // m[key] = value
             if (expectedType->kind == TypeKind::Extended && expectedType->keyType) {
                 expectedType = expectedType->valueType;
                 continue;
@@ -6010,12 +6019,6 @@ void Checker::checkAssignStmt(LuxParser::AssignStmtContext* stmt) {
             // vec[i] = value
             if (expectedType->kind == TypeKind::Extended && expectedType->elementType) {
                 expectedType = expectedType->elementType;
-                continue;
-            }
-
-            // ptr[i] = value
-            if (expectedType->kind == TypeKind::Pointer && expectedType->pointeeType) {
-                expectedType = expectedType->pointeeType;
                 continue;
             }
         }
