@@ -15,6 +15,9 @@ public:
     llvm::LLVMContext& context() { return *context_; }
     llvm::Module*      module()  { return module_.get(); }
 
+    std::unique_ptr<llvm::LLVMContext> takeContext() { return std::move(context_); }
+    std::unique_ptr<llvm::Module>      takeModule()  { return std::move(module_); }
+
     // Print LLVM IR to stdout.
     void        print()    const;
     // Return LLVM IR as a string.

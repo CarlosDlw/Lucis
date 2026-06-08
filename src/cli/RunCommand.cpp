@@ -29,7 +29,8 @@ namespace fs = std::filesystem;
 
 void RunCommand::buildArgs(ArgParser& parser) const {
     parser.addPositional("file", "Path to the .lx entrypoint file");
-    parser.addOption("opt", 'O', "LEVEL", "Optimization level: 0, 1, 2, or 3 (default: 0)");
+    parser.addOption("opt", 'O', "LEVEL", "Optimization level: 0, 1, 2, 3, s, z, or fast (default: 0)");
+    parser.addFlag("lto", '\0', "Enable Link Time Optimization");
     parser.addFlag("quiet", 'q', "Suppress pipeline logs");
     parser.addFlag("clean", 'c', "Clear cache before compiling");
     parser.addOption("link", 'l', "LIB", "Link against a library (repeatable)", true);
@@ -44,6 +45,26 @@ int RunCommand::run(const ArgParser& parser) {
     pipeOpts.quiet            = parser.has("quiet");
     pipeOpts.includePaths     = parser.getAll("include");
     pipeOpts.userLinkerFlags  = parser.getAll("link");
+
+    OptimizationLevel luxOptLevel = OptimizationLevel::O0;
+    if (parser.has("opt")) {
+        std::string optStr = parser.get("opt");
+        if (optStr == "0")      luxOptLevel = OptimizationLevel::O0;
+        else if (optStr == "1") luxOptLevel = OptimizationLevel::O1;
+        else if (optStr == "2") luxOptLevel = OptimizationLevel::O2;
+        else if (optStr == "3") luxOptLevel = OptimizationLevel::O3;
+        else if (optStr == "s") luxOptLevel = OptimizationLevel::Os;
+        else if (optStr == "z") luxOptLevel = OptimizationLevel::Oz;
+        else if (optStr == "fast") luxOptLevel = OptimizationLevel::Ofast;
+        else {
+            try {
+                int level = std::stoi(optStr);
+                if (level >= 0 && level <= 3)
+                    luxOptLevel = static_cast<OptimizationLevel>(level);
+            } catch (...) {}
+        }
+    }
+    bool useLTO = parser.has("lto");
 
     auto pipeline = LuxPipeline::run(pipeOpts);
     if (!pipeline || pipeline->hasErrors) return 1;
@@ -105,6 +126,14 @@ int RunCommand::run(const ArgParser& parser) {
         return 1;
     }
 
+    // Optimize master module
+    if (luxOptLevel != OptimizationLevel::O0) {
+        IRModule wrap(std::move(masterCtx), std::move(masterMod));
+        Optimizer::optimize(wrap, luxOptLevel);
+        masterMod = wrap.takeModule();
+        masterCtx = wrap.takeContext();
+    }
+
     // ── Cache and produce temp binary ──────────────────────────────────────
     const std::string cacheDir = pipeline->projectRoot + "/.lux/cache";
     if (parser.has("clean")) {
@@ -121,6 +150,8 @@ int RunCommand::run(const ArgParser& parser) {
 
     std::string cacheKeyData = irText;
     cacheKeyData += "\n#builtins=" + CodeGen::builtinsLibraryPath();
+    cacheKeyData += "\n#opt=" + std::to_string(static_cast<int>(luxOptLevel));
+    if (useLTO) cacheKeyData += "\n#lto=1";
     for (auto& lf : pipeline->linkerFlags)
         cacheKeyData += "\n#l=" + lf;
 
@@ -157,6 +188,18 @@ int RunCommand::run(const ArgParser& parser) {
             std::vector<const char*> argv;
             argv.push_back(cc);
             argv.push_back(irPath.c_str());
+
+            // Add optimization flag
+            std::string optArg;
+            if (luxOptLevel == OptimizationLevel::O1) optArg = "-O1";
+            else if (luxOptLevel == OptimizationLevel::O2) optArg = "-O2";
+            else if (luxOptLevel == OptimizationLevel::O3) optArg = "-O3";
+            else if (luxOptLevel == OptimizationLevel::Os) optArg = "-Os";
+            else if (luxOptLevel == OptimizationLevel::Oz) optArg = "-Oz";
+            else if (luxOptLevel == OptimizationLevel::Ofast) optArg = "-Ofast";
+            if (!optArg.empty()) argv.push_back(optArg.c_str());
+
+            if (useLTO) argv.push_back("-flto");
 
             // Add C objects
             for (auto& obj : cObjects)

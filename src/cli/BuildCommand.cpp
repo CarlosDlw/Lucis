@@ -16,7 +16,8 @@ void BuildCommand::buildArgs(ArgParser& parser) const {
     parser.addPositional("file", "Path to the .lx entrypoint file");
     parser.addOption("output", 'o', "FILE", "Output binary path (default: <input>.out)");
     parser.addFlag("emit-llvm", '\0', "Print LLVM IR to stdout and exit");
-    parser.addOption("opt", 'O', "LEVEL", "Optimization level: 0, 1, 2, or 3 (default: 0)");
+    parser.addOption("opt", 'O', "LEVEL", "Optimization level: 0, 1, 2, 3, s, z, or fast (default: 0)");
+    parser.addFlag("lto", '\0', "Enable Link Time Optimization");
     parser.addFlag("quiet", 'q', "Suppress pipeline logs");
     parser.addOption("link", 'l', "LIB", "Link against a library (repeatable)", true);
     parser.addOption("lib-path", 'L', "DIR", "Add library search path (repeatable)", true);
@@ -30,9 +31,30 @@ int BuildCommand::run(const ArgParser& parser) {
     pipeOpts.includePaths     = parser.getAll("include");
     pipeOpts.userLinkerFlags  = parser.getAll("link");
 
-    int optLevel      = parser.has("opt") ? parser.getInt("opt") : 0;
+    OptimizationLevel luxOptLevel = OptimizationLevel::O0;
+    if (parser.has("opt")) {
+        std::string optStr = parser.get("opt");
+        if (optStr == "0")      luxOptLevel = OptimizationLevel::O0;
+        else if (optStr == "1") luxOptLevel = OptimizationLevel::O1;
+        else if (optStr == "2") luxOptLevel = OptimizationLevel::O2;
+        else if (optStr == "3") luxOptLevel = OptimizationLevel::O3;
+        else if (optStr == "s") luxOptLevel = OptimizationLevel::Os;
+        else if (optStr == "z") luxOptLevel = OptimizationLevel::Oz;
+        else if (optStr == "fast") luxOptLevel = OptimizationLevel::Ofast;
+        else {
+            try {
+                int level = std::stoi(optStr);
+                if (level >= 0 && level <= 3)
+                    luxOptLevel = static_cast<OptimizationLevel>(level);
+            } catch (...) {
+                // Fallback to O0 or log warning if needed
+            }
+        }
+    }
+
     std::string outputFile = parser.get("output");
     bool emitLLVM     = parser.has("emit-llvm");
+    bool useLTO       = parser.has("lto");
 
     auto pipeline = LuxPipeline::run(pipeOpts);
     if (!pipeline || pipeline->hasErrors) return 1;
@@ -85,8 +107,8 @@ int BuildCommand::run(const ArgParser& parser) {
         }
 
         // Optimize
-        if (optLevel > 0)
-            Optimizer::optimize(*irModule, static_cast<OptimizationLevel>(optLevel));
+        if (luxOptLevel != OptimizationLevel::O0)
+            Optimizer::optimize(*irModule, luxOptLevel);
 
         // Emit object file
         auto stem = unit.namespaceName + "__" + fs::path(unit.filePath).stem().string();
@@ -115,8 +137,13 @@ int BuildCommand::run(const ArgParser& parser) {
     if (!pipeOpts.quiet)
         std::cerr << "\nlux: [build] --- linker output ---\n\n";
 
+    std::vector<std::string> finalLinkerFlags = pipeline->linkerFlags;
+    if (useLTO) {
+        finalLinkerFlags.push_back("-flto");
+    }
+
     if (!CodeGen::linkObjectFiles(objectFiles, outputFile,
-                                   pipeline->linkerFlags,
+                                   finalLinkerFlags,
                                    parser.getAll("lib-path"),
                                    true, pipeOpts.quiet)) {
         std::cerr << "lux: failed to link binary '" << outputFile << "'\n";
