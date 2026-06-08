@@ -71,11 +71,26 @@ int BuildCommand::run(const ArgParser& parser) {
     bool emitAsm      = parser.has("emit-asm");
     bool emitBc       = parser.has("emit-bc");
     bool emitObj      = parser.has("emit-obj");
-    bool isEmitMode   = emitLLVM || emitAsm || emitBc || emitObj;
     bool useLTO       = parser.has("lto");
     bool useStatic    = parser.has("static");
     bool useShared    = parser.has("shared");
-    bool usePIC       = parser.has("fPIC") || useShared;
+    bool isEmitMode   = emitLLVM || emitAsm || emitBc || emitObj;
+    
+    // Intelligent PIC inference:
+    // 1. Explicit --fPIC flag always wins.
+    // 2. --shared libraries MUST be PIC.
+    // 3. --static binaries SHOULD NOT be PIC.
+    // 4. Default for executables on modern Linux is PIE, so objects must be PIC.
+    bool usePIC;
+    if (parser.has("fPIC")) {
+        usePIC = true;
+    } else if (useShared) {
+        usePIC = true;
+    } else if (useStatic) {
+        usePIC = false;
+    } else {
+        usePIC = true; // Default for standard executables
+    }
 
     auto pipeline = LuxPipeline::run(pipeOpts);
     if (!pipeline || pipeline->hasErrors) return 1;
