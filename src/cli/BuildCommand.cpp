@@ -27,6 +27,9 @@ void BuildCommand::buildArgs(ArgParser& parser) const {
     parser.addFlag("emit-obj",  '\0', "Emit object file (.o)");
     parser.addOption("opt", 'O', "LEVEL", "Optimization level: 0, 1, 2, 3, s, z, or fast (default: 0)");
     parser.addFlag("lto", '\0', "Enable Link Time Optimization");
+    parser.addFlag("static", '\0', "Produce a statically linked executable");
+    parser.addFlag("shared", '\0', "Produce a shared library");
+    parser.addFlag("fPIC",   '\0', "Generate position-independent code");
     parser.addFlag("quiet", 'q', "Suppress pipeline logs");
     parser.addOption("link", 'l', "LIB", "Link against a library (repeatable)", true);
     parser.addOption("lib-path", 'L', "DIR", "Add library search path (repeatable)", true);
@@ -68,6 +71,9 @@ int BuildCommand::run(const ArgParser& parser) {
     bool emitObj      = parser.has("emit-obj");
     bool isEmitMode   = emitLLVM || emitAsm || emitBc || emitObj;
     bool useLTO       = parser.has("lto");
+    bool useStatic    = parser.has("static");
+    bool useShared    = parser.has("shared");
+    bool usePIC       = parser.has("fPIC") || useShared;
 
     auto pipeline = LuxPipeline::run(pipeOpts);
     if (!pipeline || pipeline->hasErrors) return 1;
@@ -175,7 +181,7 @@ int BuildCommand::run(const ArgParser& parser) {
                        ? outputFile 
                        : pipeline->buildDir + "/" + stem + ".o";
 
-        if (!CodeGen::emitObjectFile(irModule->module(), objPath)) {
+        if (!CodeGen::emitObjectFile(irModule->module(), objPath, usePIC)) {
             std::cerr << "lux: failed to emit object for '" << unit.filePath << "'\n";
             anyIRError = true;
             continue;
@@ -210,11 +216,17 @@ int BuildCommand::run(const ArgParser& parser) {
     if (useLTO) {
         finalLinkerFlags.push_back("-flto");
     }
+    if (useStatic) {
+        finalLinkerFlags.push_back("-static");
+    }
+    if (useShared) {
+        finalLinkerFlags.push_back("-shared");
+    }
 
     if (!CodeGen::linkObjectFiles(objectFiles, outputFile,
                                    finalLinkerFlags,
                                    parser.getAll("lib-path"),
-                                   true, pipeOpts.quiet)) {
+                                   !useStatic, pipeOpts.quiet)) {
         std::cerr << "lux: failed to link binary '" << outputFile << "'\n";
         return 1;
     }

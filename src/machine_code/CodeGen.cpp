@@ -35,11 +35,10 @@ static auto createTargetMachineCompat(TargetT* target,
                                       llvm::StringRef cpu,
                                       llvm::StringRef features,
                                       const llvm::TargetOptions& opt,
+                                      llvm::Reloc::Model reloc,
                                       int)
-    -> decltype(target->createTargetMachine(triple, cpu, features, opt,
-                                            llvm::Reloc::PIC_)) {
-    return target->createTargetMachine(triple, cpu, features, opt,
-                                       llvm::Reloc::PIC_);
+    -> decltype(target->createTargetMachine(triple, cpu, features, opt, reloc)) {
+    return target->createTargetMachine(triple, cpu, features, opt, reloc);
 }
 
 template <typename TargetT>
@@ -48,12 +47,11 @@ static auto createTargetMachineCompat(TargetT* target,
                                       llvm::StringRef cpu,
                                       llvm::StringRef features,
                                       const llvm::TargetOptions& opt,
+                                      llvm::Reloc::Model reloc,
                                       long)
-    -> decltype(target->createTargetMachine(llvm::StringRef(), cpu, features,
-                                            opt, llvm::Reloc::PIC_)) {
+    -> decltype(target->createTargetMachine(llvm::StringRef(), cpu, features, opt, reloc)) {
     auto tripleStr = triple.str();
-    return target->createTargetMachine(llvm::StringRef(tripleStr), cpu, features,
-                                       opt, llvm::Reloc::PIC_);
+    return target->createTargetMachine(llvm::StringRef(tripleStr), cpu, features, opt, reloc);
 }
 
 static auto lookupTargetCompat(const llvm::Triple& triple,
@@ -295,7 +293,7 @@ bool CodeGen::linkObjectFiles(const std::vector<std::string>& objectPaths,
 
 // ── Private helpers ──────────────────────────────────────────────────────────
 
-static bool emitToFile(llvm::Module* module, const std::string& outputPath, llvm::CodeGenFileType fileType) {
+static bool emitToFile(llvm::Module* module, const std::string& outputPath, llvm::CodeGenFileType fileType, bool pic) {
     llvm::InitializeNativeTarget();
     llvm::InitializeNativeTargetAsmParser();
     llvm::InitializeNativeTargetAsmPrinter();
@@ -312,8 +310,9 @@ static bool emitToFile(llvm::Module* module, const std::string& outputPath, llvm
     auto cpu      = llvm::sys::getHostCPUName();
     auto features = llvm::StringRef("");
     llvm::TargetOptions opt;
+    auto reloc = pic ? llvm::Reloc::PIC_ : llvm::Reloc::Static;
     std::unique_ptr<llvm::TargetMachine> machine(
-        createTargetMachineCompat(target, targetTriple, cpu, features, opt, 0));
+        createTargetMachineCompat(target, targetTriple, cpu, features, opt, reloc, 0));
 
     setModuleTargetTripleCompat(module, targetTriple, 0);
     module->setDataLayout(machine->createDataLayout());
@@ -337,17 +336,17 @@ static bool emitToFile(llvm::Module* module, const std::string& outputPath, llvm
     return true;
 }
 
-bool CodeGen::emitObjectFile(llvm::Module* module, const std::string& objectPath) {
-    return emitToFile(module, objectPath, LUX_CGFT_OBJECT);
+bool CodeGen::emitObjectFile(llvm::Module* module, const std::string& objectPath, bool pic) {
+    return emitToFile(module, objectPath, LUX_CGFT_OBJECT, pic);
 }
 
-bool CodeGen::emitAssembly(llvm::Module* module, const std::string& assemblyPath) {
+bool CodeGen::emitAssembly(llvm::Module* module, const std::string& assemblyPath, bool pic) {
 #ifdef LLVM_VERSION_18_OR_NEWER
     auto type = llvm::CodeGenFileType::AssemblyFile;
 #else
     auto type = llvm::CGFT_AssemblyFile;
 #endif
-    return emitToFile(module, assemblyPath, type);
+    return emitToFile(module, assemblyPath, type, pic);
 }
 
 #include <llvm/Bitcode/BitcodeWriter.h>

@@ -10,10 +10,10 @@ public:
     static bool emitBinary(IRModule& irModule, const std::string& outputPath);
 
     // Emit a single LLVM module as an object file.
-    static bool emitObjectFile(llvm::Module* module, const std::string& objectPath);
+    static bool emitObjectFile(llvm::Module* module, const std::string& objectPath, bool pic = true);
 
     // Emit a single LLVM module as assembly text.
-    static bool emitAssembly(llvm::Module* module, const std::string& assemblyPath);
+    static bool emitAssembly(llvm::Module* module, const std::string& assemblyPath, bool pic = true);
 
     // Emit a single LLVM module as bitcode.
     static bool emitBitcode(llvm::Module* module, const std::string& bitcodePath);

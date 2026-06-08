@@ -24,13 +24,12 @@ removed in a future release. Use `lux build <file> [-o <output>]` instead.
 ```
 --help, -h     Show help
 --version, -v  Show version
-```
-
 ## build — Compile to Binary
 
 ```
 lux build <file> [-o <output>] [-O <level>] [--lto]
                [--emit-llvm] [--emit-asm] [--emit-bc] [--emit-obj]
+               [--static] [--shared] [--fPIC]
                [-l <lib>] [-L <dir>] [-I <dir>] [-q]
 ```
 
@@ -46,12 +45,20 @@ Compiles the project to a native binary. Without `-o`, the output defaults to
 | `--emit-asm` | Emit assembly (`.s`) |
 | `--emit-bc` | Emit LLVM bitcode (`.bc`) |
 | `--emit-obj` | Emit object file (`.o`) |
+| `--static` | Produce a statically linked executable |
+| `--shared` | Produce a shared library (`.so`, `.dll`) |
+| `--fPIC` | Generate position-independent code (PIC) |
 | `-l, --link <LIB>` | Link against a library (repeatable) |
 | `-L, --lib-path <DIR>` | Add library search path (repeatable) |
 | `-I, --include <DIR>` | Add include search path (repeatable) |
 | `-q, --quiet` | Suppress pipeline logs |
+...
+# Build a shared library (automatically enables --fPIC)
+lux build module.lx --shared -o libmodule.so
 
-**Optimization Levels:**
+# Build a static binary
+lux build main.lx --static -o main_static
+```
 - `0-3`: Standard optimization levels.
 - `s`: Optimize for size, balancing performance.
 - `z`: Optimize aggressively for size.
