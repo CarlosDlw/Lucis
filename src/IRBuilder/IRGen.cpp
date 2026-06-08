@@ -5032,11 +5032,13 @@ std::any IRGen::visitForInStmt(LuxParser::ForInStmtContext* ctx) {
         // Detect if the iterable is a Vec<T> (Extended type)
         const TypeInfo* iterableTI = nullptr;
         llvm::AllocaInst* vecAlloca = nullptr;
+        unsigned iterableDims = 0;
         if (auto* ident = dynamic_cast<LuxParser::IdentExprContext*>(iterExpr)) {
             auto it = locals_.find(ident->IDENTIFIER()->getText());
             if (it != locals_.end()) {
                 iterableTI = it->second.typeInfo;
                 vecAlloca  = it->second.alloca;
+                iterableDims = it->second.arrayDims;
             }
         }
 
@@ -5145,7 +5147,7 @@ std::any IRGen::visitForInStmt(LuxParser::ForInStmtContext* ctx) {
             locals_.erase(varName);
 
             builder_->SetInsertPoint(endBB);
-        } else if (iterableTI && iterableTI->kind == TypeKind::Integer) {
+        } else if (iterableTI && iterableTI->kind == TypeKind::Integer && iterableDims == 0) {
             // Integer iteration: for TYPE i in N  =>  iterate 0..N-1
             auto* nVal = castValue(visit(iterExpr));
             auto* i64Ty = llvm::Type::getInt64Ty(*context_);
