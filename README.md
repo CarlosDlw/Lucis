@@ -78,6 +78,13 @@ Install the equivalent development packages for your distro. Typical package nam
 - Arch Linux: `cmake`, `base-devel`, `llvm`, `clang`, `antlr4-runtime`, `zlib`, `pkgconf`
 - Fedora: `cmake`, `gcc-c++`, `llvm-devel`, `clang-devel`, `antlr4-cpp-runtime-devel`, `zlib-devel`, `pkgconf-pkg-config`
 
+**Note for Static Linkage (--static):**
+If you plan to use the `--static` flag, you must also install the static library versions for system dependencies:
+- Ubuntu/Debian: `zlib1g-static`
+- Arch Linux: `zlib-static`
+- Fedora: `zlib-static`
+- (Ensure `glibc-static` is also installed on Fedora/RedHat based systems)
+
 ### Configure and build (recommended)
 
 Use the project Makefile (portable wrappers around CMake):
