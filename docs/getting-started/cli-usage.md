@@ -24,6 +24,8 @@ removed in a future release. Use `lux build <file> [-o <output>]` instead.
 ```
 --help, -h     Show help
 --version, -v  Show version
+```
+
 ## build — Compile to Binary
 
 ```
@@ -57,6 +59,8 @@ Compiles the project to a native binary. Without `-o`, the output defaults to
 lux build module.lx --shared -o libmodule.so
 
 # Build a static binary
+lux build main.lx --static -o main_static
+
 **Optimization Levels:**
 - `0-3`: Standard optimization levels.
 - `s`: Optimize for size, balancing performance.
