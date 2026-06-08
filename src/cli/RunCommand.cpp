@@ -106,7 +106,7 @@ int RunCommand::run(const ArgParser& parser) {
     }
 
     // ── Cache and produce temp binary ──────────────────────────────────────
-    const std::string cacheDir = pipeline->projectRoot + "/.luxcache";
+    const std::string cacheDir = pipeline->projectRoot + "/.lux/cache";
     if (parser.has("clean")) {
         if (!pipeOpts.quiet)
             std::cerr << "lux: [run] clearing cache...";

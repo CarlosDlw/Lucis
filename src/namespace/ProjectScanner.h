@@ -4,7 +4,7 @@
 #include <vector>
 
 // Recursively scans a project directory for .lx source files.
-// Includes hidden directories and skips only the .luxbuild directory.
+// Includes hidden directories and skips only the .lux directory.
 class ProjectScanner {
 public:
     static std::vector<std::string> scan(const std::string& rootDir);

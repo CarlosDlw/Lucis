@@ -47,7 +47,7 @@ The compiler starts by finding the project root and scanning for all `.lx` sourc
 
 **Entry point:** `CLI::run()` in `src/cli/CLI.cpp`
 
-The function `getProjectRoot()` walks up from the current directory looking for a `.luxbuild/` directory (the project marker). Then `ProjectScanner::scan()` collects all `.lx` files recursively.
+The function `getProjectRoot()` walks up from the current directory looking for a `.lux/` directory (the project marker). Then `ProjectScanner::scan()` collects all `.lx` files recursively.
 
 For a single-file compilation like `lux main.lx ./main`, the scanner only processes the file specified on the command line.
 
@@ -302,7 +302,7 @@ LLVM Module
 
 The compiler always targets the **native platform** — it detects the host CPU and target triple automatically using `llvm::sys::getDefaultTargetTriple()` and `llvm::sys::getHostCPUName()`.
 
-Object files are written to the `.luxbuild/` directory.
+Object files are written to the `.lux/build/` directory.
 
 ---
 

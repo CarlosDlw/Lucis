@@ -77,7 +77,7 @@ std::unique_ptr<PipelineResult> LuxPipeline::run(const Options& opts) {
     // ── Step 1: project root & build dir ────────────────────────────────────
     progress(1, 5, "resolving project root");
     result->projectRoot = getProjectRoot(opts.inputFile);
-    result->buildDir    = result->projectRoot + "/.luxbuild";
+    result->buildDir    = result->projectRoot + "/.lux/build";
     fs::create_directories(result->buildDir);
     auto buildProgress = [&, step = 1]() mutable { progress(++step, 5, "scanning .lx files"); };
     buildProgress();

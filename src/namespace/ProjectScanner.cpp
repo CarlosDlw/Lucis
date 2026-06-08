@@ -16,10 +16,10 @@ std::vector<std::string> ProjectScanner::scan(const std::string& rootDir) {
              rootDir, fs::directory_options::skip_permission_denied);
          it != fs::recursive_directory_iterator(); ++it) {
 
-        // Skip only .luxbuild directory
+        // Skip only .lux directory
         if (it->is_directory()) {
             auto dirName = it->path().filename().string();
-            if (dirName == ".luxbuild") {
+            if (dirName == ".lux") {
                 it.disable_recursion_pending();
                 continue;
             }

@@ -483,7 +483,7 @@ you need access to structs, enums, or many functions from a C library.
 When you use `#include "header.h"` with a local header, the compiler
 automatically looks for a matching `.c` source file in the same
 directory. If found, it compiles the C source into an object file
-inside `.luxbuild/` and links it into the final binary — no manual
+inside `.lux/build/` and links it into the final binary — no manual
 compilation step required.
 
 ```tm
@@ -529,7 +529,7 @@ Running `lux main.lx ./main` will:
 
 1. Parse `mymath.h` via libclang to extract `add`, `multiply`, and `PI_APPROX`
 2. Find `mymath.c` in the same directory as `mymath.h`
-3. Compile `mymath.c` → `.luxbuild/c__mymath.o` using the system C compiler
+3. Compile `mymath.c` → `.lux/build/c__mymath.o` using the system C compiler
 4. Link `c__mymath.o` together with the TM object file into the final binary
 
 ### Build directory layout
@@ -539,9 +539,11 @@ project/
 ├── main.lx
 ├── mymath.h
 ├── mymath.c
-└── .luxbuild/
-    ├── MyNamespace__main.o    # compiled TM code
-    └── c__mymath.o            # auto-compiled C code
+└── .lux/
+    ├── build/
+    │   ├── MyNamespace__main.o    # compiled TM code
+    │   └── c__mymath.o            # auto-compiled C code
+    └── cache/
 ```
 
 ### How it works

@@ -139,19 +139,20 @@ namespace resolution.
 
 ## Build Artifacts
 
-The compiler creates a `.luxbuild/` directory in the project root for
+The compiler creates a `.lux/build/` directory in the project root for
 intermediate object files:
 
 ```
 project/
 ├── main.lx
 ├── utils.lx
-└── .luxbuild/
-    ├── Main__main.o
-    └── Utils__utils.o
+└── .lux/
+    └ build/
+      ├── Main__main.o
+      └── Utils__utils.o
 ```
 
-These files are reused across compilations. You can safely delete `.luxbuild/`
+These files are reused across compilations. You can safely delete `.lux/build/`
 to force a clean rebuild.
 
 ## Compiler Pipeline
@@ -166,7 +167,7 @@ When you run `lux build`, the compiler performs these steps:
 6. **Check** — Run semantic analysis and type checking
 7. **Generate IR** — Emit LLVM intermediate representation
 8. **Optimize** — Apply LLVM optimization passes (if `-O` is specified)
-9. **Emit Objects** — Write `.o` object files to `.luxbuild/`
+9. **Emit Objects** — Write `.o` object files to `.lux/build/`
 10. **Link** — Invoke the system linker to produce the final native binary
 
 ## Error Messages
