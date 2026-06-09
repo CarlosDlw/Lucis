@@ -167,6 +167,11 @@ private:
         LuxParser::ProgramContext* tree, const CBindings& bindings,
         size_t cursorLine, const ProjectContext* project);
 
+    // Hover on a generic intrinsic call.
+    std::optional<HoverResult> hoverGenericIntrinsic(
+        LuxParser::GenericQualifiedFnCallExprContext* ctx,
+        antlr4::Token* token);
+
     // Hover on a symbol in a `use` declaration line.
     std::optional<HoverResult> hoverImportedSymbol(
         const std::string& symbolName,

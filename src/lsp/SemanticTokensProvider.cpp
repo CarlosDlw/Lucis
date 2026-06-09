@@ -498,6 +498,15 @@ static void walkTree(IdentMap& map, antlr4::tree::ParseTree* node) {
         classifyIdent(map, ctx->IDENTIFIER(), SemanticTokenType::Function);
     }
 
+    // ── generic qualified function call: lux::unsafe::va_arg<int32>(va) ──
+    else if (auto* ctx = dynamic_cast<LuxParser::GenericQualifiedFnCallExprContext*>(node)) {
+        auto ids = ctx->IDENTIFIER();
+        for (size_t i = 0; i + 1 < ids.size(); ++i)
+            classifyIdent(map, ids[i], SemanticTokenType::Namespace);
+        if (!ids.empty())
+            classifyIdent(map, ids.back(), SemanticTokenType::Function);
+    }
+
     // ── generic static method call: Node<int32>::create(42) ──
     else if (auto* ctx = dynamic_cast<LuxParser::GenericStaticMethodCallExprContext*>(node)) {
         auto ids = ctx->IDENTIFIER();

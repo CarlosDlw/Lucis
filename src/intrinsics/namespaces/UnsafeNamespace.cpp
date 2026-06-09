@@ -1,4 +1,5 @@
 #include "intrinsics/IntrinsicRegistry.h"
+#include "types/TypeInfo.h"
 
 #include <llvm/IR/DataLayout.h>
 #include <llvm/IR/Function.h>
@@ -34,7 +35,8 @@ void registerUnsafeNamespace(IntrinsicRegistry& reg) {
                                  llvm::Module* module,
                                  llvm::LLVMContext& context,
                                  const TypeRegistry& typeRegistry,
-                                 const std::vector<llvm::Value*>& args) -> llvm::Value* {
+                                 const std::vector<llvm::Value*>& args,
+                                 const std::vector<const TypeInfo*>& typeArgs) -> llvm::Value* {
             // Allocate a pointer-sized buffer to hold the VA cursor
             auto* ptrTy = llvm::PointerType::get(context, 0);
             auto* vaList = builder.CreateAlloca(ptrTy, nullptr, "va_list");
@@ -67,7 +69,8 @@ void registerUnsafeNamespace(IntrinsicRegistry& reg) {
                                  llvm::Module* module,
                                  llvm::LLVMContext& context,
                                  const TypeRegistry& typeRegistry,
-                                 const std::vector<llvm::Value*>& args) -> llvm::Value* {
+                                 const std::vector<llvm::Value*>& args,
+                                 const std::vector<const TypeInfo*>& typeArgs) -> llvm::Value* {
             // args[0] = va (pointer to buffer)
             // args[1] = addr (starting address)
             builder.CreateStore(args[1], args[0]);
@@ -95,7 +98,8 @@ void registerUnsafeNamespace(IntrinsicRegistry& reg) {
                                  llvm::Module* module,
                                  llvm::LLVMContext& context,
                                  const TypeRegistry& typeRegistry,
-                                 const std::vector<llvm::Value*>& args) -> llvm::Value* {
+                                 const std::vector<llvm::Value*>& args,
+                                 const std::vector<const TypeInfo*>& typeArgs) -> llvm::Value* {
             auto* ptrTy = llvm::PointerType::get(context, 0);
             auto* i32Ty = llvm::Type::getInt32Ty(context);
 
@@ -133,7 +137,8 @@ void registerUnsafeNamespace(IntrinsicRegistry& reg) {
                                  llvm::Module* module,
                                  llvm::LLVMContext& context,
                                  const TypeRegistry& typeRegistry,
-                                 const std::vector<llvm::Value*>& args) -> llvm::Value* {
+                                 const std::vector<llvm::Value*>& args,
+                                 const std::vector<const TypeInfo*>& typeArgs) -> llvm::Value* {
             auto* ptrTy = llvm::PointerType::get(context, 0);
             auto* i64Ty = llvm::Type::getInt64Ty(context);
 
@@ -167,7 +172,8 @@ void registerUnsafeNamespace(IntrinsicRegistry& reg) {
                                  llvm::Module* module,
                                  llvm::LLVMContext& context,
                                  const TypeRegistry& typeRegistry,
-                                 const std::vector<llvm::Value*>& args) -> llvm::Value* {
+                                 const std::vector<llvm::Value*>& args,
+                                 const std::vector<const TypeInfo*>& typeArgs) -> llvm::Value* {
             auto* ptrTy = llvm::PointerType::get(context, 0);
             auto* floatTy = llvm::Type::getFloatTy(context);
 
@@ -201,7 +207,8 @@ void registerUnsafeNamespace(IntrinsicRegistry& reg) {
                                  llvm::Module* module,
                                  llvm::LLVMContext& context,
                                  const TypeRegistry& typeRegistry,
-                                 const std::vector<llvm::Value*>& args) -> llvm::Value* {
+                                 const std::vector<llvm::Value*>& args,
+                                 const std::vector<const TypeInfo*>& typeArgs) -> llvm::Value* {
             auto* ptrTy = llvm::PointerType::get(context, 0);
             auto* doubleTy = llvm::Type::getDoubleTy(context);
 
@@ -235,7 +242,8 @@ void registerUnsafeNamespace(IntrinsicRegistry& reg) {
                                  llvm::Module* module,
                                  llvm::LLVMContext& context,
                                  const TypeRegistry& typeRegistry,
-                                 const std::vector<llvm::Value*>& args) -> llvm::Value* {
+                                 const std::vector<llvm::Value*>& args,
+                                 const std::vector<const TypeInfo*>& typeArgs) -> llvm::Value* {
             auto* ptrTy = llvm::PointerType::get(context, 0);
 
             auto* cursor = builder.CreateLoad(ptrTy, args[0], "cursor");
@@ -271,11 +279,59 @@ void registerUnsafeNamespace(IntrinsicRegistry& reg) {
                                  llvm::Module* module,
                                  llvm::LLVMContext& context,
                                  const TypeRegistry& typeRegistry,
-                                 const std::vector<llvm::Value*>& args) -> llvm::Value* {
+                                 const std::vector<llvm::Value*>& args,
+                                 const std::vector<const TypeInfo*>& typeArgs) -> llvm::Value* {
             auto* ptrTy = llvm::PointerType::get(context, 0);
             auto* nullVal = llvm::ConstantPointerNull::get(ptrTy);
             builder.CreateStore(nullVal, args[0]);
             return llvm::UndefValue::get(llvm::Type::getInt32Ty(context));
+        };
+
+        unsafe.functions.push_back(std::move(fn));
+    }
+
+    // ── va_arg<T>(va) ───────────────────────────────────────────
+    {
+        IntrinsicFunction fn;
+        fn.name = "va_arg";
+        fn.isGeneric = true;
+        fn.returnType = "_any";
+        fn.params.push_back({"*void", false});
+        fn.description =
+            "Reads the next value of type T from the variadic argument cursor and advances the cursor.\n\n"
+            "```lux\n"
+            "T val = lux::unsafe::va_arg<T>(args);\n"
+            "```";
+
+        fn.lowering.kind = IntrinsicFunction::Lowering::InlineIR;
+        fn.lowering.emitIR = [](llvm::IRBuilder<>& builder,
+                                 llvm::Module* module,
+                                 llvm::LLVMContext& context,
+                                 const TypeRegistry& typeRegistry,
+                                 const std::vector<llvm::Value*>& args,
+                                 const std::vector<const TypeInfo*>& typeArgs) -> llvm::Value* {
+            auto* vaArg = args[0];
+            auto* ptrTy = llvm::PointerType::get(context, 0);
+
+            // Get the LLVM type for T
+            auto* valueTI = typeArgs[0];
+            auto& dl = module->getDataLayout();
+            auto* valueTy = valueTI->toLLVMType(context, dl);
+            auto valueSize = dl.getTypeAllocSize(valueTy);
+
+            // Load cursor from va buffer
+            auto* cursor = builder.CreateLoad(ptrTy, vaArg, "va_cursor");
+            // Load value of type T from cursor
+            auto* val = builder.CreateLoad(valueTy, cursor, "va_arg");
+            // Advance cursor by the size of T
+            auto* next = builder.CreateGEP(
+                llvm::Type::getInt8Ty(context), cursor,
+                llvm::ConstantInt::get(llvm::Type::getInt32Ty(context),
+                                       valueSize), "va_next");
+            // Store advanced cursor back
+            builder.CreateStore(next, vaArg);
+
+            return val;
         };
 
         unsafe.functions.push_back(std::move(fn));

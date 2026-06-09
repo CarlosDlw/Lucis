@@ -7825,9 +7825,10 @@ std::any IRGen::visitStaticMethodCallExpr(
                 break;
             }
             case IntrinsicFunction::Lowering::InlineIR: {
+                std::vector<const TypeInfo*> emptyTypeArgs;
                 return intrinsic->lowering.emitIR(
                     *builder_, module_, *context_,
-                    typeRegistry_, args);
+                    typeRegistry_, args, emptyTypeArgs);
             }
             }
 
@@ -19252,6 +19253,13 @@ std::any IRGen::visitGenericQualifiedFnCallExpr(
     for (auto* id : ids)
         idTexts.push_back(id->getText());
 
+    // Collect arguments
+    std::vector<llvm::Value*> args;
+    if (auto* argList = ctx->argList()) {
+        for (auto* argExpr : argList->expression())
+            args.push_back(castValue(visit(argExpr)));
+    }
+
     if (IntrinsicRegistry::isIntrinsicPrefix(idTexts[0])) {
         std::string ns, funcName;
         if (!IntrinsicRegistry::parseIntrinsicPath(idTexts, ns, funcName)) {
@@ -19260,53 +19268,10 @@ std::any IRGen::visitGenericQualifiedFnCallExpr(
                 llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
         }
 
-        if (ns == "unsafe" && funcName == "va_arg") {
-            if (typeArgs.size() != 1) {
-                std::cerr << "lux: va_arg<T> expects 1 type argument\n";
-                return static_cast<llvm::Value*>(
-                    llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
-            }
-
-            // Collect arguments
-            std::vector<llvm::Value*> args;
-            if (auto* argList = ctx->argList()) {
-                for (auto* argExpr : argList->expression())
-                    args.push_back(castValue(visit(argExpr)));
-            }
-            if (args.size() != 1) {
-                std::cerr << "lux: va_arg<T> expects 1 argument\n";
-                return static_cast<llvm::Value*>(
-                    llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
-            }
-
-            auto* vaArg = args[0];
-            auto* ptrTy = llvm::PointerType::get(*context_, 0);
-
-            // Get the LLVM type for T
-            auto* valueTI = typeArgs[0];
-            auto& dl = module_->getDataLayout();
-            auto* valueTy = valueTI->toLLVMType(*context_, dl);
-            auto valueSize = dl.getTypeAllocSize(valueTy);
-
-            // Load cursor from va buffer
-            auto* cursor = builder_->CreateLoad(ptrTy, vaArg, "va_cursor");
-            // Load value of type T from cursor
-            auto* val = builder_->CreateLoad(valueTy, cursor, "va_arg");
-            // Advance cursor by the size of T
-            auto* next = builder_->CreateGEP(
-                llvm::Type::getInt8Ty(*context_), cursor,
-                llvm::ConstantInt::get(llvm::Type::getInt32Ty(*context_),
-                                       valueSize), "va_next");
-            // Store advanced cursor back
-            builder_->CreateStore(next, vaArg);
-
-            // Consume owned arguments
-            if (auto* argList = ctx->argList()) {
-                for (auto* argExpr : argList->expression())
-                    consumeExprIfOwnedLocal(argExpr);
-            }
-
-            return static_cast<llvm::Value*>(val);
+        auto* intrinsic = intrinsicRegistry_.lookup(ns, funcName);
+        if (intrinsic && intrinsic->isGeneric) {
+            return intrinsic->lowering.emitIR(*builder_, module_, *context_,
+                                              typeRegistry_, args, typeArgs);
         }
 
         std::cerr << "lux: unknown generic intrinsic '" << ns << "::"

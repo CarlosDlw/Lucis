@@ -884,6 +884,39 @@ std::optional<HoverResult> HoverProvider::hoverIdent(
     return std::nullopt;
 }
 
+std::optional<HoverResult> HoverProvider::hoverGenericIntrinsic(
+        LuxParser::GenericQualifiedFnCallExprContext* ctx,
+        antlr4::Token* token) {
+    auto ids = ctx->IDENTIFIER();
+    for (size_t i = 0; i < ids.size(); i++) {
+        if (ids[i]->getSymbol() == token) {
+            // Se for o último, é a função
+            if (i == ids.size() - 1) {
+                std::vector<std::string> idTexts;
+                for (auto* id : ids) idTexts.push_back(id->getText());
+                std::string ns, funcName;
+                if (IntrinsicRegistry::parseIntrinsicPath(idTexts, ns, funcName)) {
+                    auto* intrinsic = intrinsicRegistry_.lookup(ns, funcName);
+                    if (intrinsic) {
+                         std::string md = "```lux\n(intrinsic) " + ns + "::" + funcName + "\n```\n\n" + intrinsic->description;
+                         return makeResult(token, md);
+                    }
+                }
+            } else {
+                // Se não, é namespace
+                std::string nsPath;
+                for (size_t j = 0; j <= i; j++) {
+                    if (j > 0) nsPath += "::";
+                    nsPath += ids[j]->getText();
+                }
+                std::string md = "```lux\n(intrinsic namespace) " + nsPath + "\n```";
+                return makeResult(token, md);
+            }
+        }
+    }
+    return std::nullopt;
+}
+
 // ═══════════════════════════════════════════════════════════════════════
 //  Hover on imported symbol in `use` declaration
 // ═══════════════════════════════════════════════════════════════════════
@@ -1563,6 +1596,12 @@ std::optional<HoverResult> HoverProvider::walkExprForHover(
             }
         }
         return std::nullopt;
+    }
+
+    if (auto* gqfc = dynamic_cast<LuxParser::GenericQualifiedFnCallExprContext*>(expr)) {
+        if (gqfc->IDENTIFIER().back()->getSymbol() == hoveredToken) {
+            return hoverGenericIntrinsic(gqfc, hoveredToken);
+        }
     }
 
     // ── Generic static method call: Node<int32>::create(42) ─────────

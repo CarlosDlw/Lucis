@@ -22,6 +22,7 @@ struct IntrinsicFunction {
     std::vector<size_t> consumingArgs;
     std::vector<size_t> borrowedArgs;
     std::string description;
+    bool isGeneric = false;
 
     struct Lowering {
         enum Kind { LLVMIntrinsic, BuiltinCall, InlineIR };
@@ -32,7 +33,8 @@ struct IntrinsicFunction {
             llvm::Module*,
             llvm::LLVMContext&,
             const TypeRegistry&,
-            const std::vector<llvm::Value*>&
+            const std::vector<llvm::Value*>&,
+            const std::vector<const TypeInfo*>&
         )> emitIR;
     };
     Lowering lowering;
