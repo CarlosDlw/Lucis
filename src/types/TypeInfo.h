@@ -27,6 +27,7 @@ enum class TypeKind {
     Function, // function type: fn(params) -> ret
     Extended, // extended types from stdlib (Vec<T>, Map<K,V>, etc.)
     Tuple,    // tuple type: tuple<T1, T2, ...>
+    VAList,   // native variadic argument list state
 };
 
 struct TypeInfo;

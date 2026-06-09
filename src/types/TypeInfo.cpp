@@ -136,6 +136,24 @@ llvm::Type* TypeInfo::toLLVMType(llvm::LLVMContext& ctx,
     case TypeKind::Pointer:
         return llvm::PointerType::getUnqual(ctx);
 
+    case TypeKind::VAList: {
+        // va_list is target-dependent. On x86_64 Linux/Darwin it's a struct
+        // of 4 fields (gp_off, fp_off, overflow_area, reg_save_area).
+        // On other targets it's often just a pointer.
+        // LLVM's va_start/va_arg intrinsics expect the target-specific va_list type.
+        auto* existing = llvm::StructType::getTypeByName(ctx, "struct.__va_list_tag");
+        if (existing) return existing;
+
+        // Fallback: create a generic byte buffer that is large enough for most ABIs (24-32 bytes)
+        // This is a safety measure; the real type should ideally be queried from the target.
+        return llvm::StructType::create(ctx, {
+            llvm::Type::getInt32Ty(ctx), // gp_offset
+            llvm::Type::getInt32Ty(ctx), // fp_offset
+            llvm::PointerType::getUnqual(ctx), // overflow_arg_area
+            llvm::PointerType::getUnqual(ctx)  // reg_save_area
+        }, "struct.__va_list_tag");
+    }
+
     case TypeKind::Function:
         // Function values are represented as opaque pointers (function pointers)
         return llvm::PointerType::getUnqual(ctx);

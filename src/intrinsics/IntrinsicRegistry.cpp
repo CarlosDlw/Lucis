@@ -2,10 +2,10 @@
 
 #include <algorithm>
 
-IntrinsicRegistry::IntrinsicRegistry() {
-    registerCoreNamespace(*this);
-    registerDebugNamespace(*this);
-    registerUnsafeNamespace(*this);
+IntrinsicRegistry::IntrinsicRegistry(TypeRegistry& typeRegistry) {
+    registerCoreNamespace(*this, typeRegistry);
+    registerDebugNamespace(*this, typeRegistry);
+    registerUnsafeNamespace(*this, typeRegistry);
 }
 
 void IntrinsicRegistry::registerNamespace(IntrinsicNamespace ns) {

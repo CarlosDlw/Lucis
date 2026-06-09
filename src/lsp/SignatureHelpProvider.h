@@ -39,6 +39,8 @@ struct SignatureHelpResult {
 // Provides signature help (parameter hints) for function and method calls.
 class SignatureHelpProvider {
 public:
+    SignatureHelpProvider();
+
     std::optional<SignatureHelpResult> signatureHelp(
         const std::string& source, size_t line, size_t col,
         const std::string& filePath, const ProjectContext* project,

@@ -13,6 +13,8 @@ static constexpr int kParseError     = -32700;
 static constexpr int kMethodNotFound = -32601;
 static constexpr int kInvalidRequest = -32600;
 
+LspServer::LspServer() : intrinsicRegistry_(typeRegistry_) {}
+
 // ═══════════════════════════════════════════════════════════════════════
 //  Main loop
 // ═══════════════════════════════════════════════════════════════════════

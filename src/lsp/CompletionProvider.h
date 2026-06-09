@@ -68,6 +68,8 @@ struct CompletionItem {
 // Provides autocompletion for Lux source code.
 class CompletionProvider {
 public:
+    CompletionProvider();
+
     // Returns completions at the given 0-based line:col.
     std::vector<CompletionItem> complete(
         const std::string& source, size_t line, size_t col,

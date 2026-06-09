@@ -32,6 +32,8 @@ struct HoverResult {
 // Parses the document, resolves symbols, and returns markdown tooltips.
 class HoverProvider {
 public:
+    HoverProvider();
+
     // Returns hover info for the given 0-based line:col position.
     std::optional<HoverResult> hover(const std::string& source,
                                      size_t line, size_t col,

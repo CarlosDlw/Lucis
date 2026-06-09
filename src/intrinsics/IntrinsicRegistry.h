@@ -48,7 +48,7 @@ struct IntrinsicNamespace {
 
 class IntrinsicRegistry {
 public:
-    IntrinsicRegistry();
+    IntrinsicRegistry(TypeRegistry& typeRegistry);
 
     const IntrinsicFunction* lookup(const std::string& ns,
                                     const std::string& funcName) const;
@@ -77,6 +77,6 @@ private:
 };
 
 // Per-namespace registration functions (defined in their own .cpp files)
-void registerCoreNamespace(IntrinsicRegistry& reg);
-void registerDebugNamespace(IntrinsicRegistry& reg);
-void registerUnsafeNamespace(IntrinsicRegistry& reg);
+void registerCoreNamespace(IntrinsicRegistry& reg, TypeRegistry& typeReg);
+void registerDebugNamespace(IntrinsicRegistry& reg, TypeRegistry& typeReg);
+void registerUnsafeNamespace(IntrinsicRegistry& reg, TypeRegistry& typeReg);

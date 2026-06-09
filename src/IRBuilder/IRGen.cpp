@@ -20,6 +20,10 @@
 #include <cctype>
 #include <iostream>
 
+IRGen::IRGen()
+    : intrinsicRegistry_(typeRegistry_) {
+}
+
 void IRGen::setNamespaceContext(const NamespaceRegistry* registry,
                                  const std::string& currentNamespace,
                                  const std::string& currentFile) {

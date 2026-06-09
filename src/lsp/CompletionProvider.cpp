@@ -10,6 +10,8 @@
 #include <functional>
 #include <sstream>
 
+CompletionProvider::CompletionProvider() : intrinsicRegistry_(typeRegistry_) {}
+
 // Normalize lowercase native keywords (vec, map, set) to registry CamelCase
 // (Vec, Map, Set)
 static std::string normalizeExtBaseName(const std::string &name) {

@@ -10,6 +10,8 @@
 #include <fstream>
 #include <filesystem>
 
+HoverProvider::HoverProvider() : intrinsicRegistry_(typeRegistry_) {}
+
 // Normalize lowercase native keywords (vec, map, set) to registry CamelCase (Vec, Map, Set)
 static std::string normalizeExtBaseName(const std::string& name) {
     if (name == "vec") return "Vec";

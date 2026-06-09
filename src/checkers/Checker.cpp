@@ -5,6 +5,13 @@
 #include <functional>
 #include <limits>
 
+// In Checker.cpp, ensure we update any places where IntrinsicRegistry is initialized or used.
+// Checker constructor:
+Checker::Checker()
+    : intrinsicRegistry_(typeRegistry_) {
+    registerGlobalBuiltins();
+}
+
 static const EnumVariantInfo* findEnumVariantInfo(const TypeInfo* enumType,
                                                   const std::string& variantName) {
     if (!enumType) return nullptr;
@@ -4125,20 +4132,20 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
                 return nullptr;
             }
 
-            // Validate arguments: must have exactly 1 argument of type *void
+            // Validate arguments: must have exactly 1 argument of type va_list
             auto argExprs = gqfc->argList()
                 ? gqfc->argList()->expression()
                 : std::vector<LuxParser::ExpressionContext*>{};
 
             if (argExprs.size() != 1) {
-                error(expr, "lux::unsafe::va_arg<T> expects exactly 1 argument (va: *void), got " +
+                error(expr, "lux::unsafe::va_arg<T> expects exactly 1 argument (va: va_list), got " +
                       std::to_string(argExprs.size()));
                 return nullptr;
             }
 
             auto* argType = resolveExprType(argExprs[0]);
-            if (argType && argType->name != "*void" && argType->kind != TypeKind::Pointer) {
-                error(argExprs[0], "lux::unsafe::va_arg<T> argument must be *void, got '" +
+            if (argType && argType->name != "va_list") {
+                error(argExprs[0], "lux::unsafe::va_arg<T> argument must be va_list, got '" +
                       argType->name + "'");
             }
 

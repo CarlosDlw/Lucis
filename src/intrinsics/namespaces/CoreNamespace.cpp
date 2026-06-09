@@ -1,6 +1,6 @@
 #include "intrinsics/IntrinsicRegistry.h"
 
-void registerCoreNamespace(IntrinsicRegistry& reg) {
+void registerCoreNamespace(IntrinsicRegistry& reg, TypeRegistry& typeReg) {
     IntrinsicNamespace core;
     core.name = "core";
     core.description =

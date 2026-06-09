@@ -23,6 +23,8 @@ using json = nlohmann::json;
 
 class LspServer {
 public:
+    LspServer();
+
     // Main loop — blocks until shutdown or EOF.
     int run();
 
@@ -37,6 +39,9 @@ private:
     SignatureHelpProvider signatureHelpProvider_;
     ProjectContext   projectContext_;
     ParseCache       parseCache_;
+
+    TypeRegistry      typeRegistry_;
+    IntrinsicRegistry intrinsicRegistry_;
 
     // Semantic tokens cache: URI → {source, tokens}
     struct CachedTokens {

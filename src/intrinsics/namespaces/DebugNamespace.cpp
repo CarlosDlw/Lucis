@@ -1,6 +1,6 @@
 #include "intrinsics/IntrinsicRegistry.h"
 
-void registerDebugNamespace(IntrinsicRegistry& reg) {
+void registerDebugNamespace(IntrinsicRegistry& reg, TypeRegistry& typeReg) {
     IntrinsicNamespace debug;
     debug.name = "debug";
     debug.description =

@@ -28,7 +28,7 @@ struct CStructMacro;
 
 class IRGen : public LuxParserBaseVisitor {
 public:
-    IRGen() = default;
+    IRGen();
 
     // Walk the parse tree and produce an IRModule.
     std::unique_ptr<IRModule> generate(LuxParser::ProgramContext* tree,

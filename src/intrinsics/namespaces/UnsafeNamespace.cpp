@@ -1,13 +1,33 @@
 #include "intrinsics/IntrinsicRegistry.h"
 #include "types/TypeInfo.h"
+#include "types/TypeRegistry.h"
 
 #include <llvm/IR/DataLayout.h>
 #include <llvm/IR/Function.h>
 #include <llvm/IR/Module.h>
 #include <llvm/IR/Type.h>
 #include <llvm/IR/IRBuilder.h>
+#include <llvm/IR/Intrinsics.h>
 
-void registerUnsafeNamespace(IntrinsicRegistry& reg) {
+void registerUnsafeNamespace(IntrinsicRegistry& reg, TypeRegistry& typeReg) {
+    // Register the underlying VAList structure type
+    {
+        TypeInfo tag;
+        tag.name = "va_list_tag";
+        tag.kind = TypeKind::VAList;
+        typeReg.registerType(std::move(tag));
+    }
+
+    // Register va_list as a handle (pointer to the tag)
+    {
+        TypeInfo ptr;
+        ptr.name = "va_list";
+        ptr.kind = TypeKind::Pointer;
+        ptr.pointeeType = typeReg.lookup("va_list_tag");
+        ptr.builtinSuffix = "ptr";
+        typeReg.registerType(std::move(ptr));
+    }
+
     IntrinsicNamespace unsafe;
     unsafe.name = "unsafe";
     unsafe.description =
@@ -20,14 +40,13 @@ void registerUnsafeNamespace(IntrinsicRegistry& reg) {
     {
         IntrinsicFunction fn;
         fn.name = "va_list";
-        fn.returnType = "*void";
+        fn.returnType = "va_list";
         fn.description =
-            "Allocates a variadic argument list cursor and returns an opaque "
-            "pointer to it.\n"
-            "The returned `*void` must be passed to `va_start`, `va_arg_*`, "
+            "Allocates a variadic argument list state handle and returns it.\n"
+            "The returned `va_list` must be passed to `va_start`, `va_arg`, "
             "and `va_end`.\n\n"
             "```lux\n"
-            "let args = lux::unsafe::va_list();\n"
+            "va_list args = lux::unsafe::va_list();\n"
             "```";
 
         fn.lowering.kind = IntrinsicFunction::Lowering::InlineIR;
@@ -37,31 +56,29 @@ void registerUnsafeNamespace(IntrinsicRegistry& reg) {
                                  const TypeRegistry& typeRegistry,
                                  const std::vector<llvm::Value*>& args,
                                  const std::vector<const TypeInfo*>& typeArgs) -> llvm::Value* {
-            // Allocate a pointer-sized buffer to hold the VA cursor
-            auto* ptrTy = llvm::PointerType::get(context, 0);
-            auto* vaList = builder.CreateAlloca(ptrTy, nullptr, "va_list");
-            // Initialize to null
-            auto* nullVal = llvm::ConstantPointerNull::get(ptrTy);
-            builder.CreateStore(nullVal, vaList);
-            return vaList;
+            auto* tagTI = typeRegistry.lookup("va_list_tag");
+            auto& dl = module->getDataLayout();
+            auto* vaListTagTy = tagTI->toLLVMType(context, dl);
+            
+            // va_list() in Lux is an expression that returns a new state pointer.
+            // We allocate the storage on the stack.
+            return builder.CreateAlloca(vaListTagTy, nullptr, "va_list_storage");
         };
 
         unsafe.functions.push_back(std::move(fn));
     }
 
-    // ── va_start(va, addr) ─────────────────────────────────────────
+    // ── va_start(va) ─────────────────────────────────────────
     {
         IntrinsicFunction fn;
         fn.name = "va_start";
         fn.returnType = "void";
-        fn.params.push_back({"*void", false});
-        fn.params.push_back({"*void", false});
+        fn.params.push_back({"va_list", false});
         fn.description =
-            "Initializes a variadic argument list cursor from a starting address.\n"
-            "Stores `addr` into the cursor pointed to by `va`.\n"
-            "The cursor is then advanced by each `va_arg_*` call.\n\n"
+            "Initializes a variadic argument list state handle.\n"
+            "The state is then advanced by each `va_arg` call.\n\n"
             "```lux\n"
-            "lux::unsafe::va_start(args, addr);\n"
+            "lux::unsafe::va_start(args);\n"
             "```";
 
         fn.lowering.kind = IntrinsicFunction::Lowering::InlineIR;
@@ -71,219 +88,14 @@ void registerUnsafeNamespace(IntrinsicRegistry& reg) {
                                  const TypeRegistry& typeRegistry,
                                  const std::vector<llvm::Value*>& args,
                                  const std::vector<const TypeInfo*>& typeArgs) -> llvm::Value* {
-            // args[0] = va (pointer to buffer)
-            // args[1] = addr (starting address)
-            builder.CreateStore(args[1], args[0]);
-            return llvm::UndefValue::get(llvm::Type::getInt32Ty(context));
-        };
-
-        unsafe.functions.push_back(std::move(fn));
-    }
-
-    // ── va_arg_int32(va) ───────────────────────────────────────────
-    {
-        IntrinsicFunction fn;
-        fn.name = "va_arg_int32";
-        fn.returnType = "int32";
-        fn.params.push_back({"*void", false});
-        fn.description =
-            "Reads the next `int32` value from the variadic argument cursor "
-            "and advances the cursor past it.\n\n"
-            "```lux\n"
-            "int32 val = lux::unsafe::va_arg_int32(args);\n"
-            "```";
-
-        fn.lowering.kind = IntrinsicFunction::Lowering::InlineIR;
-        fn.lowering.emitIR = [](llvm::IRBuilder<>& builder,
-                                 llvm::Module* module,
-                                 llvm::LLVMContext& context,
-                                 const TypeRegistry& typeRegistry,
-                                 const std::vector<llvm::Value*>& args,
-                                 const std::vector<const TypeInfo*>& typeArgs) -> llvm::Value* {
-            auto* ptrTy = llvm::PointerType::get(context, 0);
-            auto* i32Ty = llvm::Type::getInt32Ty(context);
-
-            // Load current cursor position from va buffer
-            auto* cursor = builder.CreateLoad(ptrTy, args[0], "cursor");
-            // Read int32 from cursor
-            auto* val = builder.CreateLoad(i32Ty, cursor, "va_arg");
-            // Advance cursor by 4 bytes
-            auto* next = builder.CreateGEP(
-                llvm::Type::getInt8Ty(context), cursor,
-                llvm::ConstantInt::get(i32Ty, 4), "next");
-            // Store advanced cursor back
-            builder.CreateStore(next, args[0]);
-            return val;
-        };
-
-        unsafe.functions.push_back(std::move(fn));
-    }
-
-    // ── va_arg_int64(va) ───────────────────────────────────────────
-    {
-        IntrinsicFunction fn;
-        fn.name = "va_arg_int64";
-        fn.returnType = "int64";
-        fn.params.push_back({"*void", false});
-        fn.description =
-            "Reads the next `int64` value from the variadic argument cursor "
-            "and advances the cursor past it.\n\n"
-            "```lux\n"
-            "int64 val = lux::unsafe::va_arg_int64(args);\n"
-            "```";
-
-        fn.lowering.kind = IntrinsicFunction::Lowering::InlineIR;
-        fn.lowering.emitIR = [](llvm::IRBuilder<>& builder,
-                                 llvm::Module* module,
-                                 llvm::LLVMContext& context,
-                                 const TypeRegistry& typeRegistry,
-                                 const std::vector<llvm::Value*>& args,
-                                 const std::vector<const TypeInfo*>& typeArgs) -> llvm::Value* {
-            auto* ptrTy = llvm::PointerType::get(context, 0);
-            auto* i64Ty = llvm::Type::getInt64Ty(context);
-
-            auto* cursor = builder.CreateLoad(ptrTy, args[0], "cursor");
-            auto* val = builder.CreateLoad(i64Ty, cursor, "va_arg");
-            auto* next = builder.CreateGEP(
-                llvm::Type::getInt8Ty(context), cursor,
-                llvm::ConstantInt::get(i64Ty, 8), "next");
-            builder.CreateStore(next, args[0]);
-            return val;
-        };
-
-        unsafe.functions.push_back(std::move(fn));
-    }
-
-    // ── va_arg_float32(va) ─────────────────────────────────────────
-    {
-        IntrinsicFunction fn;
-        fn.name = "va_arg_float32";
-        fn.returnType = "float32";
-        fn.params.push_back({"*void", false});
-        fn.description =
-            "Reads the next `float32` value from the variadic argument cursor "
-            "and advances the cursor past it.\n\n"
-            "```lux\n"
-            "float32 val = lux::unsafe::va_arg_float32(args);\n"
-            "```";
-
-        fn.lowering.kind = IntrinsicFunction::Lowering::InlineIR;
-        fn.lowering.emitIR = [](llvm::IRBuilder<>& builder,
-                                 llvm::Module* module,
-                                 llvm::LLVMContext& context,
-                                 const TypeRegistry& typeRegistry,
-                                 const std::vector<llvm::Value*>& args,
-                                 const std::vector<const TypeInfo*>& typeArgs) -> llvm::Value* {
-            auto* ptrTy = llvm::PointerType::get(context, 0);
-            auto* floatTy = llvm::Type::getFloatTy(context);
-
-            auto* cursor = builder.CreateLoad(ptrTy, args[0], "cursor");
-            auto* val = builder.CreateLoad(floatTy, cursor, "va_arg");
-            auto* next = builder.CreateGEP(
-                llvm::Type::getInt8Ty(context), cursor,
-                llvm::ConstantInt::get(llvm::Type::getInt32Ty(context), 4), "next");
-            builder.CreateStore(next, args[0]);
-            return val;
-        };
-
-        unsafe.functions.push_back(std::move(fn));
-    }
-
-    // ── va_arg_float64(va) ─────────────────────────────────────────
-    {
-        IntrinsicFunction fn;
-        fn.name = "va_arg_float64";
-        fn.returnType = "float64";
-        fn.params.push_back({"*void", false});
-        fn.description =
-            "Reads the next `float64` value from the variadic argument cursor "
-            "and advances the cursor past it.\n\n"
-            "```lux\n"
-            "float64 val = lux::unsafe::va_arg_float64(args);\n"
-            "```";
-
-        fn.lowering.kind = IntrinsicFunction::Lowering::InlineIR;
-        fn.lowering.emitIR = [](llvm::IRBuilder<>& builder,
-                                 llvm::Module* module,
-                                 llvm::LLVMContext& context,
-                                 const TypeRegistry& typeRegistry,
-                                 const std::vector<llvm::Value*>& args,
-                                 const std::vector<const TypeInfo*>& typeArgs) -> llvm::Value* {
-            auto* ptrTy = llvm::PointerType::get(context, 0);
-            auto* doubleTy = llvm::Type::getDoubleTy(context);
-
-            auto* cursor = builder.CreateLoad(ptrTy, args[0], "cursor");
-            auto* val = builder.CreateLoad(doubleTy, cursor, "va_arg");
-            auto* next = builder.CreateGEP(
-                llvm::Type::getInt8Ty(context), cursor,
-                llvm::ConstantInt::get(llvm::Type::getInt32Ty(context), 8), "next");
-            builder.CreateStore(next, args[0]);
-            return val;
-        };
-
-        unsafe.functions.push_back(std::move(fn));
-    }
-
-    // ── va_arg_ptr(va) ─────────────────────────────────────────────
-    {
-        IntrinsicFunction fn;
-        fn.name = "va_arg_ptr";
-        fn.returnType = "*void";
-        fn.params.push_back({"*void", false});
-        fn.description =
-            "Reads the next pointer value from the variadic argument cursor "
-            "and advances the cursor past it.\n\n"
-            "```lux\n"
-            "let ptr: *void = lux::unsafe::va_arg_ptr(args);\n"
-            "```";
-
-        fn.lowering.kind = IntrinsicFunction::Lowering::InlineIR;
-        fn.lowering.emitIR = [](llvm::IRBuilder<>& builder,
-                                 llvm::Module* module,
-                                 llvm::LLVMContext& context,
-                                 const TypeRegistry& typeRegistry,
-                                 const std::vector<llvm::Value*>& args,
-                                 const std::vector<const TypeInfo*>& typeArgs) -> llvm::Value* {
-            auto* ptrTy = llvm::PointerType::get(context, 0);
-
-            auto* cursor = builder.CreateLoad(ptrTy, args[0], "cursor");
-            auto* val = builder.CreateLoad(ptrTy, cursor, "va_arg");
-            auto* next = builder.CreateGEP(
-                llvm::Type::getInt8Ty(context), cursor,
-                llvm::ConstantInt::get(llvm::Type::getInt32Ty(context),
-                                       module->getDataLayout().getPointerSize()),
-                "next");
-            builder.CreateStore(next, args[0]);
-            return val;
-        };
-
-        unsafe.functions.push_back(std::move(fn));
-    }
-
-    // ── va_end(va) ─────────────────────────────────────────────────
-    {
-        IntrinsicFunction fn;
-        fn.name = "va_end";
-        fn.returnType = "void";
-        fn.params.push_back({"*void", false});
-        fn.description =
-            "Invalidates a variadic argument list cursor by setting it to null.\n"
-            "After this call, the cursor must not be used again without a "
-            "prior `va_start`.\n\n"
-            "```lux\n"
-            "lux::unsafe::va_end(args);\n"
-            "```";
-
-        fn.lowering.kind = IntrinsicFunction::Lowering::InlineIR;
-        fn.lowering.emitIR = [](llvm::IRBuilder<>& builder,
-                                 llvm::Module* module,
-                                 llvm::LLVMContext& context,
-                                 const TypeRegistry& typeRegistry,
-                                 const std::vector<llvm::Value*>& args,
-                                 const std::vector<const TypeInfo*>& typeArgs) -> llvm::Value* {
-            auto* ptrTy = llvm::PointerType::get(context, 0);
-            auto* nullVal = llvm::ConstantPointerNull::get(ptrTy);
-            builder.CreateStore(nullVal, args[0]);
+            // args[0] = va_list handle (pointer to storage)
+            auto* vaStartFunc = llvm::Intrinsic::getOrInsertDeclaration(module, llvm::Intrinsic::vastart);
+            
+            // llvm.va_start expects a pointer to the storage (i8*)
+            auto* i8PtrTy = llvm::PointerType::getUnqual(context);
+            auto* vaArg = builder.CreateBitCast(args[0], i8PtrTy);
+            
+            builder.CreateCall(vaStartFunc, {vaArg});
             return llvm::UndefValue::get(llvm::Type::getInt32Ty(context));
         };
 
@@ -296,9 +108,9 @@ void registerUnsafeNamespace(IntrinsicRegistry& reg) {
         fn.name = "va_arg";
         fn.isGeneric = true;
         fn.returnType = "_any";
-        fn.params.push_back({"*void", false});
+        fn.params.push_back({"va_list", false});
         fn.description =
-            "Reads the next value of type T from the variadic argument cursor and advances the cursor.\n\n"
+            "Reads the next value of type T from the variadic argument list and advances the handle.\n\n"
             "```lux\n"
             "T val = lux::unsafe::va_arg<T>(args);\n"
             "```";
@@ -310,28 +122,44 @@ void registerUnsafeNamespace(IntrinsicRegistry& reg) {
                                  const TypeRegistry& typeRegistry,
                                  const std::vector<llvm::Value*>& args,
                                  const std::vector<const TypeInfo*>& typeArgs) -> llvm::Value* {
-            auto* vaArg = args[0];
-            auto* ptrTy = llvm::PointerType::get(context, 0);
-
-            // Get the LLVM type for T
+            auto* vaListPtr = args[0]; // The va_list handle (pointer to storage)
             auto* valueTI = typeArgs[0];
             auto& dl = module->getDataLayout();
             auto* valueTy = valueTI->toLLVMType(context, dl);
-            auto valueSize = dl.getTypeAllocSize(valueTy);
 
-            // Load cursor from va buffer
-            auto* cursor = builder.CreateLoad(ptrTy, vaArg, "va_cursor");
-            // Load value of type T from cursor
-            auto* val = builder.CreateLoad(valueTy, cursor, "va_arg");
-            // Advance cursor by the size of T
-            auto* next = builder.CreateGEP(
-                llvm::Type::getInt8Ty(context), cursor,
-                llvm::ConstantInt::get(llvm::Type::getInt32Ty(context),
-                                       valueSize), "va_next");
-            // Store advanced cursor back
-            builder.CreateStore(next, vaArg);
+            // The LLVM va_arg instruction handles target-specific ABI details.
+            return builder.CreateVAArg(vaListPtr, valueTy);
+        };
 
-            return val;
+        unsafe.functions.push_back(std::move(fn));
+    }
+
+    // ── va_end(va) ─────────────────────────────────────────────────
+    {
+        IntrinsicFunction fn;
+        fn.name = "va_end";
+        fn.returnType = "void";
+        fn.params.push_back({"va_list", false});
+        fn.description =
+            "Invalidates a variadic argument list state handle.\n"
+            "```lux\n"
+            "lux::unsafe::va_end(args);\n"
+            "```";
+
+        fn.lowering.kind = IntrinsicFunction::Lowering::InlineIR;
+        fn.lowering.emitIR = [](llvm::IRBuilder<>& builder,
+                                 llvm::Module* module,
+                                 llvm::LLVMContext& context,
+                                 const TypeRegistry& typeRegistry,
+                                 const std::vector<llvm::Value*>& args,
+                                 const std::vector<const TypeInfo*>& typeArgs) -> llvm::Value* {
+            auto* vaEndFunc = llvm::Intrinsic::getOrInsertDeclaration(module, llvm::Intrinsic::vaend);
+            
+            auto* i8PtrTy = llvm::PointerType::getUnqual(context);
+            auto* vaArg = builder.CreateBitCast(args[0], i8PtrTy);
+            
+            builder.CreateCall(vaEndFunc, {vaArg});
+            return llvm::UndefValue::get(llvm::Type::getInt32Ty(context));
         };
 
         unsafe.functions.push_back(std::move(fn));

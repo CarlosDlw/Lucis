@@ -21,6 +21,7 @@ class CBindings;
 
 class Checker {
 public:
+    Checker();
     bool check(LuxParser::ProgramContext* tree);
 
     const std::vector<std::string>& errors() const { return errors_; }

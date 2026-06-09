@@ -8,6 +8,8 @@
 #include <sstream>
 #include <fstream>
 
+SignatureHelpProvider::SignatureHelpProvider() : intrinsicRegistry_(typeRegistry_) {}
+
 // ═══════════════════════════════════════════════════════════════════════
 //  Helpers
 // ═══════════════════════════════════════════════════════════════════════
