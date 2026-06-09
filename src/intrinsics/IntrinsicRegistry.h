@@ -77,3 +77,4 @@ private:
 // Per-namespace registration functions (defined in their own .cpp files)
 void registerCoreNamespace(IntrinsicRegistry& reg);
 void registerDebugNamespace(IntrinsicRegistry& reg);
+void registerUnsafeNamespace(IntrinsicRegistry& reg);

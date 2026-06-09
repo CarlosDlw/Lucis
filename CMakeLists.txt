@@ -250,6 +250,7 @@ set(SOURCES
     src/intrinsics/IntrinsicRegistry.cpp
     src/intrinsics/namespaces/CoreNamespace.cpp
     src/intrinsics/namespaces/DebugNamespace.cpp
+    src/intrinsics/namespaces/UnsafeNamespace.cpp
     src/ffi/CBindings.cpp
     src/ffi/CTypeMapper.cpp
     src/ffi/CHeaderResolver.cpp

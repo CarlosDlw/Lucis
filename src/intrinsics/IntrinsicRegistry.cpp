@@ -5,6 +5,7 @@
 IntrinsicRegistry::IntrinsicRegistry() {
     registerCoreNamespace(*this);
     registerDebugNamespace(*this);
+    registerUnsafeNamespace(*this);
 }
 
 void IntrinsicRegistry::registerNamespace(IntrinsicNamespace ns) {
