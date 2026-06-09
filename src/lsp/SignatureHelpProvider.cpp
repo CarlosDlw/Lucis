@@ -351,6 +351,32 @@ SignatureInfo SignatureHelpProvider::buildFromBuiltin(const BuiltinSignature& bs
     return sig;
 }
 
+SignatureInfo SignatureHelpProvider::buildFromIntrinsic(const IntrinsicFunction& intrinsic) {
+    SignatureInfo sig;
+
+    std::ostringstream label;
+    label << intrinsic.returnType << " lux::" << intrinsic.name << "(";
+
+    for (size_t i = 0; i < intrinsic.params.size(); i++) {
+        if (i > 0) label << ", ";
+        std::string pType = intrinsic.params[i].type;
+        std::string pName = paramNameFromType(pType);
+
+        std::string paramLabel = pType + " " + pName;
+        label << paramLabel;
+        sig.parameters.push_back({paramLabel});
+    }
+
+    label << ")";
+    sig.label = label.str();
+
+    if (!intrinsic.description.empty()) {
+        sig.documentation = intrinsic.description;
+    }
+
+    return sig;
+}
+
 SignatureInfo SignatureHelpProvider::buildFromCFunction(const CFunction& func) {
     SignatureInfo sig;
 
@@ -626,6 +652,18 @@ SignatureHelpProvider::signatureHelp(
 
     // ── Static method calls (Type::method(...)) ─────────────────────
     if (site->isStaticCall && !site->staticTypeName.empty()) {
+        // 0) Intrinsic call: lux::core::trap()
+        if (intrinsicRegistry_.hasNamespace(site->staticTypeName)) {
+            auto* intrinsic = intrinsicRegistry_.lookup(site->staticTypeName, name);
+            if (intrinsic) {
+                auto sig = buildFromIntrinsic(*intrinsic);
+                sig.activeParameter = site->activeParam;
+                result.signatures.push_back(std::move(sig));
+                result.activeParameter = site->activeParam;
+                return result;
+            }
+        }
+
         // 1) Extend blocks in current file
         for (auto* tld : parsed.tree->topLevelDecl()) {
             auto* ext = tld->extendDecl();

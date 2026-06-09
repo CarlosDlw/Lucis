@@ -13,6 +13,7 @@
 #include "types/MethodRegistry.h"
 #include "types/ExtendedTypeRegistry.h"
 #include "types/BuiltinRegistry.h"
+#include "intrinsics/IntrinsicRegistry.h"
 #include "namespace/NamespaceRegistry.h"
 #include "lsp/Diagnostic.h"
 
@@ -42,6 +43,7 @@ private:
     MethodRegistry           methodRegistry_;
     ExtendedTypeRegistry     extTypeRegistry_;
     BuiltinRegistry          builtinRegistry_;
+    IntrinsicRegistry        intrinsicRegistry_;
 
     // Variable info tracked per-function scope
     struct VarInfo {

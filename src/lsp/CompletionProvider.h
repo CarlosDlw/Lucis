@@ -12,6 +12,7 @@
 #include "types/TypeRegistry.h"
 #include "types/MethodRegistry.h"
 #include "types/ExtendedTypeRegistry.h"
+#include "intrinsics/IntrinsicRegistry.h"
 #include "imports/ImportResolver.h"
 
 struct ParseResult;
@@ -87,6 +88,7 @@ private:
     TypeRegistry typeRegistry_;
     MethodRegistry methodRegistry_;
     ExtendedTypeRegistry extTypeRegistry_;
+    IntrinsicRegistry intrinsicRegistry_;
     bool hasIncludeBindingsCache_ = false;
     std::string includeFingerprintCache_;
     CBindings includeBindingsCache_;
@@ -212,7 +214,16 @@ private:
 
     // Add global builtins (assert, panic, toString, etc.).
     void addGlobalBuiltins(std::vector<CompletionItem>& items,
-                           const std::string& prefix);
+                            const std::string& prefix);
+
+    // Add intrinsic functions (lux::core::trap, etc.).
+    void addIntrinsics(std::vector<CompletionItem>& items,
+                       const std::string& scopeName,
+                       const std::string& prefix);
+
+    // Add the 'lux' intrinsic root in general context.
+    void addIntrinsicRoot(std::vector<CompletionItem>& items,
+                          const std::string& prefix);
 
     // Add C header file suggestions for #include <|.
     void addHeaderSuggestions(std::vector<CompletionItem>& items,

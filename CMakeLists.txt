@@ -247,6 +247,9 @@ set(SOURCES
     src/types/MethodRegistry.cpp
     src/types/ExtendedTypeRegistry.cpp
     src/types/BuiltinRegistry.cpp
+    src/intrinsics/IntrinsicRegistry.cpp
+    src/intrinsics/namespaces/CoreNamespace.cpp
+    src/intrinsics/namespaces/DebugNamespace.cpp
     src/ffi/CBindings.cpp
     src/ffi/CTypeMapper.cpp
     src/ffi/CHeaderResolver.cpp

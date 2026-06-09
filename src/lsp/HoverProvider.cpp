@@ -23,6 +23,7 @@ struct FuncLookupCtx {
     LuxParser::ProgramContext* tree = nullptr;
     const CBindings* bindings = nullptr;
     const BuiltinRegistry* builtinReg = nullptr;
+    const IntrinsicRegistry* intrinsicReg = nullptr;
     const ExtendedTypeRegistry* extTypeReg = nullptr;
     const MethodRegistry* methodReg = nullptr;
     const ProjectContext* project = nullptr;
@@ -1094,6 +1095,7 @@ std::optional<HoverResult> HoverProvider::walkExprForHover(
                 flc.tree = tree;
                 flc.bindings = &bindings;
                 flc.builtinReg = &builtinRegistry_;
+        flc.intrinsicReg = &intrinsicRegistry_;
                 flc.extTypeReg = &extTypeRegistry_;
                 flc.methodReg = &methodRegistry_;
                 flc.project = project;
@@ -1265,6 +1267,24 @@ std::optional<HoverResult> HoverProvider::walkExprForHover(
                         "```lux\n(module) " + ownerPath + "\n```");
                 }
 
+                // lux::... intrinsic root/namespace
+                if (IntrinsicRegistry::isIntrinsicPrefix(ids[0]->getText())) {
+                    if (i == 0) {
+                        return makeResult(hoveredToken,
+                            "```lux\n(intrinsic root) lux\n```\n\n"
+                            "Intrinsic namespace root. Contains low-level compiler "
+                            "builtin functions like `lux::core::trap()`.");
+                    }
+                    std::string ns = ids[i]->getText();
+                    if (intrinsicRegistry_.hasNamespace(ns)) {
+                        return makeResult(hoveredToken,
+                            "```lux\n(intrinsic namespace) lux::" + ns + "\n```\n\n" +
+                            intrinsicRegistry_.namespaceDescription(ns));
+                    }
+                    return makeResult(hoveredToken,
+                        "```lux\n(intrinsic namespace) " + ns + "\n```");
+                }
+
                 // Type/namespace: resolve only the first segment as type symbol.
                 if (i == 0) {
                     if (auto modulePath = resolveImportedModuleAliasPath(hoveredToken, tree)) {
@@ -1311,6 +1331,7 @@ std::optional<HoverResult> HoverProvider::walkExprForHover(
                     flc.tree = tree;
                     flc.bindings = &bindings;
                     flc.builtinReg = &builtinRegistry_;
+        flc.intrinsicReg = &intrinsicRegistry_;
                     flc.extTypeReg = &extTypeRegistry_;
                     flc.project = project;
 
@@ -1772,7 +1793,9 @@ std::optional<HoverResult> HoverProvider::walkExprForHover(
                 auto locals = collectLocals(func, cursorLine, tree, &bindings, project);
                 FuncLookupCtx flc;
                 flc.tree = tree; flc.bindings = &bindings;
-                flc.builtinReg = &builtinRegistry_; flc.extTypeReg = &extTypeRegistry_;
+                flc.builtinReg = &builtinRegistry_;
+                flc.intrinsicReg = &intrinsicRegistry_;
+                flc.extTypeReg = &extTypeRegistry_;
                 flc.project = project;
                 std::string typeName = inferExprTypeName(expr, locals, &flc);
                 if (!typeName.empty()) {
@@ -1794,7 +1817,9 @@ std::optional<HoverResult> HoverProvider::walkExprForHover(
                 auto locals = collectLocals(func, cursorLine, tree, &bindings, project);
                 FuncLookupCtx flc;
                 flc.tree = tree; flc.bindings = &bindings;
-                flc.builtinReg = &builtinRegistry_; flc.extTypeReg = &extTypeRegistry_;
+                flc.builtinReg = &builtinRegistry_;
+                flc.intrinsicReg = &intrinsicRegistry_;
+                flc.extTypeReg = &extTypeRegistry_;
                 flc.project = project;
                 std::string typeName = inferExprTypeName(expr, locals, &flc);
                 if (!typeName.empty()) {
@@ -1816,7 +1841,9 @@ std::optional<HoverResult> HoverProvider::walkExprForHover(
                 auto locals = collectLocals(func, cursorLine, tree, &bindings, project);
                 FuncLookupCtx flc;
                 flc.tree = tree; flc.bindings = &bindings;
-                flc.builtinReg = &builtinRegistry_; flc.extTypeReg = &extTypeRegistry_;
+                flc.builtinReg = &builtinRegistry_;
+                flc.intrinsicReg = &intrinsicRegistry_;
+                flc.extTypeReg = &extTypeRegistry_;
                 flc.project = project;
                 std::string typeName = inferExprTypeName(expr, locals, &flc);
                 if (!typeName.empty()) {
@@ -1838,7 +1865,9 @@ std::optional<HoverResult> HoverProvider::walkExprForHover(
                 auto locals = collectLocals(func, cursorLine, tree, &bindings, project);
                 FuncLookupCtx flc;
                 flc.tree = tree; flc.bindings = &bindings;
-                flc.builtinReg = &builtinRegistry_; flc.extTypeReg = &extTypeRegistry_;
+                flc.builtinReg = &builtinRegistry_;
+                flc.intrinsicReg = &intrinsicRegistry_;
+                flc.extTypeReg = &extTypeRegistry_;
                 flc.project = project;
                 std::string typeName = inferExprTypeName(expr, locals, &flc);
                 if (!typeName.empty()) {
@@ -3010,6 +3039,7 @@ std::optional<HoverResult> HoverProvider::hoverMethodCall(
         flc.tree = tree;
         flc.bindings = &bindings;
         flc.builtinReg = &builtinRegistry_;
+        flc.intrinsicReg = &intrinsicRegistry_;
         flc.extTypeReg = &extTypeRegistry_;
         flc.methodReg = &methodRegistry_;
         flc.project = project;
@@ -3307,6 +3337,7 @@ std::optional<HoverResult> HoverProvider::hoverFieldAccess(
         flc.tree = tree;
         flc.bindings = &bindings;
         flc.builtinReg = &builtinRegistry_;
+        flc.intrinsicReg = &intrinsicRegistry_;
         flc.extTypeReg = &extTypeRegistry_;
         flc.methodReg = &methodRegistry_;
         flc.project = project;
@@ -3580,6 +3611,27 @@ std::optional<HoverResult> HoverProvider::hoverStaticMethodCall(
 
     std::string methodName = ids.back()->getText();
     auto* token = ids.back()->getSymbol();
+
+    // Intrinsic calls, e.g. lux::core::trap(...)
+    if (IntrinsicRegistry::isIntrinsicPrefix(ids.front()->getText())) {
+        std::string ns, funcName;
+        std::vector<std::string> idTexts;
+        for (auto* id : ids) idTexts.push_back(id->getText());
+        if (IntrinsicRegistry::parseIntrinsicPath(idTexts, ns, funcName)) {
+            if (const auto* intrinsic = intrinsicRegistry_.lookup(ns, funcName)) {
+                std::ostringstream ss;
+                ss << "```lux\n(intrinsic) " << intrinsic->returnType << " "
+                   << "lux::" << ns << "::" << funcName << "(";
+                for (size_t i = 0; i < intrinsic->params.size(); ++i) {
+                    if (i > 0) ss << ", ";
+                    ss << intrinsic->params[i].type;
+                }
+                ss << ")\n```\n\n" << intrinsic->description;
+                return makeResult(token, ss.str());
+            }
+        }
+        return std::nullopt;
+    }
 
     // std module calls, e.g. std::log::println(...)
     if (NamespaceRegistry::isStdModule(ownerPath)) {
@@ -4228,6 +4280,18 @@ static std::string inferExprTypeName(
                 typeName = typeName.substr(lastScope + 2);
 
             std::string methodName = ids.back()->getText();
+
+            // Intrinsic calls: lux::core::trap()
+            if (flc && flc->intrinsicReg &&
+                IntrinsicRegistry::isIntrinsicPrefix(ids.front()->getText())) {
+                std::vector<std::string> idTexts;
+                for (auto* id : ids) idTexts.push_back(id->getText());
+                std::string ns, funcName;
+                if (IntrinsicRegistry::parseIntrinsicPath(idTexts, ns, funcName)) {
+                    if (auto* intrinsic = flc->intrinsicReg->lookup(ns, funcName))
+                        return intrinsic->returnType;
+                }
+            }
 
             if (NamespaceRegistry::isStdModule(ownerPath) && flc && flc->builtinReg) {
                 if (auto* sig = flc->builtinReg->lookup(methodName))
@@ -4924,6 +4988,7 @@ HoverProvider::collectLocals(LuxParser::FunctionDeclContext* func,
     flc.tree       = tree;
     flc.bindings   = bindings;
     flc.builtinReg = &builtinRegistry_;
+        flc.intrinsicReg = &intrinsicRegistry_;
     flc.extTypeReg = &extTypeRegistry_;
     flc.methodReg  = &methodRegistry_;
     flc.project    = project;

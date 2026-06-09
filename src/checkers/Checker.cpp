@@ -3452,6 +3452,53 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
             return nullptr;
         }
 
+        // ── Intrinsic call: lux::core::trap() ────────────────────────
+        {
+            std::vector<std::string> idTexts;
+            for (auto* id : ids)
+                idTexts.push_back(id->getText());
+
+            if (IntrinsicRegistry::isIntrinsicPrefix(idTexts[0])) {
+                std::string ns, funcName;
+                if (!IntrinsicRegistry::parseIntrinsicPath(idTexts, ns, funcName)) {
+                    error(expr, "invalid intrinsic path: expected 'lux::namespace::function'");
+                    return nullptr;
+                }
+
+                auto* intrinsic = intrinsicRegistry_.lookup(ns, funcName);
+                if (!intrinsic) {
+                    error(expr, "unknown intrinsic '" + ns + "::" + funcName + "'");
+                    return nullptr;
+                }
+
+                // Validate argument count
+                auto argExprs = smc->argList()
+                    ? smc->argList()->expression()
+                    : std::vector<LuxParser::ExpressionContext*>{};
+
+                if (argExprs.size() != intrinsic->params.size()) {
+                    error(expr, "intrinsic '" + ns + "::" + funcName + "' expects " +
+                          std::to_string(intrinsic->params.size()) + " argument(s), got " +
+                          std::to_string(argExprs.size()));
+                    return nullptr;
+                }
+
+                // Validate argument types
+                for (size_t i = 0; i < argExprs.size(); i++) {
+                    auto* argType = resolveExprType(argExprs[i]);
+                    auto& expected = intrinsic->params[i].type;
+                    if (expected != "_any" && argType && argType->name != expected) {
+                        error(argExprs[i], "intrinsic '" + ns + "::" + funcName +
+                              "' argument " + std::to_string(i + 1) + ": expected '" +
+                              expected + "', got '" + argType->name + "'");
+                    }
+                }
+
+                return resolveBuiltinReturnType(intrinsic->returnType);
+            }
+        }
+        // ── End intrinsic call check ─────────────────────────────────
+
         auto structName = ids.front()->getText();
         auto methodName = ids.back()->getText();
 
@@ -5199,6 +5246,17 @@ bool Checker::blockAlwaysReturns(LuxParser::BlockContext* block) {
                         return true;
                 }
             }
+            // lux::core::trap() is a noreturn intrinsic
+            if (auto* smc = dynamic_cast<LuxParser::StaticMethodCallExprContext*>(es->expression())) {
+                auto ids = smc->IDENTIFIER();
+                std::vector<std::string> idTexts;
+                for (auto* id : ids) idTexts.push_back(id->getText());
+                std::string ns, funcName;
+                if (IntrinsicRegistry::parseIntrinsicPath(idTexts, ns, funcName)) {
+                    if (intrinsicRegistry_.lookup(ns, funcName))
+                        return true;
+                }
+            }
         }
 
         // loop { body } — if the body always returns, the loop always returns
@@ -5280,6 +5338,17 @@ bool Checker::isTerminatorStmt(LuxParser::StatementContext* stmt) {
             if (auto* ident = dynamic_cast<LuxParser::IdentExprContext*>(call->expression())) {
                 auto name = ident->IDENTIFIER()->getText();
                 if (name == "panic" || name == "exit" || name == "unreachable")
+                    return true;
+            }
+        }
+        // lux::core::trap() is a noreturn intrinsic
+        if (auto* smc = dynamic_cast<LuxParser::StaticMethodCallExprContext*>(es->expression())) {
+            auto ids = smc->IDENTIFIER();
+            std::vector<std::string> idTexts;
+            for (auto* id : ids) idTexts.push_back(id->getText());
+            std::string ns, funcName;
+            if (IntrinsicRegistry::parseIntrinsicPath(idTexts, ns, funcName)) {
+                if (intrinsicRegistry_.lookup(ns, funcName))
                     return true;
             }
         }

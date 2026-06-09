@@ -19,6 +19,7 @@
 #include "types/TypeRegistry.h"
 #include "types/MethodRegistry.h"
 #include "types/ExtendedTypeRegistry.h"
+#include "intrinsics/IntrinsicRegistry.h"
 #include "ffi/ABIInfo.h"
 
 class NamespaceRegistry;
@@ -216,6 +217,9 @@ private:
 
     // Extended type registry (vec, map, etc.)
     ExtendedTypeRegistry extTypeRegistry_;
+
+    // Intrinsic functions (lux::core::trap, etc.)
+    IntrinsicRegistry intrinsicRegistry_;
 
     // Loop break/continue target stack
     struct LoopInfo {

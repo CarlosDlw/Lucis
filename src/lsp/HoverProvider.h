@@ -12,6 +12,7 @@
 #include "types/MethodRegistry.h"
 #include "types/ExtendedTypeRegistry.h"
 #include "types/BuiltinRegistry.h"
+#include "intrinsics/IntrinsicRegistry.h"
 #include "ffi/CBindings.h"
 #include "lsp/DocComment.h"
 
@@ -55,6 +56,7 @@ private:
     MethodRegistry       methodRegistry_;
     ExtendedTypeRegistry extTypeRegistry_;
     BuiltinRegistry      builtinRegistry_;
+    IntrinsicRegistry    intrinsicRegistry_;
     std::vector<DocComment> docComments_;  // rebuilt per hover() call
 
     struct DocCommentCacheEntry {

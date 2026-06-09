@@ -7771,6 +7771,74 @@ std::any IRGen::visitStaticMethodCallExpr(
             llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
     }
 
+    // ── Intrinsic call: lux::core::trap() ────────────────────────────
+    {
+        std::vector<std::string> idTexts;
+        for (auto* id : ids)
+            idTexts.push_back(id->getText());
+
+        if (IntrinsicRegistry::isIntrinsicPrefix(idTexts[0])) {
+            std::string ns, funcName;
+            if (!IntrinsicRegistry::parseIntrinsicPath(idTexts, ns, funcName)) {
+                std::cerr << "lux: invalid intrinsic path: expected "
+                             "'lux::namespace::function'\n";
+                return static_cast<llvm::Value*>(
+                    llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
+            }
+
+            auto* intrinsic = intrinsicRegistry_.lookup(ns, funcName);
+            if (!intrinsic) {
+                std::cerr << "lux: unknown intrinsic '" << ns << "::"
+                          << funcName << "'\n";
+                return static_cast<llvm::Value*>(
+                    llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
+            }
+
+            // Visit arguments
+            std::vector<llvm::Value*> args;
+            std::vector<LuxParser::ExpressionContext*> argExprs;
+            if (auto* argList = ctx->argList()) {
+                argExprs = argList->expression();
+                for (auto* argExpr : argExprs)
+                    args.push_back(castValue(visit(argExpr)));
+            }
+
+            // Lower based on lowering kind
+            switch (intrinsic->lowering.kind) {
+            case IntrinsicFunction::Lowering::LLVMIntrinsic: {
+                // Declare the LLVM intrinsic and call it
+                auto* voidTy = llvm::Type::getVoidTy(*context_);
+                auto callee = declareBuiltin(
+                    intrinsic->lowering.intrinsicName, voidTy, {});
+                builder_->CreateCall(callee, {});
+                // Execution never continues past a trap
+                builder_->CreateUnreachable();
+                break;
+            }
+            case IntrinsicFunction::Lowering::BuiltinCall: {
+                auto* voidTy = llvm::Type::getVoidTy(*context_);
+                auto callee = declareBuiltin(
+                    "lux_" + intrinsic->lowering.intrinsicName, voidTy, {});
+                builder_->CreateCall(callee, args);
+                break;
+            }
+            case IntrinsicFunction::Lowering::InlineIR: {
+                return intrinsic->lowering.emitIR(
+                    *builder_, module_, *context_,
+                    typeRegistry_, args);
+            }
+            }
+
+            // Consume owned arguments
+            for (auto* e : argExprs)
+                consumeExprIfOwnedLocal(e);
+
+            return static_cast<llvm::Value*>(
+                llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
+        }
+    }
+    // ── End intrinsic call check ─────────────────────────────────────
+
     auto structName = ids.front()->getText();
     auto methodName = ids.back()->getText();
 

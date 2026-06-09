@@ -396,7 +396,8 @@ static void walkTree(IdentMap& map, antlr4::tree::ParseTree* node) {
                 ownerPath += ids[i]->getText();
             }
             uint32_t mods = static_cast<uint32_t>(SemanticTokenMod::Static);
-            if (ownerPath == "std" || ownerPath.rfind("std::", 0) == 0) {
+            if (ownerPath == "std" || ownerPath.rfind("std::", 0) == 0 ||
+                ownerPath == "lux" || ownerPath.rfind("lux::", 0) == 0) {
                 mods |= static_cast<uint32_t>(SemanticTokenMod::DefaultLib);
             }
 

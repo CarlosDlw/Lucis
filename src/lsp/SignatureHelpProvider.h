@@ -9,6 +9,7 @@
 #include "types/TypeRegistry.h"
 #include "types/MethodRegistry.h"
 #include "types/ExtendedTypeRegistry.h"
+#include "intrinsics/IntrinsicRegistry.h"
 #include "ffi/CBindings.h"
 #include "lsp/DocComment.h"
 
@@ -48,6 +49,7 @@ private:
     TypeRegistry         typeRegistry_;
     MethodRegistry       methodRegistry_;
     ExtendedTypeRegistry extTypeRegistry_;
+    IntrinsicRegistry    intrinsicRegistry_;
 
     // ── Call-site analysis ───────────────────────────────────────────
 
@@ -76,6 +78,9 @@ private:
 
     // Build signature from a builtin function.
     SignatureInfo buildFromBuiltin(const BuiltinSignature& sig);
+
+    // Build signature from an intrinsic function (lux::core::trap, etc.)
+    SignatureInfo buildFromIntrinsic(const IntrinsicFunction& intrinsic);
 
     // Build signature from a C function binding.
     SignatureInfo buildFromCFunction(const CFunction& func);

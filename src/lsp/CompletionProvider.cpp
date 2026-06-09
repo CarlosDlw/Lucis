@@ -118,6 +118,7 @@ struct FuncLookupCtx {
   LuxParser::ProgramContext *tree = nullptr;
   const CBindings *bindings = nullptr;
   const BuiltinRegistry *builtinReg = nullptr;
+  const IntrinsicRegistry *intrinsicReg = nullptr;
   const ExtendedTypeRegistry *extTypeReg = nullptr;
   const MethodRegistry *methodReg = nullptr;
   const ProjectContext *project = nullptr;
@@ -1568,6 +1569,7 @@ CompletionProvider::complete(const std::string &source, size_t line, size_t col,
         flc.tree = parsed->tree;
         flc.bindings = cBindingsPtr;
         flc.builtinReg = &builtinRegistry_;
+        flc.intrinsicReg = &intrinsicRegistry_;
         flc.extTypeReg = &extTypeRegistry_;
         flc.methodReg = &methodRegistry_;
         flc.project = project;
@@ -1639,6 +1641,7 @@ CompletionProvider::complete(const std::string &source, size_t line, size_t col,
     break;
   }
   case CompletionContext::ScopeAccess: {
+    addIntrinsics(items, req.scopeName, req.prefix);
     addEnumVariants(items, req.scopeName, parsed->tree, *cBindingsPtr, project,
                     req.prefix);
     addStaticMethods(items, req.scopeName, parsed->tree, project, req.prefix);
@@ -1658,6 +1661,7 @@ CompletionProvider::complete(const std::string &source, size_t line, size_t col,
     addCSymbols(items, *cBindingsPtr, req.prefix);
     addKeywords(items, req.prefix);
     addTypeNames(items, parsed->tree, *cBindingsPtr, project, req.prefix);
+    addIntrinsicRoot(items, req.prefix);
     break;
   }
   }
@@ -4138,6 +4142,73 @@ void CompletionProvider::addGlobalBuiltins(std::vector<CompletionItem> &items,
   }
 }
 
+void CompletionProvider::addIntrinsicRoot(std::vector<CompletionItem> &items,
+                                          const std::string &prefix) {
+  if (!matchesPrefix("lux", prefix)) return;
+  CompletionItem ci;
+  ci.label = "lux";
+  ci.kind = CompletionKind::Module;
+  ci.detail = "intrinsic root";
+  ci.documentation = "```lux\nmodule lux\n```\n\nIntrinsic namespace root. "
+                     "Contains low-level compiler builtin functions.\n\n"
+                     "*Always available without `use`*";
+  ci.insertText = "lux::";
+  ci.sortText = "0_lux";
+  items.push_back(std::move(ci));
+}
+
+void CompletionProvider::addIntrinsics(std::vector<CompletionItem> &items,
+                                       const std::string &scopeName,
+                                       const std::string &prefix) {
+  // Parse scopeName to extract potential intrinsic namespace
+  // scopeName can be "lux" (list namespaces) or "lux::core" (list functions)
+  std::string intrinsicNs;
+  if (scopeName == "lux") {
+    // List intrinsic namespaces
+    for (auto &ns : intrinsicRegistry_.allNamespaces()) {
+      if (!matchesPrefix(ns, prefix)) continue;
+      CompletionItem ci;
+      ci.label = ns;
+      ci.kind = CompletionKind::Module;
+      ci.detail = "intrinsic namespace";
+      ci.documentation = "Intrinsics namespace. Contains low-level compiler "
+                         "builtin functions.";
+      ci.insertText = ns + "::";
+      ci.sortText = "0_" + ns;
+      items.push_back(std::move(ci));
+    }
+    return;
+  }
+
+  // Extract namespace from "lux::core" → "core"
+  if (scopeName.rfind("lux::", 0) == 0)
+    intrinsicNs = scopeName.substr(5); // 5 = len("lux::")
+
+  if (!intrinsicNs.empty() && intrinsicRegistry_.hasNamespace(intrinsicNs)) {
+    // List intrinsic functions in the namespace
+    for (auto *func : intrinsicRegistry_.functionsInNamespace(intrinsicNs)) {
+      if (!matchesPrefix(func->name, prefix)) continue;
+
+      std::string params;
+      for (size_t i = 0; i < func->params.size(); i++) {
+        if (i > 0) params += ", ";
+        params += func->params[i].type;
+      }
+
+      CompletionItem ci;
+      ci.label = func->name;
+      ci.kind = CompletionKind::Function;
+      ci.detail = "(" + params + ") -> " + func->returnType;
+      ci.documentation = "```lux\nfn " + func->name + "(" + params + ") -> " +
+                         func->returnType + "\n```\n\n" + func->description +
+                         "\n\n*Intrinsic*";
+      ci.insertText = func->name + "()";
+      ci.sortText = "0_" + func->name;
+      items.push_back(std::move(ci));
+    }
+  }
+}
+
 void CompletionProvider::warmHeaderCache() {
   std::vector<CompletionItem> dummy;
   // The cache is a function-local static inside addHeaderSuggestions.
@@ -4541,6 +4612,7 @@ CompletionProvider::collectLocals(LuxParser::FunctionDeclContext *func,
   flc.tree = tree;
   flc.bindings = bindings;
   flc.builtinReg = &builtinRegistry_;
+        flc.intrinsicReg = &intrinsicRegistry_;
   flc.extTypeReg = &extTypeRegistry_;
   flc.methodReg = &methodRegistry_;
   flc.project = project;
