@@ -5837,9 +5837,15 @@ std::any IRGen::visitIdentExpr(LuxParser::IdentExprContext* ctx) {
 std::any IRGen::visitArrayLitExpr(LuxParser::ArrayLitExprContext* ctx) {
     auto elems = ctx->expression();
     if (elems.empty()) {
-        std::cerr << "lux: empty array literal\n";
+        auto* vecTy = getOrCreateVecStructType();
+        auto* ptrTy = llvm::PointerType::getUnqual(*context_);
+        auto* i64Ty = llvm::Type::getInt64Ty(*context_);
+        
+        llvm::Constant* nullPtr = llvm::ConstantPointerNull::get(ptrTy);
+        llvm::Constant* zero = llvm::ConstantInt::get(i64Ty, 0);
+        
         return static_cast<llvm::Value*>(
-            llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
+            llvm::ConstantStruct::get(vecTy, {nullPtr, zero, zero}));
     }
 
     std::vector<llvm::Value*> vals;
