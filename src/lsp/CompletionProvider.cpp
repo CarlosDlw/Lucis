@@ -74,6 +74,11 @@ static std::string unwrapIndexedType(std::string typeName,
   for (unsigned d = 0; d < indexDepth && !typeName.empty(); d++) {
     typeName = trim(typeName);
 
+    if (typeName == "string") {
+      typeName = "char";
+      continue;
+    }
+
     // Pointer to unsized array sugar: *[]T -> T (for one index)
     if (typeName.rfind("*[]", 0) == 0) {
       typeName = typeName.substr(3);
@@ -125,6 +130,24 @@ struct FuncLookupCtx {
   const MethodRegistry *methodReg = nullptr;
   const ProjectContext *project = nullptr;
 };
+
+static std::string resolveIndexedElementType(const std::string& baseType) {
+    if (baseType == "string") return "char";
+    if (baseType.rfind("[]", 0) == 0) return baseType.substr(2);
+    if (!baseType.empty() && baseType[0] == '[') {
+        auto close = baseType.find(']');
+        if (close != std::string::npos && close + 1 < baseType.size())
+            return baseType.substr(close + 1);
+    }
+    if (baseType.rfind("Vec<", 0) == 0) {
+        auto open = baseType.find('<');
+        auto close = baseType.rfind('>');
+        if (open != std::string::npos && close != std::string::npos)
+            return baseType.substr(open + 1, close - open - 1);
+    }
+    return "";
+}
+
 static std::string inferExprTypeName(
     LuxParser::ExpressionContext *expr,
     const std::unordered_map<std::string, CompletionProvider::LocalVar> &locals,
@@ -933,7 +956,15 @@ static std::string inferExprTypeName(
   }
   // Method call: resolve receiver type, then look up method return type
   if (auto *mc = dynamic_cast<LuxParser::MethodCallExprContext *>(expr)) {
-    auto receiverType = inferExprTypeName(mc->expression(), locals, flc);
+    auto exprBase = mc->expression();
+    std::string receiverType = inferExprTypeName(exprBase, locals, flc);
+
+    // If base expression is an array access, resolve to element type
+    if (auto* idx = dynamic_cast<LuxParser::IndexExprContext*>(exprBase)) {
+        auto baseType = inferExprTypeName(idx->expression(0), locals, flc);
+        receiverType = resolveIndexedElementType(baseType);
+    }
+
     if (!receiverType.empty()) {
       std::string methodName = safeText(mc->IDENTIFIER());
 
