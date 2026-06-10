@@ -18343,19 +18343,24 @@ IRGen::promoteArithmetic(llvm::Value* lhs, llvm::Value* rhs) {
     auto* rhsTy = rhs->getType();
     if (lhsTy == rhsTy) return {lhs, rhs};
 
-    // Both integer: if the wider operand is an untyped literal (i256),
-    // truncate it down to the narrower concrete type instead of promoting
-    // the concrete type up to i256 (which breaks x86 codegen).
+    // Both integer: if the wider operand is a constant that fits in the
+    // narrower type, truncate it down instead of promoting narrower up
+    // (which would break x86 codegen for wide literal types).
     if (lhsTy->isIntegerTy() && rhsTy->isIntegerTy()) {
         unsigned lhsBits = lhsTy->getIntegerBitWidth();
         unsigned rhsBits = rhsTy->getIntegerBitWidth();
+        auto canTruncate = [](llvm::Value* v, unsigned bits) {
+            auto* ci = llvm::dyn_cast<llvm::ConstantInt>(v);
+            if (!ci) return false;
+            return ci->getValue().isIntN(bits);
+        };
         if (lhsBits > rhsBits) {
-            if (llvm::isa<llvm::ConstantInt>(lhs))
+            if (canTruncate(lhs, rhsBits))
                 lhs = builder_->CreateIntCast(lhs, rhsTy, true, "trunc_lit");
             else
                 rhs = builder_->CreateSExt(rhs, lhsTy, "prom");
         } else {
-            if (llvm::isa<llvm::ConstantInt>(rhs))
+            if (canTruncate(rhs, lhsBits))
                 rhs = builder_->CreateIntCast(rhs, lhsTy, true, "trunc_lit");
             else
                 lhs = builder_->CreateSExt(lhs, rhsTy, "prom");
