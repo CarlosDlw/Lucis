@@ -82,6 +82,7 @@ For common types, Lux provides dedicated helpers that avoid LLVM backend limitat
 | `va_arg_float64(va)` | `float64` | `float64` |
 | `va_arg_ptr(va)` | pointer | `*void` |
 | `va_arg_bool(va)` | `int32` (promoted) | `bool` |
+| `va_arg_string(va)` | pointer → `strlen` | `string` |
 
 ```lux
 int32   i = lux::unsafe::va_arg_int32(va);
@@ -90,9 +91,12 @@ float32 f = lux::unsafe::va_arg_float32(va);
 float64 d = lux::unsafe::va_arg_float64(va);
 void*   p = lux::unsafe::va_arg_ptr(va);
 bool    b = lux::unsafe::va_arg_bool(va);
+string  s = lux::unsafe::va_arg_string(va);
 ```
 
 `va_arg_bool` reads a promoted `int32` from the argument list (C variadic promotes `bool` to `int`), then truncates the result to a 1-bit `bool`. This avoids LLVM crashing on a raw `va_arg` with `i1` type.
+
+`va_arg_string` reads a `char*` from the argument list (the caller passes only the pointer, not the full `{ptr, len}` fat pointer), then calls `lux_fromCStr` which uses `strlen` to recover the length and reconstructs the Lux `string` type. This matches the C ABI convention where strings in variadic contexts are passed as null-terminated `char*`. Strings containing null bytes are truncated by `strlen`; for binary data, use `va_arg_ptr` + `va_arg_int64` manually.
 
 > **Tip**: When writing variadic helpers that handle multiple types (like a custom `printf`), always use the typed helpers. They are guaranteed to work across all supported targets.
 
@@ -116,16 +120,18 @@ void print_mixed(int32 count, ...) {
     int32   i = lux::unsafe::va_arg_int32(va);
     float64 f = lux::unsafe::va_arg_float64(va);
     bool    b = lux::unsafe::va_arg_bool(va);
+    string  s = lux::unsafe::va_arg_string(va);
 
     println(i);
     println(f);
     println(b);
+    println(s);
 
     lux::unsafe::va_end(va);
 }
 
 int32 main() {
-    print_mixed(3, 42, 3.14, true);
+    print_mixed(4, 42, 3.14, true, c"hello");
     ret 0;
 }
 ```

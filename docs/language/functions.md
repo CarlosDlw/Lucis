@@ -220,16 +220,18 @@ void print_mixed(int32 count, ...) {
     int32   i = lux::unsafe::va_arg_int32(va);
     float64 f = lux::unsafe::va_arg_float64(va);
     bool    b = lux::unsafe::va_arg_bool(va);
+    string  s = lux::unsafe::va_arg_string(va);
 
     println(i);
     println(f);
     println(b);
+    println(s);
 
     lux::unsafe::va_end(va);
 }
 
 int32 main() {
-    print_mixed(3, 42, 3.14, true);
+    print_mixed(4, 42, 3.14, true, c"hello");
     ret 0;
 }
 ```
@@ -252,8 +254,8 @@ int32 main() {
 
 - The untyped `...` must be the last parameter.
 - At least one fixed parameter is required before `...` (unlike typed variadics which can stand alone).
-- The function body must use `lux::unsafe::va_list`, `va_start`, `va_arg<T>`, and `va_end` to access the arguments (see [Intrinsics](intrinsics.md#variadic-argument-support)).
-- The caller is responsible for passing arguments that match the types read by `va_arg<T>` — there is no compile-time type checking for individual variadic arguments.
+- The function body must use `lux::unsafe::va_list`, `va_start`, `va_arg_*`, and `va_end` to access the arguments (see [Intrinsics](intrinsics.md#variadic-argument-support)).
+- The caller is responsible for passing arguments that match the types read by the `va_arg_*` helpers — there is no compile-time type checking for individual variadic arguments.
 
 ## Function Pointers
 
