@@ -193,6 +193,53 @@ void registerUnsafeNamespace(IntrinsicRegistry& reg, TypeRegistry& typeReg) {
     unsafe.functions.push_back(
         makeTypedVaArg("va_arg_bool",   "bool",    [](auto& ctx){ return llvm::Type::getInt32Ty(ctx); }, true));
 
+    // ── va_arg_string(va) ─────────────────────────────────────────
+    {
+        IntrinsicFunction fn;
+        fn.name = "va_arg_string";
+        fn.returnType = "string";
+        fn.params.push_back({"va_list", false});
+        fn.description =
+            "Reads the next C string (char*) from the variadic argument list, "
+            "converts it to a Lux string via strlen, and advances the handle.\n\n"
+            "```lux\n"
+            "string val = lux::unsafe::va_arg_string(args);\n"
+            "```";
+
+        fn.lowering.kind = IntrinsicFunction::Lowering::InlineIR;
+        fn.lowering.emitIR = [](
+            llvm::IRBuilder<>& builder,
+            llvm::Module* module,
+            llvm::LLVMContext& context,
+            const TypeRegistry& typeRegistry,
+            const std::vector<llvm::Value*>& args,
+            const std::vector<const TypeInfo*>& typeArgs) -> llvm::Value* {
+
+            auto& dl = module->getDataLayout();
+            auto* ptrTy = llvm::PointerType::getUnqual(context);
+            auto* i64Ty = llvm::Type::getInt64Ty(context);
+
+            // Step 1: Read the char* from va_list (safe — same type as va_arg_ptr)
+            llvm::Value* cstr = builder.CreateVAArg(args[0], ptrTy, "va_arg_str_ptr");
+
+            // Step 2: Call lux_fromCStr to get { ptr, len }
+            auto* retStructTy = llvm::StructType::get(context, {ptrTy, i64Ty});
+            auto callee = module->getOrInsertFunction("lux_fromCStr", retStructTy, ptrTy);
+            auto* retVal = builder.CreateCall(callee, {cstr}, "va_arg_str");
+
+            // Step 3: Wrap into Lux string type { ptr, len }
+            auto* strTy = typeRegistry.lookup("string")->toLLVMType(context, dl);
+            llvm::Value* strStruct = llvm::UndefValue::get(strTy);
+            strStruct = builder.CreateInsertValue(strStruct,
+                builder.CreateExtractValue(retVal, 0, "va_arg_str_ptr"), 0, "str_ptr");
+            strStruct = builder.CreateInsertValue(strStruct,
+                builder.CreateExtractValue(retVal, 1, "va_arg_str_len"), 1, "str_len");
+            return strStruct;
+        };
+
+        unsafe.functions.push_back(std::move(fn));
+    }
+
     // ── va_end(va) ─────────────────────────────────────────────────
     {
         IntrinsicFunction fn;

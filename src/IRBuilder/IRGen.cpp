@@ -3897,6 +3897,18 @@ std::any IRGen::visitCallStmt(LuxParser::CallStmtContext* ctx) {
                             argVal = builder_->CreateFPExt(argVal, expectedTy);
                     }
                 }
+
+                // For untyped variadic args in user-defined functions,
+                // extract string pointer from { ptr, len } fat pointer
+                if (userFn->isVarArg() && i >= fnType->getNumParams() &&
+                    argVal->getType()->isStructTy()) {
+                    auto* st = llvm::cast<llvm::StructType>(argVal->getType());
+                    if (st->getNumElements() == 2 &&
+                        st->getElementType(0)->isPointerTy() &&
+                        st->getElementType(1)->isIntegerTy())
+                        argVal = builder_->CreateExtractValue(argVal, 0, "str_to_cptr");
+                }
+
                 args.push_back(argVal);
             }
             builder_->CreateCall(userFn, args);
@@ -11921,6 +11933,17 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
                         }
                     }
                 }
+                // For untyped variadic args in user-defined functions,
+                // extract string pointer from { ptr, len } fat pointer
+                if (directFn->isVarArg() && i >= fnType->getNumParams() &&
+                    argVal->getType()->isStructTy()) {
+                    auto* st = llvm::cast<llvm::StructType>(argVal->getType());
+                    if (st->getNumElements() == 2 &&
+                        st->getElementType(0)->isPointerTy() &&
+                        st->getElementType(1)->isIntegerTy())
+                        argVal = builder_->CreateExtractValue(argVal, 0, "str_to_cptr");
+                }
+
                 args.push_back(argVal);
             }
         }
