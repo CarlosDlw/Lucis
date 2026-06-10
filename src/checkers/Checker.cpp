@@ -5201,6 +5201,7 @@ void Checker::registerFunctionSignature(LuxParser::FunctionDeclContext* func) {
     if (!retType) return;
 
     bool isVariadic = false;
+    size_t variadicIndex = 0;
     std::vector<const TypeInfo*> paramTypes;
     if (auto* paramList = func->paramList()) {
         auto params = paramList->param();
@@ -5210,6 +5211,7 @@ void Checker::registerFunctionSignature(LuxParser::FunctionDeclContext* func) {
             // Untyped variadic: ...
             if (param->SPREAD() && !param->typeSpec()) {
                 isVariadic = true;
+                variadicIndex = i;
                 break;
             }
 
@@ -5222,6 +5224,19 @@ void Checker::registerFunctionSignature(LuxParser::FunctionDeclContext* func) {
                 error(param, "typed variadic parameters are not supported (use '...' without type)");
                 return;
             }
+        }
+    }
+
+    if (isVariadic) {
+        if (paramTypes.empty())
+            error(func, "untyped variadic function '" + funcName +
+                        "' must have at least one fixed parameter before '...'");
+
+        if (auto* paramList = func->paramList()) {
+            auto params = paramList->param();
+            if (variadicIndex < params.size() - 1)
+                error(func, "'...' must be the last parameter in function '" +
+                            funcName + "'");
         }
     }
 
