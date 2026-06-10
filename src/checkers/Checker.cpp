@@ -5218,8 +5218,10 @@ void Checker::registerFunctionSignature(LuxParser::FunctionDeclContext* func) {
             if (!pType) return;
             paramTypes.push_back(pType);
 
-            if (param->SPREAD())
-                isVariadic = true;
+            if (param->SPREAD()) {
+                error(param, "typed variadic parameters are not supported (use '...' without type)");
+                return;
+            }
         }
     }
 
