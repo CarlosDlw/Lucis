@@ -63,7 +63,7 @@ Initializes the `va_list` state. When called within a variadic function, it poin
 #### `va_arg<T>(va: va_list) -> T`
 
 ```lux
-let value = lux::unsafe::va_arg<int32>(args);
+int32 value = lux::unsafe::va_arg<int32>(args);
 ```
 
 Reads the next argument of type `T` from the variadic list and advances the cursor. This intrinsic uses the native LLVM `va_arg` instruction, ensuring correct handling of the platform's ABI (including promotion and register-to-stack transitions).

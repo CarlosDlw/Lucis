@@ -39,11 +39,11 @@ Complete table of operator precedence from **highest** (tightest binding) to **l
 | `&` | `&value` | Address-of |
 
 ```tm
-let x: int32 = -5
-let positive: bool = !false
-let mask: uint8 = ~0u8        // 0xFF
-let ptr: *int32 = &x
-let val: int32 = *ptr
+int32 x = -5
+bool positive = !false
+uint8 mask = ~0u8        // 0xFF
+*int32 ptr = &x
+int32 val = *ptr
 ```
 
 ---
@@ -58,10 +58,10 @@ let val: int32 = *ptr
 | `[]` | `arr[i]` | Index |
 
 ```tm
-let name: string = person.name
-let val: int32 = ptr->value
-let result: int32 = add(2, 3)
-let first: int32 = numbers[0]
+string name = person.name
+int32 val = ptr->value
+int32 result = add(2, 3)
+int32 first = numbers[0]
 ```
 
 ---
@@ -69,9 +69,9 @@ let first: int32 = numbers[0]
 ## Type Cast (Level 15)
 
 ```tm
-let x: int32 = 42
-let f: float64 = x as float64       // 42.0
-let byte: uint8 = 256 as uint8      // truncation: 0
+int32 x = 42
+float64 f = x as float64       // 42.0
+uint8 byte = 256 as uint8      // truncation: 0
 ```
 
 ---
@@ -85,8 +85,8 @@ let byte: uint8 = 256 as uint8      // truncation: 0
 | 12 | `+ -` | `a + b - c` |
 
 ```tm
-let result: int32 = 2 + 3 * 4      // 14, not 20
-let exp: int32 = 2 ** 3 ** 2        // 512 (right-assoc: 2^(3^2))
+int32 result = 2 + 3 * 4      // 14, not 20
+int32 exp = 2 ** 3 ** 2        // 512 (right-assoc: 2^(3^2))
 ```
 
 ---
@@ -101,10 +101,10 @@ let exp: int32 = 2 ** 3 ** 2        // 512 (right-assoc: 2^(3^2))
 | 8 | `\|` | OR |
 
 ```tm
-let flags: uint8 = 0b1010
-let masked: uint8 = flags & 0x0F
-let shifted: uint8 = 1u8 << 4       // 0b10000
-let combined: uint8 = 0x0F | 0xF0   // 0xFF
+uint8 flags = 0b1010
+uint8 masked = flags & 0x0F
+uint8 shifted = 1u8 << 4       // 0b10000
+uint8 combined = 0x0F | 0xF0   // 0xFF
 ```
 
 ---
@@ -126,9 +126,9 @@ for i in 1..=100 {     // 1 to 100 inclusive
 ## Comparison (Levels 6–5)
 
 ```tm
-let less: bool = a < b
-let equal: bool = x == y
-let inRange: bool = x >= 0 && x < 100
+bool less = a < b
+bool equal = x == y
+bool inRange = x >= 0 && x < 100
 ```
 
 ---
@@ -138,8 +138,8 @@ let inRange: bool = x >= 0 && x < 100
 Both `&&` and `||` use **short-circuit evaluation**: the right operand is only evaluated if needed.
 
 ```tm
-let valid: bool = x > 0 && y > 0     // y > 0 skipped if x <= 0
-let fallback: bool = a || b           // b skipped if a is true
+bool valid = x > 0 && y > 0     // y > 0 skipped if x <= 0
+bool fallback = a || b           // b skipped if a is true
 ```
 
 ---
@@ -147,7 +147,7 @@ let fallback: bool = a || b           // b skipped if a is true
 ## Null Coalescing (Level 2)
 
 ```tm
-let port: int32 = config.port ?? 8080
+int32 port = config.port ?? 8080
 ```
 
 ---
@@ -157,8 +157,8 @@ let port: int32 = config.port ?? 8080
 Right-associative. Lowest precedence among operators.
 
 ```tm
-let label: string = count == 1 ? "item" : "items"
-let clamped: int32 = x < 0 ? 0 : x > 100 ? 100 : x
+string label = count == 1 ? "item" : "items"
+int32 clamped = x < 0 ? 0 : x > 100 ? 100 : x
 ```
 
 ---
