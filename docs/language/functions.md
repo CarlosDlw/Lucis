@@ -179,6 +179,58 @@ int32 main() {
 
 This is different from Lux variadic functions — C variadic arguments are not type-checked and must match the format string.
 
+## C-Style Untyped Variadic Functions
+
+Lux also supports untyped variadic functions — functions declared with a bare `...` as the last parameter, without a type or parameter name:
+
+```t
+namespace UntypedVariadicDemo;
+
+use std::log::println;
+
+void sum(int32 count, ...) {
+    int32 total = 0;
+
+    va_list va = lux::unsafe::va_list();
+    lux::unsafe::va_start(va);
+
+    for int32 _ in 0..count {
+        total += lux::unsafe::va_arg<int32>(va);
+    }
+
+    lux::unsafe::va_end(va);
+
+    println(total);
+}
+
+int32 main() {
+    sum(3, 10, 20, 30);   // 60
+    sum(2, 42, 100);       // 142
+    ret 0;
+}
+```
+
+### Key Differences from Typed Variadics
+
+| Aspect | Typed `int32 ...values` | Untyped `...` |
+|--------|-------------------------|---------------|
+| Argument type | Homogeneous (all `int32`) | Any type per call |
+| Access method | Array-like (`values[0]`, `for..in`) | Must use `lux::unsafe::va_*` intrinsics |
+| Type safety | Fully type-checked at compile time | Unchecked — `va_arg<T>` read type must match what was passed |
+| Zero-argument calls | Allowed (`sum()`) | Not possible (need at least one fixed param for counting) |
+
+### When to Use
+
+- **Prefer typed variadics** (`int32 ...values`) when all variadic arguments share the same type — they are safer, easier to use, and perform better.
+- **Use untyped variadics** (`...`) when you need to pass arguments of different types (mimicking C varargs like `printf`), or when interfacing with C code that expects this pattern.
+
+### Rules
+
+- The untyped `...` must be the last parameter.
+- At least one fixed parameter is required before `...` (unlike typed variadics which can stand alone).
+- The function body must use `lux::unsafe::va_list`, `va_start`, `va_arg<T>`, and `va_end` to access the arguments (see [Intrinsics](intrinsics.md#variadic-argument-support)).
+- The caller is responsible for passing arguments that match the types read by `va_arg<T>` — there is no compile-time type checking for individual variadic arguments.
+
 ## Function Pointers
 
 Functions can be referenced by their address and stored in variables:
