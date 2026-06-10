@@ -5206,18 +5206,20 @@ void Checker::registerFunctionSignature(LuxParser::FunctionDeclContext* func) {
         auto params = paramList->param();
         for (size_t i = 0; i < params.size(); i++) {
             auto* param = params[i];
+
+            // Untyped variadic: ...
+            if (param->SPREAD() && !param->typeSpec()) {
+                isVariadic = true;
+                break;
+            }
+
             unsigned pDims = 0;
             auto* pType = resolveTypeSpec(param->typeSpec(), pDims);
             if (!pType) return;
             paramTypes.push_back(pType);
 
-            if (param->SPREAD()) {
-                error(param,
-                      "spread parameter is only allowed in extern declarations");
-                // Keep registering the function as non-variadic so we avoid
-                // cascading errors (undefined variable/call) in the same file.
-                continue;
-            }
+            if (param->SPREAD())
+                isVariadic = true;
         }
     }
 
@@ -5244,6 +5246,10 @@ void Checker::checkFunction(LuxParser::FunctionDeclContext* func) {
     // Register parameters as locals (params are always initialized and used)
     if (auto* paramList = func->paramList()) {
         for (auto* param : paramList->param()) {
+            // Skip untyped variadic ... (no identifier/type)
+            if (param->SPREAD() && !param->IDENTIFIER())
+                continue;
+
             auto paramName = param->IDENTIFIER()->getText();
             unsigned pDims = 0;
             auto* pType = resolveTypeSpec(param->typeSpec(), pDims);

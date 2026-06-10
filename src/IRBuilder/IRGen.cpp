@@ -1068,11 +1068,19 @@ void IRGen::forwardDeclareFunction(LuxParser::FunctionDeclContext* ctx) {
     // Collect parameter types
     std::vector<llvm::Type*> paramTypes;
     int variadicIdx = -1;
+    bool isVarArg = false;
     if (auto* params = ctx->paramList()) {
         auto paramList = params->param();
         auto* usizeTy = module_->getDataLayout().getIntPtrType(*context_);
         for (size_t i = 0; i < paramList.size(); i++) {
             auto* param = paramList[i];
+
+            // Untyped variadic: ...
+            if (param->SPREAD() && !param->typeSpec()) {
+                isVarArg = true;
+                break;
+            }
+
             auto* pInfo = resolveTypeInfo(param->typeSpec());
             auto pDims  = countArrayDims(param->typeSpec());
             if (param->SPREAD()) {
@@ -1104,8 +1112,11 @@ void IRGen::forwardDeclareFunction(LuxParser::FunctionDeclContext* ctx) {
     if (module_->getFunction(emitName))
         return;
 
-    auto* funcType = llvm::FunctionType::get(returnType, paramTypes, false);
-    llvm::Function::Create(funcType, llvm::Function::ExternalLinkage, emitName, module_);
+    auto* funcType = llvm::FunctionType::get(returnType, paramTypes, isVarArg);
+    auto* fn = llvm::Function::Create(funcType, llvm::Function::ExternalLinkage, emitName, module_);
+    if (isVarArg) {
+        fn->addFnAttr("frame-pointer", "all");
+    }
 
     // Cache return TypeInfo for resolveExprTypeInfo
     fnReturnTypes_[emitName] = retInfo;
@@ -1116,7 +1127,7 @@ void IRGen::forwardDeclareFunction(LuxParser::FunctionDeclContext* ctx) {
         callTargetMap_[funcName] = emitName;
     }
 
-    // Register variadic function info
+    // Register variadic function info (only for typed variadics)
     if (variadicIdx >= 0 && ctx->paramList()) {
         auto* vParam = ctx->paramList()->param(variadicIdx);
         auto* vInfo = resolveTypeInfo(vParam->typeSpec());
@@ -1148,11 +1159,19 @@ std::any IRGen::visitFunctionDecl(LuxParser::FunctionDeclContext* ctx) {
     // Collect parameter types (variadic param → ptr + i64 pair)
     std::vector<llvm::Type*> paramTypes;
     int variadicIdx = -1; // index of the variadic param in the grammar param list
+    bool isVarArg = false;
     if (auto* params = ctx->paramList()) {
         auto paramList = params->param();
         auto* usizeTy = module_->getDataLayout().getIntPtrType(*context_);
         for (size_t i = 0; i < paramList.size(); i++) {
             auto* param = paramList[i];
+
+            // Untyped variadic: ...
+            if (param->SPREAD() && !param->typeSpec()) {
+                isVarArg = true;
+                break;
+            }
+
             auto* pInfo = resolveTypeInfo(param->typeSpec());
             auto pDims  = countArrayDims(param->typeSpec());
             if (param->SPREAD()) {
@@ -1192,7 +1211,7 @@ std::any IRGen::visitFunctionDecl(LuxParser::FunctionDeclContext* ctx) {
     // Reuse forward-declared function, or create if not yet declared
     llvm::Function* func = module_->getFunction(emitName);
     if (!func) {
-        auto* funcType = llvm::FunctionType::get(returnType, paramTypes, false);
+        auto* funcType = llvm::FunctionType::get(returnType, paramTypes, isVarArg);
         func = llvm::Function::Create(
             funcType, llvm::Function::ExternalLinkage, emitName, module_);
     }
@@ -1202,6 +1221,9 @@ std::any IRGen::visitFunctionDecl(LuxParser::FunctionDeclContext* ctx) {
         auto paramList = params->param();
         size_t llvmIdx = 0;
         for (size_t i = 0; i < paramList.size(); i++) {
+            // Skip untyped variadic ... (no identifier to name)
+            if (paramList[i]->SPREAD() && !paramList[i]->IDENTIFIER())
+                continue;
             auto pName = paramList[i]->IDENTIFIER()->getText();
             if (paramList[i]->SPREAD()) {
                 func->getArg(llvmIdx)->setName(pName + ".ptr");
@@ -1219,7 +1241,7 @@ std::any IRGen::visitFunctionDecl(LuxParser::FunctionDeclContext* ctx) {
     variadicParams_.clear();
     deferStack_.clear();
 
-    // Register variadic function info for call-site packing
+    // Register variadic function info for call-site packing (only for typed variadics)
     if (variadicIdx >= 0 && ctx->paramList()) {
         auto* vParam = ctx->paramList()->param(variadicIdx);
         auto* vInfo = resolveTypeInfo(vParam->typeSpec());
@@ -1237,6 +1259,11 @@ std::any IRGen::visitFunctionDecl(LuxParser::FunctionDeclContext* ctx) {
         size_t llvmIdx = 0;
         for (size_t i = 0; i < paramList.size(); i++) {
             auto* param = paramList[i];
+
+            // Skip untyped variadic ... (no identifier/type to store)
+            if (param->SPREAD() && !param->typeSpec())
+                continue;
+
             auto* pInfo = resolveTypeInfo(param->typeSpec());
             if (!pInfo) pInfo = typeRegistry_.lookup("int32");
             auto pDims  = countArrayDims(param->typeSpec());
@@ -5515,8 +5542,18 @@ std::any IRGen::visitDoWhileStmt(LuxParser::DoWhileStmtContext* ctx) {
 std::any IRGen::visitIntLitExpr(LuxParser::IntLitExprContext* ctx) {
     auto text = ctx->INT_LIT()->getText();
     llvm::APInt ap(256, text, 10);
-    auto* ty = llvm::Type::getIntNTy(*context_, 256);
-    return static_cast<llvm::Value*>(llvm::ConstantInt::get(ty, ap));
+    unsigned bits = 32;
+    unsigned sz = ap.getActiveBits() + 1;
+    if (ap.isNegative()) {
+        sz = (-ap).getActiveBits() + 1;
+    }
+    if (sz > 32) {
+        if (sz <= 64) bits = 64;
+        else if (sz <= 128) bits = 128;
+        else bits = 256;
+    }
+    auto* ty = llvm::Type::getIntNTy(*context_, bits);
+    return static_cast<llvm::Value*>(llvm::ConstantInt::get(ty, ap.sextOrTrunc(bits)));
 }
 
 std::any IRGen::visitHexLitExpr(LuxParser::HexLitExprContext* ctx) {

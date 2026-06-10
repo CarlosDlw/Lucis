@@ -251,31 +251,35 @@ int RunCommand::run(const ArgParser& parser) {
             }
         }
 
-        std::string runLLTemplate = fs::temp_directory_path().string() + "/lux-run-ir-XXXXXX.ll";
-        std::vector<char> llTmpl(runLLTemplate.begin(), runLLTemplate.end());
-        llTmpl.push_back('\0');
-        int llfd = ::mkstemps(llTmpl.data(), 3);
-        if (llfd < 0) {
-            std::cerr << "lux: could not create temporary IR path: "
+        // Emit object file directly via LLVM backend, then link with clang.
+        // Using .ll + clang leads to incorrect va_arg lowering on x86-64.
+        std::string runObjTemplate = fs::temp_directory_path().string() + "/lux-run-obj-XXXXXX.o";
+        std::vector<char> objTmpl(runObjTemplate.begin(), runObjTemplate.end());
+        objTmpl.push_back('\0');
+        int objfd = ::mkstemps(objTmpl.data(), 2);
+        if (objfd < 0) {
+            std::cerr << "lux: could not create temporary object path: "
                       << std::strerror(errno) << "\n";
             return 1;
         }
-        ::close(llfd);
-        const std::string runLLPath(llTmpl.data());
-        {
-            std::ofstream out(runLLPath, std::ios::binary | std::ios::trunc);
-            out << irText;
+        ::close(objfd);
+        const std::string runObjPath(objTmpl.data());
+
+        if (!CodeGen::emitObjectFile(masterMod.get(), runObjPath)) {
+            std::cerr << "lux: failed to emit object file\n";
+            fs::remove(runObjPath);
+            return 1;
         }
 
         const std::string runBinTempPath = runBinPath + ".tmp-" + std::to_string(::getpid());
         fs::remove(runBinTempPath);
-        if (!linkWithCompiler("clang", runLLPath, cObjectFiles, runBinTempPath)
-            && !linkWithCompiler("gcc", runLLPath, cObjectFiles, runBinTempPath)) {
+        if (!linkWithCompiler("clang", runObjPath, cObjectFiles, runBinTempPath)
+            && !linkWithCompiler("gcc", runObjPath, cObjectFiles, runBinTempPath)) {
             std::cerr << "lux: linking failed — ensure clang or gcc is installed\n";
-            fs::remove(runLLPath);
+            fs::remove(runObjPath);
             return 1;
         }
-        fs::remove(runLLPath);
+        fs::remove(runObjPath);
 
         std::error_code renameEc;
         fs::rename(runBinTempPath, runBinPath, renameEc);

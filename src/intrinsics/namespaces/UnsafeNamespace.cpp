@@ -89,12 +89,16 @@ void registerUnsafeNamespace(IntrinsicRegistry& reg, TypeRegistry& typeReg) {
                                  const std::vector<llvm::Value*>& args,
                                  const std::vector<const TypeInfo*>& typeArgs) -> llvm::Value* {
             // args[0] = va_list handle (pointer to storage)
-            auto* vaStartFunc = llvm::Intrinsic::getOrInsertDeclaration(module, llvm::Intrinsic::vastart);
-            
-            // llvm.va_start expects a pointer to the storage (i8*)
             auto* i8PtrTy = llvm::PointerType::getUnqual(context);
+            auto* vaStartFunc = llvm::Intrinsic::getOrInsertDeclaration(module, llvm::Intrinsic::vastart, {i8PtrTy});
+
+            // The va_list type in Lux is a pointer to a va_list_tag struct.
+            // But LLVM's va_start expects a pointer directly to the storage area.
+            // args[0] is the va_list value (pointer to the struct).
+            // We need to get the i8* pointing to the underlying storage.
+            // i8PtrTy declared above for the intrinsic overload
             auto* vaArg = builder.CreateBitCast(args[0], i8PtrTy);
-            
+
             builder.CreateCall(vaStartFunc, {vaArg});
             return llvm::UndefValue::get(llvm::Type::getInt32Ty(context));
         };
@@ -153,9 +157,8 @@ void registerUnsafeNamespace(IntrinsicRegistry& reg, TypeRegistry& typeReg) {
                                  const TypeRegistry& typeRegistry,
                                  const std::vector<llvm::Value*>& args,
                                  const std::vector<const TypeInfo*>& typeArgs) -> llvm::Value* {
-            auto* vaEndFunc = llvm::Intrinsic::getOrInsertDeclaration(module, llvm::Intrinsic::vaend);
-            
             auto* i8PtrTy = llvm::PointerType::getUnqual(context);
+            auto* vaEndFunc = llvm::Intrinsic::getOrInsertDeclaration(module, llvm::Intrinsic::vaend, {i8PtrTy});
             auto* vaArg = builder.CreateBitCast(args[0], i8PtrTy);
             
             builder.CreateCall(vaEndFunc, {vaArg});

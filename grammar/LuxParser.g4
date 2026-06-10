@@ -139,8 +139,9 @@ paramList
     ;
 
 param
-    : typeSpec SPREAD IDENTIFIER    // variadic: int32 ...n
-    | typeSpec IDENTIFIER           // normal:   int32 n
+    : SPREAD                           // untyped variadic: ...
+    | typeSpec SPREAD IDENTIFIER       // typed variadic: int32 ...n
+    | typeSpec IDENTIFIER              // normal:   int32 n
     ;
 
 // { statements }

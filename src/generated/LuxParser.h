@@ -628,8 +628,8 @@ public:
   public:
     ParamContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
-    TypeSpecContext *typeSpec();
     antlr4::tree::TerminalNode *SPREAD();
+    TypeSpecContext *typeSpec();
     antlr4::tree::TerminalNode *IDENTIFIER();
 
 
