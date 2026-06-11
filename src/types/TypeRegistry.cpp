@@ -13,6 +13,14 @@ void TypeRegistry::registerType(TypeInfo info) {
     types_[info.name] = std::move(info);
 }
 
+std::vector<std::string> TypeRegistry::allTypes() const {
+    std::vector<std::string> result;
+    result.reserve(types_.size());
+    for (auto& [name, _] : types_)
+        result.push_back(name);
+    return result;
+}
+
 bool TypeRegistry::isIntegerType(const std::string& name) const {
     auto* ti = lookup(name);
     return ti && ti->kind == TypeKind::Integer;

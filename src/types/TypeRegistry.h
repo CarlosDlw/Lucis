@@ -15,6 +15,9 @@ public:
     // Register a new type (for future struct/alias support)
     void registerType(TypeInfo info);
 
+    // Enumerate all registered type names
+    std::vector<std::string> allTypes() const;
+
     // Check if a name corresponds to any integer type (signed or unsigned)
     bool isIntegerType(const std::string& name) const;
 

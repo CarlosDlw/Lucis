@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <functional>
 #include <sstream>
+#include <unordered_set>
 
 CompletionProvider::CompletionProvider() : intrinsicRegistry_(typeRegistry_) {}
 
@@ -3911,13 +3912,28 @@ void CompletionProvider::addTypeNames(std::vector<CompletionItem> &items,
       "uint128", "usize", "float32", "float64", "float80", "float128", "double",
       "bool",    "char",  "void",    "string",  "cstring",
   };
+  std::unordered_set<std::string> addedPrimitives;
   for (auto *p : primitives) {
     if (!matchesPrefix(p, prefix))
       continue;
+    addedPrimitives.insert(p);
     CompletionItem ci;
     ci.label = p;
     ci.kind = CompletionKind::Keyword;
     ci.detail = "primitive type";
+    items.push_back(std::move(ci));
+  }
+
+  // Types registered by intrinsics (e.g. va_list) or other dynamic sources
+  for (auto &typeName : typeRegistry_.allTypes()) {
+    if (addedPrimitives.count(typeName))
+      continue;
+    if (!matchesPrefix(typeName.c_str(), prefix))
+      continue;
+    CompletionItem ci;
+    ci.label = typeName;
+    ci.kind = CompletionKind::Keyword;
+    ci.detail = "intrinsic type";
     items.push_back(std::move(ci));
   }
 
