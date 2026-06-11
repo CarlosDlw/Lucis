@@ -252,6 +252,7 @@ set(SOURCES
     src/intrinsics/namespaces/DebugNamespace.cpp
     src/intrinsics/namespaces/UnsafeNamespace.cpp
     src/intrinsics/namespaces/SysNamespace.cpp
+    src/intrinsics/namespaces/AtomicNamespace.cpp
     src/ffi/CBindings.cpp
     src/ffi/CTypeMapper.cpp
     src/ffi/CHeaderResolver.cpp

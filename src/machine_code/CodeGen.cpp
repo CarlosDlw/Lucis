@@ -116,6 +116,7 @@ static bool tryLink(const char*        linker,
 #endif
         argv.push_back("-lm");
         argv.push_back("-lz");
+        argv.push_back("-latomic");
         argv.push_back("-lpthread");
         if (std::string(linker) == "clang")
             argv.push_back("-Wno-override-module");

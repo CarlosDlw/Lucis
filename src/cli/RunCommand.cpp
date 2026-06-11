@@ -215,6 +215,7 @@ int RunCommand::run(const ArgParser& parser) {
                 argv.push_back(lf.c_str());
             argv.push_back("-lm");
             argv.push_back("-lz");
+            argv.push_back("-latomic");
             argv.push_back("-lpthread");
             argv.push_back("-o");
             argv.push_back(outBinPath.c_str());
