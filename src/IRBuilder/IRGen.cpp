@@ -1663,7 +1663,14 @@ void IRGen::registerCrossFileSymbols(LuxParser::ProgramContext* ctx) {
                     params = method->param();
                 }
 
+                bool isVarArg = false;
                 for (auto* param : params) {
+                    // Untyped variadic: ...
+                    if (param->SPREAD() && !param->typeSpec()) {
+                        isVarArg = true;
+                        break;
+                    }
+
                     auto* pTI = resolveTypeInfo(param->typeSpec());
                     paramLLTypes.push_back(
                         pTI ? pTI->toLLVMType(*context_, module_->getDataLayout())
@@ -1671,7 +1678,7 @@ void IRGen::registerCrossFileSymbols(LuxParser::ProgramContext* ctx) {
                 }
 
                 auto* fnType = llvm::FunctionType::get(
-                    retLLTy, paramLLTypes, false);
+                    retLLTy, paramLLTypes, isVarArg);
                 auto* fn = llvm::Function::Create(
                     fnType, llvm::Function::ExternalLinkage,
                     funcName, module_);
@@ -1755,11 +1762,19 @@ void IRGen::declareExternFunction(const std::string& mangledName,
 
     std::vector<llvm::Type*> paramTypes;
     int variadicIdx = -1;
+    bool isVarArg = false;
 
     if (auto* params = decl->paramList()) {
         auto paramList = params->param();
         for (size_t i = 0; i < paramList.size(); i++) {
             auto* param = paramList[i];
+
+            // Untyped variadic: ...
+            if (param->SPREAD() && !param->typeSpec()) {
+                isVarArg = true;
+                break;
+            }
+
             auto* pTI = resolveTypeInfo(param->typeSpec());
             if (param->SPREAD()) {
                 variadicIdx = static_cast<int>(i);
@@ -1772,11 +1787,11 @@ void IRGen::declareExternFunction(const std::string& mangledName,
         }
     }
 
-    auto* fnType = llvm::FunctionType::get(retLLType, paramTypes, false);
+    auto* fnType = llvm::FunctionType::get(retLLType, paramTypes, isVarArg);
     llvm::Function::Create(fnType, llvm::Function::ExternalLinkage,
                            mangledName, module_);
 
-    // Register variadic info under the mangled name
+    // Register variadic info under the mangled name (only for typed variadics)
     if (variadicIdx >= 0 && decl->paramList()) {
         auto* vParam = decl->paramList()->param(variadicIdx);
         auto* vInfo = resolveTypeInfo(vParam->typeSpec());
@@ -12016,7 +12031,7 @@ std::any IRGen::visitFnCallExpr(LuxParser::FnCallExprContext* ctx) {
     for (auto* pti : fnTI->paramTypes) {
         paramLLVM.push_back(pti->toLLVMType(*context_, module_->getDataLayout()));
     }
-    auto* fnType = llvm::FunctionType::get(retLLVM, paramLLVM, false);
+    auto* fnType = llvm::FunctionType::get(retLLVM, paramLLVM, fnTI->isVariadic);
 
     // Collect arguments
     std::vector<llvm::Value*> args;
