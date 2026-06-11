@@ -1679,6 +1679,31 @@ bool Checker::isAssignable(const TypeInfo* lhs, const TypeInfo* rhs) {
     return false;
 }
 
+// Returns true if `from` can be safely widened (promoted) to `to`.
+// Only widening conversions: int8→int16→int32→int64, float32→float64, etc.
+// Same signedness only — no silent signed↔unsigned conversions.
+static bool canWidenTo(const TypeInfo* from, const TypeInfo* to) {
+    if (!from || !to) return false;
+    if (from == to) return true;
+    if (from->name == to->name) return true;
+
+    // Integer → wider integer (same signedness)
+    if (from->kind == TypeKind::Integer && to->kind == TypeKind::Integer) {
+        if (from->isSigned != to->isSigned) return false;
+        unsigned fromBW = from->bitWidth;
+        unsigned toBW = to->bitWidth;
+        if (fromBW == 0) fromBW = 64; // isize/usize → pointer width
+        if (toBW == 0) toBW = 64;
+        return fromBW <= toBW;
+    }
+
+    // Float → wider float
+    if (from->kind == TypeKind::Float && to->kind == TypeKind::Float)
+        return from->bitWidth <= to->bitWidth;
+
+    return false;
+}
+
 void Checker::checkNegativeToUnsigned(const TypeInfo* target,
                                        LuxParser::ExpressionContext* expr,
                                        antlr4::ParserRuleContext* ctx) {
@@ -3502,10 +3527,13 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
                 for (size_t i = 0; i < std::min(argExprs.size(), fixedCount); i++) {
                     auto* argType = resolveExprType(argExprs[i]);
                     auto& expected = intrinsic->params[i].type;
-                    if (expected != "_any" && argType && argType->name != expected) {
-                        error(argExprs[i], "intrinsic '" + ns + "::" + funcName +
-                              "' argument " + std::to_string(i + 1) + ": expected '" +
-                              expected + "', got '" + argType->name + "'");
+                    if (expected != "_any" && argType) {
+                        auto* expectedType = typeRegistry_.lookup(expected);
+                        if (!canWidenTo(argType, expectedType)) {
+                            error(argExprs[i], "intrinsic '" + ns + "::" + funcName +
+                                  "' argument " + std::to_string(i + 1) + ": expected '" +
+                                  expected + "', got '" + argType->name + "'");
+                        }
                     }
                 }
 
@@ -4165,10 +4193,13 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
             for (size_t i = 0; i < std::min(argExprs.size(), fixedCount); i++) {
                 auto* argType = resolveExprType(argExprs[i]);
                 auto& expected = intrinsic->params[i].type;
-                if (expected != "_any" && argType && argType->name != expected) {
-                    error(argExprs[i], "generic intrinsic '" + ns + "::" + funcName +
-                          "' argument " + std::to_string(i + 1) + ": expected '" +
-                          expected + "', got '" + argType->name + "'");
+                if (expected != "_any" && argType) {
+                    auto* expectedType = typeRegistry_.lookup(expected);
+                    if (!canWidenTo(argType, expectedType)) {
+                        error(argExprs[i], "generic intrinsic '" + ns + "::" + funcName +
+                              "' argument " + std::to_string(i + 1) + ": expected '" +
+                              expected + "', got '" + argType->name + "'");
+                    }
                 }
             }
 

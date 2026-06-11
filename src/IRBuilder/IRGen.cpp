@@ -7864,6 +7864,25 @@ std::any IRGen::visitStaticMethodCallExpr(
                     args.push_back(castValue(visit(argExpr)));
             }
 
+            // Apply implicit widening casts for promoted arguments
+            for (size_t i = 0; i < args.size() && i < intrinsic->params.size(); i++) {
+                auto& expectedTypeName = intrinsic->params[i].type;
+                if (expectedTypeName == "_any") continue;
+                auto* expectedType = typeRegistry_.lookup(expectedTypeName);
+                if (!expectedType) continue;
+                auto* llvmExpectedTy = expectedType->toLLVMType(
+                    *context_, module_->getDataLayout());
+                auto* actualTy = args[i]->getType();
+                if (actualTy == llvmExpectedTy) continue;
+                if (actualTy->isIntegerTy() && llvmExpectedTy->isIntegerTy() &&
+                    actualTy->getIntegerBitWidth() < llvmExpectedTy->getIntegerBitWidth())
+                    args[i] = builder_->CreateIntCast(
+                        args[i], llvmExpectedTy, expectedType->isSigned, "widen");
+                else if (actualTy->isFloatingPointTy() && llvmExpectedTy->isFloatingPointTy() &&
+                         actualTy->getPrimitiveSizeInBits() < llvmExpectedTy->getPrimitiveSizeInBits())
+                    args[i] = builder_->CreateFPCast(args[i], llvmExpectedTy, "fwiden");
+            }
+
             // Lower based on lowering kind
             switch (intrinsic->lowering.kind) {
             case IntrinsicFunction::Lowering::LLVMIntrinsic: {
@@ -19345,6 +19364,24 @@ std::any IRGen::visitGenericQualifiedFnCallExpr(
 
         auto* intrinsic = intrinsicRegistry_.lookup(ns, funcName);
         if (intrinsic && intrinsic->isGeneric) {
+            // Apply implicit widening casts for promoted arguments
+            for (size_t i = 0; i < args.size() && i < intrinsic->params.size(); i++) {
+                auto& expectedTypeName = intrinsic->params[i].type;
+                if (expectedTypeName == "_any") continue;
+                auto* expectedType = typeRegistry_.lookup(expectedTypeName);
+                if (!expectedType) continue;
+                auto* llvmExpectedTy = expectedType->toLLVMType(
+                    *context_, module_->getDataLayout());
+                auto* actualTy = args[i]->getType();
+                if (actualTy == llvmExpectedTy) continue;
+                if (actualTy->isIntegerTy() && llvmExpectedTy->isIntegerTy() &&
+                    actualTy->getIntegerBitWidth() < llvmExpectedTy->getIntegerBitWidth())
+                    args[i] = builder_->CreateIntCast(
+                        args[i], llvmExpectedTy, expectedType->isSigned, "widen");
+                else if (actualTy->isFloatingPointTy() && llvmExpectedTy->isFloatingPointTy() &&
+                         actualTy->getPrimitiveSizeInBits() < llvmExpectedTy->getPrimitiveSizeInBits())
+                    args[i] = builder_->CreateFPCast(args[i], llvmExpectedTy, "fwiden");
+            }
             return intrinsic->lowering.emitIR(*builder_, module_, *context_,
                                               typeRegistry_, args, typeArgs);
         }
