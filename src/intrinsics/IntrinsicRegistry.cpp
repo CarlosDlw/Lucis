@@ -6,6 +6,7 @@ IntrinsicRegistry::IntrinsicRegistry(TypeRegistry& typeRegistry) {
     registerCoreNamespace(*this, typeRegistry);
     registerDebugNamespace(*this, typeRegistry);
     registerUnsafeNamespace(*this, typeRegistry);
+    registerSysNamespace(*this, typeRegistry);
 }
 
 void IntrinsicRegistry::registerNamespace(IntrinsicNamespace ns) {

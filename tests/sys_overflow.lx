@@ -1,0 +1,82 @@
+namespace Main;
+
+use std::log::println;
+use std::test::{ assertEqual };
+
+int32 testSysOverflow() {
+    println("[Testing lux::sys arithmetic overflow intrinsics...]");
+
+    // ── signed add ───────────────────────────────────────────────
+    {
+        int32 result = 0;
+        bool ov = lux::sys::sadd_with_overflow<int32>(100, 200, &result);
+        assertEqual(ov, false);
+        assertEqual(result, 300);
+    }
+    {
+        int32 result = 0;
+        bool ov = lux::sys::sadd_with_overflow<int32>(2147483647, 1, &result);
+        assertEqual(ov, true);
+        assertEqual(result, -2147483648);
+    }
+
+    // ── unsigned add ─────────────────────────────────────────────
+    {
+        uint32 result = 0;
+        bool ov = lux::sys::uadd_with_overflow<uint32>(100, 200, &result);
+        assertEqual(ov, false);
+        assertEqual(result, 300);
+    }
+    {
+        uint32 result = 0;
+        bool ov = lux::sys::uadd_with_overflow<uint32>(4294967295, 1, &result);
+        assertEqual(ov, true);
+        assertEqual(result, 0);
+    }
+
+    // ── signed sub ──────────────────────────────────────────────
+    {
+        int32 result = 0;
+        bool ov = lux::sys::ssub_with_overflow<int32>(-2147483648, 1, &result);
+        assertEqual(ov, true);
+        assertEqual(result, 2147483647);
+    }
+
+    // ── unsigned sub ────────────────────────────────────────────
+    {
+        uint32 result = 0;
+        bool ov = lux::sys::usub_with_overflow<uint32>(0, 1, &result);
+        assertEqual(ov, true);
+        assertEqual(result, 4294967295);
+    }
+
+    // ── signed mul ──────────────────────────────────────────────
+    {
+        int32 result = 0;
+        bool ov = lux::sys::smul_with_overflow<int32>(100, 200, &result);
+        assertEqual(ov, false);
+        assertEqual(result, 20000);
+    }
+    {
+        int32 result = 0;
+        bool ov = lux::sys::smul_with_overflow<int32>(46341, 46341, &result);
+        assertEqual(ov, true);
+    }
+
+    // ── unsigned mul ────────────────────────────────────────────
+    {
+        uint32 result = 0;
+        bool ov = lux::sys::umul_with_overflow<uint32>(100, 200, &result);
+        assertEqual(ov, false);
+        assertEqual(result, 20000);
+    }
+    {
+        uint32 result = 0;
+        bool ov = lux::sys::umul_with_overflow<uint32>(65536, 65536, &result);
+        assertEqual(ov, true);
+        assertEqual(result, 0);
+    }
+
+    println("✔ sys::overflow tests passed");
+    ret 0;
+}

@@ -4124,41 +4124,58 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
                 return nullptr;
             }
 
-            // Only va_arg is supported as a generic intrinsic
-            if (ns != "unsafe" || funcName != "va_arg") {
+            auto* intrinsic = intrinsicRegistry_.lookup(ns, funcName);
+            if (!intrinsic || !intrinsic->isGeneric) {
                 error(expr, "unknown generic intrinsic '" + ns + "::" + funcName + "'");
                 if (auto* argList = gqfc->argList())
                     for (auto* a : argList->expression()) resolveExprType(a);
                 return nullptr;
             }
 
-            if (typeArgs.size() != 1) {
-                error(expr, "lux::unsafe::va_arg<T> expects exactly 1 type argument, got " +
-                      std::to_string(typeArgs.size()));
+            // Validate type args: must have at least 1
+            if (typeArgs.empty()) {
+                error(expr, "generic intrinsic '" + ns + "::" + funcName +
+                      "' expects at least 1 type argument, got 0");
                 if (auto* argList = gqfc->argList())
                     for (auto* a : argList->expression()) resolveExprType(a);
                 return nullptr;
             }
 
-            // Validate arguments: must have exactly 1 argument of type va_list
+            // Validate argument count
             auto argExprs = gqfc->argList()
                 ? gqfc->argList()->expression()
                 : std::vector<LuxParser::ExpressionContext*>{};
 
-            if (argExprs.size() != 1) {
-                error(expr, "lux::unsafe::va_arg<T> expects exactly 1 argument (va: va_list), got " +
+            size_t fixedCount = intrinsic->params.size();
+            if (intrinsic->isVariadic) {
+                if (argExprs.size() < fixedCount) {
+                    error(expr, "generic intrinsic '" + ns + "::" + funcName +
+                          "' expects at least " + std::to_string(fixedCount) +
+                          " argument(s), got " + std::to_string(argExprs.size()));
+                    return nullptr;
+                }
+            } else if (argExprs.size() != fixedCount) {
+                error(expr, "generic intrinsic '" + ns + "::" + funcName + "' expects " +
+                      std::to_string(fixedCount) + " argument(s), got " +
                       std::to_string(argExprs.size()));
                 return nullptr;
             }
 
-            auto* argType = resolveExprType(argExprs[0]);
-            if (argType && argType->name != "va_list") {
-                error(argExprs[0], "lux::unsafe::va_arg<T> argument must be va_list, got '" +
-                      argType->name + "'");
+            // Validate argument types (skip _any)
+            for (size_t i = 0; i < std::min(argExprs.size(), fixedCount); i++) {
+                auto* argType = resolveExprType(argExprs[i]);
+                auto& expected = intrinsic->params[i].type;
+                if (expected != "_any" && argType && argType->name != expected) {
+                    error(argExprs[i], "generic intrinsic '" + ns + "::" + funcName +
+                          "' argument " + std::to_string(i + 1) + ": expected '" +
+                          expected + "', got '" + argType->name + "'");
+                }
             }
 
-            // Return the type argument as the result type
-            return typeArgs[0];
+            // Return type: "_any" resolves to first type arg
+            if (intrinsic->returnType == "_any" && !typeArgs.empty())
+                return typeArgs[0];
+            return resolveBuiltinReturnType(intrinsic->returnType);
         }
 
         // Not an intrinsic — fall through to generic struct lookup

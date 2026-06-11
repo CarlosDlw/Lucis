@@ -43,5 +43,14 @@ int32 main() {
     testErrorHandlingCustomTypes();
     testPropagateOperator();
     testVecPointers();
+    testSysMemory();
+    testSysVolatile();
+    testSysBitOps();
+    testSysOverflow();
+    testSysStack();
+    testSysFence();
+    testSysPrefetch();
+    testSysCPU();
+    testSysSyscall();
     ret 0;
 }

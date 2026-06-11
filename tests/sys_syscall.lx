@@ -1,0 +1,36 @@
+namespace Main;
+
+use std::log::println;
+
+int32 testSysSyscall() {
+    println("[Testing lux::sys syscall intrinsics...]");
+
+    int64 SYS_getpid = 39;
+    int64 Z = 0;
+
+    // Test all 7 variants compile and execute
+    int64 r0 = lux::sys::syscall0(SYS_getpid);
+    if (r0 <= 0) { println("FAIL: syscall0"); ret 1; }
+
+    int64 r1 = lux::sys::syscall1(SYS_getpid, Z);
+    if (r1 <= 0) { println("FAIL: syscall1"); ret 1; }
+
+    int64 r2 = lux::sys::syscall2(SYS_getpid, Z, Z);
+    if (r2 <= 0) { println("FAIL: syscall2"); ret 1; }
+
+    int64 r3 = lux::sys::syscall3(SYS_getpid, Z, Z, Z);
+    if (r3 <= 0) { println("FAIL: syscall3"); ret 1; }
+
+    int64 r4 = lux::sys::syscall4(SYS_getpid, Z, Z, Z, Z);
+    if (r4 <= 0) { println("FAIL: syscall4"); ret 1; }
+
+    int64 r5 = lux::sys::syscall5(SYS_getpid, Z, Z, Z, Z, Z);
+    if (r5 <= 0) { println("FAIL: syscall5"); ret 1; }
+
+    int64 r6 = lux::sys::syscall6(SYS_getpid, Z, Z, Z, Z, Z, Z);
+    if (r6 <= 0) { println("FAIL: syscall6"); ret 1; }
+
+    println("  ✔ syscall0..6 all return valid PIDs");
+    println("  ✔ sys::syscall tests passed");
+    ret 0;
+}

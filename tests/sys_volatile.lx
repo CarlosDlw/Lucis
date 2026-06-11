@@ -1,0 +1,49 @@
+namespace Main;
+
+use std::log::println;
+use std::test::{ assertEqual };
+
+int32 testSysVolatile() {
+    println("[Testing lux::sys volatile intrinsics...]");
+
+    // ── volatile_load / volatile_store int32 ────────────────────
+    {
+        int32 x = 42;
+        int32 v = lux::sys::volatile_load<int32>(&x);
+        assertEqual(v, 42);
+        lux::sys::volatile_store<int32>(&x, 99);
+        assertEqual(x, 99);
+    }
+
+    // ── volatile_load / volatile_store int64 ────────────────────
+    {
+        int64 val = 12345678901234;
+        int64 v = lux::sys::volatile_load<int64>(&val);
+        assertEqual(v, 12345678901234);
+        lux::sys::volatile_store<int64>(&val, 9876543210987);
+        assertEqual(val, 9876543210987);
+    }
+
+    // ── volatile_load / volatile_store bool ─────────────────────
+    {
+        bool b = true;
+        bool vb = lux::sys::volatile_load<bool>(&b);
+        assertEqual(vb, true);
+        lux::sys::volatile_store<bool>(&b, false);
+        assertEqual(b, false);
+    }
+
+    // ── volatile compose with memset ────────────────────────────
+    {
+        int32 x = 0;
+        // Zero via memset then check via volatile_load
+        int32 before = lux::sys::volatile_load<int32>(&x);
+        assertEqual(before, 0);
+        lux::sys::volatile_store<int32>(&x, 42);
+        int32 after = lux::sys::volatile_load<int32>(&x);
+        assertEqual(after, 42);
+    }
+
+    println("✔ sys::volatile tests passed");
+    ret 0;
+}

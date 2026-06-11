@@ -81,3 +81,4 @@ private:
 void registerCoreNamespace(IntrinsicRegistry& reg, TypeRegistry& typeReg);
 void registerDebugNamespace(IntrinsicRegistry& reg, TypeRegistry& typeReg);
 void registerUnsafeNamespace(IntrinsicRegistry& reg, TypeRegistry& typeReg);
+void registerSysNamespace(IntrinsicRegistry& reg, TypeRegistry& typeReg);

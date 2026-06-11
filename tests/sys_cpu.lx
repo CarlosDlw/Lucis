@@ -1,0 +1,26 @@
+namespace Main;
+
+use std::log::println;
+
+int32 testSysCPU() {
+    println("[Testing lux::sys CPU intrinsics...]");
+
+    // cpu_relax — spin-loop hint
+    lux::sys::cpu_relax();
+    println("  ✔ cpu_relax");
+
+    // read_cycle_counter — monotonically increasing
+    int64 c0 = lux::sys::read_cycle_counter();
+    int64 c1 = lux::sys::read_cycle_counter();
+    if (c1 < c0) {
+        println("  FAIL: read_cycle_counter went backwards");
+        ret 1;
+    }
+    println("  ✔ read_cycle_counter (monotonic)");
+
+    // breakpoint — debug trap (skipped if no debugger)
+    // lux::sys::breakpoint(); // uncomment when running under a debugger
+
+    println("  ✔ sys::CPU tests passed");
+    ret 0;
+}

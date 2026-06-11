@@ -11,3 +11,4 @@ node_modules/
 ztests/
 examples/
 StructuralBlocks.md
+docs/advanced/sys-namespace-plan.md

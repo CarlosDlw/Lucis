@@ -1,0 +1,866 @@
+#include "intrinsics/IntrinsicRegistry.h"
+#include "types/TypeInfo.h"
+#include "types/TypeRegistry.h"
+
+#include <functional>
+#include <llvm/IR/DataLayout.h>
+#include <llvm/IR/Function.h>
+#include <llvm/IR/Module.h>
+#include <llvm/IR/Type.h>
+#include <llvm/IR/IRBuilder.h>
+#include <llvm/IR/InlineAsm.h>
+#include <llvm/IR/Intrinsics.h>
+
+void registerSysNamespace(IntrinsicRegistry& reg, TypeRegistry& typeReg) {
+
+    IntrinsicNamespace sys;
+    sys.name = "sys";
+    sys.description =
+        "Low-level system control intrinsics.\n"
+        "Provides direct access to LLVM memory and codegen primitives.\n\n"
+        "Always available without any `use` declaration.";
+
+    // ── memcpy(dst, src, n) ────────────────────────────────────────
+    {
+        IntrinsicFunction fn;
+        fn.name = "memcpy";
+        fn.returnType = "void";
+        fn.params.push_back({"_any", false});
+        fn.params.push_back({"_any", false});
+        fn.params.push_back({"_any", false});
+        fn.description =
+            "Copies n bytes from src memory to dst memory.\n"
+            "The source and destination regions must not overlap.\n\n"
+            "```lux\n"
+            "lux::sys::memcpy(dst, src, 16);\n"
+            "```";
+
+        fn.lowering.kind = IntrinsicFunction::Lowering::InlineIR;
+        fn.lowering.emitIR = [](
+            llvm::IRBuilder<>& builder,
+            llvm::Module* module,
+            llvm::LLVMContext& context,
+            const TypeRegistry& typeRegistry,
+            const std::vector<llvm::Value*>& args,
+            const std::vector<const TypeInfo*>& typeArgs) -> llvm::Value* {
+
+            builder.CreateMemCpy(
+                args[0], llvm::MaybeAlign(1),
+                args[1], llvm::MaybeAlign(1),
+                args[2], false);
+
+            return llvm::UndefValue::get(llvm::Type::getVoidTy(context));
+        };
+
+        sys.functions.push_back(std::move(fn));
+    }
+
+    // ── memmove(dst, src, n) ──────────────────────────────────────
+    {
+        IntrinsicFunction fn;
+        fn.name = "memmove";
+        fn.returnType = "void";
+        fn.params.push_back({"_any", false});
+        fn.params.push_back({"_any", false});
+        fn.params.push_back({"_any", false});
+        fn.description =
+            "Copies n bytes from src memory to dst memory.\n"
+            "The source and destination regions may overlap.\n\n"
+            "```lux\n"
+            "lux::sys::memmove(dst, src, 16);\n"
+            "```";
+
+        fn.lowering.kind = IntrinsicFunction::Lowering::InlineIR;
+        fn.lowering.emitIR = [](
+            llvm::IRBuilder<>& builder,
+            llvm::Module* module,
+            llvm::LLVMContext& context,
+            const TypeRegistry& typeRegistry,
+            const std::vector<llvm::Value*>& args,
+            const std::vector<const TypeInfo*>& typeArgs) -> llvm::Value* {
+
+            builder.CreateMemMove(
+                args[0], llvm::MaybeAlign(1),
+                args[1], llvm::MaybeAlign(1),
+                args[2], false);
+
+            return llvm::UndefValue::get(llvm::Type::getVoidTy(context));
+        };
+
+        sys.functions.push_back(std::move(fn));
+    }
+
+    // ── memset(dst, val, n) ──────────────────────────────────────
+    {
+        IntrinsicFunction fn;
+        fn.name = "memset";
+        fn.returnType = "void";
+        fn.params.push_back({"_any", false});
+        fn.params.push_back({"_any", false});
+        fn.params.push_back({"_any", false});
+        fn.description =
+            "Sets n bytes at dst memory to byte value val.\n\n"
+            "```lux\n"
+            "lux::sys::memset(dst, 0, 16);\n"
+            "```";
+
+        fn.lowering.kind = IntrinsicFunction::Lowering::InlineIR;
+        fn.lowering.emitIR = [](
+            llvm::IRBuilder<>& builder,
+            llvm::Module* module,
+            llvm::LLVMContext& context,
+            const TypeRegistry& typeRegistry,
+            const std::vector<llvm::Value*>& args,
+            const std::vector<const TypeInfo*>& typeArgs) -> llvm::Value* {
+
+            auto* i8Ty = llvm::Type::getInt8Ty(context);
+            llvm::Value* val = builder.CreateIntCast(args[1], i8Ty, false);
+
+            builder.CreateMemSet(
+                args[0], val, args[2],
+                llvm::MaybeAlign(1), false);
+
+            return llvm::UndefValue::get(llvm::Type::getVoidTy(context));
+        };
+
+        sys.functions.push_back(std::move(fn));
+    }
+
+    // ── volatile_load<T>(ptr) ────────────────────────────────────
+    {
+        IntrinsicFunction fn;
+        fn.name = "volatile_load";
+        fn.returnType = "_any";
+        fn.isGeneric = true;
+        fn.params.push_back({"_any", false});
+        fn.description =
+            "Performs a volatile load of type T from the given pointer.\n"
+            "The compiler will not optimize away repeated loads.\n\n"
+            "```lux\n"
+            "int32 val = lux::sys::volatile_load<int32>(ptr);\n"
+            "```";
+
+        fn.lowering.kind = IntrinsicFunction::Lowering::InlineIR;
+        fn.lowering.emitIR = [](
+            llvm::IRBuilder<>& builder,
+            llvm::Module* module,
+            llvm::LLVMContext& context,
+            const TypeRegistry& typeRegistry,
+            const std::vector<llvm::Value*>& args,
+            const std::vector<const TypeInfo*>& typeArgs) -> llvm::Value* {
+
+            auto& dl = module->getDataLayout();
+            auto* valTy = typeArgs[0]->toLLVMType(context, dl);
+            auto* load = builder.CreateLoad(valTy, args[0], "volatile_load");
+            load->setVolatile(true);
+            return load;
+        };
+
+        sys.functions.push_back(std::move(fn));
+    }
+
+    // ── volatile_store<T>(ptr, val) ──────────────────────────────
+    {
+        IntrinsicFunction fn;
+        fn.name = "volatile_store";
+        fn.returnType = "void";
+        fn.isGeneric = true;
+        fn.params.push_back({"_any", false});
+        fn.params.push_back({"_any", false});
+        fn.description =
+            "Performs a volatile store of a value of type T to the given pointer.\n"
+            "The compiler will not optimize away the store.\n\n"
+            "```lux\n"
+            "lux::sys::volatile_store<int32>(ptr, val);\n"
+            "```";
+
+        fn.lowering.kind = IntrinsicFunction::Lowering::InlineIR;
+        fn.lowering.emitIR = [](
+            llvm::IRBuilder<>& builder,
+            llvm::Module* module,
+            llvm::LLVMContext& context,
+            const TypeRegistry& typeRegistry,
+            const std::vector<llvm::Value*>& args,
+            const std::vector<const TypeInfo*>& typeArgs) -> llvm::Value* {
+
+            auto* store = builder.CreateStore(args[1], args[0]);
+            store->setVolatile(true);
+            return llvm::UndefValue::get(llvm::Type::getVoidTy(context));
+        };
+
+        sys.functions.push_back(std::move(fn));
+    }
+
+    // ── Bit manipulation ops (LLVM intrinsics) ────────────────────
+    auto makeBitOp = [](const std::string& name,
+                         llvm::Intrinsic::ID id,
+                         const std::string& desc) {
+        IntrinsicFunction fn;
+        fn.name = name;
+        fn.returnType = "_any";
+        fn.isGeneric = true;
+        fn.params.push_back({"_any", false});
+        fn.description = desc;
+
+        fn.lowering.kind = IntrinsicFunction::Lowering::InlineIR;
+        fn.lowering.emitIR = [id, name](
+            llvm::IRBuilder<>& builder,
+            llvm::Module* module,
+            llvm::LLVMContext& context,
+            const TypeRegistry& typeRegistry,
+            const std::vector<llvm::Value*>& args,
+            const std::vector<const TypeInfo*>& typeArgs) -> llvm::Value* {
+
+            auto& dl = module->getDataLayout();
+            auto* intTy = typeArgs[0]->toLLVMType(context, dl);
+            auto* val = builder.CreateIntCast(args[0], intTy, false, "cast");
+            auto* callee = llvm::Intrinsic::getOrInsertDeclaration(
+                module, id, {intTy});
+            return builder.CreateCall(callee, {val}, name.c_str());
+        };
+        return fn;
+    };
+
+    sys.functions.push_back(makeBitOp("bitreverse",
+        llvm::Intrinsic::bitreverse,
+        "Reverses the bit pattern of an integer value.\n"
+        "Every bit position is mirrored: bit 0 ↔ bit N-1.\n\n"
+        "```lux\n"
+        "int32 rev = lux::sys::bitreverse<int32>(x);\n"
+        "```"));
+
+    sys.functions.push_back(makeBitOp("bswap",
+        llvm::Intrinsic::bswap,
+        "Reverses the byte order of an integer value.\n"
+        "The value must have a byte-swapped form (16, 32, 64, or 128 bits).\n\n"
+        "```lux\n"
+        "int32 swapped = lux::sys::bswap<int32>(x);\n"
+        "```"));
+
+    sys.functions.push_back(makeBitOp("ctpop",
+        llvm::Intrinsic::ctpop,
+        "Counts the number of set (1) bits in an integer value.\n"
+        "Also known as population count.\n\n"
+        "```lux\n"
+        "int32 ones = lux::sys::ctpop<int32>(x);\n"
+        "```"));
+
+    // ctlz/cttz need a second arg (is_zero_undef = false → defined at zero)
+    auto makeBitOpWithBool = [](const std::string& name,
+                                 llvm::Intrinsic::ID id,
+                                 const std::string& desc) {
+        IntrinsicFunction fn;
+        fn.name = name;
+        fn.returnType = "_any";
+        fn.isGeneric = true;
+        fn.params.push_back({"_any", false});
+        fn.description = desc;
+
+        fn.lowering.kind = IntrinsicFunction::Lowering::InlineIR;
+        fn.lowering.emitIR = [id, name](
+            llvm::IRBuilder<>& builder,
+            llvm::Module* module,
+            llvm::LLVMContext& context,
+            const TypeRegistry& typeRegistry,
+            const std::vector<llvm::Value*>& args,
+            const std::vector<const TypeInfo*>& typeArgs) -> llvm::Value* {
+
+            auto& dl = module->getDataLayout();
+            auto* intTy = typeArgs[0]->toLLVMType(context, dl);
+            auto* val = builder.CreateIntCast(args[0], intTy, false, "cast");
+            auto* callee = llvm::Intrinsic::getOrInsertDeclaration(
+                module, id, {intTy});
+            auto* isZeroUndef = llvm::ConstantInt::getFalse(context);
+            return builder.CreateCall(callee, {val, isZeroUndef}, name.c_str());
+        };
+        return fn;
+    };
+
+    sys.functions.push_back(makeBitOpWithBool("ctlz",
+        llvm::Intrinsic::ctlz,
+        "Counts the number of leading zero bits in an integer value.\n"
+        "If the value is zero, the result is the bit width of the type.\n\n"
+        "```lux\n"
+        "int32 lz = lux::sys::ctlz<int32>(x);\n"
+        "```"));
+
+    sys.functions.push_back(makeBitOpWithBool("cttz",
+        llvm::Intrinsic::cttz,
+        "Counts the number of trailing zero bits in an integer value.\n"
+        "If the value is zero, the result is the bit width of the type.\n\n"
+        "```lux\n"
+        "int32 tz = lux::sys::cttz<int32>(x);\n"
+        "```"));
+
+    // ── Arithmetic with overflow (LLVM intrinsics) ───────────────
+    auto makeOverflowOp = [](const std::string& name,
+                              llvm::Intrinsic::ID id,
+                              const std::string& desc) {
+        IntrinsicFunction fn;
+        fn.name = name;
+        fn.returnType = "bool";
+        fn.isGeneric = true;
+        fn.params.push_back({"_any", false});
+        fn.params.push_back({"_any", false});
+        fn.params.push_back({"_any", false});
+        fn.description = desc;
+
+        fn.lowering.kind = IntrinsicFunction::Lowering::InlineIR;
+        fn.lowering.emitIR = [id, name](
+            llvm::IRBuilder<>& builder,
+            llvm::Module* module,
+            llvm::LLVMContext& context,
+            const TypeRegistry& typeRegistry,
+            const std::vector<llvm::Value*>& args,
+            const std::vector<const TypeInfo*>& typeArgs) -> llvm::Value* {
+
+            auto& dl = module->getDataLayout();
+            auto* intTy = typeArgs[0]->toLLVMType(context, dl);
+            auto* a = builder.CreateIntCast(args[0], intTy, false, "a");
+            auto* b = builder.CreateIntCast(args[1], intTy, false, "b");
+            auto* callee = llvm::Intrinsic::getOrInsertDeclaration(
+                module, id, {intTy});
+            auto* res = builder.CreateCall(callee, {a, b}, name.c_str());
+            auto* val = builder.CreateExtractValue(res, 0, "val");
+            auto* ov = builder.CreateExtractValue(res, 1, "ov");
+            builder.CreateStore(val, args[2]);
+            return ov;
+        };
+        return fn;
+    };
+
+    sys.functions.push_back(makeOverflowOp("sadd_with_overflow",
+        llvm::Intrinsic::sadd_with_overflow,
+        "Signed integer addition with overflow detection.\n"
+        "Returns true if the result overflowed.\n"
+        "The result is written through the third argument.\n\n"
+        "```lux\n"
+        "int32 result;\n"
+        "bool overflow = lux::sys::sadd_with_overflow<int32>(a, b, &result);\n"
+        "```"));
+
+    sys.functions.push_back(makeOverflowOp("uadd_with_overflow",
+        llvm::Intrinsic::uadd_with_overflow,
+        "Unsigned integer addition with overflow detection.\n"
+        "Returns true if the result overflowed.\n"
+        "The result is written through the third argument.\n\n"
+        "```lux\n"
+        "uint32 result;\n"
+        "bool overflow = lux::sys::uadd_with_overflow<uint32>(a, b, &result);\n"
+        "```"));
+
+    sys.functions.push_back(makeOverflowOp("ssub_with_overflow",
+        llvm::Intrinsic::ssub_with_overflow,
+        "Signed integer subtraction with overflow detection.\n"
+        "Returns true if the result overflowed.\n"
+        "The result is written through the third argument.\n\n"
+        "```lux\n"
+        "int32 result;\n"
+        "bool overflow = lux::sys::ssub_with_overflow<int32>(a, b, &result);\n"
+        "```"));
+
+    sys.functions.push_back(makeOverflowOp("usub_with_overflow",
+        llvm::Intrinsic::usub_with_overflow,
+        "Unsigned integer subtraction with overflow detection.\n"
+        "Returns true if the result overflowed.\n"
+        "The result is written through the third argument.\n\n"
+        "```lux\n"
+        "uint32 result;\n"
+        "bool overflow = lux::sys::usub_with_overflow<uint32>(a, b, &result);\n"
+        "```"));
+
+    sys.functions.push_back(makeOverflowOp("smul_with_overflow",
+        llvm::Intrinsic::smul_with_overflow,
+        "Signed integer multiplication with overflow detection.\n"
+        "Returns true if the result overflowed.\n"
+        "The result is written through the third argument.\n\n"
+        "```lux\n"
+        "int32 result;\n"
+        "bool overflow = lux::sys::smul_with_overflow<int32>(a, b, &result);\n"
+        "```"));
+
+    sys.functions.push_back(makeOverflowOp("umul_with_overflow",
+        llvm::Intrinsic::umul_with_overflow,
+        "Unsigned integer multiplication with overflow detection.\n"
+        "Returns true if the result overflowed.\n"
+        "The result is written through the third argument.\n\n"
+        "```lux\n"
+        "uint32 result;\n"
+        "bool overflow = lux::sys::umul_with_overflow<uint32>(a, b, &result);\n"
+        "```"));
+
+    // ── Stack / frame intrinsics ────────────────────────────────
+    // frame_address(level) -> usize
+    {
+        IntrinsicFunction fn;
+        fn.name = "frame_address";
+        fn.returnType = "usize";
+        fn.params.push_back({"int32", false});
+        fn.description =
+            "Returns the frame pointer address at the given stack level.\n"
+            "Level 0 is the current function's frame.\n\n"
+            "```lux\n"
+            "usize fp = lux::sys::frame_address(0);\n"
+            "```";
+
+        fn.lowering.kind = IntrinsicFunction::Lowering::InlineIR;
+        fn.lowering.emitIR = [](
+            llvm::IRBuilder<>& builder,
+            llvm::Module* module,
+            llvm::LLVMContext& context,
+            const TypeRegistry& typeRegistry,
+            const std::vector<llvm::Value*>& args,
+            const std::vector<const TypeInfo*>& typeArgs) -> llvm::Value* {
+
+            auto* ptrTy = llvm::PointerType::getUnqual(context);
+            auto* callee = llvm::Intrinsic::getOrInsertDeclaration(
+                module, llvm::Intrinsic::frameaddress, {ptrTy});
+            auto* ptr = builder.CreateCall(callee, {args[0]}, "fp");
+            auto& dl = module->getDataLayout();
+            return builder.CreatePtrToInt(ptr, dl.getIntPtrType(context), "fp_int");
+        };
+
+        sys.functions.push_back(std::move(fn));
+    }
+
+    // return_address(level) -> usize
+    {
+        IntrinsicFunction fn;
+        fn.name = "return_address";
+        fn.returnType = "usize";
+        fn.params.push_back({"int32", false});
+        fn.description =
+            "Returns the return address at the given stack level.\n"
+            "Level 0 is the current function's return address.\n\n"
+            "```lux\n"
+            "usize ra = lux::sys::return_address(0);\n"
+            "```";
+
+        fn.lowering.kind = IntrinsicFunction::Lowering::InlineIR;
+        fn.lowering.emitIR = [](
+            llvm::IRBuilder<>& builder,
+            llvm::Module* module,
+            llvm::LLVMContext& context,
+            const TypeRegistry& typeRegistry,
+            const std::vector<llvm::Value*>& args,
+            const std::vector<const TypeInfo*>& typeArgs) -> llvm::Value* {
+
+            // returnaddress must NOT be overloaded (unlike frameaddress/stacksave)
+            auto* callee = llvm::Intrinsic::getOrInsertDeclaration(
+                module, llvm::Intrinsic::returnaddress, {});
+            auto* ptr = builder.CreateCall(callee, {args[0]}, "ra");
+            auto& dl = module->getDataLayout();
+            return builder.CreatePtrToInt(ptr, dl.getIntPtrType(context), "ra_int");
+        };
+
+        sys.functions.push_back(std::move(fn));
+    }
+
+    // stack_save() -> usize
+    {
+        IntrinsicFunction fn;
+        fn.name = "stack_save";
+        fn.returnType = "usize";
+        fn.description =
+            "Saves the current stack pointer.\n"
+            "Used with stack_restore to implement alloca-free dynamic stack frames.\n\n"
+            "```lux\n"
+            "usize sp = lux::sys::stack_save();\n"
+            "```";
+
+        fn.lowering.kind = IntrinsicFunction::Lowering::InlineIR;
+        fn.lowering.emitIR = [](
+            llvm::IRBuilder<>& builder,
+            llvm::Module* module,
+            llvm::LLVMContext& context,
+            const TypeRegistry& typeRegistry,
+            const std::vector<llvm::Value*>& args,
+            const std::vector<const TypeInfo*>& typeArgs) -> llvm::Value* {
+
+            auto* ptrTy = llvm::PointerType::getUnqual(context);
+            auto* callee = llvm::Intrinsic::getOrInsertDeclaration(
+                module, llvm::Intrinsic::stacksave, {ptrTy});
+            auto* ptr = builder.CreateCall(callee, {}, "sp");
+            auto& dl = module->getDataLayout();
+            return builder.CreatePtrToInt(ptr, dl.getIntPtrType(context), "sp_int");
+        };
+
+        sys.functions.push_back(std::move(fn));
+    }
+
+    // stack_restore(sp: usize) -> void
+    {
+        IntrinsicFunction fn;
+        fn.name = "stack_restore";
+        fn.returnType = "void";
+        fn.params.push_back({"usize", false});
+        fn.description =
+            "Restores the stack pointer to a previously saved value.\n"
+            "Used with stack_save to implement alloca-free dynamic stack frames.\n\n"
+            "```lux\n"
+            "lux::sys::stack_restore(sp);\n"
+            "```";
+
+        fn.lowering.kind = IntrinsicFunction::Lowering::InlineIR;
+        fn.lowering.emitIR = [](
+            llvm::IRBuilder<>& builder,
+            llvm::Module* module,
+            llvm::LLVMContext& context,
+            const TypeRegistry& typeRegistry,
+            const std::vector<llvm::Value*>& args,
+            const std::vector<const TypeInfo*>& typeArgs) -> llvm::Value* {
+
+            auto* ptrTy = llvm::PointerType::getUnqual(context);
+            auto* callee = llvm::Intrinsic::getOrInsertDeclaration(
+                module, llvm::Intrinsic::stackrestore, {ptrTy});
+            auto* ptr = builder.CreateIntToPtr(args[0], ptrTy, "sp_ptr");
+            builder.CreateCall(callee, {ptr});
+            return llvm::UndefValue::get(llvm::Type::getVoidTy(context));
+        };
+
+        sys.functions.push_back(std::move(fn));
+    }
+
+    // ── Memory fences ────────────────────────────────────────────
+    auto makeFence = [](const std::string& name,
+                         llvm::AtomicOrdering ordering,
+                         const std::string& desc) {
+        IntrinsicFunction fn;
+        fn.name = name;
+        fn.returnType = "void";
+        fn.description = desc;
+
+        fn.lowering.kind = IntrinsicFunction::Lowering::InlineIR;
+        fn.lowering.emitIR = [ordering](
+            llvm::IRBuilder<>& builder,
+            llvm::Module* module,
+            llvm::LLVMContext& context,
+            const TypeRegistry& typeRegistry,
+            const std::vector<llvm::Value*>& args,
+            const std::vector<const TypeInfo*>& typeArgs) -> llvm::Value* {
+
+            builder.CreateFence(ordering);
+            return llvm::UndefValue::get(llvm::Type::getVoidTy(context));
+        };
+        return fn;
+    };
+
+    sys.functions.push_back(makeFence("fence_acquire",
+        llvm::AtomicOrdering::Acquire,
+        "Memory fence with acquire semantics.\n"
+        "All loads and stores after this fence will not be reordered "
+        "before it.\n\n"
+        "```lux\n"
+        "lux::sys::fence_acquire();\n"
+        "```"));
+
+    sys.functions.push_back(makeFence("fence_release",
+        llvm::AtomicOrdering::Release,
+        "Memory fence with release semantics.\n"
+        "All loads and stores before this fence will not be reordered "
+        "after it.\n\n"
+        "```lux\n"
+        "lux::sys::fence_release();\n"
+        "```"));
+
+    sys.functions.push_back(makeFence("fence_acq_rel",
+        llvm::AtomicOrdering::AcquireRelease,
+        "Memory fence with acquire-release semantics.\n"
+        "Combines acquire and release barriers.\n\n"
+        "```lux\n"
+        "lux::sys::fence_acq_rel();\n"
+        "```"));
+
+    sys.functions.push_back(makeFence("fence_seq_cst",
+        llvm::AtomicOrdering::SequentiallyConsistent,
+        "Memory fence with sequentially-consistent semantics.\n"
+        "The strongest fence — establishes a single total order.\n\n"
+        "```lux\n"
+        "lux::sys::fence_seq_cst();\n"
+        "```"));
+
+    // ── Prefetch intrinsics ──────────────────────────────────────
+    auto makePrefetch = [](const std::string& name,
+                            int rw,
+                            const std::string& desc) {
+        IntrinsicFunction fn;
+        fn.name = name;
+        fn.returnType = "void";
+        fn.params.push_back({"_any", false});
+        fn.params.push_back({"int32", false});
+        fn.description = desc;
+
+        fn.lowering.kind = IntrinsicFunction::Lowering::InlineIR;
+        fn.lowering.emitIR = [rw](
+            llvm::IRBuilder<>& builder,
+            llvm::Module* module,
+            llvm::LLVMContext& context,
+            const TypeRegistry& typeRegistry,
+            const std::vector<llvm::Value*>& args,
+            const std::vector<const TypeInfo*>& typeArgs) -> llvm::Value* {
+
+            auto* ptrTy = llvm::PointerType::getUnqual(context);
+            auto* i32Ty = llvm::Type::getInt32Ty(context);
+            auto* callee = llvm::Intrinsic::getOrInsertDeclaration(
+                module, llvm::Intrinsic::prefetch, {ptrTy});
+            auto* rwVal = llvm::ConstantInt::get(i32Ty, rw);
+            auto* cacheVal = llvm::ConstantInt::get(i32Ty, 1);
+            builder.CreateCall(callee, {args[0], rwVal, args[1], cacheVal});
+            return llvm::UndefValue::get(llvm::Type::getVoidTy(context));
+        };
+        return fn;
+    };
+
+    sys.functions.push_back(makePrefetch("prefetch_read", 0,
+        "Prefetches data from memory for reading.\n"
+        "addr must be a pointer. locality: 0 (no temporal reuse), "
+        "1-3 (increasing persistence).\n\n"
+        "```lux\n"
+        "lux::sys::prefetch_read(&data, 3);\n"
+        "```"));
+
+    sys.functions.push_back(makePrefetch("prefetch_write", 1,
+        "Prefetches data from memory for writing.\n"
+        "addr must be a pointer. locality: 0 (no temporal reuse), "
+        "1-3 (increasing persistence).\n\n"
+        "```lux\n"
+        "lux::sys::prefetch_write(&data, 3);\n"
+        "```"));
+
+    // ── CPU intrinsics ───────────────────────────────────────────
+
+    // breakpoint() — @llvm.debugtrap (unlike trap(), continues after)
+    {
+        IntrinsicFunction fn;
+        fn.name = "breakpoint";
+        fn.returnType = "void";
+        fn.description =
+            "Triggers a debugger breakpoint.\n"
+            "Execution pauses if a debugger is attached; otherwise "
+            "the instruction may be ignored.\n"
+            "Unlike lux::core::trap(), execution continues after the breakpoint.\n\n"
+            "```lux\n"
+            "lux::sys::breakpoint();\n"
+            "```";
+
+        fn.lowering.kind = IntrinsicFunction::Lowering::InlineIR;
+        fn.lowering.emitIR = [](
+            llvm::IRBuilder<>& builder,
+            llvm::Module* module,
+            llvm::LLVMContext& context,
+            const TypeRegistry& typeRegistry,
+            const std::vector<llvm::Value*>& args,
+            const std::vector<const TypeInfo*>& typeArgs) -> llvm::Value* {
+
+            auto* callee = llvm::Intrinsic::getOrInsertDeclaration(
+                module, llvm::Intrinsic::debugtrap, {});
+            builder.CreateCall(callee, {});
+            return llvm::UndefValue::get(llvm::Type::getVoidTy(context));
+        };
+
+        sys.functions.push_back(std::move(fn));
+    }
+
+    // read_cycle_counter() — u64
+    {
+        IntrinsicFunction fn;
+        fn.name = "read_cycle_counter";
+        fn.returnType = "u64";
+        fn.description =
+            "Reads the current CPU cycle counter.\n"
+            "On x86_64 this is `rdtsc`, on AArch64 `mrs cntvct_el0`.\n"
+            "The result is a 64-bit monotonically-increasing counter.\n\n"
+            "```lux\n"
+            "u64 start = lux::sys::read_cycle_counter();\n"
+            "```";
+
+        fn.lowering.kind = IntrinsicFunction::Lowering::InlineIR;
+        fn.lowering.emitIR = [](
+            llvm::IRBuilder<>& builder,
+            llvm::Module* module,
+            llvm::LLVMContext& context,
+            const TypeRegistry& typeRegistry,
+            const std::vector<llvm::Value*>& args,
+            const std::vector<const TypeInfo*>& typeArgs) -> llvm::Value* {
+
+            auto* callee = llvm::Intrinsic::getOrInsertDeclaration(
+                module, llvm::Intrinsic::readcyclecounter, {});
+            return builder.CreateCall(callee, {}, "cycle");
+        };
+
+        sys.functions.push_back(std::move(fn));
+    }
+
+    // cpu_relax() — target-specific inline asm
+    {
+        IntrinsicFunction fn;
+        fn.name = "cpu_relax";
+        fn.returnType = "void";
+        fn.description =
+            "Hints the CPU that the current thread is in a spin-wait loop.\n"
+            "On x86_64 this emits `pause`; on AArch64 `yield`.\n"
+            "Improves performance and power efficiency of spinlocks.\n\n"
+            "```lux\n"
+            "lux::sys::cpu_relax();\n"
+            "```";
+
+        fn.lowering.kind = IntrinsicFunction::Lowering::InlineIR;
+        fn.lowering.emitIR = [](
+            llvm::IRBuilder<>& builder,
+            llvm::Module* module,
+            llvm::LLVMContext& context,
+            const TypeRegistry& typeRegistry,
+            const std::vector<llvm::Value*>& args,
+            const std::vector<const TypeInfo*>& typeArgs) -> llvm::Value* {
+
+            const auto tripleStr = module->getTargetTriple().str();
+            std::string asmStr = "nop";
+            if (tripleStr.find("x86_64") == 0 || tripleStr.find("i386") == 0 || tripleStr.find("i686") == 0)
+                asmStr = "pause";
+            else if (tripleStr.find("aarch64") == 0 || tripleStr.find("arm64") == 0)
+                asmStr = "yield";
+            else if (tripleStr.find("riscv64") == 0)
+                asmStr = "fence iorw, iorw";
+
+            auto* voidTy = llvm::Type::getVoidTy(context);
+            auto* ft = llvm::FunctionType::get(voidTy, false);
+            auto* asmFn = llvm::InlineAsm::get(ft, asmStr, "",
+                true, false, llvm::InlineAsm::AD_ATT);
+            builder.CreateCall(asmFn);
+            return llvm::UndefValue::get(voidTy);
+        };
+
+        sys.functions.push_back(std::move(fn));
+    }
+
+    // ── Syscall intrinsics ───────────────────────────────────────
+
+    auto makeSyscall = [](int numArgs) {
+        std::string fnName = "syscall" + std::to_string(numArgs);
+        std::string desc = "Invokes a system call with " +
+            std::to_string(numArgs) + " argument" +
+            (numArgs == 1 ? "" : "s") + ".\n"
+            "Returns the syscall return value (rax on x86_64).\n"
+            "Target-dependent: x86_64 `syscall`, AArch64 `svc #0`, "
+            "RISC-V `ecall`.\n\n"
+            "```lux\n"
+            "int64 ret = lux::sys::" + fnName + "(" +
+            std::to_string(numArgs == 0 ? 0 : 0) +
+            (numArgs >= 1 ? ", arg1" : "") +
+            (numArgs >= 2 ? ", arg2" : "") +
+            (numArgs >= 3 ? ", arg3" : "") +
+            (numArgs >= 4 ? ", arg4" : "") +
+            (numArgs >= 5 ? ", arg5" : "") +
+            (numArgs >= 6 ? ", arg6" : "") +
+            ");\n"
+            "```";
+
+        IntrinsicFunction fn;
+        fn.name = fnName;
+        fn.returnType = "int64";
+        fn.params.push_back({"int64", false});
+        for (int i = 0; i < numArgs; i++)
+            fn.params.push_back({"int64", false});
+        fn.description = desc;
+
+        fn.lowering.kind = IntrinsicFunction::Lowering::InlineIR;
+        fn.lowering.emitIR = [numArgs](
+            llvm::IRBuilder<>& builder,
+            llvm::Module* module,
+            llvm::LLVMContext& context,
+            const TypeRegistry& typeRegistry,
+            const std::vector<llvm::Value*>& args,
+            const std::vector<const TypeInfo*>& typeArgs) -> llvm::Value* {
+
+            const auto tripleStr = module->getTargetTriple().str();
+            bool isX86 = tripleStr.find("x86_64") == 0;
+            bool isAArch64 = tripleStr.find("aarch64") == 0;
+            bool isRISCV = tripleStr.find("riscv64") == 0;
+
+            auto* i64Ty = llvm::Type::getInt64Ty(context);
+
+            if (isX86) {
+                // Output: rax (result)
+                // Inputs: rax=num, rdi, rsi, rdx, r10, r8, r9
+                // Clobbers: rcx, r11, memory
+                std::string constraints = "={rax},{rax}";
+                if (numArgs >= 1) constraints += ",{rdi}";
+                if (numArgs >= 2) constraints += ",{rsi}";
+                if (numArgs >= 3) constraints += ",{rdx}";
+                if (numArgs >= 4) constraints += ",{r10}";
+                if (numArgs >= 5) constraints += ",{r8}";
+                if (numArgs >= 6) constraints += ",{r9}";
+                constraints += ",~{rcx},~{r11},~{memory}";
+
+                std::vector<llvm::Type*> paramTys;
+                for (int i = 0; i < numArgs + 1; i++)
+                    paramTys.push_back(i64Ty);
+
+                auto* ft = llvm::FunctionType::get(i64Ty, paramTys, false);
+                auto* asmFn = llvm::InlineAsm::get(
+                    ft, "syscall", constraints,
+                    true, false, llvm::InlineAsm::AD_ATT);
+
+                return builder.CreateCall(asmFn, args);
+            }
+            else if (isAArch64) {
+                // Output: x0 (result)
+                // Inputs: x8=num, x0..x5
+                // Clobbers: x0-x5, x8, memory
+                std::string constraints = "={x0},{x8}";
+                if (numArgs >= 1) constraints += ",{x0}";
+                if (numArgs >= 2) constraints += ",{x1}";
+                if (numArgs >= 3) constraints += ",{x2}";
+                if (numArgs >= 4) constraints += ",{x3}";
+                if (numArgs >= 5) constraints += ",{x4}";
+                if (numArgs >= 6) constraints += ",{x5}";
+                constraints += ",~{x0},~{x1},~{x2},~{x3},~{x4},~{x5},~{x8},~{memory}";
+
+                std::vector<llvm::Type*> paramTys;
+                for (int i = 0; i < numArgs + 1; i++)
+                    paramTys.push_back(i64Ty);
+
+                auto* ft = llvm::FunctionType::get(i64Ty, paramTys, false);
+                auto* asmFn = llvm::InlineAsm::get(
+                    ft, "svc #0", constraints,
+                    true, false, llvm::InlineAsm::AD_ATT);
+
+                return builder.CreateCall(asmFn, args);
+            }
+            else if (isRISCV) {
+                // Output: x10 (a0, result)
+                // Inputs: x17 (a7)=num, x10..x15 (a0..a5)
+                // Clobbers: x10-x15, x17, memory
+                std::string constraints = "={x10},{x17}";
+                if (numArgs >= 1) constraints += ",{x10}";
+                if (numArgs >= 2) constraints += ",{x11}";
+                if (numArgs >= 3) constraints += ",{x12}";
+                if (numArgs >= 4) constraints += ",{x13}";
+                if (numArgs >= 5) constraints += ",{x14}";
+                if (numArgs >= 6) constraints += ",{x15}";
+                constraints += ",~{x10},~{x11},~{x12},~{x13},~{x14},~{x15},~{x17},~{memory}";
+
+                std::vector<llvm::Type*> paramTys;
+                for (int i = 0; i < numArgs + 1; i++)
+                    paramTys.push_back(i64Ty);
+
+                auto* ft = llvm::FunctionType::get(i64Ty, paramTys, false);
+                auto* asmFn = llvm::InlineAsm::get(
+                    ft, "ecall", constraints,
+                    true, false, llvm::InlineAsm::AD_ATT);
+
+                return builder.CreateCall(asmFn, args);
+            }
+            else {
+                llvm::report_fatal_error("syscall not supported on this target");
+            }
+        };
+
+        return fn;
+    };
+
+    for (int n = 0; n <= 6; n++)
+        sys.functions.push_back(makeSyscall(n));
+
+    reg.registerNamespace(std::move(sys));
+}

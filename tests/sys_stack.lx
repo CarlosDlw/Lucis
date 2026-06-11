@@ -1,0 +1,37 @@
+namespace Main;
+
+use std::log::println;
+use std::test::{ assertTrue, assertEqual };
+
+int32 testSysStack() {
+    println("[Testing lux::sys stack/frame intrinsics...]");
+
+    // ── frame_address(0) ─────────────────────────────────────────
+    usize fp = lux::sys::frame_address(0);
+    assertTrue(fp != 0);
+
+    // ── return_address(0) ────────────────────────────────────────
+    usize ra = lux::sys::return_address(0);
+    assertTrue(ra != 0);
+
+    // fp and ra should be different (frame pointer ≠ return address)
+    assertTrue(fp != ra);
+
+    // ── stack_save() ─────────────────────────────────────────────
+    usize sp = lux::sys::stack_save();
+    assertTrue(sp != 0);
+
+    // sp should differ from both fp and ra
+    assertTrue(sp != fp);
+    assertTrue(sp != ra);
+
+    // ── stack_restore(sp) ────────────────────────────────────────
+    // Save again, then restore — validates the round-trip works
+    usize sp2 = lux::sys::stack_save();
+    lux::sys::stack_restore(sp2);
+    // After restore we're still in the same function, so sp is valid
+    // Just verifying the restore didn't crash
+
+    println("✔ sys::stack tests passed");
+    ret 0;
+}
