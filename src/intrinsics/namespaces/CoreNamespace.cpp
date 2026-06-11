@@ -55,5 +55,39 @@ void registerCoreNamespace(IntrinsicRegistry& reg, TypeRegistry& typeReg) {
         core.functions.push_back(std::move(sum));
     }
 
+    // ── sum_prefix(int32 prefix, ...) ──────────────────────────────
+    {
+        IntrinsicFunction fn;
+        fn.name = "sum_prefix";
+        fn.returnType = "int32";
+        fn.isVariadic = true;
+        fn.params.push_back({"int32", false});
+        fn.description =
+            "Adds a required prefix value to the sum of all variadic arguments.\n\n"
+            "```lux\n"
+            "int32 total = lux::core::sum_prefix(100, 1, 2, 3);  // 106\n"
+            "```";
+
+        fn.lowering.kind = IntrinsicFunction::Lowering::InlineIR;
+        fn.lowering.emitIR = [](
+            llvm::IRBuilder<>& builder,
+            llvm::Module* module,
+            llvm::LLVMContext& context,
+            const TypeRegistry& typeRegistry,
+            const std::vector<llvm::Value*>& args,
+            const std::vector<const TypeInfo*>& typeArgs) -> llvm::Value* {
+
+            auto* i32Ty = llvm::Type::getInt32Ty(context);
+            // args[0] is the fixed prefix
+            // args[1..] are the variadic values
+            llvm::Value* sum = args[0];
+            for (size_t i = 1; i < args.size(); i++)
+                sum = builder.CreateAdd(sum, args[i], "sum");
+            return sum;
+        };
+
+        core.functions.push_back(std::move(fn));
+    }
+
     reg.registerNamespace(std::move(core));
 }
