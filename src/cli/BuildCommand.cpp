@@ -1,6 +1,6 @@
 #include "cli/BuildCommand.h"
 #include "cli/ArgParser.h"
-#include "cli/LuxPipeline.h"
+#include "cli/LucisPipeline.h"
 #include "IRBuilder/IRGen.h"
 #include "LLVM_IR/IRModule.h"
 #include "LLVM_Optimizer/Optimizer.h"
@@ -19,7 +19,7 @@
 namespace fs = std::filesystem;
 
 void BuildCommand::buildArgs(ArgParser& parser) const {
-    parser.addPositional("file", "Path to the .lx entrypoint file");
+    parser.addPositional("file", "Path to the .lc entrypoint file");
     parser.addOption("output", 'o', "FILE", "Output binary path (default: <input>.out)");
     parser.addFlag("emit-llvm", '\0', "Emit LLVM IR (.ll)");
     parser.addFlag("emit-asm",  '\0', "Emit assembly (.s)");
@@ -39,27 +39,27 @@ void BuildCommand::buildArgs(ArgParser& parser) const {
 }
 
 int BuildCommand::run(const ArgParser& parser) {
-    LuxPipeline::Options pipeOpts;
+    LucisPipeline::Options pipeOpts;
     pipeOpts.inputFile        = parser.get("file");
     pipeOpts.quiet            = parser.has("quiet");
     pipeOpts.includePaths     = parser.getAll("include");
     pipeOpts.userLinkerFlags  = parser.getAll("link");
 
-    OptimizationLevel luxOptLevel = OptimizationLevel::O0;
+    OptimizationLevel lucisOptLevel = OptimizationLevel::O0;
     if (parser.has("opt")) {
         std::string optStr = parser.get("opt");
-        if (optStr == "0")      luxOptLevel = OptimizationLevel::O0;
-        else if (optStr == "1") luxOptLevel = OptimizationLevel::O1;
-        else if (optStr == "2") luxOptLevel = OptimizationLevel::O2;
-        else if (optStr == "3") luxOptLevel = OptimizationLevel::O3;
-        else if (optStr == "s") luxOptLevel = OptimizationLevel::Os;
-        else if (optStr == "z") luxOptLevel = OptimizationLevel::Oz;
-        else if (optStr == "fast") luxOptLevel = OptimizationLevel::Ofast;
+        if (optStr == "0")      lucisOptLevel = OptimizationLevel::O0;
+        else if (optStr == "1") lucisOptLevel = OptimizationLevel::O1;
+        else if (optStr == "2") lucisOptLevel = OptimizationLevel::O2;
+        else if (optStr == "3") lucisOptLevel = OptimizationLevel::O3;
+        else if (optStr == "s") lucisOptLevel = OptimizationLevel::Os;
+        else if (optStr == "z") lucisOptLevel = OptimizationLevel::Oz;
+        else if (optStr == "fast") lucisOptLevel = OptimizationLevel::Ofast;
         else {
             try {
                 int level = std::stoi(optStr);
                 if (level >= 0 && level <= 3)
-                    luxOptLevel = static_cast<OptimizationLevel>(level);
+                    lucisOptLevel = static_cast<OptimizationLevel>(level);
             } catch (...) {
                 // Fallback to O0 or log warning if needed
             }
@@ -92,7 +92,7 @@ int BuildCommand::run(const ArgParser& parser) {
         usePIC = true; // Default for standard executables
     }
 
-    auto pipeline = LuxPipeline::run(pipeOpts);
+    auto pipeline = LucisPipeline::run(pipeOpts);
     if (!pipeline || pipeline->hasErrors) return 1;
 
     // ── Compile C sources ──────────────────────────────────────────────────
@@ -106,7 +106,7 @@ int BuildCommand::run(const ArgParser& parser) {
             cIncFlags.push_back("-I" + fs::path(cSrc).parent_path().string());
             auto objPath = pipeline->buildDir + "/c__" + stem + ".o";
             if (!CodeGen::compileCSource(cSrc, objPath, cIncFlags, pipeOpts.quiet)) {
-                std::cerr << "lux: failed to compile C source '" << cSrc << "'\n";
+                std::cerr << "lucis: failed to compile C source '" << cSrc << "'\n";
                 return 1;
             }
             cObjectFiles.push_back(objPath);
@@ -121,7 +121,7 @@ int BuildCommand::run(const ArgParser& parser) {
         if (fs::path(arg).extension() == ".o") {
             objectFiles.push_back(fs::canonical(arg).string());
         } else {
-            std::cerr << "lux: unexpected argument '" << arg << "'\n";
+            std::cerr << "lucis: unexpected argument '" << arg << "'\n";
             return 1;
         }
     }
@@ -134,7 +134,7 @@ int BuildCommand::run(const ArgParser& parser) {
     for (auto& unit : pipeline->units) {
         ++irIdx;
         if (!pipeOpts.quiet)
-            std::cerr << "lux: [build ir " << irIdx << "/" << pipeline->units.size()
+            std::cerr << "lucis: [build ir " << irIdx << "/" << pipeline->units.size()
                       << "] " << unit.filePath << "\n";
 
         IRGen irGen;
@@ -142,14 +142,14 @@ int BuildCommand::run(const ArgParser& parser) {
         irGen.setCBindings(pipeline->cBindings.get());
         auto irModule = irGen.generate(unit.parseResult.tree, unit.filePath);
         if (!irModule) {
-            std::cerr << "lux: IR generation failed for '" << unit.filePath << "'\n";
+            std::cerr << "lucis: IR generation failed for '" << unit.filePath << "'\n";
             anyIRError = true;
             continue;
         }
 
         // Optimize
-        if (luxOptLevel != OptimizationLevel::O0)
-            Optimizer::optimize(*irModule, luxOptLevel);
+        if (lucisOptLevel != OptimizationLevel::O0)
+            Optimizer::optimize(*irModule, lucisOptLevel);
 
         // Handle Emit modes (LLVM, ASM, BC) - only for the main file
         if (isEmitMode && unit.filePath == mainPath) {
@@ -158,11 +158,11 @@ int BuildCommand::run(const ArgParser& parser) {
                     std::error_code ec;
                     llvm::raw_fd_ostream dest(outputFile, ec, llvm::sys::fs::OF_None);
                     if (ec) {
-                        std::cerr << "lux: could not open '" << outputFile << "': " << ec.message() << "\n";
+                        std::cerr << "lucis: could not open '" << outputFile << "': " << ec.message() << "\n";
                         anyIRError = true;
                     } else {
                         irModule->module()->print(dest, nullptr);
-                        if (!pipeOpts.quiet) std::cout << "lux: LLVM IR written to '" << outputFile << "'\n";
+                        if (!pipeOpts.quiet) std::cout << "lucis: LLVM IR written to '" << outputFile << "'\n";
                     }
                 } else {
                     irModule->print();
@@ -170,11 +170,11 @@ int BuildCommand::run(const ArgParser& parser) {
             } else if (emitAsm) {
                 if (!outputFile.empty()) {
                     if (CodeGen::emitAssembly(irModule->module(), outputFile)) {
-                        if (!pipeOpts.quiet) std::cout << "lux: assembly written to '" << outputFile << "'\n";
+                        if (!pipeOpts.quiet) std::cout << "lucis: assembly written to '" << outputFile << "'\n";
                     } else anyIRError = true;
                 } else {
                     // To stdout
-                    char tmpAsm[] = "/tmp/lux-asm-XXXXXX.s";
+                    char tmpAsm[] = "/tmp/lucis-asm-XXXXXX.s";
                     int fd = mkstemps(tmpAsm, 2);
                     if (fd != -1) {
                         ::close(fd);
@@ -188,7 +188,7 @@ int BuildCommand::run(const ArgParser& parser) {
             } else if (emitBc) {
                 if (!outputFile.empty()) {
                     if (CodeGen::emitBitcode(irModule->module(), outputFile)) {
-                        if (!pipeOpts.quiet) std::cout << "lux: bitcode written to '" << outputFile << "'\n";
+                        if (!pipeOpts.quiet) std::cout << "lucis: bitcode written to '" << outputFile << "'\n";
                     } else anyIRError = true;
                 } else {
                     // Bitcode to stdout
@@ -210,13 +210,13 @@ int BuildCommand::run(const ArgParser& parser) {
                        : pipeline->buildDir + "/" + stem + ".o";
 
         if (!CodeGen::emitObjectFile(irModule->module(), objPath, usePIC)) {
-            std::cerr << "lux: failed to emit object for '" << unit.filePath << "'\n";
+            std::cerr << "lucis: failed to emit object for '" << unit.filePath << "'\n";
             anyIRError = true;
             continue;
         }
 
         if (emitObj && unit.filePath == mainPath) {
-            if (!pipeOpts.quiet) std::cout << "lux: object file written to '" << objPath << "'\n";
+            if (!pipeOpts.quiet) std::cout << "lucis: object file written to '" << objPath << "'\n";
             continue; 
         }
 
@@ -235,10 +235,10 @@ int BuildCommand::run(const ArgParser& parser) {
         auto inPath = fs::path(pipeOpts.inputFile);
         outputFile = inPath.stem().string() + ".out";
         if (!pipeOpts.quiet)
-            std::cerr << "lux: [build] no -o given, writing to '" << outputFile << "'\n";
+            std::cerr << "lucis: [build] no -o given, writing to '" << outputFile << "'\n";
     }
     if (!pipeOpts.quiet)
-        std::cerr << "\nlux: [build] --- linker output ---\n\n";
+        std::cerr << "\nlucis: [build] --- linker output ---\n\n";
 
     std::vector<std::string> finalLinkerFlags = pipeline->linkerFlags;
     if (useLTO) {
@@ -262,9 +262,9 @@ int BuildCommand::run(const ArgParser& parser) {
                                    finalLinkerFlags,
                                    parser.getAll("lib-path"),
                                    !useStatic, pipeOpts.quiet)) {
-        std::cerr << "lux: failed to link binary '" << outputFile << "'\n";
+        std::cerr << "lucis: failed to link binary '" << outputFile << "'\n";
         return 1;
     }
-    std::cout << "lux: binary written to '" << outputFile << "'\n";
+    std::cout << "lucis: binary written to '" << outputFile << "'\n";
     return 0;
 }

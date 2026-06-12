@@ -32,8 +32,8 @@ void registerCoreNamespace(IntrinsicRegistry& reg, TypeRegistry& typeReg) {
         sum.isVariadic = true;
         sum.description =
             "Sums all variadic arguments and returns the total.\n\n"
-            "```lux\n"
-            "int32 total = lux::core::sum(1, 2, 3);  // 6\n"
+            "```lucis\n"
+            "int32 total = lucis::core::sum(1, 2, 3);  // 6\n"
             "```";
 
         sum.lowering.kind = IntrinsicFunction::Lowering::InlineIR;
@@ -64,8 +64,8 @@ void registerCoreNamespace(IntrinsicRegistry& reg, TypeRegistry& typeReg) {
         fn.params.push_back({"int32", false});
         fn.description =
             "Adds a required prefix value to the sum of all variadic arguments.\n\n"
-            "```lux\n"
-            "int32 total = lux::core::sum_prefix(100, 1, 2, 3);  // 106\n"
+            "```lucis\n"
+            "int32 total = lucis::core::sum_prefix(100, 1, 2, 3);  // 106\n"
             "```";
 
         fn.lowering.kind = IntrinsicFunction::Lowering::InlineIR;

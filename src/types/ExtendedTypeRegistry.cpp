@@ -27,7 +27,7 @@ void ExtendedTypeRegistry::registerBuiltins() {
     // Vec<T> — Dynamic growable array
     //
     // LLVM layout: { T* ptr, usize len, usize cap }
-    // C prefix: lux_vec
+    // C prefix: lucis_vec
     // Native keyword: vec<T>
     // ═══════════════════════════════════════════════════════════════════════
 
@@ -39,7 +39,7 @@ void ExtendedTypeRegistry::registerBuiltins() {
         { "len", "usize" },
         { "cap", "usize" },
     };
-    vec.cPrefix = "lux_vec";
+    vec.cPrefix = "lucis_vec";
 
     // ── Capacity / size ──────────────────────────────────────────────────
     vec.methods.push_back({ "len",      {TypeKind::Extended}, {}, "usize",
@@ -142,7 +142,7 @@ void ExtendedTypeRegistry::registerBuiltins() {
     //
     // LLVM layout: { ptr states, ptr keys, ptr values, ptr hashes,
     //                usize len, usize cap, usize key_size, usize val_size }
-    // C prefix: lux_map
+    // C prefix: lucis_map
     // Native keyword: map<K,V>
     // ═══════════════════════════════════════════════════════════════════════
 
@@ -159,7 +159,7 @@ void ExtendedTypeRegistry::registerBuiltins() {
         { "key_size", "usize" },
         { "val_size", "usize" },
     };
-    map.cPrefix = "lux_map";
+    map.cPrefix = "lucis_map";
 
     // ── Size / query ─────────────────────────────────────────────────────
     map.methods.push_back({ "len",     {TypeKind::Extended}, {}, "usize",
@@ -200,7 +200,7 @@ void ExtendedTypeRegistry::registerBuiltins() {
     //
     // LLVM layout: { ptr states, ptr keys, ptr hashes,
     //                usize len, usize cap, usize key_size }
-    // C prefix: lux_set
+    // C prefix: lucis_set
     // Native keyword: set<T>
     // ═══════════════════════════════════════════════════════════════════════
 
@@ -215,7 +215,7 @@ void ExtendedTypeRegistry::registerBuiltins() {
         { "cap",      "usize" },
         { "key_size", "usize" },
     };
-    set.cPrefix = "lux_set";
+    set.cPrefix = "lucis_set";
 
     // ── Size / query ─────────────────────────────────────────────────────
     set.methods.push_back({ "len",     {TypeKind::Extended}, {}, "usize",
@@ -247,7 +247,7 @@ void ExtendedTypeRegistry::registerBuiltins() {
     // Task<T> — Async task handle (opaque pointer wrapping pthread)
     //
     // LLVM layout: { ptr handle } (opaque — managed by C runtime)
-    // C prefix: lux_task
+    // C prefix: lucis_task
     // Module: std::thread
     // ═══════════════════════════════════════════════════════════════════════
 
@@ -257,7 +257,7 @@ void ExtendedTypeRegistry::registerBuiltins() {
     task.layout       = {
         { "handle", "ptr" },
     };
-    task.cPrefix = "lux_task";
+    task.cPrefix = "lucis_task";
 
     registerType(std::move(task));
 }

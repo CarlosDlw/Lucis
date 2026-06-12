@@ -1,6 +1,6 @@
 # Grammar Reference
 
-This page summarizes the formal grammar of the Lux language, derived from the ANTLR4 grammar files (`LuxLexer.g4` and `LuxParser.g4`).
+This page summarizes the formal grammar of the Lucis language, derived from the ANTLR4 grammar files (`LucisLexer.g4` and `LucisParser.g4`).
 
 ---
 

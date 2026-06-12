@@ -1,17 +1,17 @@
 # Compiler Internals
 
-This page describes how the Lux compiler transforms source code into a native executable. The pipeline has 7 stages, from scanning project files to linking the final binary.
+This page describes how the Lucis compiler transforms source code into a native executable. The pipeline has 7 stages, from scanning project files to linking the final binary.
 
 ---
 
 ## Pipeline Overview
 
 ```
-Source Files (.lx)
+Source Files (.lc)
        │
        ▼
 ┌──────────────┐
-│ 1. Scan      │  Find all .lx files in project
+│ 1. Scan      │  Find all .lc files in project
 └──────┬───────┘
        ▼
 ┌──────────────┐
@@ -43,13 +43,13 @@ Source Files (.lx)
 
 ## Stage 1: Project Scanning
 
-The compiler starts by finding the project root and scanning for all `.lx` source files.
+The compiler starts by finding the project root and scanning for all `.lc` source files.
 
 **Entry point:** `CLI::run()` in `src/cli/CLI.cpp`
 
-The function `getProjectRoot()` walks up from the current directory looking for a `.lux/` directory (the project marker). Then `ProjectScanner::scan()` collects all `.lx` files recursively.
+The function `getProjectRoot()` walks up from the current directory looking for a `.lucis/` directory (the project marker). Then `ProjectScanner::scan()` collects all `.lc` files recursively.
 
-For a single-file compilation like `lux main.lx ./main`, the scanner only processes the file specified on the command line.
+For a single-file compilation like `lucis build main.lc -o ./main`, the scanner only processes the file specified on the command line.
 
 ---
 
@@ -68,7 +68,7 @@ Source text
 └────────┬────────┘
          ▼
 ┌─────────────────┐
-│ LuxLexer     │  Characters → token stream
+│ LucisLexer     │  Characters → token stream
 └────────┬────────┘
          ▼
 ┌─────────────────┐
@@ -76,13 +76,13 @@ Source text
 └────────┬────────┘
          ▼
 ┌─────────────────┐
-│ LuxParser    │  Tokens → parse tree (ProgramContext)
+│ LucisParser    │  Tokens → parse tree (ProgramContext)
 └─────────────────┘
 ```
 
 The grammar is defined in two files:
-- `grammar/LuxLexer.g4` — keyword tokens, operators, literals
-- `grammar/LuxParser.g4` — syntax rules (statements, expressions, declarations)
+- `grammar/LucisLexer.g4` — keyword tokens, operators, literals
+- `grammar/LucisParser.g4` — syntax rules (statements, expressions, declarations)
 
 ### Parse Tree Structure
 
@@ -205,9 +205,9 @@ The checker maintains several registries:
 When the checker finds an error, it records the file, line number, and a descriptive message:
 
 ```
-error: main.lx:15 — cannot assign string to int32
-error: main.lx:23 — unknown function 'foobar'
-error: main.lx:31 — struct 'Point' has no field 'z'
+error: main.lc:15 — cannot assign string to int32
+error: main.lc:23 — unknown function 'foobar'
+error: main.lc:31 — struct 'Point' has no field 'z'
 ```
 
 If any errors are found during checking, compilation stops — no IR is generated.
@@ -220,7 +220,7 @@ The IR generator walks the parse tree using the visitor pattern, emitting LLVM I
 
 ### Visitor Pattern
 
-The `IRGen` class inherits from `LuxParserBaseVisitor` and overrides 100+ visitor methods:
+The `IRGen` class inherits from `LucisParserBaseVisitor` and overrides 100+ visitor methods:
 
 ```
 IRGen::generate(parseTree, filePath)
@@ -252,9 +252,9 @@ For each function, the IR generator:
 Generic types like `vec<T>` are compiled into type-specific implementations. The compiler generates a unique function name for each concrete type:
 
 ```
-vec<int32>.push()  → calls lux_vec_push_i32()
-vec<string>.push() → calls lux_vec_push_str()
-vec<float64>.pop() → calls lux_vec_pop_f64()
+vec<int32>.push()  → calls lucis_vec_push_i32()
+vec<string>.push() → calls lucis_vec_push_str()
+vec<float64>.pop() → calls lucis_vec_pop_f64()
 ```
 
 The suffix (`i32`, `str`, `f64`, etc.) is determined by the element type's `builtinSuffix` property. Each suffixed function is implemented in C in the builtins library.
@@ -302,7 +302,7 @@ LLVM Module
 
 The compiler always targets the **native platform** — it detects the host CPU and target triple automatically using `llvm::sys::getDefaultTargetTriple()` and `llvm::sys::getHostCPUName()`.
 
-Object files are written to the `.lux/build/` directory.
+Object files are written to the `.lucis/build/` directory.
 
 ---
 
@@ -316,12 +316,12 @@ All object files are combined into a final executable using the system linker.
 ┌─────────────────────────┐
 │ Your .o files            │  From stage 6c (one per source file)
 ├─────────────────────────┤
-│ liblux.a             │  Builtins static library
-│   lux_vec_*          │    Vec operations
-│   lux_map_*          │    Map operations
-│   lux_set_*          │    Set operations
-│   lux_string_*       │    String operations
-│   lux_*              │    Math, IO, FS, thread, etc.
+│ liblucis.a             │  Builtins static library
+│   lucis_vec_*          │    Vec operations
+│   lucis_map_*          │    Map operations
+│   lucis_set_*          │    Set operations
+│   lucis_string_*       │    String operations
+│   lucis_*              │    Math, IO, FS, thread, etc.
 ├─────────────────────────┤
 │ System libraries        │
 │   -lm                   │    Math (libm)
@@ -343,19 +343,19 @@ The linker is invoked by forking a child process and calling `execvp("ld", ...)`
 
 ```bash
 # Simple compilation (no extra libraries)
-lux main.lx ./main
+lucis main.lc ./main
 
 # With optimization
-lux main.lx ./main -o2
+lucis main.lc ./main -o2
 
 # With external library
-lux main.lx ./main -lssl -lcrypto
+lucis main.lc ./main -lssl -lcrypto
 
 # With custom library path
-lux main.lx ./main -L/usr/local/lib -lmylib
+lucis main.lc ./main -L/usr/local/lib -lmylib
 
 # With include path for C headers
-lux main.lx ./main -I/usr/local/include
+lucis main.lc ./main -I/usr/local/include
 ```
 
 ---
@@ -363,9 +363,9 @@ lux main.lx ./main -I/usr/local/include
 ## Data Flow Summary
 
 ```
-Source files (.lx)
+Source files (.lc)
     │
-    ├── Scanned: collect all .lx files
+    ├── Scanned: collect all .lc files
     │
     ├── Parsed: ANTLR4 → parse trees (ProgramContext per file)
     │

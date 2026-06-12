@@ -1,6 +1,6 @@
 # FFI Implementation Plan — Step-by-Step
 
-This is the ordered execution plan for implementing native C FFI in Lux.
+This is the ordered execution plan for implementing native C FFI in Lucis.
 Each step is a self-contained unit: grammar → checker → IRGen → test.
 Steps are ordered by dependency — each one builds on the previous.
 
@@ -23,9 +23,9 @@ extern void free(*void ptr);
 
 | File | Change |
 |------|--------|
-| `LuxLexer.g4` | Add `EXTERN : 'extern';` token |
-| `LuxParser.g4` | Add `externDecl` rule to `topLevelDecl`: `EXTERN typeSpec IDENTIFIER LPAREN externParamList? RPAREN SEMI` |
-| `LuxParser.g4` | Add `externParamList` and `externParam` rules (type + optional name) |
+| `LucisLexer.g4` | Add `EXTERN : 'extern';` token |
+| `LucisParser.g4` | Add `externDecl` rule to `topLevelDecl`: `EXTERN typeSpec IDENTIFIER LPAREN externParamList? RPAREN SEMI` |
+| `LucisParser.g4` | Add `externParamList` and `externParam` rules (type + optional name) |
 | `Checker.cpp` | Add `checkExternDecl()` — register function signature in known functions, validate types |
 | `IRGen.cpp` | Add `visitExternDecl()` — emit `declare` with exact LLVM types, no function body |
 | `NamespaceRegistry.cpp` | Register extern declarations as exported symbols (so cross-file resolution works) |
@@ -67,8 +67,8 @@ printf(c"Value: %d\n", 42);
 
 | File | Change |
 |------|--------|
-| `LuxLexer.g4` | Add `C_STRING_LIT : 'c"' (~["\\\r\n] \| '\\' .)* '"';` token |
-| `LuxParser.g4` | Add `C_STRING_LIT` as `# cStrLitExpr` alternative in `expression` |
+| `LucisLexer.g4` | Add `C_STRING_LIT : 'c"' (~["\\\r\n] \| '\\' .)* '"';` token |
+| `LucisParser.g4` | Add `C_STRING_LIT` as `# cStrLitExpr` alternative in `expression` |
 | `Checker.cpp` | Add `resolveExprType` case for `cStrLitExpr` → returns `*char` (pointer to char) |
 | `IRGen.cpp` | Add `visitCStrLitExpr()` — emit `@.cstr.N = private unnamed_addr constant [K x i8] c"...\00"` and return GEP to index 0 |
 
@@ -83,11 +83,11 @@ printf(c"Value: %d\n", 42);
 namespace Main;
 extern int32 puts(*char s);
 fn main() int32 {
-    puts(c"Hello from LuxM via C FFI!");
+    puts(c"Hello from LucisM via C FFI!");
     ret 0;
 }
 ```
-Expected output: `Hello from LuxM via C FFI!`
+Expected output: `Hello from LucisM via C FFI!`
 
 ---
 
@@ -106,8 +106,8 @@ printf(c"Name: %s, Age: %d\n", c"Carlos", 30);
 
 | File | Change |
 |------|--------|
-| `LuxLexer.g4` | Add `ELLIPSIS : '...';` — wait, `SPREAD` already is `'...'`. Reuse `SPREAD` for this. |
-| `LuxParser.g4` | Update `externDecl`: `EXTERN typeSpec IDENTIFIER LPAREN externParamList? (COMMA SPREAD)? RPAREN SEMI` |
+| `LucisLexer.g4` | Add `ELLIPSIS : '...';` — wait, `SPREAD` already is `'...'`. Reuse `SPREAD` for this. |
+| `LucisParser.g4` | Update `externDecl`: `EXTERN typeSpec IDENTIFIER LPAREN externParamList? (COMMA SPREAD)? RPAREN SEMI` |
 | `Checker.cpp` | Track `isExternVariadic` flag. Skip param count validation for variadic extras. |
 | `IRGen.cpp` | In `visitExternDecl()`, if variadic: emit `FunctionType::get(retTy, paramTys, /*isVarArg=*/true)` |
 | `IRGen.cpp` | At call sites of variadic extern functions, apply C promotion rules: `float32→float64`, `int8/int16→int32`, `bool→int32` |
@@ -155,7 +155,7 @@ Without these, users can't bridge the two string worlds.
 
 | File | Change |
 |------|--------|
-| `src/builtins/string/string.h` | Add `lux_cstr`, `lux_from_cstr`, `lux_from_cstr_len` declarations |
+| `src/builtins/string/string.h` | Add `lucis_cstr`, `lucis_from_cstr`, `lucis_from_cstr_len` declarations |
 | `src/builtins/string/string.c` | Implement the three functions |
 | `BuiltinRegistry.cpp` | Register `cstr`, `fromCStr`, `fromCStrLen` signatures |
 | `ImportResolver.cpp` | Add to `std::str` or make them global builtins (no import needed) |
@@ -197,8 +197,8 @@ Purely syntactic sugar, zero implementation cost.
 
 | File | Change |
 |------|--------|
-| `LuxLexer.g4` | Add `CSTRING : 'cstring';` token |
-| `LuxParser.g4` | Add `CSTRING` to `primitiveType` alternatives |
+| `LucisLexer.g4` | Add `CSTRING : 'cstring';` token |
+| `LucisParser.g4` | Add `CSTRING` to `primitiveType` alternatives |
 | `TypeRegistry.cpp` | Register `cstring` as `TypeKind::Pointer` with `pointeeType = char` |
 | `TypeInfo.cpp` | Map `cstring` to `llvm::PointerType::getUnqual(ctx)` |
 
@@ -226,7 +226,7 @@ interop and safer than implicit-size `[]T`.
 
 | File | Change |
 |------|--------|
-| `LuxParser.g4` | Add `LBRACKET INT_LIT RBRACKELux typeSpec` to `typeSpec` rule |
+| `LucisParser.g4` | Add `LBRACKET INT_LIT RBRACKELucis typeSpec` to `typeSpec` rule |
 | `TypeInfo.h` | Add `arraySize` field to TypeInfo (0 = unsized `[]T`, >0 = `[N]T`) |
 | `Checker.cpp` | Validate array size is positive integer. Track sized arrays in type resolution. |
 | `IRGen.cpp` | `resolveTypeInfo` for `[N]T` → `llvm::ArrayType::get(elemTy, N)` |
@@ -270,9 +270,9 @@ union Value {
 
 | File | Change |
 |------|--------|
-| `LuxLexer.g4` | Add `UNION : 'union';` token |
-| `LuxParser.g4` | Add `unionDecl` rule (same shape as `structDecl`) |
-| `LuxParser.g4` | Add `unionDecl` to `topLevelDecl` |
+| `LucisLexer.g4` | Add `UNION : 'union';` token |
+| `LucisParser.g4` | Add `unionDecl` rule (same shape as `structDecl`) |
+| `LucisParser.g4` | Add `unionDecl` to `topLevelDecl` |
 | `TypeInfo.h` | Add `TypeKind::Union` |
 | `TypeInfo.cpp` | `toLLVMType` for Union: compute max field size, return array type of that size |
 | `TypeRegistry.cpp` | Handle union registration |
@@ -314,8 +314,8 @@ Needed for full C type compatibility.
 
 | File | Change |
 |------|--------|
-| `LuxLexer.g4` | Add `FLOAT80 : 'float80';` and `FLOAT128 : 'float128';` tokens |
-| `LuxParser.g4` | Add `FLOAT80` and `FLOAT128` to `primitiveType` |
+| `LucisLexer.g4` | Add `FLOAT80 : 'float80';` and `FLOAT128 : 'float128';` tokens |
+| `LucisParser.g4` | Add `FLOAT80` and `FLOAT128` to `primitiveType` |
 | `TypeRegistry.cpp` | Register `float80` (bitWidth=80) and `float128` (bitWidth=128) as `TypeKind::Float` |
 | `TypeInfo.cpp` | In `toLLVMType`: bitWidth==80 → `x86_fp80`, bitWidth==128 → `fp128` |
 | `IRGen.cpp` | Add cast support: `fpext`/`fptrunc` between float32/64/80/128 |
@@ -341,7 +341,7 @@ against any C library.
 
 **Syntax**:
 ```bash
-lux main.lx ./main -lm -lSDL2 -L/usr/local/lib -I/usr/local/include
+lucis main.lc ./main -lm -lSDL2 -L/usr/local/lib -I/usr/local/include
 ```
 
 **Changes**:
@@ -375,8 +375,8 @@ in TM without manual `extern` declarations.
 
 | File | Change |
 |------|--------|
-| `LuxLexer.g4` | Add `HASH_INCLUDE` token and header path fragments |
-| `LuxParser.g4` | Add `includeDecl` to `program` rule |
+| `LucisLexer.g4` | Add `HASH_INCLUDE` token and header path fragments |
+| `LucisParser.g4` | Add `includeDecl` to `program` rule |
 | `CMakeLists.txt` | Add `find_package(Clang)` / link `libclang` |
 | `src/ffi/CHeaderResolver.h` | New — parse C headers via `clang_parseTranslationUnit()` |
 | `src/ffi/CHeaderResolver.cpp` | New — walk libclang AST, extract functions/structs/enums/typedefs/macros |

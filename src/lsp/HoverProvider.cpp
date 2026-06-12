@@ -22,7 +22,7 @@ static std::string normalizeExtBaseName(const std::string& name) {
 
 // Context for resolving function/method call return types during auto inference.
 struct FuncLookupCtx {
-    LuxParser::ProgramContext* tree = nullptr;
+    LucisParser::ProgramContext* tree = nullptr;
     const CBindings* bindings = nullptr;
     const BuiltinRegistry* builtinReg = nullptr;
     const IntrinsicRegistry* intrinsicReg = nullptr;
@@ -33,7 +33,7 @@ struct FuncLookupCtx {
 
 // Forward declarations
 static std::string inferExprTypeName(
-        LuxParser::ExpressionContext* expr,
+        LucisParser::ExpressionContext* expr,
         const std::unordered_map<std::string, HoverProvider::LocalVar>& locals,
         const FuncLookupCtx* flc);
 
@@ -58,7 +58,7 @@ static std::string safeText(antlr4::ParserRuleContext *ctx) {
     return ctx ? ctx->getText() : "";
 }
 
-static std::string extractBaseTypeName(LuxParser::TypeSpecContext* typeSpec) {
+static std::string extractBaseTypeName(LucisParser::TypeSpecContext* typeSpec) {
     auto text = typeSpec->getText();
     auto pos = text.find('<');
     if (pos != std::string::npos)
@@ -104,15 +104,15 @@ static std::string formatTypedHover(const std::string& kind,
                                     const std::string& typeName,
                                     const std::string& symbolName,
                                     const CBindings& bindings) {
-    const char* lang = isCHoverType(typeName, bindings) ? "c" : "lux";
+    const char* lang = isCHoverType(typeName, bindings) ? "c" : "lucis";
     return std::string("```") + lang + "\n(" + kind + ") " + typeName + " "
          + symbolName + "\n```";
 }
 
 static std::string normalizeHoverMarkdown(std::string contents) {
     // Normalize to the language id recognized by markdown hover rendering.
-    const std::string from = "```lx";
-    const std::string to = "```lux";
+    const std::string from = "```lc";
+    const std::string to = "```lucis";
     size_t pos = 0;
     while ((pos = contents.find(from, pos)) != std::string::npos) {
         contents.replace(pos, from.size(), to);
@@ -120,13 +120,13 @@ static std::string normalizeHoverMarkdown(std::string contents) {
     }
 
     // Some paths still produce plain typed text like "(field) ...".
-    // Wrap those in a Lux fenced block so hover has syntax highlighting.
+    // Wrap those in a Lucis fenced block so hover has syntax highlighting.
     if (contents.find("```") == std::string::npos) {
         size_t first = contents.find_first_not_of(" \t\n\r");
         if (first != std::string::npos && contents[first] == '(') {
             std::string raw = contents.substr(first);
             if (!raw.empty() && raw.back() == '\n') raw.pop_back();
-            contents = "```lux\n" + raw + "\n```";
+            contents = "```lucis\n" + raw + "\n```";
         }
     }
 
@@ -176,7 +176,7 @@ HoverProvider::docCommentsForFile(const std::string& filePath) {
 }
 
 static void collectLocalsFromBlock(
-        LuxParser::BlockContext* block,
+        LucisParser::BlockContext* block,
         size_t beforeLine,
         std::unordered_map<std::string, HoverProvider::LocalVar>& out,
         const FuncLookupCtx* flc = nullptr);
@@ -215,7 +215,7 @@ std::optional<HoverResult> HoverProvider::hover(const std::string& source,
     if (project && project->isValid()) {
         cBindingsPtr = &project->cBindings();
     } else {
-        std::vector<LuxParser::IncludeDeclContext*> includes;
+        std::vector<LucisParser::IncludeDeclContext*> includes;
         for (auto* pre : parsed.tree->preambleDecl())
             if (auto* inc = pre->includeDecl()) includes.push_back(inc);
         if (!includes.empty()) {
@@ -264,7 +264,7 @@ std::optional<HoverResult> HoverProvider::hover(const std::string& source,
     // ── Namespace declaration: namespace Main; ──────────────────────
     if (auto* nsDecl = parsed.tree->namespaceDecl()) {
         if (nsDecl->IDENTIFIER() && nsDecl->IDENTIFIER()->getSymbol() == hoveredToken) {
-            std::string md = "```lux\n(namespace) " + tokenText + "\n```";
+            std::string md = "```lucis\n(namespace) " + tokenText + "\n```";
             return makeResult(hoveredToken, md);
         }
     }
@@ -273,13 +273,13 @@ std::optional<HoverResult> HoverProvider::hover(const std::string& source,
     for (auto* pre : parsed.tree->preambleDecl()) {
         auto* useDecl = pre->useDecl();
         if (!useDecl) continue;
-        if (auto* root = dynamic_cast<LuxParser::UseRootContext*>(useDecl)) {
+        if (auto* root = dynamic_cast<LucisParser::UseRootContext*>(useDecl)) {
             if (root->IDENTIFIER() && root->IDENTIFIER()->getSymbol() == hoveredToken) {
-                std::string md = "```lux\n(module) " + safeText(root->IDENTIFIER()) + "\n```";
+                std::string md = "```lucis\n(module) " + safeText(root->IDENTIFIER()) + "\n```";
                 return makeResult(hoveredToken, md);
             }
         }
-        if (auto* item = dynamic_cast<LuxParser::UseItemContext*>(useDecl)) {
+        if (auto* item = dynamic_cast<LucisParser::UseItemContext*>(useDecl)) {
             if (!item->IDENTIFIER() || !item->modulePath()) continue;
             // Hover on the imported symbol name
             if (item->IDENTIFIER()->getSymbol() == hoveredToken) {
@@ -296,12 +296,12 @@ std::optional<HoverResult> HoverProvider::hover(const std::string& source,
             // Hover on module path identifiers
             for (auto* id : item->modulePath()->IDENTIFIER()) {
                 if (id->getSymbol() == hoveredToken) {
-                    std::string md = "```lux\n(module) " + item->modulePath()->getText() + "\n```";
+                    std::string md = "```lucis\n(module) " + item->modulePath()->getText() + "\n```";
                     return makeResult(hoveredToken, md);
                 }
             }
         }
-        if (auto* group = dynamic_cast<LuxParser::UseGroupContext*>(useDecl)) {
+        if (auto* group = dynamic_cast<LucisParser::UseGroupContext*>(useDecl)) {
             if (!group->modulePath()) continue;
             std::string modulePath;
             for (auto* id : group->modulePath()->IDENTIFIER()) {
@@ -311,7 +311,7 @@ std::optional<HoverResult> HoverProvider::hover(const std::string& source,
             // Hover on module path identifiers
             for (auto* id : group->modulePath()->IDENTIFIER()) {
                 if (id->getSymbol() == hoveredToken) {
-                    std::string md = "```lux\n(module) " + modulePath + "\n```";
+                    std::string md = "```lucis\n(module) " + modulePath + "\n```";
                     return makeResult(hoveredToken, md);
                 }
             }
@@ -360,7 +360,7 @@ std::optional<HoverResult> HoverProvider::hover(const std::string& source,
             for (auto* f : sd->structField()) {
                 if (!f->IDENTIFIER()) continue;
                 if (f->IDENTIFIER()->getSymbol() == hoveredToken) {
-                    std::string md = "```lux\n(field) " + typeSpecToString(f->typeSpec())
+                    std::string md = "```lucis\n(field) " + typeSpecToString(f->typeSpec())
                                    + " " + tokenText + "\n```";
                     return makeResult(hoveredToken, md);
                 }
@@ -378,7 +378,7 @@ std::optional<HoverResult> HoverProvider::hover(const std::string& source,
             for (auto* variant : ed->enumVariant()) {
                 auto* v = variant->IDENTIFIER();
                 if (v && v->getSymbol() == hoveredToken) {
-                    std::string md = "```lux\n(variant) " + enumName->getText()
+                    std::string md = "```lucis\n(variant) " + enumName->getText()
                                    + "::" + v->getText() + "\n```";
                     return makeResult(hoveredToken, md);
                 }
@@ -394,7 +394,7 @@ std::optional<HoverResult> HoverProvider::hover(const std::string& source,
             for (auto* f : ud->unionField()) {
                 if (!f->IDENTIFIER()) continue;
                 if (f->IDENTIFIER()->getSymbol() == hoveredToken) {
-                    std::string md = "```lux\n(field) " + typeSpecToString(f->typeSpec())
+                    std::string md = "```lucis\n(field) " + typeSpecToString(f->typeSpec())
                                    + " " + tokenText + "\n```";
                     return makeResult(hoveredToken, md);
                 }
@@ -414,7 +414,7 @@ std::optional<HoverResult> HoverProvider::hover(const std::string& source,
         if (auto* ta = tld->typeAliasDecl()) {
             if (!ta->IDENTIFIER()) continue;
             if (ta->IDENTIFIER()->getSymbol() == hoveredToken) {
-                std::string md = "```lux\ntype " + tokenText + " = "
+                std::string md = "```lucis\ntype " + tokenText + " = "
                                + typeSpecToString(ta->typeSpec()) + "\n```";
                 return makeResult(hoveredToken, withDoc(md, ta->getStart()->getLine() - 1));
             }
@@ -470,9 +470,9 @@ std::optional<HoverResult> HoverProvider::hover(const std::string& source,
                     std::string structName = ext->IDENTIFIER() ? safeText(ext->IDENTIFIER()) : "?";
                     bool isStatic = (method->AMPERSAND() == nullptr);
                     std::string retType = typeSpecToString(method->typeSpec());
-                    std::string md = "```lux\n(" + std::string(isStatic ? "static method" : "method")
+                    std::string md = "```lucis\n(" + std::string(isStatic ? "static method" : "method")
                         + ") " + retType + " " + structName + "::" + tokenText + "(";
-                    std::vector<LuxParser::ParamContext*> params;
+                    std::vector<LucisParser::ParamContext*> params;
                     if (isStatic) {
                         if (auto* pl = method->paramList())
                             params = pl->param();
@@ -498,7 +498,7 @@ std::optional<HoverResult> HoverProvider::hover(const std::string& source,
 
                 // Parameter names and types
                 bool isStatic = (method->AMPERSAND() == nullptr);
-                std::vector<LuxParser::ParamContext*> params;
+                std::vector<LucisParser::ParamContext*> params;
                 if (isStatic) {
                     if (auto* pl = method->paramList())
                         params = pl->param();
@@ -529,7 +529,7 @@ std::optional<HoverResult> HoverProvider::hover(const std::string& source,
     }
 
     // ── Fallback: resolve any IDENTIFIER (global scope or missed contexts) ──
-    if (tokenType == LuxLexer::IDENTIFIER) {
+    if (tokenType == LucisLexer::IDENTIFIER) {
         return hoverIdent(tokenText, hoveredToken, parsed.tree,
                           *cBindingsPtr, line, project);
     }
@@ -538,7 +538,7 @@ std::optional<HoverResult> HoverProvider::hover(const std::string& source,
     // These are their own token types, not IDENTIFIER.
     const TypeInfo* primitiveType = typeRegistry_.lookup(tokenText);
     if (primitiveType) {
-        std::string md = "```lux\n(type) " + primitiveType->name + "\n```";
+        std::string md = "```lucis\n(type) " + primitiveType->name + "\n```";
         return makeResult(hoveredToken, md);
     }
 
@@ -551,7 +551,7 @@ std::optional<HoverResult> HoverProvider::hover(const std::string& source,
 
 std::optional<HoverResult> HoverProvider::hoverIdent(
         const std::string& name, antlr4::Token* token,
-        LuxParser::ProgramContext* tree, const CBindings& bindings,
+        LucisParser::ProgramContext* tree, const CBindings& bindings,
         size_t cursorLine, const ProjectContext* project) {
 
     // 1) Local variable / parameter in enclosing function
@@ -584,7 +584,7 @@ std::optional<HoverResult> HoverProvider::hoverIdent(
             if (tokenLine < es->getLine() || tokenLine > ee->getLine()) continue;
             if (!ext->IDENTIFIER()) continue;
             std::string structName = safeText(ext->IDENTIFIER());
-            std::string md = "```lux\n(self) *" + structName + "\n```";
+            std::string md = "```lucis\n(self) *" + structName + "\n```";
             return makeResult(token, md);
         }
     }
@@ -602,7 +602,7 @@ std::optional<HoverResult> HoverProvider::hoverIdent(
                 if (tokenLine < ms->getLine() || tokenLine > me->getLine()) continue;
                 // Check parameters
                 bool isStatic = (method->AMPERSAND() == nullptr);
-                std::vector<LuxParser::ParamContext*> params;
+                std::vector<LucisParser::ParamContext*> params;
                 if (isStatic) {
                     if (auto* pl = method->paramList())
                         params = pl->param();
@@ -664,7 +664,7 @@ std::optional<HoverResult> HoverProvider::hoverIdent(
 
             switch (sym->kind) {
                 case ExportedSymbol::Function:
-                    if (auto* fd = dynamic_cast<LuxParser::FunctionDeclContext*>(sym->decl)) {
+                    if (auto* fd = dynamic_cast<LucisParser::FunctionDeclContext*>(sym->decl)) {
                         std::string crossMd = formatFunctionDecl(fd);
                         size_t declLine = fd->getStart()->getLine() - 1;
                         crossMd = appendDocToHover(crossMd, crossDocs, declLine);
@@ -672,7 +672,7 @@ std::optional<HoverResult> HoverProvider::hoverIdent(
                     }
                     break;
                 case ExportedSymbol::Struct:
-                    if (auto* sd = dynamic_cast<LuxParser::StructDeclContext*>(sym->decl)) {
+                    if (auto* sd = dynamic_cast<LucisParser::StructDeclContext*>(sym->decl)) {
                         std::string crossMd = formatStructDecl(sd);
                         size_t declLine = sd->getStart()->getLine() - 1;
                         crossMd = appendDocToHover(crossMd, crossDocs, declLine);
@@ -680,7 +680,7 @@ std::optional<HoverResult> HoverProvider::hoverIdent(
                     }
                     break;
                 case ExportedSymbol::Enum:
-                    if (auto* ed = dynamic_cast<LuxParser::EnumDeclContext*>(sym->decl)) {
+                    if (auto* ed = dynamic_cast<LucisParser::EnumDeclContext*>(sym->decl)) {
                         std::string crossMd = formatEnumDecl(ed);
                         size_t declLine = ed->getStart()->getLine() - 1;
                         crossMd = appendDocToHover(crossMd, crossDocs, declLine);
@@ -688,7 +688,7 @@ std::optional<HoverResult> HoverProvider::hoverIdent(
                     }
                     break;
                 case ExportedSymbol::Union:
-                    if (auto* ud = dynamic_cast<LuxParser::UnionDeclContext*>(sym->decl)) {
+                    if (auto* ud = dynamic_cast<LucisParser::UnionDeclContext*>(sym->decl)) {
                         std::string crossMd = formatUnionDecl(ud);
                         size_t declLine = ud->getStart()->getLine() - 1;
                         crossMd = appendDocToHover(crossMd, crossDocs, declLine);
@@ -696,8 +696,8 @@ std::optional<HoverResult> HoverProvider::hoverIdent(
                     }
                     break;
                 case ExportedSymbol::TypeAlias:
-                    if (auto* ta = dynamic_cast<LuxParser::TypeAliasDeclContext*>(sym->decl)) {
-                        std::string md = "```lux\ntype " + name + " = "
+                    if (auto* ta = dynamic_cast<LucisParser::TypeAliasDeclContext*>(sym->decl)) {
+                        std::string md = "```lucis\ntype " + name + " = "
                                        + typeSpecToString(ta->typeSpec()) + "\n```";
                         size_t declLine = ta->getStart()->getLine() - 1;
                         md = appendDocToHover(md, crossDocs, declLine);
@@ -705,7 +705,7 @@ std::optional<HoverResult> HoverProvider::hoverIdent(
                     }
                     break;
                 case ExportedSymbol::ExtendBlock:
-                    if (auto* ext = dynamic_cast<LuxParser::ExtendDeclContext*>(sym->decl))
+                    if (auto* ext = dynamic_cast<LucisParser::ExtendDeclContext*>(sym->decl))
                         return makeResult(token, formatExtendMethods(ext));
                     break;
             }
@@ -721,7 +721,7 @@ std::optional<HoverResult> HoverProvider::hoverIdent(
     // 5) Builtin constant (PI, E, INT32_MAX, etc.)
     auto& constType = builtinRegistry_.lookupConstant(name);
     if (!constType.empty()) {
-        std::string md = "```lux\n(constant) " + constType + " " + name + "\n```";
+        std::string md = "```lucis\n(constant) " + constType + " " + name + "\n```";
         return makeResult(token, md);
     }
 
@@ -815,7 +815,7 @@ std::optional<HoverResult> HoverProvider::hoverIdent(
     // 15) Type alias
     auto* aliasDecl = findTypeAliasDecl(tree, name);
     if (aliasDecl) {
-        std::string md = "```lux\ntype " + name + " = "
+        std::string md = "```lucis\ntype " + name + " = "
                        + typeSpecToString(aliasDecl->typeSpec()) + "\n```";
         return makeResult(token, withDoc(md, aliasDecl->getStart()->getLine() - 1));
     }
@@ -824,10 +824,10 @@ std::optional<HoverResult> HoverProvider::hoverIdent(
     auto* extDesc = extTypeRegistry_.lookup(normalizeExtBaseName(name));
     if (extDesc) {
         std::ostringstream ss;
-        ss << "```lux\n(type) " << name;
+        ss << "```lucis\n(type) " << name;
         if (extDesc->genericArity == 1) ss << "<T>";
         else if (extDesc->genericArity == 2) ss << "<K, V>";
-        ss << "\n```\n\n**Methods:**\n```lux\n";
+        ss << "\n```\n\n**Methods:**\n```lucis\n";
         for (auto& m : extDesc->methods) {
             ss << m.returnType << " " << m.name << "(";
             for (size_t i = 0; i < m.paramTypes.size(); i++) {
@@ -843,13 +843,13 @@ std::optional<HoverResult> HoverProvider::hoverIdent(
     // 17) Primitive type used as identifier (should not normally happen)
     auto* typeInfo = typeRegistry_.lookup(name);
     if (typeInfo) {
-        std::string md = "```lux\n(type) " + typeInfo->name + "\n```";
+        std::string md = "```lucis\n(type) " + typeInfo->name + "\n```";
         return makeResult(token, md);
     }
 
     // 18) Enum variant from `use EnumType::*;`
-    auto tryEnumWildcardHover = [&](LuxParser::UseDeclContext* useDecl) -> std::optional<HoverResult> {
-        auto* ew = dynamic_cast<LuxParser::UseEnumWildcardContext*>(useDecl);
+    auto tryEnumWildcardHover = [&](LucisParser::UseDeclContext* useDecl) -> std::optional<HoverResult> {
+        auto* ew = dynamic_cast<LucisParser::UseEnumWildcardContext*>(useDecl);
         if (!ew) return std::nullopt;
         auto baseName = extractBaseTypeName(ew->typeSpec());
         if (baseName.empty()) return std::nullopt;
@@ -858,7 +858,7 @@ std::optional<HoverResult> HoverProvider::hoverIdent(
         for (auto* variant : ed->enumVariant()) {
             auto* v = variant->IDENTIFIER();
             if (v && v->getText() == name) {
-                std::string md = "```lux\n(variant) " + baseName + "::" + name + "\n```";
+                std::string md = "```lucis\n(variant) " + baseName + "::" + name + "\n```";
                 return makeResult(token, withDoc(md, ed->getStart()->getLine() - 1));
             }
         }
@@ -887,7 +887,7 @@ std::optional<HoverResult> HoverProvider::hoverIdent(
 }
 
 std::optional<HoverResult> HoverProvider::hoverGenericIntrinsic(
-        LuxParser::GenericQualifiedFnCallExprContext* ctx,
+        LucisParser::GenericQualifiedFnCallExprContext* ctx,
         antlr4::Token* token) {
     auto ids = ctx->IDENTIFIER();
     for (size_t i = 0; i < ids.size(); i++) {
@@ -900,7 +900,7 @@ std::optional<HoverResult> HoverProvider::hoverGenericIntrinsic(
                 if (IntrinsicRegistry::parseIntrinsicPath(idTexts, ns, funcName)) {
                     auto* intrinsic = intrinsicRegistry_.lookup(ns, funcName);
                     if (intrinsic) {
-                         std::string md = "```lux\n(intrinsic) " + ns + "::" + funcName + "\n```\n\n" + intrinsic->description;
+                         std::string md = "```lucis\n(intrinsic) " + ns + "::" + funcName + "\n```\n\n" + intrinsic->description;
                          return makeResult(token, md);
                     }
                 }
@@ -911,7 +911,7 @@ std::optional<HoverResult> HoverProvider::hoverGenericIntrinsic(
                     if (j > 0) nsPath += "::";
                     nsPath += ids[j]->getText();
                 }
-                std::string md = "```lux\n(intrinsic namespace) " + nsPath + "\n```";
+                std::string md = "```lucis\n(intrinsic namespace) " + nsPath + "\n```";
                 return makeResult(token, md);
             }
         }
@@ -927,7 +927,7 @@ std::optional<HoverResult> HoverProvider::hoverImportedSymbol(
         const std::string& symbolName,
         const std::string& modulePath,
         antlr4::Token* token,
-        LuxParser::ProgramContext* tree,
+        LucisParser::ProgramContext* tree,
         const CBindings& bindings,
         const ProjectContext* project) {
     std::string importedPath = modulePath;
@@ -942,18 +942,18 @@ std::optional<HoverResult> HoverProvider::hoverImportedSymbol(
             if (builtin)
                 return makeResult(token, formatBuiltinSignature(*builtin));
             // fallback: só nome
-            std::string md = "```lux\n(function) " + symbolName + "\n```";
+            std::string md = "```lucis\n(function) " + symbolName + "\n```";
             return makeResult(token, md);
         }
         // Constante do stdlib
         auto& constType = builtinRegistry_.lookupConstant(symbolName);
         if (!constType.empty()) {
-            std::string md = "```lux\n(constant) " + constType + " " + symbolName + "\n```";
+            std::string md = "```lucis\n(constant) " + constType + " " + symbolName + "\n```";
             return makeResult(token, md);
         }
         // Se não for função nem constante, pode ser módulo
         if (ImportResolver::isStdModule(modulePath + "::" + symbolName)) {
-            std::string md = "```lux\n(module) " + modulePath + "::" + symbolName + "\n```";
+            std::string md = "```lucis\n(module) " + modulePath + "::" + symbolName + "\n```";
             return makeResult(token, md);
         }
     }
@@ -964,30 +964,30 @@ std::optional<HoverResult> HoverProvider::hoverImportedSymbol(
         if (sym) {
             switch (sym->kind) {
                 case ExportedSymbol::Function:
-                    if (auto* fd = dynamic_cast<LuxParser::FunctionDeclContext*>(sym->decl))
+                    if (auto* fd = dynamic_cast<LucisParser::FunctionDeclContext*>(sym->decl))
                         return makeResult(token, formatFunctionDecl(fd));
                     break;
                 case ExportedSymbol::Struct:
-                    if (auto* sd = dynamic_cast<LuxParser::StructDeclContext*>(sym->decl))
+                    if (auto* sd = dynamic_cast<LucisParser::StructDeclContext*>(sym->decl))
                         return makeResult(token, formatStructDecl(sd));
                     break;
                 case ExportedSymbol::Enum:
-                    if (auto* ed = dynamic_cast<LuxParser::EnumDeclContext*>(sym->decl))
+                    if (auto* ed = dynamic_cast<LucisParser::EnumDeclContext*>(sym->decl))
                         return makeResult(token, formatEnumDecl(ed));
                     break;
                 case ExportedSymbol::Union:
-                    if (auto* ud = dynamic_cast<LuxParser::UnionDeclContext*>(sym->decl))
+                    if (auto* ud = dynamic_cast<LucisParser::UnionDeclContext*>(sym->decl))
                         return makeResult(token, formatUnionDecl(ud));
                     break;
                 case ExportedSymbol::TypeAlias:
-                    if (auto* ta = dynamic_cast<LuxParser::TypeAliasDeclContext*>(sym->decl)) {
-                        std::string md = "```lux\ntype " + symbolName + " = "
+                    if (auto* ta = dynamic_cast<LucisParser::TypeAliasDeclContext*>(sym->decl)) {
+                        std::string md = "```lucis\ntype " + symbolName + " = "
                                        + typeSpecToString(ta->typeSpec()) + "\n```";
                         return makeResult(token, md);
                     }
                     break;
                 case ExportedSymbol::ExtendBlock:
-                    if (auto* ext = dynamic_cast<LuxParser::ExtendDeclContext*>(sym->decl))
+                    if (auto* ext = dynamic_cast<LucisParser::ExtendDeclContext*>(sym->decl))
                         return makeResult(token, formatExtendMethods(ext));
                     break;
             }
@@ -1002,13 +1002,13 @@ std::optional<HoverResult> HoverProvider::hoverImportedSymbol(
     // 4. Fallback: builtin constante
     auto& constType = builtinRegistry_.lookupConstant(symbolName);
     if (!constType.empty()) {
-        std::string md = "```lux\n(constant) " + constType + " " + symbolName + "\n```";
+        std::string md = "```lucis\n(constant) " + constType + " " + symbolName + "\n```";
         return makeResult(token, md);
     }
 
     // 5. Fallback: módulo
     if (ImportResolver::isStdModule(modulePath + "::" + symbolName)) {
-        std::string md = "```lux\n(module) " + modulePath + "::" + symbolName + "\n```";
+        std::string md = "```lucis\n(module) " + modulePath + "::" + symbolName + "\n```";
         return makeResult(token, md);
     }
 
@@ -1031,7 +1031,7 @@ static bool containsToken(antlr4::ParserRuleContext* ctx, antlr4::Token* token) 
 
 static std::optional<std::string> resolveImportedModuleAliasPath(
         antlr4::Token* token,
-        LuxParser::ProgramContext* tree) {
+        LucisParser::ProgramContext* tree) {
     if (!token || !tree) return std::nullopt;
     std::string name = token->getText();
 
@@ -1039,13 +1039,13 @@ static std::optional<std::string> resolveImportedModuleAliasPath(
         auto* useDecl = pre->useDecl();
         if (!useDecl) continue;
 
-        if (auto* root = dynamic_cast<LuxParser::UseRootContext*>(useDecl)) {
+        if (auto* root = dynamic_cast<LucisParser::UseRootContext*>(useDecl)) {
             auto* id = root->IDENTIFIER();
             if (id && id->getText() == name)
                 return id->getText();
         }
 
-        if (auto* item = dynamic_cast<LuxParser::UseItemContext*>(useDecl)) {
+        if (auto* item = dynamic_cast<LucisParser::UseItemContext*>(useDecl)) {
             if (!item->modulePath()) continue;
             auto* importedId = item->IDENTIFIER();
             if (importedId && importedId->getText() == name) {
@@ -1075,17 +1075,17 @@ static std::optional<std::string> resolveImportedModuleAliasPath(
 }
 
 std::optional<HoverResult> HoverProvider::walkExprForHover(
-        LuxParser::ExpressionContext* expr,
+        LucisParser::ExpressionContext* expr,
         antlr4::Token* hoveredToken,
         const std::string& tokenText,
-        LuxParser::ProgramContext* tree,
+        LucisParser::ProgramContext* tree,
         const CBindings& bindings,
         size_t cursorLine,
         const ProjectContext* project) {
     if (!expr || !containsToken(expr, hoveredToken)) return std::nullopt;
 
     // ── Method call: expr.method(args) ──────────────────────────────
-    if (auto* mc = dynamic_cast<LuxParser::MethodCallExprContext*>(expr)) {
+    if (auto* mc = dynamic_cast<LucisParser::MethodCallExprContext*>(expr)) {
         auto* methodId = mc->IDENTIFIER();
         if (methodId && methodId->getSymbol() == hoveredToken) {
             return hoverMethodCall(mc, tree, bindings, cursorLine, project);
@@ -1105,7 +1105,7 @@ std::optional<HoverResult> HoverProvider::walkExprForHover(
     }
 
     // ── Field access: expr.field ────────────────────────────────────
-    if (auto* fa = dynamic_cast<LuxParser::FieldAccessExprContext*>(expr)) {
+    if (auto* fa = dynamic_cast<LucisParser::FieldAccessExprContext*>(expr)) {
         auto* fieldId = fa->IDENTIFIER();
         if (fieldId && fieldId->getSymbol() == hoveredToken) {
             return hoverFieldAccess(fa, tree, bindings, cursorLine, project);
@@ -1115,7 +1115,7 @@ std::optional<HoverResult> HoverProvider::walkExprForHover(
     }
 
     // ── Arrow access: expr->field (pointer dereference + field) ─────
-    if (auto* aa = dynamic_cast<LuxParser::ArrowAccessExprContext*>(expr)) {
+    if (auto* aa = dynamic_cast<LucisParser::ArrowAccessExprContext*>(expr)) {
         auto* fieldId = aa->IDENTIFIER();
         if (fieldId && fieldId->getSymbol() == hoveredToken) {
             std::string fieldName = fieldId->getText();
@@ -1154,7 +1154,7 @@ std::optional<HoverResult> HoverProvider::walkExprForHover(
                 if (sd) {
                     for (auto* f : sd->structField()) {
                         if (safeText(f->IDENTIFIER()) == fieldName) {
-                            std::string md = "```lux\n(field) "
+                            std::string md = "```lucis\n(field) "
                                 + typeSpecToString(f->typeSpec()) + " "
                                 + structName + "." + fieldName + "\n```";
                             return makeResult(token, md);
@@ -1169,14 +1169,14 @@ std::optional<HoverResult> HoverProvider::walkExprForHover(
                     auto syms = project->registry().getNamespaceSymbols(ns);
                     for (auto* sym : syms) {
                         if (sym->kind != ExportedSymbol::Struct) continue;
-                        auto* sd = dynamic_cast<LuxParser::StructDeclContext*>(sym->decl);
+                        auto* sd = dynamic_cast<LucisParser::StructDeclContext*>(sym->decl);
                         if (!sd) continue;
                         if (!structName.empty() &&
                             safeText(sd->IDENTIFIER()) != structName)
                             continue;
                         for (auto* f : sd->structField()) {
                             if (safeText(f->IDENTIFIER()) == fieldName) {
-                                std::string md = "```lux\n(field) "
+                                std::string md = "```lucis\n(field) "
                                     + typeSpecToString(f->typeSpec()) + " "
                                     + safeText(sd->IDENTIFIER()) + "."
                                     + fieldName + "\n```";
@@ -1209,19 +1209,19 @@ std::optional<HoverResult> HoverProvider::walkExprForHover(
     }
 
     // ── Address-of: &expression ───────────────────────────────────
-    if (auto* ao = dynamic_cast<LuxParser::AddrOfExprContext*>(expr)) {
+    if (auto* ao = dynamic_cast<LucisParser::AddrOfExprContext*>(expr)) {
         return walkExprForHover(ao->expression(), hoveredToken, tokenText,
                                  tree, bindings, cursorLine, project);
     }
 
     // ── Dereference: *expr ──────────────────────────────────────────
-    if (auto* de = dynamic_cast<LuxParser::DerefExprContext*>(expr)) {
+    if (auto* de = dynamic_cast<LucisParser::DerefExprContext*>(expr)) {
         return walkExprForHover(de->expression(), hoveredToken, tokenText,
                                  tree, bindings, cursorLine, project);
     }
 
     // ── Enum access: Type::Variant ──────────────────────────────────
-    if (auto* ea = dynamic_cast<LuxParser::EnumAccessExprContext*>(expr)) {
+    if (auto* ea = dynamic_cast<LucisParser::EnumAccessExprContext*>(expr)) {
         auto ids = ea->IDENTIFIER();
         if (ids.size() >= 2) {
             // Hover on variant name
@@ -1239,7 +1239,7 @@ std::optional<HoverResult> HoverProvider::walkExprForHover(
     }
 
     // ── Generic enum access: Type<T>::Variant ──────────────────────
-    if (auto* gea = dynamic_cast<LuxParser::GenericEnumAccessExprContext*>(expr)) {
+    if (auto* gea = dynamic_cast<LucisParser::GenericEnumAccessExprContext*>(expr)) {
         auto ids = gea->IDENTIFIER();
         if (ids.size() >= 1 && ids[0]->getSymbol() == hoveredToken) {
             return hoverIdent(ids[0]->getText(), hoveredToken, tree, bindings,
@@ -1263,7 +1263,7 @@ std::optional<HoverResult> HoverProvider::walkExprForHover(
                 for (auto* variant : ed->enumVariant()) {
                     auto* v = variant->IDENTIFIER();
                     if (v && v->getText() == variantName) {
-                        std::string md = "```lux\n(variant) " + fullType + "::" +
+                        std::string md = "```lucis\n(variant) " + fullType + "::" +
                                          variantName + "\n```";
                         size_t declLine = ed->getStart()->getLine();
                         md = appendDocToHover(md, docComments_, declLine);
@@ -1273,13 +1273,13 @@ std::optional<HoverResult> HoverProvider::walkExprForHover(
             }
 
             return makeResult(hoveredToken,
-                "```lux\n(variant) " + fullType + "::" + variantName + "\n```");
+                "```lucis\n(variant) " + fullType + "::" + variantName + "\n```");
         }
         return std::nullopt;
     }
 
     // ── Static method call: Type::method(args) ─────────────────────
-    if (auto* smc = dynamic_cast<LuxParser::StaticMethodCallExprContext*>(expr)) {
+    if (auto* smc = dynamic_cast<LucisParser::StaticMethodCallExprContext*>(expr)) {
         auto ids = smc->IDENTIFIER();
         if (ids.size() >= 2) {
             auto* methodTok = ids.back()->getSymbol();
@@ -1299,32 +1299,32 @@ std::optional<HoverResult> HoverProvider::walkExprForHover(
                 // std::... scope chain
                 if (ownerPath == "std" || ownerPath.rfind("std::", 0) == 0) {
                     return makeResult(hoveredToken,
-                        "```lux\n(module) " + ownerPath + "\n```");
+                        "```lucis\n(module) " + ownerPath + "\n```");
                 }
 
-                // lux::... intrinsic root/namespace
+                // lucis::... intrinsic root/namespace
                 if (IntrinsicRegistry::isIntrinsicPrefix(ids[0]->getText())) {
                     if (i == 0) {
                         return makeResult(hoveredToken,
-                            "```lux\n(intrinsic root) lux\n```\n\n"
+                            "```lucis\n(intrinsic root) lucis\n```\n\n"
                             "Intrinsic namespace root. Contains low-level compiler "
-                            "builtin functions like `lux::core::trap()`.");
+                            "builtin functions like `lucis::core::trap()`.");
                     }
                     std::string ns = ids[i]->getText();
                     if (intrinsicRegistry_.hasNamespace(ns)) {
                         return makeResult(hoveredToken,
-                            "```lux\n(intrinsic namespace) lux::" + ns + "\n```\n\n" +
+                            "```lucis\n(intrinsic namespace) lucis::" + ns + "\n```\n\n" +
                             intrinsicRegistry_.namespaceDescription(ns));
                     }
                     return makeResult(hoveredToken,
-                        "```lux\n(intrinsic namespace) " + ns + "\n```");
+                        "```lucis\n(intrinsic namespace) " + ns + "\n```");
                 }
 
                 // Type/namespace: resolve only the first segment as type symbol.
                 if (i == 0) {
                     if (auto modulePath = resolveImportedModuleAliasPath(hoveredToken, tree)) {
                         return makeResult(hoveredToken,
-                            "```lux\n(module) " + *modulePath + "\n```"
+                            "```lucis\n(module) " + *modulePath + "\n```"
                         );
                     }
                     std::string typeName = ids[0]->getText();
@@ -1344,11 +1344,11 @@ std::optional<HoverResult> HoverProvider::walkExprForHover(
     }
 
     // ── Function call: expr(args) ──────────────────────────────────
-    if (auto* fc = dynamic_cast<LuxParser::FnCallExprContext*>(expr)) {
-        if (auto* calleeIdent = dynamic_cast<LuxParser::IdentExprContext*>(fc->expression())) {
+    if (auto* fc = dynamic_cast<LucisParser::FnCallExprContext*>(expr)) {
+        if (auto* calleeIdent = dynamic_cast<LucisParser::IdentExprContext*>(fc->expression())) {
             if (calleeIdent->IDENTIFIER() && calleeIdent->IDENTIFIER()->getSymbol() == hoveredToken) {
                 std::string funcName = safeText(calleeIdent->IDENTIFIER());
-                auto buildCallHover = [&](LuxParser::FunctionDeclContext* fd) -> std::optional<HoverResult> {
+                auto buildCallHover = [&](LucisParser::FunctionDeclContext* fd) -> std::optional<HoverResult> {
                     if (!fd) return std::nullopt;
                     if (!fd->typeParamList()) {
                         return makeResult(hoveredToken,
@@ -1382,7 +1382,7 @@ std::optional<HoverResult> HoverProvider::walkExprForHover(
                             actualArgTypes.push_back(inferExprTypeName(a, locals, &flc));
                     }
 
-                    std::vector<LuxParser::ParamContext*> formalParams;
+                    std::vector<LucisParser::ParamContext*> formalParams;
                     if (auto* pl = fd->paramList()) formalParams = pl->param();
                     if (actualArgTypes.size() != formalParams.size()) {
                         return makeResult(hoveredToken,
@@ -1411,7 +1411,7 @@ std::optional<HoverResult> HoverProvider::walkExprForHover(
 
                     std::string retType = substituteTypeParams(safeText(fd->typeSpec()), inferred);
                     std::ostringstream ss;
-                    ss << "```lux\n(function) " << retType << " " << funcName << "(";
+                    ss << "```lucis\n(function) " << retType << " " << funcName << "(";
                     bool first = true;
                     if (auto* params = fd->paramList()) {
                         for (auto* p : params->param()) {
@@ -1435,7 +1435,7 @@ std::optional<HoverResult> HoverProvider::walkExprForHover(
                     for (auto& ns : project->registry().allNamespaces()) {
                         auto* sym = project->registry().findSymbol(ns, funcName);
                         if (!sym || sym->kind != ExportedSymbol::Function) continue;
-                        auto* fd = dynamic_cast<LuxParser::FunctionDeclContext*>(sym->decl);
+                        auto* fd = dynamic_cast<LucisParser::FunctionDeclContext*>(sym->decl);
                         if (auto h = buildCallHover(fd)) return h;
                     }
                 }
@@ -1456,7 +1456,7 @@ std::optional<HoverResult> HoverProvider::walkExprForHover(
     }
 
     // ── Struct literal: Type { field: expr, ... } ────────────────────
-    if (auto* sl = dynamic_cast<LuxParser::StructLitExprContext*>(expr)) {
+    if (auto* sl = dynamic_cast<LucisParser::StructLitExprContext*>(expr)) {
         auto ids = sl->IDENTIFIER();
         if (!ids.empty()) {
             // Hover on struct type name
@@ -1474,7 +1474,7 @@ std::optional<HoverResult> HoverProvider::walkExprForHover(
                 if (sd) {
                     for (auto* f : sd->structField()) {
                         if (safeText(f->IDENTIFIER()) == fieldName) {
-                            std::string md = "```lux\n(field) "
+                            std::string md = "```lucis\n(field) "
                                 + typeSpecToString(f->typeSpec()) + " "
                                 + structName + "." + fieldName + "\n```";
                             return makeResult(hoveredToken, md);
@@ -1488,11 +1488,11 @@ std::optional<HoverResult> HoverProvider::walkExprForHover(
                         for (auto* sym : syms) {
                             if (sym->kind != ExportedSymbol::Struct ||
                                 sym->name != structName) continue;
-                            auto* rsd = dynamic_cast<LuxParser::StructDeclContext*>(sym->decl);
+                            auto* rsd = dynamic_cast<LucisParser::StructDeclContext*>(sym->decl);
                             if (!rsd) continue;
                             for (auto* f : rsd->structField()) {
                                 if (safeText(f->IDENTIFIER()) == fieldName) {
-                                    std::string md = "```lux\n(field) "
+                                    std::string md = "```lucis\n(field) "
                                         + typeSpecToString(f->typeSpec()) + " "
                                         + structName + "." + fieldName + "\n```";
                                     return makeResult(hoveredToken, md);
@@ -1506,7 +1506,7 @@ std::optional<HoverResult> HoverProvider::walkExprForHover(
                 if (ud) {
                     for (auto* f : ud->unionField()) {
                         if (safeText(f->IDENTIFIER()) == fieldName) {
-                            std::string md = "```lux\n(field) "
+                            std::string md = "```lucis\n(field) "
                                 + typeSpecToString(f->typeSpec()) + " "
                                 + structName + "." + fieldName + "\n```";
                             return makeResult(hoveredToken, md);
@@ -1517,7 +1517,7 @@ std::optional<HoverResult> HoverProvider::walkExprForHover(
                 if (auto* cs = bindings.findStruct(structName)) {
                     for (auto& f : cs->fields) {
                         if (f.name == fieldName) {
-                            std::string md = "```lux\n(field) "
+                            std::string md = "```lucis\n(field) "
                                 + f.typeInfo->name + " " + structName + "."
                                 + fieldName + "\n```";
                             return makeResult(hoveredToken, md);
@@ -1529,7 +1529,7 @@ std::optional<HoverResult> HoverProvider::walkExprForHover(
                 if (bti && bti->kind == TypeKind::Struct) {
                     for (auto& f : bti->fields) {
                         if (f.name == fieldName) {
-                            std::string md = "```lux\n(field) "
+                            std::string md = "```lucis\n(field) "
                                 + f.typeInfo->name + " " + structName + "."
                                 + fieldName + "\n```";
                             return makeResult(hoveredToken, md);
@@ -1548,7 +1548,7 @@ std::optional<HoverResult> HoverProvider::walkExprForHover(
     }
 
     // ── Generic function call: max<int32>(a, b) ─────────────────────
-    if (auto* gfc = dynamic_cast<LuxParser::GenericFnCallExprContext*>(expr)) {
+    if (auto* gfc = dynamic_cast<LucisParser::GenericFnCallExprContext*>(expr)) {
         auto* fnId = gfc->IDENTIFIER();
         if (fnId && fnId->getSymbol() == hoveredToken) {
             std::string funcName = fnId->getText();
@@ -1573,7 +1573,7 @@ std::optional<HoverResult> HoverProvider::walkExprForHover(
 
                 std::string retType = substituteTypeParams(safeText(fd->typeSpec()), subst);
                 std::ostringstream ss;
-                ss << "```lux\n(function) " << retType << " " << funcName << "(";
+                ss << "```lucis\n(function) " << retType << " " << funcName << "(";
                 bool first = true;
                 if (auto* pl = fd->paramList()) {
                     for (auto* p : pl->param()) {
@@ -1600,19 +1600,19 @@ std::optional<HoverResult> HoverProvider::walkExprForHover(
         return std::nullopt;
     }
 
-    if (auto* gqfc = dynamic_cast<LuxParser::GenericQualifiedFnCallExprContext*>(expr)) {
+    if (auto* gqfc = dynamic_cast<LucisParser::GenericQualifiedFnCallExprContext*>(expr)) {
         if (gqfc->IDENTIFIER().back()->getSymbol() == hoveredToken) {
             return hoverGenericIntrinsic(gqfc, hoveredToken);
         }
     }
 
     // ── Generic static method call: Node<int32>::create(42) ─────────
-    if (auto* gsmc = dynamic_cast<LuxParser::GenericStaticMethodCallExprContext*>(expr)) {
+    if (auto* gsmc = dynamic_cast<LucisParser::GenericStaticMethodCallExprContext*>(expr)) {
         auto ids = gsmc->IDENTIFIER();
         if (ids.size() >= 1 && ids[0]->getSymbol() == hoveredToken) {
             if (auto modulePath = resolveImportedModuleAliasPath(hoveredToken, tree)) {
                 return makeResult(hoveredToken,
-                    "```lux\n(module) " + *modulePath + "\n```"
+                    "```lucis\n(module) " + *modulePath + "\n```"
                 );
             }
             return hoverIdent(ids[0]->getText(), hoveredToken, tree, bindings,
@@ -1628,7 +1628,7 @@ std::optional<HoverResult> HoverProvider::walkExprForHover(
                     if (m->IDENTIFIER().empty()) continue;
                     if (safeIdAt(m, 0) == methodName) {
                         std::ostringstream ss;
-                        ss << "```lux\n(static method) " << typeSpecToString(m->typeSpec())
+                        ss << "```lucis\n(static method) " << typeSpecToString(m->typeSpec())
                            << " " << structName << "<T>::" << methodName << "(";
                         if (auto* params = m->paramList()) {
                             bool first = true;
@@ -1645,7 +1645,7 @@ std::optional<HoverResult> HoverProvider::walkExprForHover(
                 }
             }
             return makeResult(hoveredToken,
-                "```lux\n(method) " + structName + "::" + methodName + "()\n```");
+                "```lucis\n(method) " + structName + "::" + methodName + "()\n```");
         }
         if (auto* al = gsmc->argList()) {
             for (auto* a : al->expression()) {
@@ -1658,7 +1658,7 @@ std::optional<HoverResult> HoverProvider::walkExprForHover(
     }
 
     // ── Generic struct literal: Node<int32> { field: val } ──────────
-    if (auto* gsl = dynamic_cast<LuxParser::GenericStructLitExprContext*>(expr)) {
+    if (auto* gsl = dynamic_cast<LucisParser::GenericStructLitExprContext*>(expr)) {
         auto ids = gsl->IDENTIFIER();
         if (!ids.empty() && ids[0]->getSymbol() == hoveredToken) {
             return hoverIdent(ids[0]->getText(), hoveredToken, tree, bindings,
@@ -1673,7 +1673,7 @@ std::optional<HoverResult> HoverProvider::walkExprForHover(
                 if (sd) {
                     for (auto* f : sd->structField()) {
                         if (safeText(f->IDENTIFIER()) == fieldName) {
-                            std::string md = "```lux\n(field) "
+                            std::string md = "```lucis\n(field) "
                                 + typeSpecToString(f->typeSpec()) + " "
                                 + structName + "." + fieldName + "\n```";
                             return makeResult(hoveredToken, md);
@@ -1681,7 +1681,7 @@ std::optional<HoverResult> HoverProvider::walkExprForHover(
                     }
                 }
                 return makeResult(hoveredToken,
-                    "```lux\n(field) " + structName + "." + fieldName + "\n```");
+                    "```lucis\n(field) " + structName + "." + fieldName + "\n```");
             }
         }
         for (auto* child : gsl->expression()) {
@@ -1693,7 +1693,7 @@ std::optional<HoverResult> HoverProvider::walkExprForHover(
     }
 
     // ── Cast: expr as Type ──────────────────────────────────────────
-    if (auto* cast = dynamic_cast<LuxParser::CastExprContext*>(expr)) {
+    if (auto* cast = dynamic_cast<LucisParser::CastExprContext*>(expr)) {
         if (auto* ts = cast->typeSpec()) {
             auto r = hoverTypeSpec(ts, hoveredToken, tree, bindings, project);
             if (r) return r;
@@ -1703,7 +1703,7 @@ std::optional<HoverResult> HoverProvider::walkExprForHover(
     }
 
     // ── Is: expr is Type [::Variant] ────────────────────────────────
-    if (auto* isE = dynamic_cast<LuxParser::IsExprContext*>(expr)) {
+    if (auto* isE = dynamic_cast<LucisParser::IsExprContext*>(expr)) {
         if (auto* ts = isE->typeSpec()) {
             auto r = hoverTypeSpec(ts, hoveredToken, tree, bindings, project);
             if (r) return r;
@@ -1715,7 +1715,7 @@ std::optional<HoverResult> HoverProvider::walkExprForHover(
             auto* ts = isE->typeSpec();
             std::string fullType = ts ? typeSpecToString(ts) : std::string("?");
 
-            std::string md = "```lux\n(variant) " + fullType + "::" +
+            std::string md = "```lucis\n(variant) " + fullType + "::" +
                              variantName + "\n```";
             return makeResult(hoveredToken, md);
         }
@@ -1748,7 +1748,7 @@ std::optional<HoverResult> HoverProvider::walkExprForHover(
                 }
             }
 
-            std::string md = "```lux\n(variable) " + bindType + " " +
+            std::string md = "```lucis\n(variable) " + bindType + " " +
                              safeIdAt(isE, 1) + "\n```";
             return makeResult(hoveredToken, md);
         }
@@ -1758,10 +1758,10 @@ std::optional<HoverResult> HoverProvider::walkExprForHover(
     }
 
     // ── Sizeof: sizeof(Type) ────────────────────────────────────────
-    if (auto* sz = dynamic_cast<LuxParser::SizeofExprContext*>(expr)) {
+    if (auto* sz = dynamic_cast<LucisParser::SizeofExprContext*>(expr)) {
         if (sz->SIZEOF() && sz->SIZEOF()->getSymbol() == hoveredToken) {
             return makeResult(hoveredToken,
-                "```lux\n(keyword) int64 sizeof(type)\n```\n"
+                "```lucis\n(keyword) int64 sizeof(type)\n```\n"
                 "Returns the size in bytes of the given type.");
         }
         if (auto* ts = sz->typeSpec()) {
@@ -1772,10 +1772,10 @@ std::optional<HoverResult> HoverProvider::walkExprForHover(
     }
 
     // ── Typeof: typeof(expr) ────────────────────────────────────────
-    if (auto* to = dynamic_cast<LuxParser::TypeofExprContext*>(expr)) {
+    if (auto* to = dynamic_cast<LucisParser::TypeofExprContext*>(expr)) {
         if (to->TYPEOF() && to->TYPEOF()->getSymbol() == hoveredToken) {
             return makeResult(hoveredToken,
-                "```lux\n(keyword) string typeof(expression)\n```\n"
+                "```lucis\n(keyword) string typeof(expression)\n```\n"
                 "Returns the type name of the given expression as a string.");
         }
         return walkExprForHover(to->expression(), hoveredToken, tokenText,
@@ -1783,7 +1783,7 @@ std::optional<HoverResult> HoverProvider::walkExprForHover(
     }
 
     // ── List comprehension: [expr | for Type x in range if cond] ────
-    if (auto* lc = dynamic_cast<LuxParser::ListCompExprContext*>(expr)) {
+    if (auto* lc = dynamic_cast<LucisParser::ListCompExprContext*>(expr)) {
         // Hover on iterator type spec
         if (auto* ts = lc->typeSpec()) {
             auto r = hoverTypeSpec(ts, hoveredToken, tree, bindings, project);
@@ -1793,7 +1793,7 @@ std::optional<HoverResult> HoverProvider::walkExprForHover(
         if (auto* id = lc->IDENTIFIER()) {
             if (id->getSymbol() == hoveredToken) {
                 std::string typeName = typeSpecToString(lc->typeSpec());
-                std::string md = "```lux\n(variable) " + typeName + " "
+                std::string md = "```lucis\n(variable) " + typeName + " "
                                + id->getText() + "\n```\n*List comprehension iterator*";
                 return makeResult(hoveredToken, md);
             }
@@ -1801,7 +1801,7 @@ std::optional<HoverResult> HoverProvider::walkExprForHover(
         // Hover on 'for' keyword
         if (lc->FOR() && lc->FOR()->getSymbol() == hoveredToken) {
             return makeResult(hoveredToken,
-                "```lux\n(keyword) for\n```\n"
+                "```lucis\n(keyword) for\n```\n"
                 "List comprehension iterator clause.");
         }
         // Recurse into all sub-expressions (transform, range, filter)
@@ -1814,7 +1814,7 @@ std::optional<HoverResult> HoverProvider::walkExprForHover(
     }
 
     // ── Index access: expr[expr] ────────────────────────────────────
-    if (auto* idx = dynamic_cast<LuxParser::IndexExprContext*>(expr)) {
+    if (auto* idx = dynamic_cast<LucisParser::IndexExprContext*>(expr)) {
         auto exprs = idx->expression();
         // Recurse into base expression (exprs[0]) and index (exprs[1])
         for (auto* e : exprs) {
@@ -1826,7 +1826,7 @@ std::optional<HoverResult> HoverProvider::walkExprForHover(
     }
 
     // ── Tuple index access: expr.0, expr.1 ─────────────────────────
-    if (auto* ti = dynamic_cast<LuxParser::TupleIndexExprContext*>(expr)) {
+    if (auto* ti = dynamic_cast<LucisParser::TupleIndexExprContext*>(expr)) {
         // If hovering on the INTEGER token (.0, .1 ...), show element type
         if (ti->INT_LIT() && ti->INT_LIT()->getSymbol() == hoveredToken) {
             auto* func = findEnclosingFunction(tree, cursorLine);
@@ -1841,7 +1841,7 @@ std::optional<HoverResult> HoverProvider::walkExprForHover(
                 std::string typeName = inferExprTypeName(expr, locals, &flc);
                 if (!typeName.empty()) {
                     std::string idx = ti->INT_LIT()->getText();
-                    std::string md = "```lux\n(tuple element) ." + idx + ": " + typeName + "\n```";
+                    std::string md = "```lucis\n(tuple element) ." + idx + ": " + typeName + "\n```";
                     return makeResult(hoveredToken, md);
                 }
             }
@@ -1851,7 +1851,7 @@ std::optional<HoverResult> HoverProvider::walkExprForHover(
     }
 
     // ── Tuple arrow index: expr->0, expr->1 ────────────────────────
-    if (auto* tai = dynamic_cast<LuxParser::TupleArrowIndexExprContext*>(expr)) {
+    if (auto* tai = dynamic_cast<LucisParser::TupleArrowIndexExprContext*>(expr)) {
         if (tai->INT_LIT() && tai->INT_LIT()->getSymbol() == hoveredToken) {
             auto* func = findEnclosingFunction(tree, cursorLine);
             if (func) {
@@ -1865,7 +1865,7 @@ std::optional<HoverResult> HoverProvider::walkExprForHover(
                 std::string typeName = inferExprTypeName(expr, locals, &flc);
                 if (!typeName.empty()) {
                     std::string idx = tai->INT_LIT()->getText();
-                    std::string md = "```lux\n(tuple element) ->" + idx + ": " + typeName + "\n```";
+                    std::string md = "```lucis\n(tuple element) ->" + idx + ": " + typeName + "\n```";
                     return makeResult(hoveredToken, md);
                 }
             }
@@ -1875,7 +1875,7 @@ std::optional<HoverResult> HoverProvider::walkExprForHover(
     }
 
     // ── Chained tuple index: expr.N.M (FLOAT_LIT) ─────────────────
-    if (auto* cti = dynamic_cast<LuxParser::ChainedTupleIndexExprContext*>(expr)) {
+    if (auto* cti = dynamic_cast<LucisParser::ChainedTupleIndexExprContext*>(expr)) {
         if (cti->FLOAT_LIT() && cti->FLOAT_LIT()->getSymbol() == hoveredToken) {
             auto* func = findEnclosingFunction(tree, cursorLine);
             if (func) {
@@ -1889,7 +1889,7 @@ std::optional<HoverResult> HoverProvider::walkExprForHover(
                 std::string typeName = inferExprTypeName(expr, locals, &flc);
                 if (!typeName.empty()) {
                     std::string idx = cti->FLOAT_LIT()->getText();
-                    std::string md = "```lux\n(tuple element) ." + idx + ": " + typeName + "\n```";
+                    std::string md = "```lucis\n(tuple element) ." + idx + ": " + typeName + "\n```";
                     return makeResult(hoveredToken, md);
                 }
             }
@@ -1899,7 +1899,7 @@ std::optional<HoverResult> HoverProvider::walkExprForHover(
     }
 
     // ── Chained tuple arrow index: expr->N.M (FLOAT_LIT) ──────────
-    if (auto* ctai = dynamic_cast<LuxParser::ChainedTupleArrowIndexExprContext*>(expr)) {
+    if (auto* ctai = dynamic_cast<LucisParser::ChainedTupleArrowIndexExprContext*>(expr)) {
         if (ctai->FLOAT_LIT() && ctai->FLOAT_LIT()->getSymbol() == hoveredToken) {
             auto* func = findEnclosingFunction(tree, cursorLine);
             if (func) {
@@ -1913,7 +1913,7 @@ std::optional<HoverResult> HoverProvider::walkExprForHover(
                 std::string typeName = inferExprTypeName(expr, locals, &flc);
                 if (!typeName.empty()) {
                     std::string idx = ctai->FLOAT_LIT()->getText();
-                    std::string md = "```lux\n(tuple element) ->" + idx + ": " + typeName + "\n```";
+                    std::string md = "```lucis\n(tuple element) ->" + idx + ": " + typeName + "\n```";
                     return makeResult(hoveredToken, md);
                 }
             }
@@ -1923,7 +1923,7 @@ std::optional<HoverResult> HoverProvider::walkExprForHover(
     }
 
     // ── Tuple literal: (expr, expr, ...) ────────────────────────────
-    if (auto* tl = dynamic_cast<LuxParser::TupleLitExprContext*>(expr)) {
+    if (auto* tl = dynamic_cast<LucisParser::TupleLitExprContext*>(expr)) {
         for (auto* e : tl->expression()) {
             auto r = walkExprForHover(e, hoveredToken, tokenText,
                                        tree, bindings, cursorLine, project);
@@ -1933,7 +1933,7 @@ std::optional<HoverResult> HoverProvider::walkExprForHover(
     }
 
     // ── Catch unwrap expression: value catch { ... } ─────────────────
-    if (auto* cu = dynamic_cast<LuxParser::CatchUnwrapExprContext*>(expr)) {
+    if (auto* cu = dynamic_cast<LucisParser::CatchUnwrapExprContext*>(expr)) {
         auto r = walkExprForHover(cu->expression(), hoveredToken, tokenText,
                                   tree, bindings, cursorLine, project);
         if (r) return r;
@@ -1946,7 +1946,7 @@ std::optional<HoverResult> HoverProvider::walkExprForHover(
     }
 
     // ── Array literal: [expr, expr, ...] ────────────────────────────
-    if (auto* al = dynamic_cast<LuxParser::ArrayLitExprContext*>(expr)) {
+    if (auto* al = dynamic_cast<LucisParser::ArrayLitExprContext*>(expr)) {
         for (auto* e : al->expression()) {
             auto r = walkExprForHover(e, hoveredToken, tokenText,
                                        tree, bindings, cursorLine, project);
@@ -1960,7 +1960,7 @@ std::optional<HoverResult> HoverProvider::walkExprForHover(
     // (which may have been adjusted by the #scope callback handler to
     // the block's end line) is honoured instead of falling through to
     // the provide() fallback that uses the raw cursor position.
-    if (auto* id = dynamic_cast<LuxParser::IdentExprContext*>(expr)) {
+    if (auto* id = dynamic_cast<LucisParser::IdentExprContext*>(expr)) {
         if (id->IDENTIFIER()->getSymbol() == hoveredToken)
             return hoverIdent(tokenText, hoveredToken, tree, bindings,
                                cursorLine, project);
@@ -1969,7 +1969,7 @@ std::optional<HoverResult> HoverProvider::walkExprForHover(
 
     // ── Generic: recurse into children ─────────────────────────────
     for (auto* child : expr->children) {
-        if (auto* childExpr = dynamic_cast<LuxParser::ExpressionContext*>(child)) {
+        if (auto* childExpr = dynamic_cast<LucisParser::ExpressionContext*>(child)) {
             auto r = walkExprForHover(childExpr, hoveredToken, tokenText,
                                        tree, bindings, cursorLine, project);
             if (r) return r;
@@ -1980,10 +1980,10 @@ std::optional<HoverResult> HoverProvider::walkExprForHover(
 }
 
 std::optional<HoverResult> HoverProvider::walkStmtForHover(
-        LuxParser::StatementContext* stmt,
+        LucisParser::StatementContext* stmt,
         antlr4::Token* hoveredToken,
         const std::string& tokenText,
-        LuxParser::ProgramContext* tree,
+        LucisParser::ProgramContext* tree,
         const CBindings& bindings,
         size_t cursorLine,
         const ProjectContext* project) {
@@ -2111,7 +2111,7 @@ std::optional<HoverResult> HoverProvider::walkStmtForHover(
                 std::string fieldType = resolveFieldType(currentType, fieldName);
 
                 if (fid->getSymbol() == hoveredToken && !currentType.empty() && !fieldType.empty()) {
-                    std::string md = "```lux\n(field) " + fieldType + " "
+                    std::string md = "```lucis\n(field) " + fieldType + " "
                                    + currentType + "." + fieldName + "\n```";
                     return makeResult(fid->getSymbol(), md);
                 }
@@ -2207,7 +2207,7 @@ std::optional<HoverResult> HoverProvider::walkStmtForHover(
                 std::string fieldType = resolveFieldType(currentType, fieldName);
 
                 if (fid->getSymbol() == hoveredToken && !currentType.empty() && !fieldType.empty()) {
-                    std::string md = "```lux\n(field) " + fieldType + " "
+                    std::string md = "```lucis\n(field) " + fieldType + " "
                                    + currentType + "." + fieldName + "\n```";
                     return makeResult(fid->getSymbol(), md);
                 }
@@ -2339,7 +2339,7 @@ std::optional<HoverResult> HoverProvider::walkStmtForHover(
             if (!owner.empty() && owner[0] == '*') owner = owner.substr(1);
             auto finalType = resolveFieldType(owner, fieldId->getText());
             if (!owner.empty() && !finalType.empty()) {
-                std::string md = "```lux\n(field) " + finalType + " "
+                std::string md = "```lucis\n(field) " + finalType + " "
                                + owner + "." + fieldId->getText() + "\n```";
                 return makeResult(fieldId->getSymbol(), md);
             }
@@ -2360,7 +2360,7 @@ std::optional<HoverResult> HoverProvider::walkStmtForHover(
                 if (!owner.empty() && owner[0] == '*') owner = owner.substr(1);
                 auto nextType = resolveFieldType(owner, dotId->getText());
                 if (dotId && dotId->getSymbol() == hoveredToken && !owner.empty() && !nextType.empty()) {
-                    std::string md = "```lux\n(field) " + nextType + " "
+                    std::string md = "```lucis\n(field) " + nextType + " "
                                    + owner + "." + dotId->getText() + "\n```";
                     return makeResult(dotId->getSymbol(), md);
                 }
@@ -2489,7 +2489,7 @@ std::optional<HoverResult> HoverProvider::walkStmtForHover(
             if (!owner.empty() && owner[0] == '*') owner = owner.substr(1);
             auto finalType = resolveFieldType(owner, fieldId->getText());
             if (!owner.empty() && !finalType.empty()) {
-                std::string md = "```lux\n(field) " + finalType + " "
+                std::string md = "```lucis\n(field) " + finalType + " "
                                + owner + "." + fieldId->getText() + "\n```";
                 return makeResult(fieldId->getSymbol(), md);
             }
@@ -2509,7 +2509,7 @@ std::optional<HoverResult> HoverProvider::walkStmtForHover(
                 if (!owner.empty() && owner[0] == '*') owner = owner.substr(1);
                 auto nextType = resolveFieldType(owner, dotId->getText());
                 if (dotId && dotId->getSymbol() == hoveredToken && !owner.empty() && !nextType.empty()) {
-                    std::string md = "```lux\n(field) " + nextType + " "
+                    std::string md = "```lucis\n(field) " + nextType + " "
                                    + owner + "." + dotId->getText() + "\n```";
                     return makeResult(dotId->getSymbol(), md);
                 }
@@ -2586,7 +2586,7 @@ std::optional<HoverResult> HoverProvider::walkStmtForHover(
     }
 
     if (auto* fs = stmt->forStmt()) {
-        if (auto* fin = dynamic_cast<LuxParser::ForInStmtContext*>(fs)) {
+        if (auto* fin = dynamic_cast<LucisParser::ForInStmtContext*>(fs)) {
             if (auto* ts = fin->typeSpec()) {
                 auto r = hoverTypeSpec(ts, hoveredToken, tree, bindings, project);
                 if (r) return r;
@@ -2598,7 +2598,7 @@ std::optional<HoverResult> HoverProvider::walkStmtForHover(
                                    tree, bindings, cursorLine, project);
             if (r) return r;
         }
-        if (auto* fc = dynamic_cast<LuxParser::ForClassicStmtContext*>(fs)) {
+        if (auto* fc = dynamic_cast<LucisParser::ForClassicStmtContext*>(fs)) {
             if (auto* ts = fc->typeSpec()) {
                 auto r = hoverTypeSpec(ts, hoveredToken, tree, bindings, project);
                 if (r) return r;
@@ -2674,7 +2674,7 @@ std::optional<HoverResult> HoverProvider::walkStmtForHover(
                 std::string typeName = cc->typeSpec()
                                         ? safeText(cc->typeSpec()) : "Error";
                 std::string varName = safeText(cc->IDENTIFIER());
-                std::string md = "```lux\n(catch) " + typeName
+                std::string md = "```lucis\n(catch) " + typeName
                                + " " + varName + "\n```";
                 return makeResult(cc->IDENTIFIER()->getSymbol(), md);
             }
@@ -2777,8 +2777,8 @@ std::optional<HoverResult> HoverProvider::walkStmtForHover(
                         }
 
                         // Search local extend blocks for this method
-                        auto tryExtend = [&](LuxParser::ExtendDeclContext* ext,
-                                              LuxParser::ExtendMethodContext* m,
+                        auto tryExtend = [&](LucisParser::ExtendDeclContext* ext,
+                                              LucisParser::ExtendMethodContext* m,
                                               const std::vector<DocComment>& docs)
                                 -> std::optional<HoverResult> {
                             if (safeIdAt(m, 0) != methodName) return std::nullopt;
@@ -2787,7 +2787,7 @@ std::optional<HoverResult> HoverProvider::walkStmtForHover(
                                 return std::nullopt;
 
                             std::ostringstream ss;
-                            ss << "```lux\n(" << safeText(ext->IDENTIFIER())
+                            ss << "```lucis\n(" << safeText(ext->IDENTIFIER())
                                << " method) " << typeSpecToString(m->typeSpec())
                                << " " << methodName << "(";
                             if (m->AMPERSAND()) {
@@ -2823,7 +2823,7 @@ std::optional<HoverResult> HoverProvider::walkStmtForHover(
                             for (auto& ns : project->registry().allNamespaces()) {
                                 for (auto* sym : project->registry().getNamespaceSymbols(ns)) {
                                     if (sym->kind != ExportedSymbol::ExtendBlock) continue;
-                                    auto* ext = dynamic_cast<LuxParser::ExtendDeclContext*>(sym->decl);
+                                    auto* ext = dynamic_cast<LucisParser::ExtendDeclContext*>(sym->decl);
                                     if (!ext) continue;
                                     for (auto* m : ext->extendMethod()) {
                                         if (auto r = tryExtend(ext, m,
@@ -2861,10 +2861,10 @@ std::optional<HoverResult> HoverProvider::walkStmtForHover(
 }
 
 std::optional<HoverResult> HoverProvider::walkBlockForHover(
-        LuxParser::BlockContext* block,
+        LucisParser::BlockContext* block,
         antlr4::Token* hoveredToken,
         const std::string& tokenText,
-        LuxParser::ProgramContext* tree,
+        LucisParser::ProgramContext* tree,
         const CBindings& bindings,
         size_t cursorLine,
         const ProjectContext* project) {
@@ -2878,10 +2878,10 @@ std::optional<HoverResult> HoverProvider::walkBlockForHover(
 }
 
 std::optional<HoverResult> HoverProvider::walkTreeForHover(
-        LuxParser::BlockContext* block,
+        LucisParser::BlockContext* block,
         antlr4::Token* hoveredToken,
         const std::string& tokenText,
-        LuxParser::ProgramContext* tree,
+        LucisParser::ProgramContext* tree,
         const CBindings& bindings,
         size_t cursorLine,
         const ProjectContext* project) {
@@ -2894,9 +2894,9 @@ std::optional<HoverResult> HoverProvider::walkTreeForHover(
 // ═══════════════════════════════════════════════════════════════════════
 
 std::optional<HoverResult> HoverProvider::hoverTypeSpec(
-        LuxParser::TypeSpecContext* ts,
+        LucisParser::TypeSpecContext* ts,
         antlr4::Token* hoveredToken,
-        LuxParser::ProgramContext* tree,
+        LucisParser::ProgramContext* tree,
         const CBindings& bindings,
         const ProjectContext* project) {
     if (!ts || !containsToken(ts, hoveredToken)) return std::nullopt;
@@ -2911,13 +2911,13 @@ std::optional<HoverResult> HoverProvider::hoverTypeSpec(
 
     // Check if hovering on collection type keywords (tuple, Vec, Map, Set)
     if (ts->TUPLE() && ts->TUPLE()->getSymbol() == hoveredToken)
-        return makeResult(hoveredToken, "```lux\n(keyword) tuple\n```\nFixed-size heterogeneous collection type.");
+        return makeResult(hoveredToken, "```lucis\n(keyword) tuple\n```\nFixed-size heterogeneous collection type.");
     if (ts->VEC() && ts->VEC()->getSymbol() == hoveredToken)
-        return makeResult(hoveredToken, "```lux\n(keyword) Vec\n```\nDynamic array collection type.");
+        return makeResult(hoveredToken, "```lucis\n(keyword) Vec\n```\nDynamic array collection type.");
     if (ts->MAP() && ts->MAP()->getSymbol() == hoveredToken)
-        return makeResult(hoveredToken, "```lux\n(keyword) Map\n```\nKey-value association collection type.");
+        return makeResult(hoveredToken, "```lucis\n(keyword) Map\n```\nKey-value association collection type.");
     if (ts->SET() && ts->SET()->getSymbol() == hoveredToken)
-        return makeResult(hoveredToken, "```lux\n(keyword) Set\n```\nUnique-element collection type.");
+        return makeResult(hoveredToken, "```lucis\n(keyword) Set\n```\nUnique-element collection type.");
 
     // Check if hovering on a primitive type keyword
     if (auto* pt = ts->primitiveType()) {
@@ -2925,7 +2925,7 @@ std::optional<HoverResult> HoverProvider::hoverTypeSpec(
             std::string name = pt->getText();
             auto* ti = typeRegistry_.lookup(name);
             if (ti) {
-                std::string md = "```lux\n(type) " + ti->name + "\n```";
+                std::string md = "```lucis\n(type) " + ti->name + "\n```";
                 return makeResult(hoveredToken, md);
             }
         }
@@ -2947,7 +2947,7 @@ std::optional<HoverResult> HoverProvider::hoverTypeSpec(
 std::optional<HoverResult> HoverProvider::hoverTypeName(
         const std::string& name,
         antlr4::Token* token,
-        LuxParser::ProgramContext* tree,
+        LucisParser::ProgramContext* tree,
         const CBindings& bindings,
         const ProjectContext* project) {
 
@@ -2966,7 +2966,7 @@ std::optional<HoverResult> HoverProvider::hoverTypeName(
     // Type alias
     auto* ta = findTypeAliasDecl(tree, name);
     if (ta) {
-        std::string md = "```lux\ntype " + name + " = "
+        std::string md = "```lucis\ntype " + name + " = "
                        + typeSpecToString(ta->typeSpec()) + "\n```";
         return makeResult(token, md);
     }
@@ -2990,10 +2990,10 @@ std::optional<HoverResult> HoverProvider::hoverTypeName(
     auto* ext = extTypeRegistry_.lookup(name);
     if (ext) {
         std::ostringstream ss;
-        ss << "```lux\n(type) " << name;
+        ss << "```lucis\n(type) " << name;
         if (ext->genericArity == 1) ss << "<T>";
         else if (ext->genericArity == 2) ss << "<K, V>";
-        ss << "\n```\n\n**Methods:**\n```lux\n";
+        ss << "\n```\n\n**Methods:**\n```lucis\n";
         for (auto& m : ext->methods) {
             ss << m.returnType << " " << m.name << "(";
             for (size_t i = 0; i < m.paramTypes.size(); i++) {
@@ -3011,7 +3011,7 @@ std::optional<HoverResult> HoverProvider::hoverTypeName(
     if (ti) {
         if (ti->kind == TypeKind::Struct && !ti->fields.empty()) {
             std::ostringstream ss;
-            ss << "```lux\nstruct " << ti->name << " {\n";
+            ss << "```lucis\nstruct " << ti->name << " {\n";
             for (auto& f : ti->fields) {
                 ss << "    " << f.typeInfo->name << " " << f.name;
                 if (f.autoFill) ss << "  // auto-filled";
@@ -3020,7 +3020,7 @@ std::optional<HoverResult> HoverProvider::hoverTypeName(
             ss << "}\n```";
             return makeResult(token, ss.str());
         }
-        std::string md = "```lux\n(type) " + ti->name + "\n```";
+        std::string md = "```lucis\n(type) " + ti->name + "\n```";
         return makeResult(token, md);
     }
 
@@ -3030,17 +3030,17 @@ std::optional<HoverResult> HoverProvider::hoverTypeName(
             auto* sym = project->registry().findSymbol(ns, name);
             if (!sym) continue;
             if (sym->kind == ExportedSymbol::Struct) {
-                if (auto* sdc = dynamic_cast<LuxParser::StructDeclContext*>(sym->decl))
+                if (auto* sdc = dynamic_cast<LucisParser::StructDeclContext*>(sym->decl))
                     return makeResult(token, formatStructDecl(sdc));
             } else if (sym->kind == ExportedSymbol::Enum) {
-                if (auto* edc = dynamic_cast<LuxParser::EnumDeclContext*>(sym->decl))
+                if (auto* edc = dynamic_cast<LucisParser::EnumDeclContext*>(sym->decl))
                     return makeResult(token, formatEnumDecl(edc));
             } else if (sym->kind == ExportedSymbol::Union) {
-                if (auto* udc = dynamic_cast<LuxParser::UnionDeclContext*>(sym->decl))
+                if (auto* udc = dynamic_cast<LucisParser::UnionDeclContext*>(sym->decl))
                     return makeResult(token, formatUnionDecl(udc));
             } else if (sym->kind == ExportedSymbol::TypeAlias) {
-                if (auto* tac = dynamic_cast<LuxParser::TypeAliasDeclContext*>(sym->decl)) {
-                    std::string md = "```lux\ntype " + name + " = "
+                if (auto* tac = dynamic_cast<LucisParser::TypeAliasDeclContext*>(sym->decl)) {
+                    std::string md = "```lucis\ntype " + name + " = "
                                    + typeSpecToString(tac->typeSpec()) + "\n```";
                     return makeResult(token, md);
                 }
@@ -3056,8 +3056,8 @@ std::optional<HoverResult> HoverProvider::hoverTypeName(
 // ═══════════════════════════════════════════════════════════════════════
 
 std::optional<HoverResult> HoverProvider::hoverMethodCall(
-        LuxParser::MethodCallExprContext* ctx,
-        LuxParser::ProgramContext* tree,
+        LucisParser::MethodCallExprContext* ctx,
+        LucisParser::ProgramContext* tree,
         const CBindings& bindings,
         size_t cursorLine,
         const ProjectContext* project) {
@@ -3068,7 +3068,7 @@ std::optional<HoverResult> HoverProvider::hoverMethodCall(
     std::string receiverTypeName;
     std::string receiverText;
 
-    if (auto* ident = dynamic_cast<LuxParser::IdentExprContext*>(receiver)) {
+    if (auto* ident = dynamic_cast<LucisParser::IdentExprContext*>(receiver)) {
         receiverText = safeText(ident->IDENTIFIER());
     }
 
@@ -3191,7 +3191,7 @@ std::optional<HoverResult> HoverProvider::hoverMethodCall(
                 if (m.name == methodName) {
                     std::ostringstream ss;
                     std::string retType = substituteGeneric(m.returnType);
-                    ss << "```lux\n(" << displayName << " method) " << retType
+                    ss << "```lucis\n(" << displayName << " method) " << retType
                        << " " << methodName << "(";
                     for (size_t i = 0; i < m.paramTypes.size(); i++) {
                         if (i > 0) ss << ", ";
@@ -3209,7 +3209,7 @@ std::optional<HoverResult> HoverProvider::hoverMethodCall(
         auto* arrayMd = methodRegistry_.lookupArrayMethod(methodName);
         if (arrayMd) {
             std::ostringstream ss;
-            ss << "```lux\n(method) " << arrayMd->returnType << " " << methodName << "(";
+            ss << "```lucis\n(method) " << arrayMd->returnType << " " << methodName << "(";
             for (size_t i = 0; i < arrayMd->paramTypes.size(); i++) {
                 if (i > 0) ss << ", ";
                 ss << arrayMd->paramTypes[i];
@@ -3227,7 +3227,7 @@ std::optional<HoverResult> HoverProvider::hoverMethodCall(
             if (retType == "_self" && !receiverTypeName.empty())
                 retType = receiverTypeName;
             std::ostringstream ss;
-            ss << "```lux\n(method) " << retType << " " << methodName << "(";
+            ss << "```lucis\n(method) " << retType << " " << methodName << "(";
             for (size_t i = 0; i < md->paramTypes.size(); i++) {
                 if (i > 0) ss << ", ";
                 ss << md->paramTypes[i];
@@ -3250,7 +3250,7 @@ std::optional<HoverResult> HoverProvider::hoverMethodCall(
             for (auto& m : desc->methods) {
                 if (m.name == methodName) {
                     std::ostringstream ss;
-                    ss << "```lux\n(" << displayName << " method) " << m.returnType
+                    ss << "```lucis\n(" << displayName << " method) " << m.returnType
                        << " " << methodName << "(";
                     for (size_t i = 0; i < m.paramTypes.size(); i++) {
                         if (i > 0) ss << ", ";
@@ -3268,7 +3268,7 @@ std::optional<HoverResult> HoverProvider::hoverMethodCall(
             auto* md = methodRegistry_.lookup(kind, methodName);
             if (md) {
                 std::ostringstream ss;
-                ss << "```lux\n(method) " << md->returnType << " " << methodName << "(";
+                ss << "```lucis\n(method) " << md->returnType << " " << methodName << "(";
                 for (size_t i = 0; i < md->paramTypes.size(); i++) {
                     if (i > 0) ss << ", ";
                     ss << md->paramTypes[i];
@@ -3282,7 +3282,7 @@ std::optional<HoverResult> HoverProvider::hoverMethodCall(
         auto* arrayMd = methodRegistry_.lookupArrayMethod(methodName);
         if (arrayMd) {
             std::ostringstream ss;
-            ss << "```lux\n(method) " << arrayMd->returnType << " " << methodName << "(";
+            ss << "```lucis\n(method) " << arrayMd->returnType << " " << methodName << "(";
             for (size_t i = 0; i < arrayMd->paramTypes.size(); i++) {
                 if (i > 0) ss << ", ";
                 ss << arrayMd->paramTypes[i];
@@ -3293,11 +3293,11 @@ std::optional<HoverResult> HoverProvider::hoverMethodCall(
     }
 
     // 4) Check user extend block methods (local + cross-file)
-    auto formatExtendMethod = [&](LuxParser::ExtendDeclContext* ext,
-                                   LuxParser::ExtendMethodContext* m,
+    auto formatExtendMethod = [&](LucisParser::ExtendDeclContext* ext,
+                                   LucisParser::ExtendMethodContext* m,
                                    const std::vector<DocComment>& docs) -> std::optional<HoverResult> {
         std::ostringstream ss;
-        ss << "```lux\n(" << safeText(ext->IDENTIFIER())
+        ss << "```lucis\n(" << safeText(ext->IDENTIFIER())
            << " method) " << typeSpecToString(m->typeSpec())
            << " " << methodName << "(";
         if (m->AMPERSAND()) {
@@ -3340,7 +3340,7 @@ std::optional<HoverResult> HoverProvider::hoverMethodCall(
             auto syms = project->registry().getNamespaceSymbols(ns);
             for (auto* sym : syms) {
                 if (sym->kind != ExportedSymbol::ExtendBlock) continue;
-                auto* ext = dynamic_cast<LuxParser::ExtendDeclContext*>(sym->decl);
+                auto* ext = dynamic_cast<LucisParser::ExtendDeclContext*>(sym->decl);
                 if (!ext) continue;
                 for (auto* m : ext->extendMethod()) {
                     if (safeIdAt(m, 0) == methodName) {
@@ -3360,8 +3360,8 @@ std::optional<HoverResult> HoverProvider::hoverMethodCall(
 // ═══════════════════════════════════════════════════════════════════════
 
 std::optional<HoverResult> HoverProvider::hoverFieldAccess(
-        LuxParser::FieldAccessExprContext* ctx,
-        LuxParser::ProgramContext* tree,
+        LucisParser::FieldAccessExprContext* ctx,
+        LucisParser::ProgramContext* tree,
         const CBindings& bindings,
         size_t cursorLine,
         const ProjectContext* project) {
@@ -3415,7 +3415,7 @@ std::optional<HoverResult> HoverProvider::hoverFieldAccess(
             }
             for (auto* f : sd->structField()) {
                 if (safeText(f->IDENTIFIER()) == fieldName) {
-                    std::string md = "```lux\n(field) "
+                    std::string md = "```lucis\n(field) "
                                    + substituteTypeParams(typeSpecToString(f->typeSpec()), subst)
                                    + " " + sName + "." + fieldName + "\n```";
                     return makeResult(token, md);
@@ -3441,7 +3441,7 @@ std::optional<HoverResult> HoverProvider::hoverFieldAccess(
             }
             for (auto* f : ud->unionField()) {
                 if (safeText(f->IDENTIFIER()) == fieldName) {
-                    std::string md = "```lux\n(field) "
+                    std::string md = "```lucis\n(field) "
                                    + substituteTypeParams(typeSpecToString(f->typeSpec()), subst)
                                    + " " + uName + "." + fieldName + "\n```";
                     return makeResult(token, md);
@@ -3456,7 +3456,7 @@ std::optional<HoverResult> HoverProvider::hoverFieldAccess(
         if (ti && (ti->kind == TypeKind::Struct || ti->kind == TypeKind::Union)) {
             for (auto& f : ti->fields) {
                 if (f.name == fieldName) {
-                    std::string md = "```lux\n(field) " + f.typeInfo->name
+                    std::string md = "```lucis\n(field) " + f.typeInfo->name
                                    + " " + receiverTypeName + "." + fieldName + "\n```";
                     return makeResult(token, md);
                 }
@@ -3468,7 +3468,7 @@ std::optional<HoverResult> HoverProvider::hoverFieldAccess(
         if (err && (err->kind == TypeKind::Struct || err->kind == TypeKind::Union)) {
             for (const auto& f : err->fields) {
                 if (f.name == fieldName && f.typeInfo) {
-                    std::string md = "```lux\n(field) " + f.typeInfo->name
+                    std::string md = "```lucis\n(field) " + f.typeInfo->name
                                    + " Error." + fieldName + "\n```";
                     return makeResult(token, md);
                 }
@@ -3507,7 +3507,7 @@ std::optional<HoverResult> HoverProvider::hoverFieldAccess(
             auto syms = project->registry().getNamespaceSymbols(ns);
             for (auto* sym : syms) {
                 if (sym->kind == ExportedSymbol::Struct) {
-                    auto* sd = dynamic_cast<LuxParser::StructDeclContext*>(sym->decl);
+                    auto* sd = dynamic_cast<LucisParser::StructDeclContext*>(sym->decl);
                     if (!sd) continue;
                     if (!lookupReceiverType.empty() &&
                         safeText(sd->IDENTIFIER()) != lookupReceiverType)
@@ -3523,7 +3523,7 @@ std::optional<HoverResult> HoverProvider::hoverFieldAccess(
                     }
                     for (auto* f : sd->structField()) {
                         if (safeText(f->IDENTIFIER()) == fieldName) {
-                            std::string md = "```lux\n(field) "
+                            std::string md = "```lucis\n(field) "
                                            + substituteTypeParams(typeSpecToString(f->typeSpec()), subst)
                                            + " " + safeText(sd->IDENTIFIER()) + "." + fieldName + "\n```";
                             return makeResult(token, md);
@@ -3532,7 +3532,7 @@ std::optional<HoverResult> HoverProvider::hoverFieldAccess(
                 }
 
                 if (sym->kind == ExportedSymbol::Union) {
-                    auto* ud = dynamic_cast<LuxParser::UnionDeclContext*>(sym->decl);
+                    auto* ud = dynamic_cast<LucisParser::UnionDeclContext*>(sym->decl);
                     if (!ud) continue;
                     if (!lookupReceiverType.empty() &&
                         safeText(ud->IDENTIFIER()) != lookupReceiverType)
@@ -3548,7 +3548,7 @@ std::optional<HoverResult> HoverProvider::hoverFieldAccess(
                     }
                     for (auto* f : ud->unionField()) {
                         if (safeText(f->IDENTIFIER()) == fieldName) {
-                            std::string md = "```lux\n(field) "
+                            std::string md = "```lucis\n(field) "
                                            + substituteTypeParams(typeSpecToString(f->typeSpec()), subst)
                                            + " " + safeText(ud->IDENTIFIER()) + "." + fieldName + "\n```";
                             return makeResult(token, md);
@@ -3567,8 +3567,8 @@ std::optional<HoverResult> HoverProvider::hoverFieldAccess(
 // ═══════════════════════════════════════════════════════════════════════
 
 std::optional<HoverResult> HoverProvider::hoverEnumAccess(
-        LuxParser::EnumAccessExprContext* ctx,
-        LuxParser::ProgramContext* tree,
+        LucisParser::EnumAccessExprContext* ctx,
+        LucisParser::ProgramContext* tree,
         const CBindings& bindings,
         const ProjectContext* project) {
     auto ids = ctx->IDENTIFIER();
@@ -3581,7 +3581,7 @@ std::optional<HoverResult> HoverProvider::hoverEnumAccess(
     // User enum (local file)
     auto* ed = findEnumDecl(tree, typeName);
     if (ed) {
-        std::string md = "```lux\n(variant) " + typeName + "::" + variantName + "\n```";
+        std::string md = "```lucis\n(variant) " + typeName + "::" + variantName + "\n```";
         size_t declLine = ed->getStart()->getLine();
         md = appendDocToHover(md, docComments_, declLine);
         return makeResult(token, md);
@@ -3604,12 +3604,12 @@ std::optional<HoverResult> HoverProvider::hoverEnumAccess(
         for (auto& ns : project->registry().allNamespaces()) {
             auto* sym = project->registry().findSymbol(ns, typeName);
             if (!sym || sym->kind != ExportedSymbol::Enum) continue;
-            auto* enumCtx = dynamic_cast<LuxParser::EnumDeclContext*>(sym->decl);
+            auto* enumCtx = dynamic_cast<LucisParser::EnumDeclContext*>(sym->decl);
             if (!enumCtx) continue;
             for (auto* variant : enumCtx->enumVariant()) {
                 auto* v = variant->IDENTIFIER();
                 if (v && v->getText() == variantName) {
-                    std::string md = "```lux\n(variant) " + typeName + "::" + variantName + "\n```";
+                    std::string md = "```lucis\n(variant) " + typeName + "::" + variantName + "\n```";
                     // Read doc-comments from source file
                     if (!sym->sourceFile.empty()) {
                         size_t declLine = enumCtx->getStart()->getLine();
@@ -3631,8 +3631,8 @@ std::optional<HoverResult> HoverProvider::hoverEnumAccess(
 // ═══════════════════════════════════════════════════════════════════════
 
 std::optional<HoverResult> HoverProvider::hoverStaticMethodCall(
-        LuxParser::StaticMethodCallExprContext* ctx,
-        LuxParser::ProgramContext* tree,
+        LucisParser::StaticMethodCallExprContext* ctx,
+        LucisParser::ProgramContext* tree,
         const CBindings& bindings,
         size_t cursorLine,
         const ProjectContext* project) {
@@ -3653,7 +3653,7 @@ std::optional<HoverResult> HoverProvider::hoverStaticMethodCall(
     std::string methodName = ids.back()->getText();
     auto* token = ids.back()->getSymbol();
 
-    // Intrinsic calls, e.g. lux::core::trap(...)
+    // Intrinsic calls, e.g. lucis::core::trap(...)
     if (IntrinsicRegistry::isIntrinsicPrefix(ids.front()->getText())) {
         std::string ns, funcName;
         std::vector<std::string> idTexts;
@@ -3661,8 +3661,8 @@ std::optional<HoverResult> HoverProvider::hoverStaticMethodCall(
         if (IntrinsicRegistry::parseIntrinsicPath(idTexts, ns, funcName)) {
             if (const auto* intrinsic = intrinsicRegistry_.lookup(ns, funcName)) {
                 std::ostringstream ss;
-                ss << "```lux\n(intrinsic) " << intrinsic->returnType << " "
-                   << "lux::" << ns << "::" << funcName << "(";
+                ss << "```lucis\n(intrinsic) " << intrinsic->returnType << " "
+                   << "lucis::" << ns << "::" << funcName << "(";
                 for (size_t i = 0; i < intrinsic->params.size(); ++i) {
                     if (i > 0) ss << ", ";
                     ss << intrinsic->params[i].type;
@@ -3682,7 +3682,7 @@ std::optional<HoverResult> HoverProvider::hoverStaticMethodCall(
     if (NamespaceRegistry::isStdModule(ownerPath)) {
         if (const auto* sig = builtinRegistry_.lookup(methodName)) {
             std::ostringstream ss;
-            ss << "```lux\n(function) " << sig->returnType << " " << ownerPath
+            ss << "```lucis\n(function) " << sig->returnType << " " << ownerPath
                << "::" << methodName << "(";
             for (size_t i = 0; i < sig->paramTypes.size(); ++i) {
                 if (i > 0) ss << ", ";
@@ -3706,7 +3706,7 @@ std::optional<HoverResult> HoverProvider::hoverStaticMethodCall(
         for (auto* m : ext->extendMethod()) {
             if (safeIdAt(m, 0) == methodName) {
                 std::ostringstream ss;
-                ss << "```lux\n(static method) " << typeSpecToString(m->typeSpec())
+                ss << "```lucis\n(static method) " << typeSpecToString(m->typeSpec())
                    << " " << typeName << "::" << methodName << "(";
                 if (auto* params = m->paramList()) {
                     bool first = true;
@@ -3732,7 +3732,7 @@ std::optional<HoverResult> HoverProvider::hoverStaticMethodCall(
         for (auto& m : extDesc->methods) {
             if (m.name == methodName) {
                 std::ostringstream ss;
-                ss << "```lux\n(static method) " << m.returnType << " "
+                ss << "```lucis\n(static method) " << m.returnType << " "
                    << typeName << "::" << methodName << "(";
                 for (size_t i = 0; i < m.paramTypes.size(); i++) {
                     if (i > 0) ss << ", ";
@@ -3750,12 +3750,12 @@ std::optional<HoverResult> HoverProvider::hoverStaticMethodCall(
             auto syms = project->registry().getNamespaceSymbols(ns);
             for (auto* sym : syms) {
                 if (sym->kind != ExportedSymbol::ExtendBlock) continue;
-                auto* ext = dynamic_cast<LuxParser::ExtendDeclContext*>(sym->decl);
+                auto* ext = dynamic_cast<LucisParser::ExtendDeclContext*>(sym->decl);
                 if (!ext || safeText(ext->IDENTIFIER()) != typeName) continue;
                 for (auto* m : ext->extendMethod()) {
                     if (safeIdAt(m, 0) == methodName) {
                         std::ostringstream ss;
-                        ss << "```lux\n(static method) " << typeSpecToString(m->typeSpec())
+                        ss << "```lucis\n(static method) " << typeSpecToString(m->typeSpec())
                            << " " << typeName << "::" << methodName << "(";
                         if (auto* params = m->paramList()) {
                             bool first = true;
@@ -4000,7 +4000,7 @@ static std::string lookupFuncReturnType(
             auto* sym = flc->project->registry().findSymbol(ns, funcName);
             if (!sym) continue;
             if (sym->kind == ExportedSymbol::Function) {
-                auto* fd = dynamic_cast<LuxParser::FunctionDeclContext*>(sym->decl);
+                auto* fd = dynamic_cast<LucisParser::FunctionDeclContext*>(sym->decl);
                 if (fd) return safeText(fd->typeSpec());
             }
         }
@@ -4015,7 +4015,7 @@ static std::string lookupFuncReturnType(
     return "";
 }
 
-static LuxParser::FunctionDeclContext* findFunctionDeclForInference(
+static LucisParser::FunctionDeclContext* findFunctionDeclForInference(
     const std::string& name,
     const FuncLookupCtx* flc) {
     if (!flc) return nullptr;
@@ -4030,14 +4030,14 @@ static LuxParser::FunctionDeclContext* findFunctionDeclForInference(
         for (auto& ns : flc->project->registry().allNamespaces()) {
             auto* sym = flc->project->registry().findSymbol(ns, name);
             if (!sym || sym->kind != ExportedSymbol::Function) continue;
-            if (auto* fd = dynamic_cast<LuxParser::FunctionDeclContext*>(sym->decl))
+            if (auto* fd = dynamic_cast<LucisParser::FunctionDeclContext*>(sym->decl))
                 return fd;
         }
     }
     return nullptr;
 }
 
-static LuxParser::EnumDeclContext* findEnumDeclForInference(
+static LucisParser::EnumDeclContext* findEnumDeclForInference(
     const std::string& name,
     const FuncLookupCtx* flc) {
     if (!flc) return nullptr;
@@ -4052,14 +4052,14 @@ static LuxParser::EnumDeclContext* findEnumDeclForInference(
         for (auto& ns : flc->project->registry().allNamespaces()) {
             auto* sym = flc->project->registry().findSymbol(ns, name);
             if (!sym || sym->kind != ExportedSymbol::Enum) continue;
-            if (auto* ed = dynamic_cast<LuxParser::EnumDeclContext*>(sym->decl))
+            if (auto* ed = dynamic_cast<LucisParser::EnumDeclContext*>(sym->decl))
                 return ed;
         }
     }
     return nullptr;
 }
 
-static LuxParser::StructDeclContext* findStructDeclForInference(
+static LucisParser::StructDeclContext* findStructDeclForInference(
     const std::string& name,
     const FuncLookupCtx* flc) {
     if (!flc) return nullptr;
@@ -4074,14 +4074,14 @@ static LuxParser::StructDeclContext* findStructDeclForInference(
         for (auto& ns : flc->project->registry().allNamespaces()) {
             auto* sym = flc->project->registry().findSymbol(ns, name);
             if (!sym || sym->kind != ExportedSymbol::Struct) continue;
-            if (auto* sd = dynamic_cast<LuxParser::StructDeclContext*>(sym->decl))
+            if (auto* sd = dynamic_cast<LucisParser::StructDeclContext*>(sym->decl))
                 return sd;
         }
     }
     return nullptr;
 }
 
-static LuxParser::UnionDeclContext* findUnionDeclForInference(
+static LucisParser::UnionDeclContext* findUnionDeclForInference(
     const std::string& name,
     const FuncLookupCtx* flc) {
     if (!flc) return nullptr;
@@ -4096,7 +4096,7 @@ static LuxParser::UnionDeclContext* findUnionDeclForInference(
         for (auto& ns : flc->project->registry().allNamespaces()) {
             auto* sym = flc->project->registry().findSymbol(ns, name);
             if (!sym || sym->kind != ExportedSymbol::Union) continue;
-            if (auto* ud = dynamic_cast<LuxParser::UnionDeclContext*>(sym->decl))
+            if (auto* ud = dynamic_cast<LucisParser::UnionDeclContext*>(sym->decl))
                 return ud;
         }
     }
@@ -4106,24 +4106,24 @@ static LuxParser::UnionDeclContext* findUnionDeclForInference(
 // Infer the type name of an expression for auto variable resolution.
 // This is a lightweight heuristic — no full type-checking.
 static std::string inferExprTypeName(
-        LuxParser::ExpressionContext* expr,
+        LucisParser::ExpressionContext* expr,
         const std::unordered_map<std::string, HoverProvider::LocalVar>& locals,
         const FuncLookupCtx* flc = nullptr) {
     if (!expr) return "";
 
     // Literals
-    if (dynamic_cast<LuxParser::IntLitExprContext*>(expr) ||
-        dynamic_cast<LuxParser::HexLitExprContext*>(expr) ||
-        dynamic_cast<LuxParser::OctLitExprContext*>(expr) ||
-        dynamic_cast<LuxParser::BinLitExprContext*>(expr))   return "int32";
-    if (dynamic_cast<LuxParser::FloatLitExprContext*>(expr)) return "float64";
-    if (dynamic_cast<LuxParser::BoolLitExprContext*>(expr))  return "bool";
-    if (dynamic_cast<LuxParser::CharLitExprContext*>(expr))  return "char";
-    if (dynamic_cast<LuxParser::StrLitExprContext*>(expr))   return "string";
-    if (dynamic_cast<LuxParser::CStrLitExprContext*>(expr))  return "*char";
+    if (dynamic_cast<LucisParser::IntLitExprContext*>(expr) ||
+        dynamic_cast<LucisParser::HexLitExprContext*>(expr) ||
+        dynamic_cast<LucisParser::OctLitExprContext*>(expr) ||
+        dynamic_cast<LucisParser::BinLitExprContext*>(expr))   return "int32";
+    if (dynamic_cast<LucisParser::FloatLitExprContext*>(expr)) return "float64";
+    if (dynamic_cast<LucisParser::BoolLitExprContext*>(expr))  return "bool";
+    if (dynamic_cast<LucisParser::CharLitExprContext*>(expr))  return "char";
+    if (dynamic_cast<LucisParser::StrLitExprContext*>(expr))   return "string";
+    if (dynamic_cast<LucisParser::CStrLitExprContext*>(expr))  return "*char";
 
     // Identifier: look up in collected locals
-    if (auto* id = dynamic_cast<LuxParser::IdentExprContext*>(expr)) {
+    if (auto* id = dynamic_cast<LucisParser::IdentExprContext*>(expr)) {
         auto it = locals.find(safeText(id->IDENTIFIER()));
         if (it != locals.end()) return it->second.typeName;
         return "";
@@ -4181,7 +4181,7 @@ static std::string inferExprTypeName(
         return "";
     };
 
-    if (auto* fa = dynamic_cast<LuxParser::FieldAccessExprContext*>(expr)) {
+    if (auto* fa = dynamic_cast<LucisParser::FieldAccessExprContext*>(expr)) {
         auto baseType = inferExprTypeName(fa->expression(), locals, flc);
         if (baseType.empty()) return "";
         // Auto-dereference pointer for field access (e.g. n2.next.value)
@@ -4190,15 +4190,15 @@ static std::string inferExprTypeName(
         return resolveFieldType(baseType, safeText(fa->IDENTIFIER()));
     }
 
-    if (auto* aa = dynamic_cast<LuxParser::ArrowAccessExprContext*>(expr)) {
+    if (auto* aa = dynamic_cast<LucisParser::ArrowAccessExprContext*>(expr)) {
         auto baseType = inferExprTypeName(aa->expression(), locals, flc);
         if (baseType.empty() || baseType[0] != '*') return "";
         return resolveFieldType(baseType.substr(1), safeText(aa->IDENTIFIER()));
     }
 
     // Address-of: &expr → *type
-    if (auto* addr = dynamic_cast<LuxParser::AddrOfExprContext*>(expr)) {
-        if (auto* ident = dynamic_cast<LuxParser::IdentExprContext*>(addr->expression())) {
+    if (auto* addr = dynamic_cast<LucisParser::AddrOfExprContext*>(expr)) {
+        if (auto* ident = dynamic_cast<LucisParser::IdentExprContext*>(addr->expression())) {
             auto it = locals.find(safeText(ident->IDENTIFIER()));
             if (it != locals.end()) return "*" + it->second.typeName;
         }
@@ -4206,8 +4206,8 @@ static std::string inferExprTypeName(
     }
 
     // Function call: resolve return type
-    if (auto* fn = dynamic_cast<LuxParser::FnCallExprContext*>(expr)) {
-        if (auto* ident = dynamic_cast<LuxParser::IdentExprContext*>(fn->expression())) {
+    if (auto* fn = dynamic_cast<LucisParser::FnCallExprContext*>(expr)) {
+        if (auto* ident = dynamic_cast<LucisParser::IdentExprContext*>(fn->expression())) {
             auto funcName = safeText(ident->IDENTIFIER());
 
             if (auto* fd = findFunctionDeclForInference(funcName, flc)) {
@@ -4227,7 +4227,7 @@ static std::string inferExprTypeName(
                             actualArgTypes.push_back(inferExprTypeName(a, locals, flc));
                     }
 
-                    std::vector<LuxParser::ParamContext*> formalParams;
+                    std::vector<LucisParser::ParamContext*> formalParams;
                     if (auto* pl = fd->paramList()) formalParams = pl->param();
                     if (actualArgTypes.size() == formalParams.size()) {
                         std::unordered_map<std::string, std::string> inferred;
@@ -4259,7 +4259,7 @@ static std::string inferExprTypeName(
     }
 
     // Generic function call: d<string>(...) → substitute explicit type args
-    if (auto* gfc = dynamic_cast<LuxParser::GenericFnCallExprContext*>(expr)) {
+    if (auto* gfc = dynamic_cast<LucisParser::GenericFnCallExprContext*>(expr)) {
         auto* fnId = gfc->IDENTIFIER();
         if (!fnId) return "";
         std::string funcName = fnId->getText();
@@ -4288,14 +4288,14 @@ static std::string inferExprTypeName(
     }
 
     // Enum access: Direction::North → "Direction"
-    if (auto* ea = dynamic_cast<LuxParser::EnumAccessExprContext*>(expr)) {
+    if (auto* ea = dynamic_cast<LucisParser::EnumAccessExprContext*>(expr)) {
         auto ids = ea->IDENTIFIER();
         if (!ids.empty()) return ids[0]->getText();
         return "";
     }
 
     // Generic enum access: Result<int32, string>::Unit → "Result<int32,string>"
-    if (auto* gea = dynamic_cast<LuxParser::GenericEnumAccessExprContext*>(expr)) {
+    if (auto* gea = dynamic_cast<LucisParser::GenericEnumAccessExprContext*>(expr)) {
         auto ids = gea->IDENTIFIER();
         if (ids.empty()) return "";
 
@@ -4310,7 +4310,7 @@ static std::string inferExprTypeName(
     }
 
     // Static method call: Type::method(...) → look up return type from extend blocks
-    if (auto* smc = dynamic_cast<LuxParser::StaticMethodCallExprContext*>(expr)) {
+    if (auto* smc = dynamic_cast<LucisParser::StaticMethodCallExprContext*>(expr)) {
         auto ids = smc->IDENTIFIER();
         if (ids.size() >= 2) {
             std::string ownerPath;
@@ -4326,7 +4326,7 @@ static std::string inferExprTypeName(
 
             std::string methodName = ids.back()->getText();
 
-            // Intrinsic calls: lux::core::trap()
+            // Intrinsic calls: lucis::core::trap()
             if (flc && flc->intrinsicReg &&
                 IntrinsicRegistry::isIntrinsicPrefix(ids.front()->getText())) {
                 std::vector<std::string> idTexts;
@@ -4367,7 +4367,7 @@ static std::string inferExprTypeName(
                                 actualArgTypes.push_back(inferExprTypeName(a, locals, flc));
                         }
 
-                        std::vector<LuxParser::ParamContext*> formalParams;
+                        std::vector<LucisParser::ParamContext*> formalParams;
                         if (auto* pl = m->paramList()) formalParams = pl->param();
                         if (actualArgTypes.size() != formalParams.size())
                             return safeText(m->typeSpec());
@@ -4400,7 +4400,7 @@ static std::string inferExprTypeName(
                     auto syms = flc->project->registry().getNamespaceSymbols(ns);
                     for (auto* sym : syms) {
                         if (sym->kind != ExportedSymbol::ExtendBlock) continue;
-                        auto* ext = dynamic_cast<LuxParser::ExtendDeclContext*>(sym->decl);
+                        auto* ext = dynamic_cast<LucisParser::ExtendDeclContext*>(sym->decl);
                         if (!ext || safeText(ext->IDENTIFIER()) != typeName) continue;
                         for (auto* m : ext->extendMethod()) {
                             if (safeIdAt(m, 0) == methodName)
@@ -4424,7 +4424,7 @@ static std::string inferExprTypeName(
     }
 
     // Method call: resolve receiver type, then look up method return type
-    if (auto* mc = dynamic_cast<LuxParser::MethodCallExprContext*>(expr)) {
+    if (auto* mc = dynamic_cast<LucisParser::MethodCallExprContext*>(expr)) {
         auto receiverType = inferExprTypeName(mc->expression(), locals, flc);
         if (!receiverType.empty()) {
             std::string methodName = safeText(mc->IDENTIFIER());
@@ -4467,7 +4467,7 @@ static std::string inferExprTypeName(
                     auto syms = flc->project->registry().getNamespaceSymbols(ns);
                     for (auto* sym : syms) {
                         if (sym->kind != ExportedSymbol::ExtendBlock) continue;
-                        auto* ext = dynamic_cast<LuxParser::ExtendDeclContext*>(sym->decl);
+                        auto* ext = dynamic_cast<LucisParser::ExtendDeclContext*>(sym->decl);
                         if (!ext || safeText(ext->IDENTIFIER()) != receiverType) continue;
                         for (auto* m : ext->extendMethod()) {
                             if (safeIdAt(m, 0) == methodName)
@@ -4526,48 +4526,48 @@ static std::string inferExprTypeName(
     }
 
     // Dereference: *expr → remove one *
-    if (auto* deref = dynamic_cast<LuxParser::DerefExprContext*>(expr)) {
+    if (auto* deref = dynamic_cast<LucisParser::DerefExprContext*>(expr)) {
         auto inner = inferExprTypeName(deref->expression(), locals, flc);
         if (inner.size() > 1 && inner[0] == '*') return inner.substr(1);
         return "";
     }
 
     // Negation: -expr → same type
-    if (auto* neg = dynamic_cast<LuxParser::NegExprContext*>(expr))
+    if (auto* neg = dynamic_cast<LucisParser::NegExprContext*>(expr))
         return inferExprTypeName(neg->expression(), locals, flc);
 
     // Logical NOT → bool
-    if (dynamic_cast<LuxParser::LogicalNotExprContext*>(expr)) return "bool";
+    if (dynamic_cast<LucisParser::LogicalNotExprContext*>(expr)) return "bool";
 
     // Comparisons → bool
-    if (dynamic_cast<LuxParser::RelExprContext*>(expr))        return "bool";
-    if (dynamic_cast<LuxParser::EqExprContext*>(expr))         return "bool";
-    if (dynamic_cast<LuxParser::LogicalAndExprContext*>(expr)) return "bool";
-    if (dynamic_cast<LuxParser::LogicalOrExprContext*>(expr))  return "bool";
+    if (dynamic_cast<LucisParser::RelExprContext*>(expr))        return "bool";
+    if (dynamic_cast<LucisParser::EqExprContext*>(expr))         return "bool";
+    if (dynamic_cast<LucisParser::LogicalAndExprContext*>(expr)) return "bool";
+    if (dynamic_cast<LucisParser::LogicalOrExprContext*>(expr))  return "bool";
 
     // Binary arithmetic: use left operand type
-    if (auto* mul = dynamic_cast<LuxParser::MulExprContext*>(expr))
+    if (auto* mul = dynamic_cast<LucisParser::MulExprContext*>(expr))
         return inferExprTypeName(mul->expression(0), locals, flc);
-    if (auto* add = dynamic_cast<LuxParser::AddSubExprContext*>(expr))
+    if (auto* add = dynamic_cast<LucisParser::AddSubExprContext*>(expr))
         return inferExprTypeName(add->expression(0), locals, flc);
 
     // Paren: unwrap
-    if (auto* paren = dynamic_cast<LuxParser::ParenExprContext*>(expr))
+    if (auto* paren = dynamic_cast<LucisParser::ParenExprContext*>(expr))
         return inferExprTypeName(paren->expression(), locals, flc);
 
     // Cast: target type
-    if (auto* cast = dynamic_cast<LuxParser::CastExprContext*>(expr))
+    if (auto* cast = dynamic_cast<LucisParser::CastExprContext*>(expr))
         return safeText(cast->typeSpec());
 
     // Is expression always returns bool
-    if (dynamic_cast<LuxParser::IsExprContext*>(expr))
+    if (dynamic_cast<LucisParser::IsExprContext*>(expr))
         return "bool";
 
     // Ternary: type of true branch
-    if (auto* tern = dynamic_cast<LuxParser::TernaryExprContext*>(expr))
+    if (auto* tern = dynamic_cast<LucisParser::TernaryExprContext*>(expr))
         return inferExprTypeName(tern->expression(1), locals, flc);
 
-    if (auto* cu = dynamic_cast<LuxParser::CatchUnwrapExprContext*>(expr)) {
+    if (auto* cu = dynamic_cast<LucisParser::CatchUnwrapExprContext*>(expr)) {
         auto sourceType = inferExprTypeName(cu->expression(), locals, flc);
         if (sourceType.empty() || !flc) return "";
 
@@ -4607,7 +4607,7 @@ static std::string inferExprTypeName(
     }
 
     // Array literal: [expr, ...] → infer element type, prepend []
-    if (auto* arr = dynamic_cast<LuxParser::ArrayLitExprContext*>(expr)) {
+    if (auto* arr = dynamic_cast<LucisParser::ArrayLitExprContext*>(expr)) {
         auto elems = arr->expression();
         if (!elems.empty()) {
             auto elemType = inferExprTypeName(elems[0], locals, flc);
@@ -4617,14 +4617,14 @@ static std::string inferExprTypeName(
     }
 
     // Struct literal: Point { x: 10, y: 20 } → "Point"
-    if (auto* sl = dynamic_cast<LuxParser::StructLitExprContext*>(expr)) {
+    if (auto* sl = dynamic_cast<LucisParser::StructLitExprContext*>(expr)) {
         auto ids = sl->IDENTIFIER();
         if (!ids.empty()) return ids[0]->getText();
         return "";
     }
 
     // Generic struct/union literal: Result<int32, string> { ... } → "Result<int32,string>"
-    if (auto* gsl = dynamic_cast<LuxParser::GenericStructLitExprContext*>(expr)) {
+    if (auto* gsl = dynamic_cast<LucisParser::GenericStructLitExprContext*>(expr)) {
         if (!gsl->IDENTIFIER().empty()) {
             std::string base = safeIdAt(gsl, 0);
             std::string outType = base + "<";
@@ -4640,13 +4640,13 @@ static std::string inferExprTypeName(
     }
 
     // Sizeof → int64
-    if (dynamic_cast<LuxParser::SizeofExprContext*>(expr)) return "int64";
+    if (dynamic_cast<LucisParser::SizeofExprContext*>(expr)) return "int64";
 
     // Typeof → string
-    if (dynamic_cast<LuxParser::TypeofExprContext*>(expr)) return "string";
+    if (dynamic_cast<LucisParser::TypeofExprContext*>(expr)) return "string";
 
     // Tuple literal: (10, 20) → "tuple<int32, int32>"
-    if (auto* tup = dynamic_cast<LuxParser::TupleLitExprContext*>(expr)) {
+    if (auto* tup = dynamic_cast<LucisParser::TupleLitExprContext*>(expr)) {
         auto exprs = tup->expression();
         std::string result = "tuple<";
         for (size_t i = 0; i < exprs.size(); i++) {
@@ -4659,7 +4659,7 @@ static std::string inferExprTypeName(
     }
 
     // Index: expr[i] → element type
-    if (auto* idx = dynamic_cast<LuxParser::IndexExprContext*>(expr)) {
+    if (auto* idx = dynamic_cast<LucisParser::IndexExprContext*>(expr)) {
         auto exprs = idx->expression();
         if (!exprs.empty()) {
             auto baseType = inferExprTypeName(exprs[0], locals, flc);
@@ -4675,7 +4675,7 @@ static std::string inferExprTypeName(
     }
 
     // Tuple index: expr.N → element type
-    if (auto* ti = dynamic_cast<LuxParser::TupleIndexExprContext*>(expr)) {
+    if (auto* ti = dynamic_cast<LucisParser::TupleIndexExprContext*>(expr)) {
         auto baseType = inferExprTypeName(ti->expression(), locals, flc);
         auto resolved = resolveTupleTypeName(baseType, flc);
         if (!resolved.empty()) {
@@ -4687,7 +4687,7 @@ static std::string inferExprTypeName(
     }
 
     // Chained tuple index: expr.N.M (FLOAT_LIT) → inner element type
-    if (auto* cti = dynamic_cast<LuxParser::ChainedTupleIndexExprContext*>(expr)) {
+    if (auto* cti = dynamic_cast<LucisParser::ChainedTupleIndexExprContext*>(expr)) {
         auto baseType = inferExprTypeName(cti->expression(), locals, flc);
         auto resolved = resolveTupleTypeName(baseType, flc);
         if (!resolved.empty()) {
@@ -4708,7 +4708,7 @@ static std::string inferExprTypeName(
     }
 
     // Tuple arrow index: expr->N → element type
-    if (auto* tai = dynamic_cast<LuxParser::TupleArrowIndexExprContext*>(expr)) {
+    if (auto* tai = dynamic_cast<LucisParser::TupleArrowIndexExprContext*>(expr)) {
         auto baseType = inferExprTypeName(tai->expression(), locals, flc);
         // Strip leading * from pointer type
         std::string pointeeType = baseType;
@@ -4724,7 +4724,7 @@ static std::string inferExprTypeName(
     }
 
     // Chained tuple arrow index: expr->N.M (FLOAT_LIT) → inner element type
-    if (auto* ctai = dynamic_cast<LuxParser::ChainedTupleArrowIndexExprContext*>(expr)) {
+    if (auto* ctai = dynamic_cast<LucisParser::ChainedTupleArrowIndexExprContext*>(expr)) {
         auto baseType = inferExprTypeName(ctai->expression(), locals, flc);
         std::string pointeeType = baseType;
         if (!pointeeType.empty() && pointeeType[0] == '*')
@@ -4751,8 +4751,8 @@ static std::string inferExprTypeName(
 }
 
 static std::string inferCatchUnwrapItType(
-        LuxParser::ExpressionContext* sourceExpr,
-        LuxParser::ProgramContext* tree,
+        LucisParser::ExpressionContext* sourceExpr,
+        LucisParser::ProgramContext* tree,
         const std::unordered_map<std::string, HoverProvider::LocalVar>& locals,
         const FuncLookupCtx* flc) {
     if (!sourceExpr) return "";
@@ -4807,7 +4807,7 @@ static std::string inferCatchUnwrapItType(
 }
 
 static void collectLocalsFromStmts(
-        const std::vector<LuxParser::StatementContext*>& stmts,
+        const std::vector<LucisParser::StatementContext*>& stmts,
         size_t beforeLine,
         std::unordered_map<std::string, HoverProvider::LocalVar>& out,
         const FuncLookupCtx* flc = nullptr) {
@@ -4822,15 +4822,15 @@ static void collectLocalsFromStmts(
         return cursorLine0 >= startLine && cursorLine0 <= stopLine;
     };
 
-    auto inferIsBindingPayloadType = [&](LuxParser::ExpressionContext* cond) -> std::string {
-        auto* isE = dynamic_cast<LuxParser::IsExprContext*>(cond);
+    auto inferIsBindingPayloadType = [&](LucisParser::ExpressionContext* cond) -> std::string {
+        auto* isE = dynamic_cast<LucisParser::IsExprContext*>(cond);
         if (!isE || !isE->SCOPE() || !isE->LPAREN() || !isE->IDENTIFIER(1)) return "";
 
         auto* rhsType = isE->typeSpec();
         if (!rhsType || !rhsType->IDENTIFIER() || !flc || !flc->tree) return "";
 
         auto enumName = safeText(rhsType->IDENTIFIER());
-        LuxParser::EnumDeclContext* enumDecl = nullptr;
+        LucisParser::EnumDeclContext* enumDecl = nullptr;
         for (auto* tld : flc->tree->topLevelDecl()) {
             if (auto* ed = tld->enumDecl(); ed && ed->IDENTIFIER() &&
                 safeText(ed->IDENTIFIER()) == enumName) {
@@ -4896,7 +4896,7 @@ static void collectLocalsFromStmts(
                     out[varName] = {typeName, 0};
             }
 
-            if (auto* cu = dynamic_cast<LuxParser::CatchUnwrapExprContext*>(vd->expression())) {
+            if (auto* cu = dynamic_cast<LucisParser::CatchUnwrapExprContext*>(vd->expression())) {
                 if (cursorInsideNode(cu->block(), beforeLine)) {
                     auto itType = inferCatchUnwrapItType(cu->expression(), flc ? flc->tree : nullptr, out, flc);
                     out["it"] = {itType, 0};
@@ -4910,7 +4910,7 @@ static void collectLocalsFromStmts(
             if (auto* body = ifS->ifBody()) {
                 if (auto* b = body->block()) {
                     if (cursorInsideNode(b, beforeLine)) {
-                        if (auto* isE = dynamic_cast<LuxParser::IsExprContext*>(ifS->expression());
+                        if (auto* isE = dynamic_cast<LucisParser::IsExprContext*>(ifS->expression());
                             isE && isE->IDENTIFIER(1)) {
                             auto bindType = inferIsBindingPayloadType(ifS->expression());
                             out[safeIdAt(isE, 1)] = {bindType.empty() ? "auto" : bindType, 0};
@@ -4919,7 +4919,7 @@ static void collectLocalsFromStmts(
                     }
                 } else if (auto* s = body->statement()) {
                     if (cursorInsideNode(s, beforeLine)) {
-                        if (auto* isE = dynamic_cast<LuxParser::IsExprContext*>(ifS->expression());
+                        if (auto* isE = dynamic_cast<LucisParser::IsExprContext*>(ifS->expression());
                             isE && isE->IDENTIFIER(1)) {
                             auto bindType = inferIsBindingPayloadType(ifS->expression());
                             out[safeIdAt(isE, 1)] = {bindType.empty() ? "auto" : bindType, 0};
@@ -4932,7 +4932,7 @@ static void collectLocalsFromStmts(
                 if (auto* body = elif->ifBody()) {
                     if (auto* b = body->block()) {
                         if (cursorInsideNode(b, beforeLine)) {
-                            if (auto* isE = dynamic_cast<LuxParser::IsExprContext*>(elif->expression());
+                            if (auto* isE = dynamic_cast<LucisParser::IsExprContext*>(elif->expression());
                                 isE && isE->IDENTIFIER(1)) {
                                 auto bindType = inferIsBindingPayloadType(elif->expression());
                                 out[safeIdAt(isE, 1)] = {bindType.empty() ? "auto" : bindType, 0};
@@ -4941,7 +4941,7 @@ static void collectLocalsFromStmts(
                         }
                     } else if (auto* s = body->statement()) {
                         if (cursorInsideNode(s, beforeLine)) {
-                            if (auto* isE = dynamic_cast<LuxParser::IsExprContext*>(elif->expression());
+                            if (auto* isE = dynamic_cast<LucisParser::IsExprContext*>(elif->expression());
                                 isE && isE->IDENTIFIER(1)) {
                                 auto bindType = inferIsBindingPayloadType(elif->expression());
                                 out[safeIdAt(isE, 1)] = {bindType.empty() ? "auto" : bindType, 0};
@@ -4964,14 +4964,14 @@ static void collectLocalsFromStmts(
             }
         }
         if (auto* forIn = stmt->forStmt()) {
-            if (auto* fin = dynamic_cast<LuxParser::ForInStmtContext*>(forIn)) {
+            if (auto* fin = dynamic_cast<LucisParser::ForInStmtContext*>(forIn)) {
                 if (fin->typeSpec() && fin->IDENTIFIER()) {
                     std::string tname = safeText(fin->typeSpec());
                     out[safeText(fin->IDENTIFIER())] = {tname, 0};
                 }
                 collectLocalsFromBlock(fin->block(), beforeLine, out, flc);
             }
-            if (auto* fc = dynamic_cast<LuxParser::ForClassicStmtContext*>(forIn)) {
+            if (auto* fc = dynamic_cast<LucisParser::ForClassicStmtContext*>(forIn)) {
                 if (fc->typeSpec() && fc->IDENTIFIER()) {
                     std::string tname = safeText(fc->typeSpec());
                     out[safeText(fc->IDENTIFIER())] = {tname, 0};
@@ -5012,7 +5012,7 @@ static void collectLocalsFromStmts(
 }
 
 static void collectLocalsFromBlock(
-        LuxParser::BlockContext* block,
+        LucisParser::BlockContext* block,
         size_t beforeLine,
         std::unordered_map<std::string, HoverProvider::LocalVar>& out,
         const FuncLookupCtx* flc) {
@@ -5021,9 +5021,9 @@ static void collectLocalsFromBlock(
 }
 
 std::unordered_map<std::string, HoverProvider::LocalVar>
-HoverProvider::collectLocals(LuxParser::FunctionDeclContext* func,
+HoverProvider::collectLocals(LucisParser::FunctionDeclContext* func,
                              size_t beforeLine,
-                             LuxParser::ProgramContext* tree,
+                             LucisParser::ProgramContext* tree,
                              const CBindings* bindings,
                              const ProjectContext* project) {
     std::unordered_map<std::string, LocalVar> result;
@@ -5057,8 +5057,8 @@ HoverProvider::collectLocals(LuxParser::FunctionDeclContext* func,
 //  AST lookup helpers
 // ═══════════════════════════════════════════════════════════════════════
 
-LuxParser::FunctionDeclContext*
-HoverProvider::findEnclosingFunction(LuxParser::ProgramContext* tree,
+LucisParser::FunctionDeclContext*
+HoverProvider::findEnclosingFunction(LucisParser::ProgramContext* tree,
                                      size_t line) {
     size_t tokenLine = line + 1; // convert to 1-based
     for (auto* tld : tree->topLevelDecl()) {
@@ -5073,8 +5073,8 @@ HoverProvider::findEnclosingFunction(LuxParser::ProgramContext* tree,
     return nullptr;
 }
 
-LuxParser::FunctionDeclContext*
-HoverProvider::findFunctionDecl(LuxParser::ProgramContext* tree,
+LucisParser::FunctionDeclContext*
+HoverProvider::findFunctionDecl(LucisParser::ProgramContext* tree,
                                 const std::string& name) {
     for (auto* tld : tree->topLevelDecl()) {
         if (auto* func = tld->functionDecl()) {
@@ -5085,8 +5085,8 @@ HoverProvider::findFunctionDecl(LuxParser::ProgramContext* tree,
     return nullptr;
 }
 
-LuxParser::StructDeclContext*
-HoverProvider::findStructDecl(LuxParser::ProgramContext* tree,
+LucisParser::StructDeclContext*
+HoverProvider::findStructDecl(LucisParser::ProgramContext* tree,
                               const std::string& name) {
     for (auto* tld : tree->topLevelDecl()) {
         if (auto* sd = tld->structDecl()) {
@@ -5097,8 +5097,8 @@ HoverProvider::findStructDecl(LuxParser::ProgramContext* tree,
     return nullptr;
 }
 
-LuxParser::EnumDeclContext*
-HoverProvider::findEnumDecl(LuxParser::ProgramContext* tree,
+LucisParser::EnumDeclContext*
+HoverProvider::findEnumDecl(LucisParser::ProgramContext* tree,
                             const std::string& name) {
     for (auto* tld : tree->topLevelDecl()) {
         if (auto* ed = tld->enumDecl()) {
@@ -5109,8 +5109,8 @@ HoverProvider::findEnumDecl(LuxParser::ProgramContext* tree,
     return nullptr;
 }
 
-LuxParser::UnionDeclContext*
-HoverProvider::findUnionDecl(LuxParser::ProgramContext* tree,
+LucisParser::UnionDeclContext*
+HoverProvider::findUnionDecl(LucisParser::ProgramContext* tree,
                              const std::string& name) {
     for (auto* tld : tree->topLevelDecl()) {
         if (auto* ud = tld->unionDecl()) {
@@ -5121,8 +5121,8 @@ HoverProvider::findUnionDecl(LuxParser::ProgramContext* tree,
     return nullptr;
 }
 
-LuxParser::TypeAliasDeclContext*
-HoverProvider::findTypeAliasDecl(LuxParser::ProgramContext* tree,
+LucisParser::TypeAliasDeclContext*
+HoverProvider::findTypeAliasDecl(LucisParser::ProgramContext* tree,
                                  const std::string& name) {
     for (auto* tld : tree->topLevelDecl()) {
         if (auto* ta = tld->typeAliasDecl()) {
@@ -5133,8 +5133,8 @@ HoverProvider::findTypeAliasDecl(LuxParser::ProgramContext* tree,
     return nullptr;
 }
 
-LuxParser::ExtendDeclContext*
-HoverProvider::findExtendDecl(LuxParser::ProgramContext* tree,
+LucisParser::ExtendDeclContext*
+HoverProvider::findExtendDecl(LucisParser::ProgramContext* tree,
                               const std::string& name) {
     for (auto* tld : tree->topLevelDecl()) {
         if (auto* ext = tld->extendDecl()) {
@@ -5149,15 +5149,15 @@ HoverProvider::findExtendDecl(LuxParser::ProgramContext* tree,
 //  Formatting helpers
 // ═══════════════════════════════════════════════════════════════════════
 
-std::string HoverProvider::typeSpecToString(LuxParser::TypeSpecContext* ctx) {
+std::string HoverProvider::typeSpecToString(LucisParser::TypeSpecContext* ctx) {
     if (!ctx) return "?";
     // Use the raw text from the parse tree — preserves the original syntax.
     return ctx->getText();
 }
 
-std::string HoverProvider::formatFunctionDecl(LuxParser::FunctionDeclContext* func) {
+std::string HoverProvider::formatFunctionDecl(LucisParser::FunctionDeclContext* func) {
     std::ostringstream ss;
-    ss << "```lux\n";
+    ss << "```lucis\n";
     ss << "fn " << safeIdAt(func, 0) << "(";
     if (auto* params = func->paramList()) {
         bool first = true;
@@ -5174,9 +5174,9 @@ std::string HoverProvider::formatFunctionDecl(LuxParser::FunctionDeclContext* fu
     return ss.str();
 }
 
-std::string HoverProvider::formatExternDecl(LuxParser::ExternDeclContext* ext) {
+std::string HoverProvider::formatExternDecl(LucisParser::ExternDeclContext* ext) {
     std::ostringstream ss;
-    ss << "```lux\nextern " << typeSpecToString(ext->typeSpec())
+    ss << "```lucis\nextern " << typeSpecToString(ext->typeSpec())
        << " " << safeText(ext->IDENTIFIER()) << "(";
     if (auto* params = ext->externParamList()) {
         bool first = true;
@@ -5196,9 +5196,9 @@ std::string HoverProvider::formatExternDecl(LuxParser::ExternDeclContext* ext) {
     return ss.str();
 }
 
-std::string HoverProvider::formatStructDecl(LuxParser::StructDeclContext* decl) {
+std::string HoverProvider::formatStructDecl(LucisParser::StructDeclContext* decl) {
     std::ostringstream ss;
-    ss << "```lux\nstruct " << safeText(decl->IDENTIFIER());
+    ss << "```lucis\nstruct " << safeText(decl->IDENTIFIER());
     if (auto* tpl = decl->typeParamList()) {
         ss << "<";
         bool first = true;
@@ -5223,9 +5223,9 @@ std::string HoverProvider::formatStructDecl(LuxParser::StructDeclContext* decl) 
     return ss.str();
 }
 
-std::string HoverProvider::formatEnumDecl(LuxParser::EnumDeclContext* decl) {
+std::string HoverProvider::formatEnumDecl(LucisParser::EnumDeclContext* decl) {
     std::ostringstream ss;
-    ss << "```lux\nenum " << safeText(decl->IDENTIFIER());
+    ss << "```lucis\nenum " << safeText(decl->IDENTIFIER());
     if (auto* tpl = decl->typeParamList()) {
         ss << "<";
         bool first = true;
@@ -5268,9 +5268,9 @@ std::string HoverProvider::formatEnumDecl(LuxParser::EnumDeclContext* decl) {
     return ss.str();
 }
 
-std::string HoverProvider::formatUnionDecl(LuxParser::UnionDeclContext* decl) {
+std::string HoverProvider::formatUnionDecl(LucisParser::UnionDeclContext* decl) {
     std::ostringstream ss;
-    ss << "```lux\nunion " << safeText(decl->IDENTIFIER());
+    ss << "```lucis\nunion " << safeText(decl->IDENTIFIER());
     if (auto* tpl = decl->typeParamList()) {
         ss << "<";
         bool first = true;
@@ -5345,7 +5345,7 @@ std::string HoverProvider::formatCEnum(const std::string& name,
 
 std::string HoverProvider::formatBuiltinSignature(const BuiltinSignature& sig) {
     std::ostringstream ss;
-    ss << "```lux\n(builtin) " << sig.returnType << " " << sig.name << "(";
+    ss << "```lucis\n(builtin) " << sig.returnType << " " << sig.name << "(";
     for (size_t i = 0; i < sig.paramTypes.size(); i++) {
         if (i > 0) ss << ", ";
         ss << sig.paramTypes[i];
@@ -5375,9 +5375,9 @@ std::string HoverProvider::formatTypeInfo(const TypeInfo* ti) {
     return ti->name;
 }
 
-std::string HoverProvider::formatExtendMethods(LuxParser::ExtendDeclContext* ext) {
+std::string HoverProvider::formatExtendMethods(LucisParser::ExtendDeclContext* ext) {
     std::ostringstream ss;
-    ss << "```lux\nextend " << safeText(ext->IDENTIFIER()) << " {\n";
+    ss << "```lucis\nextend " << safeText(ext->IDENTIFIER()) << " {\n";
     for (auto* m : ext->extendMethod()) {
         ss << "    fn " << safeIdAt(m, 0) << "(";
 

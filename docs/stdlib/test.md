@@ -54,7 +54,7 @@ log("Test passed successfully");
 ## Running Tests
 
 ```bash
-./build/lux test examples/my_test.lx
+./build/lucis test examples/my_test.lc
 ```
 
 Tests that call assertion functions will report pass/fail status automatically.

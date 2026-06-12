@@ -1,5 +1,5 @@
 #include "checkers/Checker.h"
-#include "generated/LuxLexer.h"
+#include "generated/LucisLexer.h"
 #include "ffi/CBindings.h"
 #include <cctype>
 #include <functional>
@@ -169,7 +169,7 @@ void Checker::warningToken(antlr4::Token* start, antlr4::Token* stop,
     emitDiag(start, stop, Diagnostic::Warning, msg);
 }
 
-std::optional<uint64_t> Checker::tryEvalUSizeExpr(LuxParser::ExpressionContext* expr) const {
+std::optional<uint64_t> Checker::tryEvalUSizeExpr(LucisParser::ExpressionContext* expr) const {
     auto range = tryEvalUSizeRangeExpr(expr);
     if (!range) return std::nullopt;
     if (range->first != range->second) return std::nullopt;
@@ -177,16 +177,16 @@ std::optional<uint64_t> Checker::tryEvalUSizeExpr(LuxParser::ExpressionContext* 
 }
 
 std::optional<std::pair<uint64_t, uint64_t>>
-Checker::tryEvalUSizeRangeExpr(LuxParser::ExpressionContext* expr) const {
+Checker::tryEvalUSizeRangeExpr(LucisParser::ExpressionContext* expr) const {
     if (!expr) return std::nullopt;
 
-    if (auto* cast = dynamic_cast<LuxParser::CastExprContext*>(expr))
+    if (auto* cast = dynamic_cast<LucisParser::CastExprContext*>(expr))
         return tryEvalUSizeRangeExpr(cast->expression());
 
-    if (auto* paren = dynamic_cast<LuxParser::ParenExprContext*>(expr))
+    if (auto* paren = dynamic_cast<LucisParser::ParenExprContext*>(expr))
         return tryEvalUSizeRangeExpr(paren->expression());
 
-    if (auto* intLit = dynamic_cast<LuxParser::IntLitExprContext*>(expr)) {
+    if (auto* intLit = dynamic_cast<LucisParser::IntLitExprContext*>(expr)) {
         try {
             auto s = intLit->INT_LIT()->getText();
             if (s.empty() || s[0] == '-') return std::nullopt;
@@ -197,14 +197,14 @@ Checker::tryEvalUSizeRangeExpr(LuxParser::ExpressionContext* expr) const {
         }
     }
 
-    if (auto* id = dynamic_cast<LuxParser::IdentExprContext*>(expr)) {
+    if (auto* id = dynamic_cast<LucisParser::IdentExprContext*>(expr)) {
         auto it = locals_.find(id->IDENTIFIER()->getText());
         if (it != locals_.end() && it->second.hasKnownUSizeRange)
             return std::make_pair(it->second.minUSize, it->second.maxUSize);
         return std::nullopt;
     }
 
-    if (auto* add = dynamic_cast<LuxParser::AddSubExprContext*>(expr)) {
+    if (auto* add = dynamic_cast<LucisParser::AddSubExprContext*>(expr)) {
         auto exprs = add->expression();
         if (exprs.size() != 2) return std::nullopt;
 
@@ -227,7 +227,7 @@ Checker::tryEvalUSizeRangeExpr(LuxParser::ExpressionContext* expr) const {
         return std::nullopt;
     }
 
-    if (auto* mul = dynamic_cast<LuxParser::MulExprContext*>(expr)) {
+    if (auto* mul = dynamic_cast<LucisParser::MulExprContext*>(expr)) {
         auto exprs = mul->expression();
         if (exprs.size() != 2) return std::nullopt;
         if (mul->op->getText() != "*") return std::nullopt;
@@ -247,10 +247,10 @@ Checker::tryEvalUSizeRangeExpr(LuxParser::ExpressionContext* expr) const {
     return std::nullopt;
 }
 
-std::optional<uint64_t> Checker::tryGetCStringLiteralLen(LuxParser::ExpressionContext* expr) const {
+std::optional<uint64_t> Checker::tryGetCStringLiteralLen(LucisParser::ExpressionContext* expr) const {
     if (!expr) return std::nullopt;
 
-    if (auto* cast = dynamic_cast<LuxParser::CastExprContext*>(expr))
+    if (auto* cast = dynamic_cast<LucisParser::CastExprContext*>(expr))
         return tryGetCStringLiteralLen(cast->expression());
 
     auto decodeLen = [](const std::string& tok, const std::string& prefix) -> std::optional<uint64_t> {
@@ -272,22 +272,22 @@ std::optional<uint64_t> Checker::tryGetCStringLiteralLen(LuxParser::ExpressionCo
         return len;
     };
 
-    if (auto* cstr = dynamic_cast<LuxParser::CStrLitExprContext*>(expr))
+    if (auto* cstr = dynamic_cast<LucisParser::CStrLitExprContext*>(expr))
         return decodeLen(cstr->C_STR_LIT()->getText(), "c");
 
-    if (auto* str = dynamic_cast<LuxParser::StrLitExprContext*>(expr))
+    if (auto* str = dynamic_cast<LucisParser::StrLitExprContext*>(expr))
         return decodeLen(str->STR_LIT()->getText(), "");
 
     return std::nullopt;
 }
 
-Checker::VarInfo* Checker::resolveTrackedVarFromExpr(LuxParser::ExpressionContext* expr) {
+Checker::VarInfo* Checker::resolveTrackedVarFromExpr(LucisParser::ExpressionContext* expr) {
     if (!expr) return nullptr;
 
-    if (auto* cast = dynamic_cast<LuxParser::CastExprContext*>(expr))
+    if (auto* cast = dynamic_cast<LucisParser::CastExprContext*>(expr))
         return resolveTrackedVarFromExpr(cast->expression());
 
-    if (auto* id = dynamic_cast<LuxParser::IdentExprContext*>(expr)) {
+    if (auto* id = dynamic_cast<LucisParser::IdentExprContext*>(expr)) {
         auto it = locals_.find(id->IDENTIFIER()->getText());
         if (it != locals_.end()) return &it->second;
     }
@@ -310,7 +310,7 @@ void Checker::resetTrackedNumericInfo(VarInfo& vi) {
 }
 
 void Checker::trackVarBufferFromExpr(const std::string& varName,
-                                     LuxParser::ExpressionContext* expr,
+                                     LucisParser::ExpressionContext* expr,
                                      const TypeInfo* declaredType) {
     auto it = locals_.find(varName);
     if (it == locals_.end()) return;
@@ -339,19 +339,19 @@ void Checker::trackVarBufferFromExpr(const std::string& varName,
         return;
     }
 
-    LuxParser::ExpressionContext* probe = expr;
-    if (auto* cast = dynamic_cast<LuxParser::CastExprContext*>(probe))
+    LucisParser::ExpressionContext* probe = expr;
+    if (auto* cast = dynamic_cast<LucisParser::CastExprContext*>(probe))
         probe = cast->expression();
 
-    auto* call = dynamic_cast<LuxParser::FnCallExprContext*>(probe);
+    auto* call = dynamic_cast<LucisParser::FnCallExprContext*>(probe);
     if (!call) return;
 
     std::string calleeName;
-    if (auto* ident = dynamic_cast<LuxParser::IdentExprContext*>(call->expression()))
+    if (auto* ident = dynamic_cast<LucisParser::IdentExprContext*>(call->expression()))
         calleeName = ident->IDENTIFIER()->getText();
     if (calleeName.empty()) return;
 
-    std::vector<LuxParser::ExpressionContext*> args;
+    std::vector<LucisParser::ExpressionContext*> args;
     if (auto* argList = call->argList())
         args = argList->expression();
 
@@ -384,7 +384,7 @@ void Checker::trackVarBufferFromExpr(const std::string& varName,
 }
 
 void Checker::trackVarNumericRangeFromExpr(const std::string& varName,
-                                           LuxParser::ExpressionContext* expr,
+                                           LucisParser::ExpressionContext* expr,
                                            const TypeInfo* declaredType) {
     auto it = locals_.find(varName);
     if (it == locals_.end()) return;
@@ -409,10 +409,10 @@ bool Checker::isDropTrackedType(const TypeInfo* type, unsigned arrayDims) const 
     return false;
 }
 
-bool Checker::isBorrowedStringExpr(LuxParser::ExpressionContext* expr) const {
-    if (dynamic_cast<LuxParser::StrLitExprContext*>(expr)) return true;
-    if (auto* call = dynamic_cast<LuxParser::FnCallExprContext*>(expr)) {
-        if (auto* ident = dynamic_cast<LuxParser::IdentExprContext*>(call->expression())) {
+bool Checker::isBorrowedStringExpr(LucisParser::ExpressionContext* expr) const {
+    if (dynamic_cast<LucisParser::StrLitExprContext*>(expr)) return true;
+    if (auto* call = dynamic_cast<LucisParser::FnCallExprContext*>(expr)) {
+        if (auto* ident = dynamic_cast<LucisParser::IdentExprContext*>(call->expression())) {
             auto name = ident->IDENTIFIER()->getText();
             return name == "fromCStr" || name == "fromCStrLen";
         }
@@ -420,8 +420,8 @@ bool Checker::isBorrowedStringExpr(LuxParser::ExpressionContext* expr) const {
     return false;
 }
 
-bool Checker::exprConsumesOwnership(LuxParser::ExpressionContext* expr) const {
-    if (auto* ident = dynamic_cast<LuxParser::IdentExprContext*>(expr)) {
+bool Checker::exprConsumesOwnership(LucisParser::ExpressionContext* expr) const {
+    if (auto* ident = dynamic_cast<LucisParser::IdentExprContext*>(expr)) {
         auto it = locals_.find(ident->IDENTIFIER()->getText());
         if (it != locals_.end())
             return isDropTrackedType(it->second.type, it->second.arrayDims);
@@ -429,7 +429,7 @@ bool Checker::exprConsumesOwnership(LuxParser::ExpressionContext* expr) const {
     return false;
 }
 
-void Checker::updateOwnershipOnInitialization(VarInfo& vi, LuxParser::ExpressionContext* expr) {
+void Checker::updateOwnershipOnInitialization(VarInfo& vi, LucisParser::ExpressionContext* expr) {
     if (!isDropTrackedType(vi.type, vi.arrayDims)) {
         vi.ownership = VarInfo::OwnershipState::BorrowedImm;
         return;
@@ -448,8 +448,8 @@ void Checker::updateOwnershipOnInitialization(VarInfo& vi, LuxParser::Expression
     vi.ownership = VarInfo::OwnershipState::Owned;
 }
 
-void Checker::markExprAsMoved(LuxParser::ExpressionContext* expr, antlr4::ParserRuleContext* whereCtx) {
-    auto* ident = dynamic_cast<LuxParser::IdentExprContext*>(expr);
+void Checker::markExprAsMoved(LucisParser::ExpressionContext* expr, antlr4::ParserRuleContext* whereCtx) {
+    auto* ident = dynamic_cast<LucisParser::IdentExprContext*>(expr);
     if (!ident) return;
     auto name = ident->IDENTIFIER()->getText();
     auto it = locals_.find(name);
@@ -468,7 +468,7 @@ void Checker::markExprAsMoved(LuxParser::ExpressionContext* expr, antlr4::Parser
 
 void Checker::applyCallOwnershipEffects(
     const std::string& calleeName,
-    const std::vector<LuxParser::ExpressionContext*>& args,
+    const std::vector<LucisParser::ExpressionContext*>& args,
     antlr4::ParserRuleContext* whereCtx) {
     auto* sig = calleeName.empty() ? nullptr : builtinRegistry_.lookup(calleeName);
     if (!sig) return;
@@ -479,8 +479,8 @@ void Checker::applyCallOwnershipEffects(
     }
 }
 
-void Checker::validateExprNotMoved(LuxParser::ExpressionContext* expr, antlr4::ParserRuleContext* whereCtx) {
-    auto* ident = dynamic_cast<LuxParser::IdentExprContext*>(expr);
+void Checker::validateExprNotMoved(LucisParser::ExpressionContext* expr, antlr4::ParserRuleContext* whereCtx) {
+    auto* ident = dynamic_cast<LucisParser::IdentExprContext*>(expr);
     if (!ident) return;
     auto name = ident->IDENTIFIER()->getText();
     auto it = locals_.find(name);
@@ -496,7 +496,7 @@ void Checker::validateExprNotMoved(LuxParser::ExpressionContext* expr, antlr4::P
 
 void Checker::analyzeUnsafeCBufferCall(const std::string& funcName,
                                        antlr4::ParserRuleContext* ctx,
-                                       const std::vector<LuxParser::ExpressionContext*>& args) {
+                                       const std::vector<LucisParser::ExpressionContext*>& args) {
     if (!cBindings_) return;
     const CFunction* cfunc = cBindings_->findFunction(funcName);
     if (!cfunc) return;
@@ -629,7 +629,7 @@ void Checker::analyzeUnsafeCBufferCall(const std::string& funcName,
 //  Main entry point
 // ═══════════════════════════════════════════════════════════════════════
 
-bool Checker::check(LuxParser::ProgramContext* tree) {
+bool Checker::check(LucisParser::ProgramContext* tree) {
     if (!tree) {
         errors_.push_back("empty program");
         return false;
@@ -639,36 +639,36 @@ bool Checker::check(LuxParser::ProgramContext* tree) {
     registerGlobalBuiltins();
 
     // Pass 0.5: register C header bindings (from #include directives)
-    // Determine which C functions are overridden by Lux imports
+    // Determine which C functions are overridden by Lucis imports
     // based on preamble declaration order (last import wins).
-    std::unordered_set<std::string> luxOverridesC;
+    std::unordered_set<std::string> lucisOverridesC;
     if (cBindings_) {
         int lastIncludePos = -1;
-        std::unordered_map<std::string, int> luxImportPos;
+        std::unordered_map<std::string, int> lucisImportPos;
         int pos = 0;
         for (auto* pre : tree->preambleDecl()) {
             if (pre->includeDecl()) {
                 lastIncludePos = pos;
             } else if (auto* ud = pre->useDecl()) {
-                if (auto* item = dynamic_cast<LuxParser::UseItemContext*>(ud)) {
+                if (auto* item = dynamic_cast<LucisParser::UseItemContext*>(ud)) {
                     if (item->IDENTIFIER()) {
                         auto n = item->IDENTIFIER()->getText();
                         if (cBindings_->findFunction(n))
-                            luxImportPos[n] = pos;
+                            lucisImportPos[n] = pos;
                     }
-                } else if (auto* group = dynamic_cast<LuxParser::UseGroupContext*>(ud)) {
+                } else if (auto* group = dynamic_cast<LucisParser::UseGroupContext*>(ud)) {
                     for (auto* id : group->IDENTIFIER()) {
                         auto n = id->getText();
                         if (cBindings_->findFunction(n))
-                            luxImportPos[n] = pos;
+                            lucisImportPos[n] = pos;
                     }
                 }
             }
             pos++;
         }
-        for (auto& [n, luxPos] : luxImportPos) {
-            if (luxPos > lastIncludePos)
-                luxOverridesC.insert(n);
+        for (auto& [n, lucisPos] : lucisImportPos) {
+            if (lucisPos > lastIncludePos)
+                lucisOverridesC.insert(n);
         }
     }
 
@@ -716,9 +716,9 @@ bool Checker::check(LuxParser::ProgramContext* tree) {
             }
         }
 
-        // Register C functions (skip those overridden by Lux imports)
+        // Register C functions (skip those overridden by Lucis imports)
         for (auto& [name, cfunc] : cBindings_->functions()) {
-            if (luxOverridesC.count(name)) continue;
+            if (lucisOverridesC.count(name)) continue;
             auto* funcType = makeFunctionType(
                 cfunc.returnType, cfunc.paramTypes, cfunc.isVariadic);
             functions_[name] = funcType;
@@ -870,7 +870,7 @@ bool Checker::check(LuxParser::ProgramContext* tree) {
         // that were not explicitly imported via `use`. Ensure those type templates
         // are registered before function signature/type resolution.
         auto ensureTypeDependencyFromSpec =
-            [&](auto&& self, LuxParser::TypeSpecContext* ts, const std::string& ns) -> void {
+            [&](auto&& self, LucisParser::TypeSpecContext* ts, const std::string& ns) -> void {
                 if (!ts) return;
                 if (ts->fnTypeSpec()) {
                     for (auto* inner : ts->fnTypeSpec()->typeSpec())
@@ -895,7 +895,7 @@ bool Checker::check(LuxParser::ProgramContext* tree) {
                 if (depSym->kind == ExportedSymbol::Enum &&
                     !typeRegistry_.lookup(baseName) &&
                     !genericEnumTemplates_.count(baseName)) {
-                    auto* ed = static_cast<LuxParser::EnumDeclContext*>(depSym->decl);
+                    auto* ed = static_cast<LucisParser::EnumDeclContext*>(depSym->decl);
                     // Pre-resolve payload types before checking the enum
                     for (auto* variant : ed->enumVariant())
                         for (auto* ts : variant->typeSpec())
@@ -906,7 +906,7 @@ bool Checker::check(LuxParser::ProgramContext* tree) {
                 if (depSym->kind == ExportedSymbol::Struct &&
                     !typeRegistry_.lookup(baseName) &&
                     !genericStructTemplates_.count(baseName)) {
-                    auto* sd = static_cast<LuxParser::StructDeclContext*>(depSym->decl);
+                    auto* sd = static_cast<LucisParser::StructDeclContext*>(depSym->decl);
                     // Pre-resolve field types before checking the struct
                     for (auto* field : sd->structField())
                         self(self, field->typeSpec(), ns);
@@ -916,7 +916,7 @@ bool Checker::check(LuxParser::ProgramContext* tree) {
                 if (depSym->kind == ExportedSymbol::Union &&
                     !typeRegistry_.lookup(baseName) &&
                     !genericUnionTemplates_.count(baseName)) {
-                    auto* ud = static_cast<LuxParser::UnionDeclContext*>(depSym->decl);
+                    auto* ud = static_cast<LucisParser::UnionDeclContext*>(depSym->decl);
                     // Pre-resolve field types before checking the union
                     for (auto* field : ud->unionField())
                         self(self, field->typeSpec(), ns);
@@ -925,7 +925,7 @@ bool Checker::check(LuxParser::ProgramContext* tree) {
             };
 
         auto ensureFunctionTypeDependencies =
-            [&](LuxParser::FunctionDeclContext* decl, const std::string& ns) {
+            [&](LucisParser::FunctionDeclContext* decl, const std::string& ns) {
                 if (!decl) return;
                 ensureTypeDependencyFromSpec(ensureTypeDependencyFromSpec, decl->typeSpec(), ns);
                 if (auto* params = decl->paramList()) {
@@ -939,12 +939,12 @@ bool Checker::check(LuxParser::ProgramContext* tree) {
             if (sym->kind == ExportedSymbol::Enum) {
                 if (typeRegistry_.lookup(sym->name) || genericEnumTemplates_.count(sym->name))
                     continue;
-                auto* decl = static_cast<LuxParser::EnumDeclContext*>(sym->decl);
+                auto* decl = static_cast<LucisParser::EnumDeclContext*>(sym->decl);
                 checkEnumDecl(decl);
             } else if (sym->kind == ExportedSymbol::TypeAlias) {
                 if (typeRegistry_.lookup(sym->name))
                     continue;
-                auto* decl = static_cast<LuxParser::TypeAliasDeclContext*>(sym->decl);
+                auto* decl = static_cast<LucisParser::TypeAliasDeclContext*>(sym->decl);
                 checkTypeAliasDecl(decl);
             }
         }
@@ -954,12 +954,12 @@ bool Checker::check(LuxParser::ProgramContext* tree) {
             if (sym->kind == ExportedSymbol::Enum) {
                 if (typeRegistry_.lookup(sym->name) || genericEnumTemplates_.count(sym->name))
                     continue;
-                auto* decl = static_cast<LuxParser::EnumDeclContext*>(sym->decl);
+                auto* decl = static_cast<LucisParser::EnumDeclContext*>(sym->decl);
                 checkEnumDecl(decl);
             } else if (sym->kind == ExportedSymbol::TypeAlias) {
                 if (typeRegistry_.lookup(sym->name))
                     continue;
-                auto* decl = static_cast<LuxParser::TypeAliasDeclContext*>(sym->decl);
+                auto* decl = static_cast<LucisParser::TypeAliasDeclContext*>(sym->decl);
                 checkTypeAliasDecl(decl);
             }
         }
@@ -972,7 +972,7 @@ bool Checker::check(LuxParser::ProgramContext* tree) {
                 auto* existing = typeRegistry_.lookup(sym->name);
                 if (existing && !(existing->kind == TypeKind::Struct && existing->fields.empty() && existing->bitWidth == 0))
                     continue;
-                auto* decl = static_cast<LuxParser::StructDeclContext*>(sym->decl);
+                auto* decl = static_cast<LucisParser::StructDeclContext*>(sym->decl);
                 for (auto* field : decl->structField())
                     ensureTypeDependencyFromSpec(
                         ensureTypeDependencyFromSpec, field->typeSpec(), currentNamespace_);
@@ -983,7 +983,7 @@ bool Checker::check(LuxParser::ProgramContext* tree) {
                 auto* existing = typeRegistry_.lookup(sym->name);
                 if (existing && !(existing->kind == TypeKind::Union && existing->fields.empty() && existing->bitWidth == 0))
                     continue;
-                auto* decl = static_cast<LuxParser::UnionDeclContext*>(sym->decl);
+                auto* decl = static_cast<LucisParser::UnionDeclContext*>(sym->decl);
                 for (auto* field : decl->unionField())
                     ensureTypeDependencyFromSpec(
                         ensureTypeDependencyFromSpec, field->typeSpec(), currentNamespace_);
@@ -999,7 +999,7 @@ bool Checker::check(LuxParser::ProgramContext* tree) {
                 auto* existing = typeRegistry_.lookup(sym->name);
                 if (existing && !(existing->kind == TypeKind::Struct && existing->fields.empty() && existing->bitWidth == 0))
                     continue;
-                auto* decl = static_cast<LuxParser::StructDeclContext*>(sym->decl);
+                auto* decl = static_cast<LucisParser::StructDeclContext*>(sym->decl);
                 for (auto* field : decl->structField())
                     ensureTypeDependencyFromSpec(
                         ensureTypeDependencyFromSpec, field->typeSpec(), ns);
@@ -1010,7 +1010,7 @@ bool Checker::check(LuxParser::ProgramContext* tree) {
                 auto* existing = typeRegistry_.lookup(sym->name);
                 if (existing && !(existing->kind == TypeKind::Union && existing->fields.empty() && existing->bitWidth == 0))
                     continue;
-                auto* decl = static_cast<LuxParser::UnionDeclContext*>(sym->decl);
+                auto* decl = static_cast<LucisParser::UnionDeclContext*>(sym->decl);
                 for (auto* field : decl->unionField())
                     ensureTypeDependencyFromSpec(
                         ensureTypeDependencyFromSpec, field->typeSpec(), ns);
@@ -1023,7 +1023,7 @@ bool Checker::check(LuxParser::ProgramContext* tree) {
         // must also be registered so methods like Type::new() work.
         for (auto* sym : extSyms) {
             if (sym->kind == ExportedSymbol::ExtendBlock) {
-                auto* decl = static_cast<LuxParser::ExtendDeclContext*>(sym->decl);
+                auto* decl = static_cast<LucisParser::ExtendDeclContext*>(sym->decl);
                 checkExtendDecl(decl);
             }
         }
@@ -1038,7 +1038,7 @@ bool Checker::check(LuxParser::ProgramContext* tree) {
             for (auto* nsSym : nsSyms) {
                 if (nsSym->kind == ExportedSymbol::ExtendBlock &&
                     nsSym->name == symName) {
-                    auto* extDecl = static_cast<LuxParser::ExtendDeclContext*>(nsSym->decl);
+                    auto* extDecl = static_cast<LucisParser::ExtendDeclContext*>(nsSym->decl);
                     // Pre-register types referenced in extend method signatures
                     // (e.g. return types like ReadFileResult) so resolveTypeSpec
                     // can find them when checkExtendDecl processes the block.
@@ -1064,7 +1064,7 @@ bool Checker::check(LuxParser::ProgramContext* tree) {
         // Phase C: functions (may reference types from phases A and B)
         for (auto* sym : extSyms) {
             if (sym->kind == ExportedSymbol::Function) {
-                auto* decl = static_cast<LuxParser::FunctionDeclContext*>(sym->decl);
+                auto* decl = static_cast<LucisParser::FunctionDeclContext*>(sym->decl);
                 ensureFunctionTypeDependencies(decl, currentNamespace_);
                 registerFunctionSignature(decl);
             }
@@ -1073,7 +1073,7 @@ bool Checker::check(LuxParser::ProgramContext* tree) {
             auto* sym = nsRegistry_->findSymbol(ns, symName);
             if (!sym) continue;
             if (sym->kind == ExportedSymbol::Function) {
-                auto* decl = static_cast<LuxParser::FunctionDeclContext*>(sym->decl);
+                auto* decl = static_cast<LucisParser::FunctionDeclContext*>(sym->decl);
                 ensureFunctionTypeDependencies(decl, ns);
                 registerFunctionSignature(decl);
             }
@@ -1183,7 +1183,7 @@ bool Checker::check(LuxParser::ProgramContext* tree) {
 //  Type resolution helpers
 // ═══════════════════════════════════════════════════════════════════════
 
-const TypeInfo* Checker::resolveTypeSpec(LuxParser::TypeSpecContext* ctx,
+const TypeInfo* Checker::resolveTypeSpec(LucisParser::TypeSpecContext* ctx,
                                          unsigned& arrayDims) {
     arrayDims = 0;
     auto* cur = ctx;
@@ -1571,7 +1571,7 @@ const TypeInfo* Checker::makeFunctionType(const TypeInfo* returnType,
     return raw;
 }
 
-std::string Checker::resolveBaseTypeName(LuxParser::TypeSpecContext* ctx) {
+std::string Checker::resolveBaseTypeName(LucisParser::TypeSpecContext* ctx) {
     if (!ctx) return "";
     while (!ctx->typeSpec().empty())
         ctx = ctx->typeSpec(0);
@@ -1715,31 +1715,31 @@ static bool canWidenTo(const TypeInfo* from, const TypeInfo* to) {
 }
 
 void Checker::checkNegativeToUnsigned(const TypeInfo* target,
-                                       LuxParser::ExpressionContext* expr,
+                                       LucisParser::ExpressionContext* expr,
                                        antlr4::ParserRuleContext* ctx) {
     if (!target || target->kind != TypeKind::Integer || target->isSigned)
         return;
 
     // Unwrap try expression
-    if (auto* te = dynamic_cast<LuxParser::TryExprContext*>(expr))
+    if (auto* te = dynamic_cast<LucisParser::TryExprContext*>(expr))
         expr = te->expression();
 
     // Case 1: Positive integer literal → always safe for unsigned
-    if (dynamic_cast<LuxParser::IntLitExprContext*>(expr) ||
-        dynamic_cast<LuxParser::HexLitExprContext*>(expr) ||
-        dynamic_cast<LuxParser::OctLitExprContext*>(expr) ||
-        dynamic_cast<LuxParser::BinLitExprContext*>(expr))
+    if (dynamic_cast<LucisParser::IntLitExprContext*>(expr) ||
+        dynamic_cast<LucisParser::HexLitExprContext*>(expr) ||
+        dynamic_cast<LucisParser::OctLitExprContext*>(expr) ||
+        dynamic_cast<LucisParser::BinLitExprContext*>(expr))
         return;
 
     // Case 2: Negative literal (-N) → always invalid for unsigned
-    if (dynamic_cast<LuxParser::NegExprContext*>(expr)) {
+    if (dynamic_cast<LucisParser::NegExprContext*>(expr)) {
         error(ctx, "cannot assign negative value to unsigned type '" +
                     target->name + "'");
         return;
     }
 
     // Case 3: C macro constant — check its known value
-    if (auto* ident = dynamic_cast<LuxParser::IdentExprContext*>(expr)) {
+    if (auto* ident = dynamic_cast<LucisParser::IdentExprContext*>(expr)) {
         auto id = ident->IDENTIFIER()->getText();
         auto cit = cEnumConstants_.find(id);
         if (cit != cEnumConstants_.end()) {
@@ -1756,7 +1756,7 @@ void Checker::checkNegativeToUnsigned(const TypeInfo* target,
     }
 
     // Case 4: Explicit cast (expr as uint32) → user took responsibility
-    if (dynamic_cast<LuxParser::CastExprContext*>(expr))
+    if (dynamic_cast<LucisParser::CastExprContext*>(expr))
         return;
 
     // Case 5: General signed → unsigned (function return, variable, etc.)
@@ -1772,7 +1772,7 @@ void Checker::checkNegativeToUnsigned(const TypeInfo* target,
 //  Expression type resolution
 // ═══════════════════════════════════════════════════════════════════════
 
-const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
+const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
     if (!expr) return nullptr;
 
     // Guard against infinite recursion in pathological type expressions
@@ -1784,7 +1784,7 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
         return typeRegistry_.lookup("int64");  // fallback type
     }
 
-    auto resolveTypeSpecInContext = [&](LuxParser::TypeSpecContext* ts,
+    auto resolveTypeSpecInContext = [&](LucisParser::TypeSpecContext* ts,
                                         unsigned& dims) -> const TypeInfo* {
         if (!activeTypeSubst_.empty())
             return resolveTypeSpecWithSubst(ts, activeTypeSubst_, dims);
@@ -1792,34 +1792,34 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
     };
 
     // ── Literals ──────────────────────────────────────────────────────
-    if (dynamic_cast<LuxParser::IntLitExprContext*>(expr) ||
-        dynamic_cast<LuxParser::HexLitExprContext*>(expr) ||
-        dynamic_cast<LuxParser::OctLitExprContext*>(expr) ||
-        dynamic_cast<LuxParser::BinLitExprContext*>(expr))
+    if (dynamic_cast<LucisParser::IntLitExprContext*>(expr) ||
+        dynamic_cast<LucisParser::HexLitExprContext*>(expr) ||
+        dynamic_cast<LucisParser::OctLitExprContext*>(expr) ||
+        dynamic_cast<LucisParser::BinLitExprContext*>(expr))
         return typeRegistry_.lookup("int32");
 
-    if (dynamic_cast<LuxParser::FloatLitExprContext*>(expr) ||
-        dynamic_cast<LuxParser::LeadingDotFloatLitExprContext*>(expr))
+    if (dynamic_cast<LucisParser::FloatLitExprContext*>(expr) ||
+        dynamic_cast<LucisParser::LeadingDotFloatLitExprContext*>(expr))
         return typeRegistry_.lookup("float64");
 
-    if (dynamic_cast<LuxParser::BoolLitExprContext*>(expr))
+    if (dynamic_cast<LucisParser::BoolLitExprContext*>(expr))
         return typeRegistry_.lookup("bool");
 
-    if (dynamic_cast<LuxParser::CharLitExprContext*>(expr))
+    if (dynamic_cast<LucisParser::CharLitExprContext*>(expr))
         return typeRegistry_.lookup("char");
 
-    if (dynamic_cast<LuxParser::StrLitExprContext*>(expr))
+    if (dynamic_cast<LucisParser::StrLitExprContext*>(expr))
         return typeRegistry_.lookup("string");
 
     // C string literal: c"hello" → *char (null-terminated)
-    if (dynamic_cast<LuxParser::CStrLitExprContext*>(expr))
+    if (dynamic_cast<LucisParser::CStrLitExprContext*>(expr))
         return getPointerType(typeRegistry_.lookup("char"));
 
-    if (dynamic_cast<LuxParser::NullLitExprContext*>(expr))
+    if (dynamic_cast<LucisParser::NullLitExprContext*>(expr))
         return nullptr; // null is compatible with any pointer
 
     // ── Identifier ───────────────────────────────────────────────────
-    if (auto* id = dynamic_cast<LuxParser::IdentExprContext*>(expr)) {
+    if (auto* id = dynamic_cast<LucisParser::IdentExprContext*>(expr)) {
         auto name = id->IDENTIFIER()->getText();
         auto it = locals_.find(name);
         if (it != locals_.end()) {
@@ -1879,11 +1879,11 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
     }
 
     // ── Parenthesized ────────────────────────────────────────────────
-    if (auto* p = dynamic_cast<LuxParser::ParenExprContext*>(expr))
+    if (auto* p = dynamic_cast<LucisParser::ParenExprContext*>(expr))
         return resolveExprType(p->expression());
 
     // ── Tuple literal: (expr, expr, ...) ─────────────────────────────
-    if (auto* tl = dynamic_cast<LuxParser::TupleLitExprContext*>(expr)) {
+    if (auto* tl = dynamic_cast<LucisParser::TupleLitExprContext*>(expr)) {
         auto elements = tl->expression();
         std::vector<const TypeInfo*> elemTypes;
         std::string fullName = "tuple<";
@@ -1912,7 +1912,7 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
     }
 
     // ── Tuple index: expr.0, expr.1, ... ─────────────────────────────
-    if (auto* ti = dynamic_cast<LuxParser::TupleIndexExprContext*>(expr)) {
+    if (auto* ti = dynamic_cast<LucisParser::TupleIndexExprContext*>(expr)) {
         auto* baseType = resolveExprType(ti->expression());
         if (!baseType || baseType->kind != TypeKind::Tuple) {
             if (baseType)
@@ -1929,7 +1929,7 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
     }
 
     // ── Chained tuple index: expr.N.M (FLOAT_LIT) ──────────────────
-    if (auto* cti = dynamic_cast<LuxParser::ChainedTupleIndexExprContext*>(expr)) {
+    if (auto* cti = dynamic_cast<LucisParser::ChainedTupleIndexExprContext*>(expr)) {
         auto* baseType = resolveExprType(cti->expression());
         if (!baseType || baseType->kind != TypeKind::Tuple) {
             if (baseType)
@@ -1957,7 +1957,7 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
     }
 
     // ── Tuple arrow index: ptr->0, ptr->1, ... ──────────────────────
-    if (auto* tai = dynamic_cast<LuxParser::TupleArrowIndexExprContext*>(expr)) {
+    if (auto* tai = dynamic_cast<LucisParser::TupleArrowIndexExprContext*>(expr)) {
         auto* baseType = resolveExprType(tai->expression());
         if (!baseType || baseType->kind != TypeKind::Pointer) {
             if (baseType)
@@ -1980,7 +1980,7 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
     }
 
     // ── Chained tuple arrow index: ptr->N.M (FLOAT_LIT) ────────────
-    if (auto* ctai = dynamic_cast<LuxParser::ChainedTupleArrowIndexExprContext*>(expr)) {
+    if (auto* ctai = dynamic_cast<LucisParser::ChainedTupleArrowIndexExprContext*>(expr)) {
         auto* baseType = resolveExprType(ctai->expression());
         if (!baseType || baseType->kind != TypeKind::Pointer) {
             if (baseType)
@@ -2014,11 +2014,11 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
     }
 
     // ── Try expression (unwrap — same type as inner) ─────────────────
-    if (auto* te = dynamic_cast<LuxParser::TryExprContext*>(expr))
+    if (auto* te = dynamic_cast<LucisParser::TryExprContext*>(expr))
         return resolveExprType(te->expression());
 
     // ── Propagate operator: expr? — unwrap Result or return error ─────
-    if (auto* pe = dynamic_cast<LuxParser::PropagateExprContext*>(expr)) {
+    if (auto* pe = dynamic_cast<LucisParser::PropagateExprContext*>(expr)) {
         auto* sourceType = resolveExprType(pe->expression());
         if (!sourceType) return nullptr;
 
@@ -2039,7 +2039,7 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
     }
 
     // ── Catch unwrap expression: expr catch { ... } ───────────────────
-    if (auto* cu = dynamic_cast<LuxParser::CatchUnwrapExprContext*>(expr)) {
+    if (auto* cu = dynamic_cast<LucisParser::CatchUnwrapExprContext*>(expr)) {
         auto* sourceType = resolveExprType(cu->expression());
         if (!sourceType) return nullptr;
 
@@ -2072,7 +2072,7 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
     }
 
     // ── Spawn expression: spawn f() → Task<T> where f() returns T ───
-    if (auto* se = dynamic_cast<LuxParser::SpawnExprContext*>(expr)) {
+    if (auto* se = dynamic_cast<LucisParser::SpawnExprContext*>(expr)) {
         auto* innerType = resolveExprType(se->expression());
         if (innerType) {
             auto fullName = "Task<" + innerType->name + ">";
@@ -2094,7 +2094,7 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
     }
 
     // ── Await expression: await task → T where task is Task<T> ──────
-    if (auto* ae = dynamic_cast<LuxParser::AwaitExprContext*>(expr)) {
+    if (auto* ae = dynamic_cast<LucisParser::AwaitExprContext*>(expr)) {
         auto* taskType = resolveExprType(ae->expression());
         if (taskType && taskType->kind == TypeKind::Extended &&
             taskType->extendedKind == "Task" && taskType->elementType)
@@ -2107,7 +2107,7 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
     }
 
     // ── Unary negation ───────────────────────────────────────────────
-    if (auto* neg = dynamic_cast<LuxParser::NegExprContext*>(expr)) {
+    if (auto* neg = dynamic_cast<LucisParser::NegExprContext*>(expr)) {
         auto* operand = resolveExprType(neg->expression());
         if (operand && !isNumeric(operand))
             error(expr, "unary '-' requires numeric operand, got '" +
@@ -2116,13 +2116,13 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
     }
 
     // ── Logical NOT ──────────────────────────────────────────────────
-    if (auto* lnot = dynamic_cast<LuxParser::LogicalNotExprContext*>(expr)) {
+    if (auto* lnot = dynamic_cast<LucisParser::LogicalNotExprContext*>(expr)) {
         resolveExprType(lnot->expression());
         return typeRegistry_.lookup("bool");
     }
 
     // ── Bitwise NOT ──────────────────────────────────────────────────
-    if (auto* bnot = dynamic_cast<LuxParser::BitNotExprContext*>(expr)) {
+    if (auto* bnot = dynamic_cast<LucisParser::BitNotExprContext*>(expr)) {
         auto* operand = resolveExprType(bnot->expression());
         if (operand && !isInteger(operand))
             error(expr, "operator '~' requires integer operand, got '" +
@@ -2131,7 +2131,7 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
     }
 
     // ── Multiplicative: *, /, % ──────────────────────────────────────
-    if (auto* mul = dynamic_cast<LuxParser::MulExprContext*>(expr)) {
+    if (auto* mul = dynamic_cast<LucisParser::MulExprContext*>(expr)) {
         auto exprs = mul->expression();
         auto* lhs = resolveExprType(exprs[0]);
         auto* rhs = resolveExprType(exprs[1]);
@@ -2163,7 +2163,7 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
 
         // Compile-time division by zero check
         if (opText == "/" || opText == "%") {
-            if (auto* intLit = dynamic_cast<LuxParser::IntLitExprContext*>(exprs[1])) {
+            if (auto* intLit = dynamic_cast<LucisParser::IntLitExprContext*>(exprs[1])) {
                 if (intLit->INT_LIT()->getText() == "0")
                     error(expr, "division by zero");
             }
@@ -2175,7 +2175,7 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
     }
 
     // ── Additive: +, - ──────────────────────────────────────────────
-    if (auto* add = dynamic_cast<LuxParser::AddSubExprContext*>(expr)) {
+    if (auto* add = dynamic_cast<LucisParser::AddSubExprContext*>(expr)) {
         auto exprs = add->expression();
         auto* lhs = resolveExprType(exprs[0]);
         auto* rhs = resolveExprType(exprs[1]);
@@ -2228,13 +2228,13 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
                              "' requires integer operands, got '" + rhs->name + "'");
         return lhs;
     };
-    if (auto* lsh = dynamic_cast<LuxParser::LshiftExprContext*>(expr))
+    if (auto* lsh = dynamic_cast<LucisParser::LshiftExprContext*>(expr))
         return checkShift(lsh, "<<");
-    if (auto* rsh = dynamic_cast<LuxParser::RshiftExprContext*>(expr))
+    if (auto* rsh = dynamic_cast<LucisParser::RshiftExprContext*>(expr))
         return checkShift(rsh, ">>");
 
     // ── Relational: <, >, <=, >= ────────────────────────────────────
-    if (auto* rel = dynamic_cast<LuxParser::RelExprContext*>(expr)) {
+    if (auto* rel = dynamic_cast<LucisParser::RelExprContext*>(expr)) {
         auto exprs = rel->expression();
         auto* lhs = resolveExprType(exprs[0]);
         auto* rhs = resolveExprType(exprs[1]);
@@ -2257,7 +2257,7 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
     }
 
     // ── Equality: ==, != ────────────────────────────────────────────
-    if (auto* eq = dynamic_cast<LuxParser::EqExprContext*>(expr)) {
+    if (auto* eq = dynamic_cast<LucisParser::EqExprContext*>(expr)) {
         auto exprs = eq->expression();
         auto* lhs = resolveExprType(exprs[0]);
         auto* rhs = resolveExprType(exprs[1]);
@@ -2281,7 +2281,7 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
     }
 
     // ── Bitwise AND/XOR/OR ──────────────────────────────────────────
-    if (auto* ba = dynamic_cast<LuxParser::BitAndExprContext*>(expr)) {
+    if (auto* ba = dynamic_cast<LucisParser::BitAndExprContext*>(expr)) {
         auto exprs = ba->expression();
         auto* lhs = resolveExprType(exprs[0]);
         auto* rhs = resolveExprType(exprs[1]);
@@ -2295,7 +2295,7 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
         return lhs ? lhs : rhs;
     }
 
-    if (auto* bx = dynamic_cast<LuxParser::BitXorExprContext*>(expr)) {
+    if (auto* bx = dynamic_cast<LucisParser::BitXorExprContext*>(expr)) {
         auto exprs = bx->expression();
         auto* lhs = resolveExprType(exprs[0]);
         auto* rhs = resolveExprType(exprs[1]);
@@ -2309,7 +2309,7 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
         return lhs ? lhs : rhs;
     }
 
-    if (auto* bo = dynamic_cast<LuxParser::BitOrExprContext*>(expr)) {
+    if (auto* bo = dynamic_cast<LucisParser::BitOrExprContext*>(expr)) {
         auto exprs = bo->expression();
         auto* lhs = resolveExprType(exprs[0]);
         auto* rhs = resolveExprType(exprs[1]);
@@ -2324,14 +2324,14 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
     }
 
     // ── Logical AND/OR ──────────────────────────────────────────────
-    if (auto* la = dynamic_cast<LuxParser::LogicalAndExprContext*>(expr)) {
+    if (auto* la = dynamic_cast<LucisParser::LogicalAndExprContext*>(expr)) {
         auto exprs = la->expression();
         resolveExprType(exprs[0]);
         resolveExprType(exprs[1]);
         return typeRegistry_.lookup("bool");
     }
 
-    if (auto* lo = dynamic_cast<LuxParser::LogicalOrExprContext*>(expr)) {
+    if (auto* lo = dynamic_cast<LucisParser::LogicalOrExprContext*>(expr)) {
         auto exprs = lo->expression();
         resolveExprType(exprs[0]);
         resolveExprType(exprs[1]);
@@ -2339,15 +2339,15 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
     }
 
     // ── Helper: check if an expression is an lvalue ─────────────────
-    auto isLValue = [](LuxParser::ExpressionContext* e) -> bool {
-        return dynamic_cast<LuxParser::IdentExprContext*>(e)
-            || dynamic_cast<LuxParser::FieldAccessExprContext*>(e)
-            || dynamic_cast<LuxParser::DerefExprContext*>(e)
-            || dynamic_cast<LuxParser::IndexExprContext*>(e);
+    auto isLValue = [](LucisParser::ExpressionContext* e) -> bool {
+        return dynamic_cast<LucisParser::IdentExprContext*>(e)
+            || dynamic_cast<LucisParser::FieldAccessExprContext*>(e)
+            || dynamic_cast<LucisParser::DerefExprContext*>(e)
+            || dynamic_cast<LucisParser::IndexExprContext*>(e);
     };
 
     // ── Pre-increment/decrement ─────────────────────────────────────
-    if (auto* pi = dynamic_cast<LuxParser::PreIncrExprContext*>(expr)) {
+    if (auto* pi = dynamic_cast<LucisParser::PreIncrExprContext*>(expr)) {
         auto* inner = pi->expression();
         auto* type = resolveExprType(inner);
         if (type && !isInteger(type))
@@ -2358,7 +2358,7 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
         return type;
     }
 
-    if (auto* pd = dynamic_cast<LuxParser::PreDecrExprContext*>(expr)) {
+    if (auto* pd = dynamic_cast<LucisParser::PreDecrExprContext*>(expr)) {
         auto* inner = pd->expression();
         auto* type = resolveExprType(inner);
         if (type && !isInteger(type))
@@ -2370,7 +2370,7 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
     }
 
     // ── Post-increment/decrement ────────────────────────────────────
-    if (auto* pi = dynamic_cast<LuxParser::PostIncrExprContext*>(expr)) {
+    if (auto* pi = dynamic_cast<LucisParser::PostIncrExprContext*>(expr)) {
         auto* inner = pi->expression();
         auto* type = resolveExprType(inner);
         if (type && !isInteger(type))
@@ -2381,7 +2381,7 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
         return type;
     }
 
-    if (auto* pd = dynamic_cast<LuxParser::PostDecrExprContext*>(expr)) {
+    if (auto* pd = dynamic_cast<LucisParser::PostDecrExprContext*>(expr)) {
         auto* inner = pd->expression();
         auto* type = resolveExprType(inner);
         if (type && !isInteger(type))
@@ -2393,7 +2393,7 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
     }
 
     // ── Ternary: cond ? trueExpr : falseExpr ────────────────────────
-    if (auto* tern = dynamic_cast<LuxParser::TernaryExprContext*>(expr)) {
+    if (auto* tern = dynamic_cast<LucisParser::TernaryExprContext*>(expr)) {
         auto exprs = tern->expression();
         auto* condType = resolveExprType(exprs[0]); // condition
         if (condType && !isConditionType(condType))
@@ -2408,7 +2408,7 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
     }
 
     // ── Is: expr is type [::Variant] ────────────────────────────────
-    if (auto* isE = dynamic_cast<LuxParser::IsExprContext*>(expr)) {
+    if (auto* isE = dynamic_cast<LucisParser::IsExprContext*>(expr)) {
         auto* lhsType = resolveExprType(isE->expression());
         unsigned dims = 0;
         auto* rhsType = resolveTypeSpec(isE->typeSpec(), dims);
@@ -2470,7 +2470,7 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
     }
 
     // ── Null coalescing: expr ?? default ────────────────────────────
-    if (auto* nc = dynamic_cast<LuxParser::NullCoalExprContext*>(expr)) {
+    if (auto* nc = dynamic_cast<LucisParser::NullCoalExprContext*>(expr)) {
         auto exprs = nc->expression();
         auto* lhsType = resolveExprType(exprs[0]);
         auto* rhsType = resolveExprType(exprs[1]);
@@ -2485,7 +2485,7 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
     }
 
     // ── Arrow method call: expr->method(args) ───────────────────────
-    if (auto* amc = dynamic_cast<LuxParser::ArrowMethodCallExprContext*>(expr)) {
+    if (auto* amc = dynamic_cast<LucisParser::ArrowMethodCallExprContext*>(expr)) {
         auto* baseType = resolveExprType(amc->expression());
         auto methodName = amc->IDENTIFIER()->getText();
 
@@ -2527,7 +2527,7 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
     }
 
     // ── Arrow access: expr->field ───────────────────────────────────
-    if (auto* aa = dynamic_cast<LuxParser::ArrowAccessExprContext*>(expr)) {
+    if (auto* aa = dynamic_cast<LucisParser::ArrowAccessExprContext*>(expr)) {
         auto* baseType = resolveExprType(aa->expression());
         auto fieldName = aa->IDENTIFIER()->getText();
 
@@ -2554,7 +2554,7 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
     }
 
     // ── Range: expr..expr ───────────────────────────────────────────
-    if (auto* rng = dynamic_cast<LuxParser::RangeExprContext*>(expr)) {
+    if (auto* rng = dynamic_cast<LucisParser::RangeExprContext*>(expr)) {
         auto exprs = rng->expression();
         auto* startType = resolveExprType(exprs[0]);
         auto* endType   = resolveExprType(exprs[1]);
@@ -2568,7 +2568,7 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
     }
 
     // ── Range inclusive: expr..=expr ─────────────────────────────────
-    if (auto* rng = dynamic_cast<LuxParser::RangeInclExprContext*>(expr)) {
+    if (auto* rng = dynamic_cast<LucisParser::RangeInclExprContext*>(expr)) {
         auto exprs = rng->expression();
         auto* startType = resolveExprType(exprs[0]);
         auto* endType   = resolveExprType(exprs[1]);
@@ -2582,12 +2582,12 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
     }
 
     // ── Spread: ...expr ─────────────────────────────────────────────
-    if (auto* sp = dynamic_cast<LuxParser::SpreadExprContext*>(expr)) {
+    if (auto* sp = dynamic_cast<LucisParser::SpreadExprContext*>(expr)) {
         return resolveExprType(sp->expression());
     }
 
     // ── Cast: expr as type ──────────────────────────────────────────
-    if (auto* cast = dynamic_cast<LuxParser::CastExprContext*>(expr)) {
+    if (auto* cast = dynamic_cast<LucisParser::CastExprContext*>(expr)) {
         auto* srcType = resolveExprType(cast->expression());
         unsigned dims = 0;
         auto* dstType = resolveTypeSpec(cast->typeSpec(), dims);
@@ -2647,7 +2647,7 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
     }
 
     // ── Sizeof: sizeof(type) ────────────────────────────────────────
-    if (auto* sz = dynamic_cast<LuxParser::SizeofExprContext*>(expr)) {
+    if (auto* sz = dynamic_cast<LucisParser::SizeofExprContext*>(expr)) {
         // sizeof requires concrete type sizes; unsized [] dimensions are not valid.
         auto* spec = sz->typeSpec();
         while (spec && spec->LBRACKET()) {
@@ -2666,13 +2666,13 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
     }
 
     // ── Typeof: typeof(expr) ────────────────────────────────────────
-    if (auto* to = dynamic_cast<LuxParser::TypeofExprContext*>(expr)) {
+    if (auto* to = dynamic_cast<LucisParser::TypeofExprContext*>(expr)) {
         resolveExprType(to->expression());
         return typeRegistry_.lookup("string");
     }
 
     // ── Method call: expr.method(args) ─────────────────────────────
-    if (auto* mc = dynamic_cast<LuxParser::MethodCallExprContext*>(expr)) {
+    if (auto* mc = dynamic_cast<LucisParser::MethodCallExprContext*>(expr)) {
         auto* receiverType = resolveExprType(mc->expression());
         auto methodName = mc->IDENTIFIER()->getText();
 
@@ -2881,16 +2881,16 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
     }
 
     // ── Function call: expr(args) ───────────────────────────────────
-    if (auto* call = dynamic_cast<LuxParser::FnCallExprContext*>(expr)) {
+    if (auto* call = dynamic_cast<LucisParser::FnCallExprContext*>(expr)) {
         auto* callee = call->expression();
 
         // Detect callee name for polymorphic builtin detection
         std::string calleeName;
-        if (auto* ident = dynamic_cast<LuxParser::IdentExprContext*>(callee))
+        if (auto* ident = dynamic_cast<LucisParser::IdentExprContext*>(callee))
             calleeName = ident->IDENTIFIER()->getText();
 
         std::vector<const TypeInfo*> argTypes;
-        std::vector<LuxParser::ExpressionContext*> argExprs;
+        std::vector<LucisParser::ExpressionContext*> argExprs;
         if (auto* argList = call->argList()) {
             for (auto* argExpr : argList->expression()) {
                 argExprs.push_back(argExpr);
@@ -2909,7 +2909,7 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
             }
         }
 
-        // Lux std::log::sprintf expects Lux `string` values, not `*char`.
+        // Lucis std::log::sprintf expects Lucis `string` values, not `*char`.
         // Guard expression calls during semantic checking.
         if (calleeName == "sprintf" && imports_.isImported("sprintf")) {
             for (size_t i = 0; i < argTypes.size(); i++) {
@@ -2919,7 +2919,7 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
                     ti->pointeeType &&
                     ti->pointeeType->kind == TypeKind::Char) {
                     error(argExprs[i],
-                          "'sprintf' from Lux does not accept '*char'; "
+                          "'sprintf' from Lucis does not accept '*char'; "
                           "pass 'string' values (use 'fromCStr(...)' if needed)");
                     return nullptr;
                 }
@@ -2930,7 +2930,7 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
         if (!calleeName.empty()) {
             auto funcIt = genericFuncTemplates_.find(calleeName);
             if (funcIt != genericFuncTemplates_.end()) {
-                std::vector<LuxParser::ParamContext*> formalParams;
+                std::vector<LucisParser::ParamContext*> formalParams;
                 if (auto* paramList = funcIt->second.decl->paramList())
                     formalParams = paramList->param();
 
@@ -3142,13 +3142,13 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
     }
 
     // ── Field access: expr.field ─────────────────────────────────────
-    if (auto* fa = dynamic_cast<LuxParser::FieldAccessExprContext*>(expr)) {
+    if (auto* fa = dynamic_cast<LucisParser::FieldAccessExprContext*>(expr)) {
         auto* baseType = resolveExprType(fa->expression());
         auto fieldName = fa->IDENTIFIER()->getText();
 
         // .len/.length on array/variadic params → int64
         if (fieldName == "len" || fieldName == "length") {
-            if (auto* ident = dynamic_cast<LuxParser::IdentExprContext*>(fa->expression())) {
+            if (auto* ident = dynamic_cast<LucisParser::IdentExprContext*>(fa->expression())) {
                 auto it = locals_.find(ident->IDENTIFIER()->getText());
                 if (it != locals_.end() && it->second.arrayDims > 0)
                     return typeRegistry_.lookup("int64");
@@ -3185,7 +3185,7 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
     }
 
     // ── Index: expr[index] ──────────────────────────────────────────
-    if (auto* idx = dynamic_cast<LuxParser::IndexExprContext*>(expr)) {
+    if (auto* idx = dynamic_cast<LucisParser::IndexExprContext*>(expr)) {
         auto exprs = idx->expression();
         auto* baseType = resolveExprType(exprs[0]);
         auto* indexType = resolveExprType(exprs[1]);
@@ -3206,11 +3206,11 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
         // Ranges in [] are for loops/comprehensions, not for string (see docs/language/ranges.md, docs/stdlib/string.md)
         {
             auto* indexExpr = exprs[1];
-            while (auto* p = dynamic_cast<LuxParser::ParenExprContext*>(indexExpr))
+            while (auto* p = dynamic_cast<LucisParser::ParenExprContext*>(indexExpr))
                 indexExpr = p->expression();
             if (baseType && baseType->kind == TypeKind::String &&
-                (dynamic_cast<LuxParser::RangeExprContext*>(indexExpr) ||
-                 dynamic_cast<LuxParser::RangeInclExprContext*>(indexExpr))) {
+                (dynamic_cast<LucisParser::RangeExprContext*>(indexExpr) ||
+                 dynamic_cast<LucisParser::RangeInclExprContext*>(indexExpr))) {
                 error(expr,
                     "cannot subscript 'string' with a range: use .slice(start, end) on the "
                     "string or std::str::slice (see docs/stdlib/string.md)");
@@ -3244,7 +3244,7 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
     }
 
     // ── Struct / Union literal: Name { field: expr, ... } ────────────
-    if (auto* sl = dynamic_cast<LuxParser::StructLitExprContext*>(expr)) {
+    if (auto* sl = dynamic_cast<LucisParser::StructLitExprContext*>(expr)) {
         auto ids = sl->IDENTIFIER();
         if (ids.empty()) return nullptr;
 
@@ -3312,7 +3312,7 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
     }
 
     // ── Struct / Union positional init: Name { expr, expr, ... } ────
-    if (auto* spi = dynamic_cast<LuxParser::StructPosInitExprContext*>(expr)) {
+    if (auto* spi = dynamic_cast<LucisParser::StructPosInitExprContext*>(expr)) {
         auto typeName = spi->IDENTIFIER()->getText();
         auto* typeInfo = typeRegistry_.lookup(typeName);
 
@@ -3363,7 +3363,7 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
     }
 
     // ── Qualified positional struct/union init or enum variant init: LIB::Point { x, y } or Shape::Circle { 1, 2 } ───
-    if (auto* qspi = dynamic_cast<LuxParser::QualifiedStructPosInitExprContext*>(expr)) {
+    if (auto* qspi = dynamic_cast<LucisParser::QualifiedStructPosInitExprContext*>(expr)) {
         if (qspi->IDENTIFIER().empty()) {
             error(expr, "invalid qualified type initialization");
             return nullptr;
@@ -3420,7 +3420,7 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
     }
 
     // ── Qualified named struct/union init or enum variant init: LIB::Point { x: 10, y: 20 } or Shape::Circle { r: 4.0 } ───
-    if (auto* qsni = dynamic_cast<LuxParser::QualifiedStructNamedInitExprContext*>(expr)) {
+    if (auto* qsni = dynamic_cast<LucisParser::QualifiedStructNamedInitExprContext*>(expr)) {
         auto first = qsni->IDENTIFIER().size() > 0 ? qsni->IDENTIFIER(0)->getText() : "";
         auto second = qsni->IDENTIFIER().size() > 1 ? qsni->IDENTIFIER(1)->getText() : "";
         auto* typeInfo = tryResolveQualifiedType(expr, first, second);
@@ -3487,14 +3487,14 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
     }
 
     // ── Static method call: Struct::method(args) ─────────────────────
-    if (auto* smc = dynamic_cast<LuxParser::StaticMethodCallExprContext*>(expr)) {
+    if (auto* smc = dynamic_cast<LucisParser::StaticMethodCallExprContext*>(expr)) {
         auto ids = smc->IDENTIFIER();
         if (ids.size() < 2) {
             error(expr, "invalid static call expression");
             return nullptr;
         }
 
-        // ── Intrinsic call: lux::core::trap() ────────────────────────
+        // ── Intrinsic call: lucis::core::trap() ────────────────────────
         {
             std::vector<std::string> idTexts;
             for (auto* id : ids)
@@ -3503,7 +3503,7 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
             if (IntrinsicRegistry::isIntrinsicPrefix(idTexts[0])) {
                 std::string ns, funcName;
                 if (!IntrinsicRegistry::parseIntrinsicPath(idTexts, ns, funcName)) {
-                    error(expr, "invalid intrinsic path: expected 'lux::namespace::function'");
+                    error(expr, "invalid intrinsic path: expected 'lucis::namespace::function'");
                     return nullptr;
                 }
 
@@ -3516,7 +3516,7 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
                 // Validate argument count
                 auto argExprs = smc->argList()
                     ? smc->argList()->expression()
-                    : std::vector<LuxParser::ExpressionContext*>{};
+                    : std::vector<LucisParser::ExpressionContext*>{};
 
                 size_t fixedCount = intrinsic->params.size();
                 if (intrinsic->isVariadic) {
@@ -3728,7 +3728,7 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
                 auto* sym = nsRegistry_->findSymbol(importedModule->second, methodName);
                 if (sym) {
                     if (sym->kind == ExportedSymbol::Function) {
-                        auto* funcDecl = static_cast<LuxParser::FunctionDeclContext*>(sym->decl);
+                        auto* funcDecl = static_cast<LucisParser::FunctionDeclContext*>(sym->decl);
                         unsigned retDims = 0;
                         auto* retType = resolveTypeSpec(funcDecl->typeSpec(), retDims);
                         if (!retType) return nullptr;
@@ -3776,16 +3776,16 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
                 return enumType;
             }
             auto args = smc->argList() ? smc->argList()->expression()
-                                       : std::vector<LuxParser::ExpressionContext*>{};
+                                       : std::vector<LucisParser::ExpressionContext*>{};
             for (size_t i = 0; i < argTypes.size(); i++) {
                 auto* expected = variantInfo->payloadFields[i].typeInfo;
                 bool literalToVecOk = false;
                 if (expected && expected->kind == TypeKind::Extended &&
                     expected->extendedKind == "Vec" &&
                     i < args.size() &&
-                    dynamic_cast<LuxParser::ArrayLitExprContext*>(args[i])) {
+                    dynamic_cast<LucisParser::ArrayLitExprContext*>(args[i])) {
                     literalToVecOk = true;
-                    auto* arr = dynamic_cast<LuxParser::ArrayLitExprContext*>(args[i]);
+                    auto* arr = dynamic_cast<LucisParser::ArrayLitExprContext*>(args[i]);
                     for (auto* e : arr->expression()) {
                         auto* et = resolveExprType(e);
                         if (et && expected->elementType &&
@@ -3846,16 +3846,16 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
                 return inferredEnum;
             }
             auto args = smc->argList() ? smc->argList()->expression()
-                                       : std::vector<LuxParser::ExpressionContext*>{};
+                                       : std::vector<LucisParser::ExpressionContext*>{};
             for (size_t i = 0; i < argTypes.size(); i++) {
                 auto* expected = variantInfo->payloadFields[i].typeInfo;
                 bool literalToVecOk = false;
                 if (expected && expected->kind == TypeKind::Extended &&
                     expected->extendedKind == "Vec" &&
                     i < args.size() &&
-                    dynamic_cast<LuxParser::ArrayLitExprContext*>(args[i])) {
+                    dynamic_cast<LucisParser::ArrayLitExprContext*>(args[i])) {
                     literalToVecOk = true;
-                    auto* arr = dynamic_cast<LuxParser::ArrayLitExprContext*>(args[i]);
+                    auto* arr = dynamic_cast<LucisParser::ArrayLitExprContext*>(args[i]);
                     for (auto* e : arr->expression()) {
                         auto* et = resolveExprType(e);
                         if (et && expected->elementType &&
@@ -3887,7 +3887,7 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
                 if (method->AMPERSAND()) continue;
                 if (method->IDENTIFIER(0)->getText() != methodName) continue;
 
-                std::vector<LuxParser::ParamContext*> formalParams;
+                std::vector<LucisParser::ParamContext*> formalParams;
                 if (auto* paramList = method->paramList())
                     formalParams = paramList->param();
 
@@ -3988,7 +3988,7 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
     }
 
     // ── Generic function call: max<int32>(a, b) ─────────────────────
-    if (auto* gfc = dynamic_cast<LuxParser::GenericFnCallExprContext*>(expr)) {
+    if (auto* gfc = dynamic_cast<LucisParser::GenericFnCallExprContext*>(expr)) {
         auto funcName = gfc->IDENTIFIER()->getText();
         auto typeParamSpecs = gfc->typeSpec();
 
@@ -4015,7 +4015,7 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
     }
 
     // ── Generic static method call: Node<int32>::create(42) ─────────
-    if (auto* gsmc = dynamic_cast<LuxParser::GenericStaticMethodCallExprContext*>(expr)) {
+    if (auto* gsmc = dynamic_cast<LucisParser::GenericStaticMethodCallExprContext*>(expr)) {
         auto ids = gsmc->IDENTIFIER();
         auto structBaseName = ids[0]->getText();
         auto methodName = ids[1]->getText();
@@ -4060,16 +4060,16 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
                 return enumType;
             }
             auto args = gsmc->argList() ? gsmc->argList()->expression()
-                                        : std::vector<LuxParser::ExpressionContext*>{};
+                                        : std::vector<LucisParser::ExpressionContext*>{};
             for (size_t i = 0; i < argTypes.size(); i++) {
                 auto* expected = variantInfo->payloadFields[i].typeInfo;
                 bool literalToVecOk = false;
                 if (expected && expected->kind == TypeKind::Extended &&
                     expected->extendedKind == "Vec" &&
                     i < args.size() &&
-                    dynamic_cast<LuxParser::ArrayLitExprContext*>(args[i])) {
+                    dynamic_cast<LucisParser::ArrayLitExprContext*>(args[i])) {
                     literalToVecOk = true;
-                    auto* arr = dynamic_cast<LuxParser::ArrayLitExprContext*>(args[i]);
+                    auto* arr = dynamic_cast<LucisParser::ArrayLitExprContext*>(args[i]);
                     for (auto* e : arr->expression()) {
                         auto* et = resolveExprType(e);
                         if (et && expected->elementType &&
@@ -4130,8 +4130,8 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
         return nullptr;
     }
 
-    // ── Qualified generic call: lux::unsafe::va_arg<int32>(ptr) ──────
-    if (auto* gqfc = dynamic_cast<LuxParser::GenericQualifiedFnCallExprContext*>(expr)) {
+    // ── Qualified generic call: lucis::unsafe::va_arg<int32>(ptr) ──────
+    if (auto* gqfc = dynamic_cast<LucisParser::GenericQualifiedFnCallExprContext*>(expr)) {
         auto ids = gqfc->IDENTIFIER();
         if (ids.size() < 2) {
             error(expr, "invalid qualified generic call");
@@ -4148,7 +4148,7 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
             typeArgs.push_back(argTI);
         }
 
-        // ── Intrinsic check: lux::unsafe::va_arg<T>(ptr) ─────────
+        // ── Intrinsic check: lucis::unsafe::va_arg<T>(ptr) ─────────
         if (IntrinsicRegistry::isIntrinsicPrefix(ids[0]->getText())) {
             // Build path: all identifiers except the last = namespace path
             std::vector<std::string> idTexts;
@@ -4182,7 +4182,7 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
             // Validate argument count
             auto argExprs = gqfc->argList()
                 ? gqfc->argList()->expression()
-                : std::vector<LuxParser::ExpressionContext*>{};
+                : std::vector<LucisParser::ExpressionContext*>{};
 
             size_t fixedCount = intrinsic->params.size();
             if (intrinsic->isVariadic) {
@@ -4227,7 +4227,7 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
     }
 
     // ── Generic struct literal: Node<int32> { value: 42, next: null } ─
-    if (auto* gsl = dynamic_cast<LuxParser::GenericStructLitExprContext*>(expr)) {
+    if (auto* gsl = dynamic_cast<LucisParser::GenericStructLitExprContext*>(expr)) {
         auto baseName = gsl->IDENTIFIER(0)->getText();
         auto typeParamSpecs = gsl->typeSpec();
 
@@ -4290,7 +4290,7 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
     }
 
     // ── Generic struct positional init: Node<int32> { expr, expr, ... } ─
-    if (auto* gspi = dynamic_cast<LuxParser::GenericStructPosInitExprContext*>(expr)) {
+    if (auto* gspi = dynamic_cast<LucisParser::GenericStructPosInitExprContext*>(expr)) {
         auto baseName = gspi->IDENTIFIER()->getText();
         auto typeParamSpecs = gspi->typeSpec();
 
@@ -4346,7 +4346,7 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
 
 
     // ── Generic enum named variant literal: Enum<T>::Variant { ... } ─────
-    if (auto* genv = dynamic_cast<LuxParser::GenericEnumNamedVariantExprContext*>(expr)) {
+    if (auto* genv = dynamic_cast<LucisParser::GenericEnumNamedVariantExprContext*>(expr)) {
         auto ids = genv->IDENTIFIER();
         auto baseName = ids[0]->getText();
         auto variantName = ids[1]->getText();
@@ -4424,7 +4424,7 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
     }
 
     // ── Generic enum positional variant: Enum<T>::Variant { expr, ... } ─
-    if (auto* gepv = dynamic_cast<LuxParser::GenericEnumPosVariantExprContext*>(expr)) {
+    if (auto* gepv = dynamic_cast<LucisParser::GenericEnumPosVariantExprContext*>(expr)) {
         auto ids = gepv->IDENTIFIER();
         auto baseName = ids[0]->getText();
         auto variantName = ids[1]->getText();
@@ -4475,7 +4475,7 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
     }
 
     // ── Enum access: Enum::Variant ──────────────────────────────────
-    if (auto* ea = dynamic_cast<LuxParser::EnumAccessExprContext*>(expr)) {
+    if (auto* ea = dynamic_cast<LucisParser::EnumAccessExprContext*>(expr)) {
         auto ids = ea->IDENTIFIER();
         auto enumName = ids[0]->getText();
         auto variant = ids[1]->getText();
@@ -4502,7 +4502,7 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
     }
 
     // ── Generic enum access: Enum<T>::Variant ───────────────────────
-    if (auto* gea = dynamic_cast<LuxParser::GenericEnumAccessExprContext*>(expr)) {
+    if (auto* gea = dynamic_cast<LucisParser::GenericEnumAccessExprContext*>(expr)) {
         auto ids = gea->IDENTIFIER();
         auto baseName = ids[0]->getText();
         auto variantName = ids[1]->getText();
@@ -4535,11 +4535,11 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
     }
 
     // ── Address-of: &var ────────────────────────────────────────────
-    if (auto* addr = dynamic_cast<LuxParser::AddrOfExprContext*>(expr)) {
+    if (auto* addr = dynamic_cast<LucisParser::AddrOfExprContext*>(expr)) {
         auto* innerType = resolveExprType(addr->expression());
         if (!innerType) return nullptr;
         // Mark the variable as used if it's a simple identifier
-        if (auto* ident = dynamic_cast<LuxParser::IdentExprContext*>(addr->expression())) {
+        if (auto* ident = dynamic_cast<LucisParser::IdentExprContext*>(addr->expression())) {
             auto it = locals_.find(ident->IDENTIFIER()->getText());
             if (it != locals_.end()) it->second.used = true;
         }
@@ -4547,7 +4547,7 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
     }
 
     // ── Dereference: *expr ──────────────────────────────────────────
-    if (auto* deref = dynamic_cast<LuxParser::DerefExprContext*>(expr)) {
+    if (auto* deref = dynamic_cast<LucisParser::DerefExprContext*>(expr)) {
         auto* operand = resolveExprType(deref->expression());
         if (operand && operand->kind != TypeKind::Pointer) {
             error(expr, "cannot dereference non-pointer type '" +
@@ -4560,7 +4560,7 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
     }
 
     // ── Array literal: [expr, expr, ...] ────────────────────────────
-    if (auto* arr = dynamic_cast<LuxParser::ArrayLitExprContext*>(expr)) {
+    if (auto* arr = dynamic_cast<LucisParser::ArrayLitExprContext*>(expr)) {
         auto elements = arr->expression();
         if (elements.empty()) return nullptr;
 
@@ -4576,7 +4576,7 @@ const TypeInfo* Checker::resolveExprType(LuxParser::ExpressionContext* expr) {
     }
 
     // ── List comprehension: [expr | for type x in iterable if cond] ─
-    if (auto* lc = dynamic_cast<LuxParser::ListCompExprContext*>(expr)) {
+    if (auto* lc = dynamic_cast<LucisParser::ListCompExprContext*>(expr)) {
         // Register the loop variable temporarily
         unsigned varDims = 0;
         auto* varType = resolveTypeSpec(lc->typeSpec(), varDims);
@@ -4674,7 +4674,7 @@ bool Checker::isKnownType(const std::string& name) const {
 }
 
 static bool typeSpecMentionsGenericParam(
-    LuxParser::TypeSpecContext* typeSpec,
+    LucisParser::TypeSpecContext* typeSpec,
     const std::unordered_set<std::string>& genericParams) {
     if (!typeSpec) return false;
 
@@ -4691,9 +4691,9 @@ static bool typeSpecMentionsGenericParam(
     return false;
 }
 
-void Checker::checkUseDecls(LuxParser::ProgramContext* tree) {
-    auto processUse = [&](LuxParser::UseDeclContext* useDecl) {
-        if (auto* root = dynamic_cast<LuxParser::UseRootContext*>(useDecl)) {
+void Checker::checkUseDecls(LucisParser::ProgramContext* tree) {
+    auto processUse = [&](LucisParser::UseDeclContext* useDecl) {
+        if (auto* root = dynamic_cast<LucisParser::UseRootContext*>(useDecl)) {
             auto rootName = root->IDENTIFIER()->getText();
             if (rootName == "std") {
                 userImports_[rootName] = rootName;
@@ -4704,7 +4704,7 @@ void Checker::checkUseDecls(LuxParser::ProgramContext* tree) {
             } else {
                 error(root, "unknown module or namespace root '" + rootName + "'");
             }
-        } else if (auto* item = dynamic_cast<LuxParser::UseItemContext*>(useDecl)) {
+        } else if (auto* item = dynamic_cast<LucisParser::UseItemContext*>(useDecl)) {
             std::string path;
             for (auto* id : item->modulePath()->IDENTIFIER()) {
                 if (!path.empty()) path += "::";
@@ -4732,7 +4732,7 @@ void Checker::checkUseDecls(LuxParser::ProgramContext* tree) {
             } else {
                 error(item, "unknown module or namespace '" + path + "'");
             }
-        } else if (auto* grp = dynamic_cast<LuxParser::UseGroupContext*>(useDecl)) {
+        } else if (auto* grp = dynamic_cast<LucisParser::UseGroupContext*>(useDecl)) {
             std::string path;
             for (auto* id : grp->modulePath()->IDENTIFIER()) {
                 if (!path.empty()) path += "::";
@@ -4762,7 +4762,7 @@ void Checker::checkUseDecls(LuxParser::ProgramContext* tree) {
             } else {
                 error(grp, "unknown module or namespace '" + path + "'");
             }
-        } else if (auto* ew = dynamic_cast<LuxParser::UseEnumWildcardContext*>(useDecl)) {
+        } else if (auto* ew = dynamic_cast<LucisParser::UseEnumWildcardContext*>(useDecl)) {
             unsigned arrayDims = 0;
             auto* enumType = resolveTypeSpec(ew->typeSpec(), arrayDims);
             if (!enumType) {
@@ -4798,7 +4798,7 @@ void Checker::checkUseDecls(LuxParser::ProgramContext* tree) {
     }
 }
 
-void Checker::checkTypeAliasDecl(LuxParser::TypeAliasDeclContext* decl) {
+void Checker::checkTypeAliasDecl(LucisParser::TypeAliasDeclContext* decl) {
     auto name = decl->IDENTIFIER()->getText();
 
     auto* existing = typeRegistry_.lookup(name);
@@ -4863,7 +4863,7 @@ void Checker::checkTypeAliasDecl(LuxParser::TypeAliasDeclContext* decl) {
     }
 }
 
-void Checker::checkStructDecl(LuxParser::StructDeclContext* decl) {
+void Checker::checkStructDecl(LucisParser::StructDeclContext* decl) {
     auto name = decl->IDENTIFIER()->getText();
 
     // Generic struct template — register as template, not as concrete type
@@ -4933,7 +4933,7 @@ void Checker::checkStructDecl(LuxParser::StructDeclContext* decl) {
     typeRegistry_.registerType(std::move(ti));
 }
 
-void Checker::checkUnionDecl(LuxParser::UnionDeclContext* decl) {
+void Checker::checkUnionDecl(LucisParser::UnionDeclContext* decl) {
     auto name = decl->IDENTIFIER()->getText();
 
     if (auto* tpl = decl->typeParamList()) {
@@ -4988,7 +4988,7 @@ void Checker::checkUnionDecl(LuxParser::UnionDeclContext* decl) {
     typeRegistry_.registerType(std::move(ti));
 }
 
-void Checker::checkEnumDecl(LuxParser::EnumDeclContext* decl) {
+void Checker::checkEnumDecl(LucisParser::EnumDeclContext* decl) {
     auto name = decl->IDENTIFIER()->getText();
 
     if (typeRegistry_.lookup(name) || genericEnumTemplates_.count(name)) {
@@ -5094,7 +5094,7 @@ void Checker::checkEnumDecl(LuxParser::EnumDeclContext* decl) {
     typeRegistry_.registerType(std::move(ti));
 }
 
-void Checker::checkExtendDecl(LuxParser::ExtendDeclContext* decl) {
+void Checker::checkExtendDecl(LucisParser::ExtendDeclContext* decl) {
     auto structName = decl->IDENTIFIER()->getText();
 
     bool isGenericStruct = genericStructTemplates_.count(structName) != 0;
@@ -5144,7 +5144,7 @@ void Checker::checkExtendDecl(LuxParser::ExtendDeclContext* decl) {
         info.isStatic = (method->AMPERSAND() == nullptr);
 
         // Static methods use paramList, instance methods use direct param()
-        std::vector<LuxParser::ParamContext*> params;
+        std::vector<LucisParser::ParamContext*> params;
         if (info.isStatic) {
             if (auto* pl = method->paramList())
                 params = pl->param();
@@ -5163,7 +5163,7 @@ void Checker::checkExtendDecl(LuxParser::ExtendDeclContext* decl) {
     }
 }
 
-void Checker::checkExtendMethodBodies(LuxParser::ExtendDeclContext* decl) {
+void Checker::checkExtendMethodBodies(LucisParser::ExtendDeclContext* decl) {
     // Generic extend blocks are processed lazily during struct instantiation
     if (decl->typeParamList()) return;
 
@@ -5187,7 +5187,7 @@ void Checker::checkExtendMethodBodies(LuxParser::ExtendDeclContext* decl) {
         }
 
         // Register parameters
-        std::vector<LuxParser::ParamContext*> params;
+        std::vector<LucisParser::ParamContext*> params;
         if (isInstance) {
             params = method->param();
         } else {
@@ -5230,7 +5230,7 @@ void Checker::checkExtendMethodBodies(LuxParser::ExtendDeclContext* decl) {
     }
 }
 
-void Checker::registerFunctionSignature(LuxParser::FunctionDeclContext* func) {
+void Checker::registerFunctionSignature(LucisParser::FunctionDeclContext* func) {
     if (!func || func->IDENTIFIER().empty()) {
         error(func, "function must have a valid name");
         return;
@@ -5315,7 +5315,7 @@ void Checker::registerFunctionSignature(LuxParser::FunctionDeclContext* func) {
 //  Function body check
 // ═══════════════════════════════════════════════════════════════════════
 
-void Checker::checkFunction(LuxParser::FunctionDeclContext* func) {
+void Checker::checkFunction(LucisParser::FunctionDeclContext* func) {
     // Generic function templates are not checked directly — only their instantiations are.
     if (func->typeParamList()) return;
 
@@ -5369,9 +5369,9 @@ void Checker::checkFunction(LuxParser::FunctionDeclContext* func) {
     warnUnusedLocals(func);
 }
 
-bool Checker::blockAlwaysReturns(LuxParser::BlockContext* block) {
-    std::function<bool(LuxParser::IfBodyContext*)> ifBodyAlwaysReturns =
-    [&](LuxParser::IfBodyContext* body) -> bool {
+bool Checker::blockAlwaysReturns(LucisParser::BlockContext* block) {
+    std::function<bool(LucisParser::IfBodyContext*)> ifBodyAlwaysReturns =
+    [&](LucisParser::IfBodyContext* body) -> bool {
         if (!body) return false;
         if (auto* b = body->block())
             return blockAlwaysReturns(b);
@@ -5411,15 +5411,15 @@ bool Checker::blockAlwaysReturns(LuxParser::BlockContext* block) {
                 return true;
         }
         if (auto* es = stmt->exprStmt()) {
-            if (auto* call = dynamic_cast<LuxParser::FnCallExprContext*>(es->expression())) {
-                if (auto* ident = dynamic_cast<LuxParser::IdentExprContext*>(call->expression())) {
+            if (auto* call = dynamic_cast<LucisParser::FnCallExprContext*>(es->expression())) {
+                if (auto* ident = dynamic_cast<LucisParser::IdentExprContext*>(call->expression())) {
                     auto name = ident->IDENTIFIER()->getText();
                     if (name == "panic" || name == "exit" || name == "unreachable")
                         return true;
                 }
             }
-            // lux::core::trap() is a noreturn intrinsic
-            if (auto* smc = dynamic_cast<LuxParser::StaticMethodCallExprContext*>(es->expression())) {
+            // lucis::core::trap() is a noreturn intrinsic
+            if (auto* smc = dynamic_cast<LucisParser::StaticMethodCallExprContext*>(es->expression())) {
                 auto ids = smc->IDENTIFIER();
                 std::vector<std::string> idTexts;
                 for (auto* id : ids) idTexts.push_back(id->getText());
@@ -5493,7 +5493,7 @@ bool Checker::blockAlwaysReturns(LuxParser::BlockContext* block) {
     return false;
 }
 
-bool Checker::isTerminatorStmt(LuxParser::StatementContext* stmt) {
+bool Checker::isTerminatorStmt(LucisParser::StatementContext* stmt) {
     if (stmt->returnStmt()) return true;
     if (stmt->throwStmt())  return true;
     if (stmt->breakStmt())  return true;
@@ -5506,15 +5506,15 @@ bool Checker::isTerminatorStmt(LuxParser::StatementContext* stmt) {
             return true;
     }
     if (auto* es = stmt->exprStmt()) {
-        if (auto* call = dynamic_cast<LuxParser::FnCallExprContext*>(es->expression())) {
-            if (auto* ident = dynamic_cast<LuxParser::IdentExprContext*>(call->expression())) {
+        if (auto* call = dynamic_cast<LucisParser::FnCallExprContext*>(es->expression())) {
+            if (auto* ident = dynamic_cast<LucisParser::IdentExprContext*>(call->expression())) {
                 auto name = ident->IDENTIFIER()->getText();
                 if (name == "panic" || name == "exit" || name == "unreachable")
                     return true;
             }
         }
-        // lux::core::trap() is a noreturn intrinsic
-        if (auto* smc = dynamic_cast<LuxParser::StaticMethodCallExprContext*>(es->expression())) {
+        // lucis::core::trap() is a noreturn intrinsic
+        if (auto* smc = dynamic_cast<LucisParser::StaticMethodCallExprContext*>(es->expression())) {
             auto ids = smc->IDENTIFIER();
             std::vector<std::string> idTexts;
             for (auto* id : ids) idTexts.push_back(id->getText());
@@ -5528,7 +5528,7 @@ bool Checker::isTerminatorStmt(LuxParser::StatementContext* stmt) {
     return false;
 }
 
-void Checker::checkBlock(LuxParser::BlockContext* block,
+void Checker::checkBlock(LucisParser::BlockContext* block,
                          const TypeInfo* retType,
                          std::unordered_set<std::string>* initCapture) {
     auto savedLocals = locals_;
@@ -5558,11 +5558,11 @@ void Checker::checkBlock(LuxParser::BlockContext* block,
     enumVariantImports_ = savedEnumImports;
 }
 
-void Checker::checkStmt(LuxParser::StatementContext* stmt,
+void Checker::checkStmt(LucisParser::StatementContext* stmt,
                         const TypeInfo* retType,
                         bool& terminated) {
     if (auto* ud = stmt->useDecl()) {
-        if (auto* ew = dynamic_cast<LuxParser::UseEnumWildcardContext*>(ud)) {
+        if (auto* ew = dynamic_cast<LucisParser::UseEnumWildcardContext*>(ud)) {
             unsigned arrayDims = 0;
             auto* enumType = resolveTypeSpec(ew->typeSpec(), arrayDims);
             if (!enumType) {
@@ -5614,9 +5614,9 @@ void Checker::checkStmt(LuxParser::StatementContext* stmt,
     } else if (auto* ifS = stmt->ifStmt()) {
         checkIfStmt(ifS, retType);
     } else if (auto* forS = stmt->forStmt()) {
-        if (auto* forIn = dynamic_cast<LuxParser::ForInStmtContext*>(forS))
+        if (auto* forIn = dynamic_cast<LucisParser::ForInStmtContext*>(forS))
             checkForInStmt(forIn, retType);
-        else if (auto* forC = dynamic_cast<LuxParser::ForClassicStmtContext*>(forS))
+        else if (auto* forC = dynamic_cast<LucisParser::ForClassicStmtContext*>(forS))
             checkForClassicStmt(forC, retType);
     } else if (stmt->loopStmt()) {
         loopDepth_++;
@@ -5767,7 +5767,7 @@ void Checker::checkStmt(LuxParser::StatementContext* stmt,
         terminated = true;
 }
 
-void Checker::checkSwitchStmt(LuxParser::SwitchStmtContext* stmt,
+void Checker::checkSwitchStmt(LucisParser::SwitchStmtContext* stmt,
                               const TypeInfo* retType) {
     auto* exprType = resolveExprType(stmt->expression());
     if (exprType && !isInteger(exprType) && exprType->name != "char" &&
@@ -5792,7 +5792,7 @@ void Checker::checkSwitchStmt(LuxParser::SwitchStmtContext* stmt,
         for (auto* cc : stmt->caseClause()) {
             for (auto* caseExpr : cc->expression()) {
                 // Enum access: Enum::Variant
-                if (auto* ea = dynamic_cast<LuxParser::EnumAccessExprContext*>(caseExpr)) {
+                if (auto* ea = dynamic_cast<LucisParser::EnumAccessExprContext*>(caseExpr)) {
                     auto ids = ea->IDENTIFIER();
                     if (ids.size() >= 2)
                         coveredVariants.insert(ids[1]->getText());
@@ -5819,10 +5819,10 @@ void Checker::checkSwitchStmt(LuxParser::SwitchStmtContext* stmt,
     }
 }
 
-void Checker::checkIfStmt(LuxParser::IfStmtContext* stmt,
+void Checker::checkIfStmt(LucisParser::IfStmtContext* stmt,
                            const TypeInfo* retType) {
     // Run a branch body and capture which outer-scope variables become initialized.
-    auto checkIfBodyTracked = [&](LuxParser::IfBodyContext* body,
+    auto checkIfBodyTracked = [&](LucisParser::IfBodyContext* body,
                                    std::unordered_set<std::string>& inited) {
         if (!body) return;
         if (auto* b = body->block()) {
@@ -5849,9 +5849,9 @@ void Checker::checkIfStmt(LuxParser::IfStmtContext* stmt,
 
     // Extract is-binding from an expression (if it's `expr is Type::Variant(name)`).
     // Returns {bindingName, payloadTypeInfo} or {"", nullptr}.
-    auto extractIsBinding = [&](LuxParser::ExpressionContext* condExpr)
+    auto extractIsBinding = [&](LucisParser::ExpressionContext* condExpr)
             -> std::pair<std::string, const TypeInfo*> {
-        auto* isE = dynamic_cast<LuxParser::IsExprContext*>(condExpr);
+        auto* isE = dynamic_cast<LucisParser::IsExprContext*>(condExpr);
         if (!isE || !isE->SCOPE() || !isE->LPAREN() || !isE->IDENTIFIER(1))
             return {"", nullptr};
         auto variantName = isE->IDENTIFIER(0)->getText();
@@ -5929,7 +5929,7 @@ void Checker::checkIfStmt(LuxParser::IfStmtContext* stmt,
     }
 }
 
-void Checker::checkForInStmt(LuxParser::ForInStmtContext* stmt,
+void Checker::checkForInStmt(LucisParser::ForInStmtContext* stmt,
                               const TypeInfo* retType) {
     unsigned dims = 0;
     auto* iterType = [&]() -> const TypeInfo* {
@@ -5952,7 +5952,7 @@ void Checker::checkForInStmt(LuxParser::ForInStmtContext* stmt,
     locals_.erase(iterName);
 }
 
-void Checker::checkForClassicStmt(LuxParser::ForClassicStmtContext* stmt,
+void Checker::checkForClassicStmt(LucisParser::ForClassicStmtContext* stmt,
                                    const TypeInfo* retType) {
     unsigned dims = 0;
     auto* varType = [&]() -> const TypeInfo* {
@@ -5994,7 +5994,7 @@ void Checker::checkForClassicStmt(LuxParser::ForClassicStmtContext* stmt,
 //  Statement checks
 // ═══════════════════════════════════════════════════════════════════════
 
-void Checker::checkVarDeclStmt(LuxParser::VarDeclStmtContext* stmt) {
+void Checker::checkVarDeclStmt(LucisParser::VarDeclStmtContext* stmt) {
     // ── Tuple destructuring: auto (x, y) = expr; ─────────────────────
     if (stmt->LPAREN()) {
         auto ids = stmt->IDENTIFIER();
@@ -6074,7 +6074,7 @@ void Checker::checkVarDeclStmt(LuxParser::VarDeclStmtContext* stmt) {
 
         // Determine array dimensions from the initializer
         unsigned arrayDims = 0;
-        if (auto* arrLit = dynamic_cast<LuxParser::ArrayLitExprContext*>(
+        if (auto* arrLit = dynamic_cast<LucisParser::ArrayLitExprContext*>(
                 stmt->expression())) {
             if (!arrLit->expression().empty()) {
                 arrayDims = 1;
@@ -6085,9 +6085,9 @@ void Checker::checkVarDeclStmt(LuxParser::VarDeclStmtContext* stmt) {
         }
 
         // Infer pointer type from &var
-        if (auto* addr = dynamic_cast<LuxParser::AddrOfExprContext*>(
+        if (auto* addr = dynamic_cast<LucisParser::AddrOfExprContext*>(
                 stmt->expression())) {
-            if (auto* ident = dynamic_cast<LuxParser::IdentExprContext*>(addr->expression())) {
+            if (auto* ident = dynamic_cast<LucisParser::IdentExprContext*>(addr->expression())) {
                 auto varName = ident->IDENTIFIER()->getText();
                 auto it = locals_.find(varName);
                 if (it != locals_.end() && initType &&
@@ -6162,14 +6162,14 @@ void Checker::checkVarDeclStmt(LuxParser::VarDeclStmtContext* stmt) {
 
     // Allow array literal → vec/set conversion (but NOT for Map)
     if (typeInfo->kind == TypeKind::Extended &&
-        dynamic_cast<LuxParser::ArrayLitExprContext*>(stmt->expression())) {
+        dynamic_cast<LucisParser::ArrayLitExprContext*>(stmt->expression())) {
         if (typeInfo->extendedKind == "Map") {
             error(stmt, "Map cannot be initialized with a literal; "
                         "use method 'set' to add entries");
             return;
         }
         // Array literal initializing an extended type — validate element types
-        auto* arrExpr = dynamic_cast<LuxParser::ArrayLitExprContext*>(
+        auto* arrExpr = dynamic_cast<LucisParser::ArrayLitExprContext*>(
             stmt->expression());
         auto elems = arrExpr->expression();
         for (auto* e : elems) {
@@ -6201,7 +6201,7 @@ void Checker::checkVarDeclStmt(LuxParser::VarDeclStmtContext* stmt) {
     trackVarNumericRangeFromExpr(name, stmt->expression(), typeInfo);
 }
 
-void Checker::checkAssignStmt(LuxParser::AssignStmtContext* stmt) {
+void Checker::checkAssignStmt(LucisParser::AssignStmtContext* stmt) {
     auto name = stmt->IDENTIFIER()->getText();
     auto it = locals_.find(name);
 
@@ -6283,7 +6283,7 @@ void Checker::checkAssignStmt(LuxParser::AssignStmtContext* stmt) {
     }
 }
 
-void Checker::checkCompoundAssignStmt(LuxParser::CompoundAssignStmtContext* stmt) {
+void Checker::checkCompoundAssignStmt(LucisParser::CompoundAssignStmtContext* stmt) {
     auto name = stmt->IDENTIFIER()->getText();
     auto it = locals_.find(name);
 
@@ -6316,14 +6316,14 @@ void Checker::checkCompoundAssignStmt(LuxParser::CompoundAssignStmtContext* stmt
 
     // Compile-time division by zero check
     if (opText == "/=" || opText == "%=") {
-        if (auto* intLit = dynamic_cast<LuxParser::IntLitExprContext*>(stmt->expression())) {
+        if (auto* intLit = dynamic_cast<LucisParser::IntLitExprContext*>(stmt->expression())) {
             if (intLit->INT_LIT()->getText() == "0")
                 error(stmt, "division by zero");
         }
     }
 }
 
-void Checker::checkFieldAssignStmt(LuxParser::FieldAssignStmtContext* stmt) {
+void Checker::checkFieldAssignStmt(LucisParser::FieldAssignStmtContext* stmt) {
     auto identifiers = stmt->IDENTIFIER();
     auto varName = identifiers[0]->getText();
 
@@ -6374,7 +6374,7 @@ void Checker::checkFieldAssignStmt(LuxParser::FieldAssignStmtContext* stmt) {
     }
 }
 
-void Checker::checkFieldCompoundAssignStmt(LuxParser::FieldCompoundAssignStmtContext* stmt) {
+void Checker::checkFieldCompoundAssignStmt(LucisParser::FieldCompoundAssignStmtContext* stmt) {
     auto identifiers = stmt->IDENTIFIER();
     auto varName = identifiers[0]->getText();
 
@@ -6441,14 +6441,14 @@ void Checker::checkFieldCompoundAssignStmt(LuxParser::FieldCompoundAssignStmtCon
 
     // Compile-time division by zero check
     if (opText == "/=" || opText == "%=") {
-        if (auto* intLit = dynamic_cast<LuxParser::IntLitExprContext*>(stmt->expression())) {
+        if (auto* intLit = dynamic_cast<LucisParser::IntLitExprContext*>(stmt->expression())) {
             if (intLit->INT_LIT()->getText() == "0")
                 error(stmt, "division by zero");
         }
     }
 }
 
-void Checker::checkArrowAssignStmt(LuxParser::ArrowAssignStmtContext* stmt) {
+void Checker::checkArrowAssignStmt(LucisParser::ArrowAssignStmtContext* stmt) {
     auto ids = stmt->IDENTIFIER();
     if (ids.size() < 2) {
         error(stmt, "malformed '->' assignment");
@@ -6530,7 +6530,7 @@ void Checker::checkArrowAssignStmt(LuxParser::ArrowAssignStmtContext* stmt) {
     }
 }
 
-void Checker::checkArrowCompoundAssignStmt(LuxParser::ArrowCompoundAssignStmtContext* stmt) {
+void Checker::checkArrowCompoundAssignStmt(LucisParser::ArrowCompoundAssignStmtContext* stmt) {
     auto ids = stmt->IDENTIFIER();
     if (ids.size() < 2) {
         error(stmt, "malformed '->' compound assignment");
@@ -6625,14 +6625,14 @@ void Checker::checkArrowCompoundAssignStmt(LuxParser::ArrowCompoundAssignStmtCon
                          "' requires integer operand, got '" + rhsType->name + "'");
 
     if (opText == "/=" || opText == "%=") {
-        if (auto* intLit = dynamic_cast<LuxParser::IntLitExprContext*>(stmt->expression())) {
+        if (auto* intLit = dynamic_cast<LucisParser::IntLitExprContext*>(stmt->expression())) {
             if (intLit->INT_LIT()->getText() == "0")
                 error(stmt, "division by zero");
         }
     }
 }
 
-void Checker::checkDerefAssignStmt(LuxParser::DerefAssignStmtContext* stmt) {
+void Checker::checkDerefAssignStmt(LucisParser::DerefAssignStmtContext* stmt) {
     if (stmt->IDENTIFIER()) {
         // *ptr = value;
         auto varName = stmt->IDENTIFIER()->getText();
@@ -6660,7 +6660,7 @@ void Checker::checkDerefAssignStmt(LuxParser::DerefAssignStmtContext* stmt) {
     }
 }
 
-void Checker::checkDerefCompoundAssignStmt(LuxParser::DerefCompoundAssignStmtContext* stmt) {
+void Checker::checkDerefCompoundAssignStmt(LucisParser::DerefCompoundAssignStmtContext* stmt) {
     const TypeInfo* targetType = nullptr;
 
     if (stmt->IDENTIFIER()) {
@@ -6714,7 +6714,7 @@ void Checker::checkDerefCompoundAssignStmt(LuxParser::DerefCompoundAssignStmtCon
 
     if (opText == "/=" || opText == "%=") {
         auto* rhsExpr = stmt->expression(stmt->IDENTIFIER() ? 0 : 1);
-        if (auto* intLit = dynamic_cast<LuxParser::IntLitExprContext*>(rhsExpr)) {
+        if (auto* intLit = dynamic_cast<LucisParser::IntLitExprContext*>(rhsExpr)) {
             if (intLit->INT_LIT()->getText() == "0")
                 error(stmt, "division by zero");
         }
@@ -6799,7 +6799,7 @@ void Checker::registerGlobalBuiltins() {
 //  FFI: extern function declarations
 // ═══════════════════════════════════════════════════════════════════════
 
-void Checker::checkExternDecl(LuxParser::ExternDeclContext* decl) {
+void Checker::checkExternDecl(LucisParser::ExternDeclContext* decl) {
     auto funcName = decl->IDENTIFIER()->getText();
 
     unsigned retDims = 0;
@@ -6823,7 +6823,7 @@ void Checker::checkExternDecl(LuxParser::ExternDeclContext* decl) {
     globalBuiltins_.insert(funcName);
 }
 
-void Checker::checkCallStmt(LuxParser::CallStmtContext* stmt) {
+void Checker::checkCallStmt(LucisParser::CallStmtContext* stmt) {
     auto name = stmt->IDENTIFIER()->getText();
 
     if (!isKnownFunction(name)) {
@@ -6837,7 +6837,7 @@ void Checker::checkCallStmt(LuxParser::CallStmtContext* stmt) {
 
     // Resolve all argument types
     std::vector<const TypeInfo*> argTypes;
-    std::vector<LuxParser::ExpressionContext*> argExprs;
+    std::vector<LucisParser::ExpressionContext*> argExprs;
     if (auto* argList = stmt->argList()) {
         for (auto* argExpr : argList->expression()) {
             argExprs.push_back(argExpr);
@@ -6867,7 +6867,7 @@ void Checker::checkCallStmt(LuxParser::CallStmtContext* stmt) {
             }
         }
     }
-    // Lux std::log::sprintf expects Lux `string` values, not `*char`.
+    // Lucis std::log::sprintf expects Lucis `string` values, not `*char`.
     // Passing `*char` reaches invalid IR lowering; fail early in checker.
     if (name == "sprintf" && imports_.isImported("sprintf")) {
         for (size_t i = 0; i < argTypes.size(); i++) {
@@ -6877,7 +6877,7 @@ void Checker::checkCallStmt(LuxParser::CallStmtContext* stmt) {
                 ti->pointeeType &&
                 ti->pointeeType->kind == TypeKind::Char) {
                 error(argExprs[i],
-                      "'sprintf' from Lux does not accept '*char'; "
+                      "'sprintf' from Lucis does not accept '*char'; "
                       "pass 'string' values (use 'fromCStr(...)' if needed)");
             }
         }
@@ -6886,7 +6886,7 @@ void Checker::checkCallStmt(LuxParser::CallStmtContext* stmt) {
     // Generic function call with inferred type arguments: foo(10);
     auto gfit = genericFuncTemplates_.find(name);
     if (gfit != genericFuncTemplates_.end()) {
-        std::vector<LuxParser::ParamContext*> formalParams;
+        std::vector<LucisParser::ParamContext*> formalParams;
         if (auto* paramList = gfit->second.decl->paramList())
             formalParams = paramList->param();
 
@@ -7049,11 +7049,11 @@ void Checker::checkCallStmt(LuxParser::CallStmtContext* stmt) {
     applyCallOwnershipEffects(name, argExprs, stmt);
 }
 
-void Checker::checkExprStmt(LuxParser::ExprStmtContext* stmt) {
+void Checker::checkExprStmt(LucisParser::ExprStmtContext* stmt) {
     resolveExprType(stmt->expression());
 }
 
-void Checker::checkReturnStmt(LuxParser::ReturnStmtContext* stmt,
+void Checker::checkReturnStmt(LucisParser::ReturnStmtContext* stmt,
                                const TypeInfo* expectedType) {
     auto* expr = stmt->expression();
 
@@ -7080,18 +7080,18 @@ void Checker::checkReturnStmt(LuxParser::ReturnStmtContext* stmt,
     markExprAsMoved(expr, stmt);
 }
 
-unsigned Checker::resolveExprArrayDims(LuxParser::ExpressionContext* expr) {
+unsigned Checker::resolveExprArrayDims(LucisParser::ExpressionContext* expr) {
     if (!expr) return 0;
-    if (auto* id = dynamic_cast<LuxParser::IdentExprContext*>(expr)) {
+    if (auto* id = dynamic_cast<LucisParser::IdentExprContext*>(expr)) {
         auto it = locals_.find(id->IDENTIFIER()->getText());
         if (it != locals_.end())
             return it->second.arrayDims;
     }
-    if (auto* idx = dynamic_cast<LuxParser::IndexExprContext*>(expr)) {
+    if (auto* idx = dynamic_cast<LucisParser::IndexExprContext*>(expr)) {
         unsigned baseDims = resolveExprArrayDims(idx->expression(0));
         return baseDims > 0 ? baseDims - 1 : 0;
     }
-    if (auto* mc = dynamic_cast<LuxParser::MethodCallExprContext*>(expr)) {
+    if (auto* mc = dynamic_cast<LucisParser::MethodCallExprContext*>(expr)) {
         unsigned baseDims = resolveExprArrayDims(mc->expression());
         if (baseDims == 0) return 0;
 
@@ -7103,11 +7103,11 @@ unsigned Checker::resolveExprArrayDims(LuxParser::ExpressionContext* expr) {
         if (md->returnType == "_elem") return baseDims > 0 ? baseDims - 1 : 0;
         return 0;
     }
-    if (auto* paren = dynamic_cast<LuxParser::ParenExprContext*>(expr))
+    if (auto* paren = dynamic_cast<LucisParser::ParenExprContext*>(expr))
         return resolveExprArrayDims(paren->expression());
-    if (auto* deref = dynamic_cast<LuxParser::DerefExprContext*>(expr))
+    if (auto* deref = dynamic_cast<LucisParser::DerefExprContext*>(expr))
         return resolveExprArrayDims(deref->expression());
-    if (auto* cu = dynamic_cast<LuxParser::CatchUnwrapExprContext*>(expr)) {
+    if (auto* cu = dynamic_cast<LucisParser::CatchUnwrapExprContext*>(expr)) {
         auto* sourceType = resolveExprType(cu->expression());
         UnwrapCatchPatternInfo pattern;
         std::string reason;
@@ -7117,7 +7117,7 @@ unsigned Checker::resolveExprArrayDims(LuxParser::ExpressionContext* expr) {
             return 0;
         return pattern.okVariant->payloadFields[0].arrayDims;
     }
-    if (auto* pe = dynamic_cast<LuxParser::PropagateExprContext*>(expr)) {
+    if (auto* pe = dynamic_cast<LucisParser::PropagateExprContext*>(expr)) {
         auto* sourceType = resolveExprType(pe->expression());
         UnwrapCatchPatternInfo pattern;
         std::string reason;
@@ -7130,7 +7130,7 @@ unsigned Checker::resolveExprArrayDims(LuxParser::ExpressionContext* expr) {
     return 0;
 }
 
-void Checker::warnUnusedLocals(LuxParser::FunctionDeclContext* func) {
+void Checker::warnUnusedLocals(LucisParser::FunctionDeclContext* func) {
     warnUnusedLocals(static_cast<antlr4::ParserRuleContext*>(func));
 }
 
@@ -7194,7 +7194,7 @@ const TypeInfo* Checker::tryResolveQualifiedType(antlr4::ParserRuleContext* ctx,
 }
 
 const TypeInfo* Checker::resolveTypeSpecWithSubst(
-    LuxParser::TypeSpecContext* typeSpec,
+    LucisParser::TypeSpecContext* typeSpec,
     const std::unordered_map<std::string, const TypeInfo*>& subst,
     unsigned& arrayDims) {
     // If the typeSpec is a bare IDENTIFIER that matches a type param, substitute it
@@ -7521,7 +7521,7 @@ const TypeInfo* Checker::instantiateGenericStruct(
             info.returnType = retType;
             info.isStatic = (method->AMPERSAND() == nullptr);
 
-            std::vector<LuxParser::ParamContext*> params;
+            std::vector<LucisParser::ParamContext*> params;
             if (info.isStatic) {
                 if (auto* pl = method->paramList())
                     params = pl->param();
@@ -7875,8 +7875,8 @@ const TypeInfo* Checker::instantiateGenericFunc(
 std::optional<std::vector<const TypeInfo*>> Checker::inferGenericTypeArgs(
     const std::string& displayName,
     const std::vector<std::string>& typeParams,
-    LuxParser::TypeParamListContext* typeParamList,
-    const std::vector<LuxParser::ParamContext*>& formalParams,
+    LucisParser::TypeParamListContext* typeParamList,
+    const std::vector<LucisParser::ParamContext*>& formalParams,
     const std::vector<const TypeInfo*>& argTypes,
     antlr4::ParserRuleContext* ctx) {
 
@@ -7934,7 +7934,7 @@ std::optional<std::vector<const TypeInfo*>> Checker::inferGenericTypeArgs(
 }
 
 bool Checker::unifyGenericTypeArg(
-    LuxParser::TypeSpecContext* formalType,
+    LucisParser::TypeSpecContext* formalType,
     const TypeInfo* actualType,
     const std::unordered_set<std::string>& genericParams,
     std::unordered_map<std::string, const TypeInfo*>& inferred,

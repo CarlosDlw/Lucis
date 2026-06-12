@@ -124,7 +124,7 @@ static std::string unwrapIndexedType(std::string typeName,
 }
 
 struct FuncLookupCtx {
-  LuxParser::ProgramContext *tree = nullptr;
+  LucisParser::ProgramContext *tree = nullptr;
   const CBindings *bindings = nullptr;
   const BuiltinRegistry *builtinReg = nullptr;
   const IntrinsicRegistry *intrinsicReg = nullptr;
@@ -151,23 +151,23 @@ static std::string resolveIndexedElementType(const std::string& baseType) {
 }
 
 static std::string inferExprTypeName(
-    LuxParser::ExpressionContext *expr,
+    LucisParser::ExpressionContext *expr,
     const std::unordered_map<std::string, CompletionProvider::LocalVar> &locals,
     const FuncLookupCtx *flc);
 static bool parseGenericInstance(const std::string &t, std::string &base,
                                  std::vector<std::string> &args);
-static LuxParser::FunctionDeclContext *
+static LucisParser::FunctionDeclContext *
 findFunctionDeclForInference(const std::string &name, const FuncLookupCtx *flc);
-static LuxParser::StructDeclContext *
+static LucisParser::StructDeclContext *
 findStructDeclForInference(const std::string &name, const FuncLookupCtx *flc);
-static LuxParser::UnionDeclContext *
+static LucisParser::UnionDeclContext *
 findUnionDeclForInference(const std::string &name, const FuncLookupCtx *flc);
-static LuxParser::EnumDeclContext *
+static LucisParser::EnumDeclContext *
 findEnumDeclForInference(const std::string &name, const FuncLookupCtx *flc);
 
-static std::string inferIsBindingPayloadType(LuxParser::ExpressionContext *cond,
-                                             LuxParser::ProgramContext *tree) {
-  auto *isE = dynamic_cast<LuxParser::IsExprContext *>(cond);
+static std::string inferIsBindingPayloadType(LucisParser::ExpressionContext *cond,
+                                             LucisParser::ProgramContext *tree) {
+  auto *isE = dynamic_cast<LucisParser::IsExprContext *>(cond);
   if (!isE || !isE->SCOPE() || !isE->LPAREN() || !isE->IDENTIFIER(1))
     return "";
 
@@ -176,7 +176,7 @@ static std::string inferIsBindingPayloadType(LuxParser::ExpressionContext *cond,
     return "";
 
   auto enumName = safeText(rhsType->IDENTIFIER());
-  LuxParser::EnumDeclContext *enumDecl = nullptr;
+  LucisParser::EnumDeclContext *enumDecl = nullptr;
   if (tree) {
     for (auto *tld : tree->topLevelDecl()) {
       if (auto *ed = tld->enumDecl();
@@ -219,7 +219,7 @@ static std::string inferIsBindingPayloadType(LuxParser::ExpressionContext *cond,
 }
 
 static std::string inferCatchUnwrapSuccessType(
-    LuxParser::ExpressionContext *sourceExpr, LuxParser::ProgramContext *tree,
+    LucisParser::ExpressionContext *sourceExpr, LucisParser::ProgramContext *tree,
     const std::unordered_map<std::string, CompletionProvider::LocalVar> &locals,
     const FuncLookupCtx *flc) {
   if (!sourceExpr)
@@ -284,7 +284,7 @@ static std::string inferCatchUnwrapSuccessType(
 }
 
 static std::string inferCatchUnwrapItType(
-    LuxParser::ExpressionContext *sourceExpr, LuxParser::ProgramContext *tree,
+    LucisParser::ExpressionContext *sourceExpr, LucisParser::ProgramContext *tree,
     const std::unordered_map<std::string, CompletionProvider::LocalVar> &locals,
     const FuncLookupCtx *flc) {
   if (!sourceExpr) return "";
@@ -339,7 +339,7 @@ static std::string inferCatchUnwrapItType(
 }
 
 static void collectLocalsFromBlock(
-    LuxParser::BlockContext *block, size_t beforeLine,
+    LucisParser::BlockContext *block, size_t beforeLine,
     std::unordered_map<std::string, CompletionProvider::LocalVar> &out,
     const FuncLookupCtx *flc = nullptr);
 
@@ -386,7 +386,7 @@ static bool parseGenericInstance(const std::string &t, std::string &base,
   return !base.empty();
 }
 
-static LuxParser::FunctionDeclContext *
+static LucisParser::FunctionDeclContext *
 findFunctionDeclForInference(const std::string &name,
                              const FuncLookupCtx *flc) {
   if (!flc)
@@ -403,14 +403,14 @@ findFunctionDeclForInference(const std::string &name,
       auto *sym = flc->project->registry().findSymbol(ns, name);
       if (!sym || sym->kind != ExportedSymbol::Function)
         continue;
-      if (auto *fd = dynamic_cast<LuxParser::FunctionDeclContext *>(sym->decl))
+      if (auto *fd = dynamic_cast<LucisParser::FunctionDeclContext *>(sym->decl))
         return fd;
     }
   }
   return nullptr;
 }
 
-static LuxParser::EnumDeclContext *
+static LucisParser::EnumDeclContext *
 findEnumDeclForInference(const std::string &name, const FuncLookupCtx *flc) {
   if (!flc)
     return nullptr;
@@ -426,14 +426,14 @@ findEnumDeclForInference(const std::string &name, const FuncLookupCtx *flc) {
       auto *sym = flc->project->registry().findSymbol(ns, name);
       if (!sym || sym->kind != ExportedSymbol::Enum)
         continue;
-      if (auto *ed = dynamic_cast<LuxParser::EnumDeclContext *>(sym->decl))
+      if (auto *ed = dynamic_cast<LucisParser::EnumDeclContext *>(sym->decl))
         return ed;
     }
   }
   return nullptr;
 }
 
-static LuxParser::StructDeclContext *
+static LucisParser::StructDeclContext *
 findStructDeclForInference(const std::string &name, const FuncLookupCtx *flc) {
   if (!flc)
     return nullptr;
@@ -449,14 +449,14 @@ findStructDeclForInference(const std::string &name, const FuncLookupCtx *flc) {
       auto *sym = flc->project->registry().findSymbol(ns, name);
       if (!sym || sym->kind != ExportedSymbol::Struct)
         continue;
-      if (auto *sd = dynamic_cast<LuxParser::StructDeclContext *>(sym->decl))
+      if (auto *sd = dynamic_cast<LucisParser::StructDeclContext *>(sym->decl))
         return sd;
     }
   }
   return nullptr;
 }
 
-static LuxParser::UnionDeclContext *
+static LucisParser::UnionDeclContext *
 findUnionDeclForInference(const std::string &name, const FuncLookupCtx *flc) {
   if (!flc)
     return nullptr;
@@ -472,7 +472,7 @@ findUnionDeclForInference(const std::string &name, const FuncLookupCtx *flc) {
       auto *sym = flc->project->registry().findSymbol(ns, name);
       if (!sym || sym->kind != ExportedSymbol::Union)
         continue;
-      if (auto *ud = dynamic_cast<LuxParser::UnionDeclContext *>(sym->decl))
+      if (auto *ud = dynamic_cast<LucisParser::UnionDeclContext *>(sym->decl))
         return ud;
     }
   }
@@ -614,7 +614,7 @@ static std::string lookupFuncReturnType(const std::string &funcName,
       if (!sym)
         continue;
       if (sym->kind == ExportedSymbol::Function) {
-        auto *fd = dynamic_cast<LuxParser::FunctionDeclContext *>(sym->decl);
+        auto *fd = dynamic_cast<LucisParser::FunctionDeclContext *>(sym->decl);
         if (fd)
           return safeText(fd->typeSpec());
       }
@@ -630,27 +630,27 @@ static std::string lookupFuncReturnType(const std::string &funcName,
 
 // Infer the type name of an expression for auto variable resolution.
 static std::string inferExprTypeName(
-    LuxParser::ExpressionContext *expr,
+    LucisParser::ExpressionContext *expr,
     const std::unordered_map<std::string, CompletionProvider::LocalVar> &locals,
     const FuncLookupCtx *flc = nullptr) {
   if (!expr)
     return "";
-  if (dynamic_cast<LuxParser::IntLitExprContext *>(expr) ||
-      dynamic_cast<LuxParser::HexLitExprContext *>(expr) ||
-      dynamic_cast<LuxParser::OctLitExprContext *>(expr) ||
-      dynamic_cast<LuxParser::BinLitExprContext *>(expr))
+  if (dynamic_cast<LucisParser::IntLitExprContext *>(expr) ||
+      dynamic_cast<LucisParser::HexLitExprContext *>(expr) ||
+      dynamic_cast<LucisParser::OctLitExprContext *>(expr) ||
+      dynamic_cast<LucisParser::BinLitExprContext *>(expr))
     return "int32";
-  if (dynamic_cast<LuxParser::FloatLitExprContext *>(expr))
+  if (dynamic_cast<LucisParser::FloatLitExprContext *>(expr))
     return "float64";
-  if (dynamic_cast<LuxParser::BoolLitExprContext *>(expr))
+  if (dynamic_cast<LucisParser::BoolLitExprContext *>(expr))
     return "bool";
-  if (dynamic_cast<LuxParser::CharLitExprContext *>(expr))
+  if (dynamic_cast<LucisParser::CharLitExprContext *>(expr))
     return "char";
-  if (dynamic_cast<LuxParser::StrLitExprContext *>(expr))
+  if (dynamic_cast<LucisParser::StrLitExprContext *>(expr))
     return "string";
-  if (dynamic_cast<LuxParser::CStrLitExprContext *>(expr))
+  if (dynamic_cast<LucisParser::CStrLitExprContext *>(expr))
     return "*char";
-  if (auto *id = dynamic_cast<LuxParser::IdentExprContext *>(expr)) {
+  if (auto *id = dynamic_cast<LucisParser::IdentExprContext *>(expr)) {
     auto it = locals.find(safeText(id->IDENTIFIER()));
     if (it != locals.end())
       return it->second.typeName;
@@ -712,22 +712,22 @@ static std::string inferExprTypeName(
     return "";
   };
 
-  if (auto *fa = dynamic_cast<LuxParser::FieldAccessExprContext *>(expr)) {
+  if (auto *fa = dynamic_cast<LucisParser::FieldAccessExprContext *>(expr)) {
     auto baseType = inferExprTypeName(fa->expression(), locals, flc);
     if (baseType.empty())
       return "";
     return resolveFieldType(baseType, safeText(fa->IDENTIFIER()));
   }
 
-  if (auto *aa = dynamic_cast<LuxParser::ArrowAccessExprContext *>(expr)) {
+  if (auto *aa = dynamic_cast<LucisParser::ArrowAccessExprContext *>(expr)) {
     auto baseType = inferExprTypeName(aa->expression(), locals, flc);
     if (baseType.empty() || baseType[0] != '*')
       return "";
     return resolveFieldType(baseType.substr(1), safeText(aa->IDENTIFIER()));
   }
-  if (auto *addr = dynamic_cast<LuxParser::AddrOfExprContext *>(expr)) {
+  if (auto *addr = dynamic_cast<LucisParser::AddrOfExprContext *>(expr)) {
     if (auto *ident =
-            dynamic_cast<LuxParser::IdentExprContext *>(addr->expression())) {
+            dynamic_cast<LucisParser::IdentExprContext *>(addr->expression())) {
       auto it = locals.find(safeText(ident->IDENTIFIER()));
       if (it != locals.end())
         return "*" + it->second.typeName;
@@ -735,9 +735,9 @@ static std::string inferExprTypeName(
     return "";
   }
   // Function call: resolve return type
-  if (auto *fn = dynamic_cast<LuxParser::FnCallExprContext *>(expr)) {
+  if (auto *fn = dynamic_cast<LucisParser::FnCallExprContext *>(expr)) {
     if (auto *ident =
-            dynamic_cast<LuxParser::IdentExprContext *>(fn->expression())) {
+            dynamic_cast<LucisParser::IdentExprContext *>(fn->expression())) {
       auto funcName = safeText(ident->IDENTIFIER());
       if (auto *fd = findFunctionDeclForInference(funcName, flc)) {
         // Non-generic function: direct return type.
@@ -760,7 +760,7 @@ static std::string inferExprTypeName(
               actualArgTypes.push_back(inferExprTypeName(a, locals, flc));
           }
 
-          std::vector<LuxParser::ParamContext *> formalParams;
+          std::vector<LucisParser::ParamContext *> formalParams;
           if (auto *pl = fd->paramList())
             formalParams = pl->param();
           if (actualArgTypes.size() == formalParams.size()) {
@@ -804,7 +804,7 @@ static std::string inferExprTypeName(
   }
 
   // Generic function call: d<string>(...) → substitute explicit type args
-  if (auto *gfc = dynamic_cast<LuxParser::GenericFnCallExprContext *>(expr)) {
+  if (auto *gfc = dynamic_cast<LucisParser::GenericFnCallExprContext *>(expr)) {
     auto *fnId = gfc->IDENTIFIER();
     if (!fnId)
       return "";
@@ -837,7 +837,7 @@ static std::string inferExprTypeName(
     return "";
   }
   // Enum access: Direction::North → "Direction"
-  if (auto *ea = dynamic_cast<LuxParser::EnumAccessExprContext *>(expr)) {
+  if (auto *ea = dynamic_cast<LucisParser::EnumAccessExprContext *>(expr)) {
     auto ids = ea->IDENTIFIER();
     if (!ids.empty())
       return ids[0]->getText();
@@ -846,7 +846,7 @@ static std::string inferExprTypeName(
   // Static method call: Type::method(...) → look up return type from extend
   // blocks
   if (auto *smc =
-          dynamic_cast<LuxParser::StaticMethodCallExprContext *>(expr)) {
+          dynamic_cast<LucisParser::StaticMethodCallExprContext *>(expr)) {
     auto ids = smc->IDENTIFIER();
     if (ids.size() >= 2) {
       std::string ownerPath;
@@ -895,7 +895,7 @@ static std::string inferExprTypeName(
                 actualArgTypes.push_back(inferExprTypeName(a, locals, flc));
             }
 
-            std::vector<LuxParser::ParamContext *> formalParams;
+            std::vector<LucisParser::ParamContext *> formalParams;
             if (auto *pl = m->paramList())
               formalParams = pl->param();
             if (actualArgTypes.size() != formalParams.size())
@@ -934,7 +934,7 @@ static std::string inferExprTypeName(
           for (auto *sym : syms) {
             if (sym->kind != ExportedSymbol::ExtendBlock)
               continue;
-            auto *ext = dynamic_cast<LuxParser::ExtendDeclContext *>(sym->decl);
+            auto *ext = dynamic_cast<LucisParser::ExtendDeclContext *>(sym->decl);
             if (!ext || safeText(ext->IDENTIFIER()) != typeName)
               continue;
             for (auto *m : ext->extendMethod()) {
@@ -957,12 +957,12 @@ static std::string inferExprTypeName(
     return "";
   }
   // Method call: resolve receiver type, then look up method return type
-  if (auto *mc = dynamic_cast<LuxParser::MethodCallExprContext *>(expr)) {
+  if (auto *mc = dynamic_cast<LucisParser::MethodCallExprContext *>(expr)) {
     auto exprBase = mc->expression();
     std::string receiverType = inferExprTypeName(exprBase, locals, flc);
 
     // If base expression is an array access, resolve to element type
-    if (auto* idx = dynamic_cast<LuxParser::IndexExprContext*>(exprBase)) {
+    if (auto* idx = dynamic_cast<LucisParser::IndexExprContext*>(exprBase)) {
         auto baseType = inferExprTypeName(idx->expression(0), locals, flc);
         receiverType = resolveIndexedElementType(baseType);
     }
@@ -1015,7 +1015,7 @@ static std::string inferExprTypeName(
           for (auto *sym : syms) {
             if (sym->kind != ExportedSymbol::ExtendBlock)
               continue;
-            auto *ext = dynamic_cast<LuxParser::ExtendDeclContext *>(sym->decl);
+            auto *ext = dynamic_cast<LucisParser::ExtendDeclContext *>(sym->decl);
             if (!ext || safeText(ext->IDENTIFIER()) != receiverType)
               continue;
             for (auto *m : ext->extendMethod()) {
@@ -1082,35 +1082,35 @@ static std::string inferExprTypeName(
     }
     return "";
   }
-  if (auto *deref = dynamic_cast<LuxParser::DerefExprContext *>(expr)) {
+  if (auto *deref = dynamic_cast<LucisParser::DerefExprContext *>(expr)) {
     auto inner = inferExprTypeName(deref->expression(), locals, flc);
     if (inner.size() > 1 && inner[0] == '*')
       return inner.substr(1);
     return "";
   }
-  if (auto *neg = dynamic_cast<LuxParser::NegExprContext *>(expr))
+  if (auto *neg = dynamic_cast<LucisParser::NegExprContext *>(expr))
     return inferExprTypeName(neg->expression(), locals, flc);
-  if (dynamic_cast<LuxParser::LogicalNotExprContext *>(expr))
+  if (dynamic_cast<LucisParser::LogicalNotExprContext *>(expr))
     return "bool";
-  if (dynamic_cast<LuxParser::RelExprContext *>(expr))
+  if (dynamic_cast<LucisParser::RelExprContext *>(expr))
     return "bool";
-  if (dynamic_cast<LuxParser::EqExprContext *>(expr))
+  if (dynamic_cast<LucisParser::EqExprContext *>(expr))
     return "bool";
-  if (dynamic_cast<LuxParser::LogicalAndExprContext *>(expr))
+  if (dynamic_cast<LucisParser::LogicalAndExprContext *>(expr))
     return "bool";
-  if (dynamic_cast<LuxParser::LogicalOrExprContext *>(expr))
+  if (dynamic_cast<LucisParser::LogicalOrExprContext *>(expr))
     return "bool";
-  if (auto *mul = dynamic_cast<LuxParser::MulExprContext *>(expr))
+  if (auto *mul = dynamic_cast<LucisParser::MulExprContext *>(expr))
     return inferExprTypeName(mul->expression(0), locals, flc);
-  if (auto *add = dynamic_cast<LuxParser::AddSubExprContext *>(expr))
+  if (auto *add = dynamic_cast<LucisParser::AddSubExprContext *>(expr))
     return inferExprTypeName(add->expression(0), locals, flc);
-  if (auto *paren = dynamic_cast<LuxParser::ParenExprContext *>(expr))
+  if (auto *paren = dynamic_cast<LucisParser::ParenExprContext *>(expr))
     return inferExprTypeName(paren->expression(), locals, flc);
-  if (auto *cast = dynamic_cast<LuxParser::CastExprContext *>(expr))
+  if (auto *cast = dynamic_cast<LucisParser::CastExprContext *>(expr))
     return cast->typeSpec() ? safeText(cast->typeSpec()) : "";
-  if (auto *tern = dynamic_cast<LuxParser::TernaryExprContext *>(expr))
+  if (auto *tern = dynamic_cast<LucisParser::TernaryExprContext *>(expr))
     return inferExprTypeName(tern->expression(1), locals, flc);
-  if (auto *cu = dynamic_cast<LuxParser::CatchUnwrapExprContext *>(expr)) {
+  if (auto *cu = dynamic_cast<LucisParser::CatchUnwrapExprContext *>(expr)) {
     auto *tree = flc ? flc->tree : nullptr;
     auto inferred =
         inferCatchUnwrapSuccessType(cu->expression(), tree, locals, flc);
@@ -1118,7 +1118,7 @@ static std::string inferExprTypeName(
       return inferred;
     return "";
   }
-  if (auto *arr = dynamic_cast<LuxParser::ArrayLitExprContext *>(expr)) {
+  if (auto *arr = dynamic_cast<LucisParser::ArrayLitExprContext *>(expr)) {
     auto elems = arr->expression();
     if (!elems.empty()) {
       auto elemType = inferExprTypeName(elems[0], locals, flc);
@@ -1127,13 +1127,13 @@ static std::string inferExprTypeName(
     }
     return "";
   }
-  if (dynamic_cast<LuxParser::SizeofExprContext *>(expr))
+  if (dynamic_cast<LucisParser::SizeofExprContext *>(expr))
     return "int64";
-  if (dynamic_cast<LuxParser::TypeofExprContext *>(expr))
+  if (dynamic_cast<LucisParser::TypeofExprContext *>(expr))
     return "string";
 
   // Index: expr[i] → element type
-  if (auto *idx = dynamic_cast<LuxParser::IndexExprContext *>(expr)) {
+  if (auto *idx = dynamic_cast<LucisParser::IndexExprContext *>(expr)) {
     auto exprs = idx->expression();
     if (!exprs.empty()) {
       auto baseType = inferExprTypeName(exprs[0], locals, flc);
@@ -1150,7 +1150,7 @@ static std::string inferExprTypeName(
   }
 
   // Struct literal: Point { x: 10, y: 20 } → "Point"
-  if (auto *sl = dynamic_cast<LuxParser::StructLitExprContext *>(expr)) {
+  if (auto *sl = dynamic_cast<LucisParser::StructLitExprContext *>(expr)) {
     auto ids = sl->IDENTIFIER();
     if (!ids.empty())
       return ids[0]->getText();
@@ -1160,7 +1160,7 @@ static std::string inferExprTypeName(
   // Generic struct/union literal: Result<int32, string> { ... } →
   // "Result<int32,string>"
   if (auto *gsl =
-          dynamic_cast<LuxParser::GenericStructLitExprContext *>(expr)) {
+          dynamic_cast<LucisParser::GenericStructLitExprContext *>(expr)) {
     if (!gsl->IDENTIFIER().empty()) {
       std::string base = safeIdAt(gsl, 0);
       std::string outType = base + "<";
@@ -1179,7 +1179,7 @@ static std::string inferExprTypeName(
 }
 
 static void collectLocalsFromStmts(
-    const std::vector<LuxParser::StatementContext *> &stmts, size_t beforeLine,
+    const std::vector<LucisParser::StatementContext *> &stmts, size_t beforeLine,
     std::unordered_map<std::string, CompletionProvider::LocalVar> &out,
     const FuncLookupCtx *flc = nullptr) {
   for (auto *stmt : stmts) {
@@ -1200,7 +1200,7 @@ static void collectLocalsFromStmts(
         continue;
       out[safeIdAt(vd, 0)] = {typeName, 0};
 
-      if (auto *cu = dynamic_cast<LuxParser::CatchUnwrapExprContext *>(
+      if (auto *cu = dynamic_cast<LucisParser::CatchUnwrapExprContext *>(
               vd->expression())) {
         if (cursorInsideNode(cu->block(), beforeLine)) {
           auto itType = inferCatchUnwrapItType(cu->expression(), flc ? flc->tree : nullptr, out, flc);
@@ -1237,7 +1237,7 @@ static void collectLocalsFromStmts(
         if (auto *b = body->block()) {
           if (cursorInsideNode(b, beforeLine)) {
             if (auto *isE =
-                    dynamic_cast<LuxParser::IsExprContext *>(ifS->expression());
+                    dynamic_cast<LucisParser::IsExprContext *>(ifS->expression());
                 isE && isE->IDENTIFIER(1)) {
               auto bindType = inferIsBindingPayloadType(
                   ifS->expression(), flc ? flc->tree : nullptr);
@@ -1249,7 +1249,7 @@ static void collectLocalsFromStmts(
         } else if (auto *s = body->statement()) {
           if (cursorInsideNode(s, beforeLine)) {
             if (auto *isE =
-                    dynamic_cast<LuxParser::IsExprContext *>(ifS->expression());
+                    dynamic_cast<LucisParser::IsExprContext *>(ifS->expression());
                 isE && isE->IDENTIFIER(1)) {
               auto bindType = inferIsBindingPayloadType(
                   ifS->expression(), flc ? flc->tree : nullptr);
@@ -1264,7 +1264,7 @@ static void collectLocalsFromStmts(
         if (auto *body = elif->ifBody()) {
           if (auto *b = body->block()) {
             if (cursorInsideNode(b, beforeLine)) {
-              if (auto *isE = dynamic_cast<LuxParser::IsExprContext *>(
+              if (auto *isE = dynamic_cast<LucisParser::IsExprContext *>(
                       elif->expression());
                   isE && isE->IDENTIFIER(1)) {
                 auto bindType = inferIsBindingPayloadType(
@@ -1276,7 +1276,7 @@ static void collectLocalsFromStmts(
             }
           } else if (auto *s = body->statement()) {
             if (cursorInsideNode(s, beforeLine)) {
-              if (auto *isE = dynamic_cast<LuxParser::IsExprContext *>(
+              if (auto *isE = dynamic_cast<LucisParser::IsExprContext *>(
                       elif->expression());
                   isE && isE->IDENTIFIER(1)) {
                 auto bindType = inferIsBindingPayloadType(
@@ -1302,14 +1302,14 @@ static void collectLocalsFromStmts(
       }
     }
     if (auto *forS = stmt->forStmt()) {
-      if (auto *fin = dynamic_cast<LuxParser::ForInStmtContext *>(forS)) {
+      if (auto *fin = dynamic_cast<LucisParser::ForInStmtContext *>(forS)) {
         if (cursorInsideNode(fin, beforeLine)) {
           if (fin->IDENTIFIER() && fin->typeSpec())
             out[safeText(fin->IDENTIFIER())] = {safeText(fin->typeSpec()), 0};
           collectLocalsFromBlock(fin->block(), beforeLine, out, flc);
         }
       }
-      if (auto *fc = dynamic_cast<LuxParser::ForClassicStmtContext *>(forS)) {
+      if (auto *fc = dynamic_cast<LucisParser::ForClassicStmtContext *>(forS)) {
         if (cursorInsideNode(fc, beforeLine)) {
           if (fc->IDENTIFIER() && fc->typeSpec())
             out[safeText(fc->IDENTIFIER())] = {safeText(fc->typeSpec()), 0};
@@ -1354,7 +1354,7 @@ static void collectLocalsFromStmts(
 }
 
 static void collectLocalsFromBlock(
-    LuxParser::BlockContext *block, size_t beforeLine,
+    LucisParser::BlockContext *block, size_t beforeLine,
     std::unordered_map<std::string, CompletionProvider::LocalVar> &out,
     const FuncLookupCtx *flc) {
   if (!block)
@@ -1449,7 +1449,7 @@ static CompletionItem buildMethodItem(const MethodDescriptor &md,
   ci.detail = detail;
 
   // documentation: markdown with full method signature
-  std::string doc = "```lux\nfn " + md.name + "(";
+  std::string doc = "```lucis\nfn " + md.name + "(";
   for (size_t i = 0; i < resolvedParams.size(); i++) {
     if (i > 0)
       doc += ", ";
@@ -1561,7 +1561,7 @@ CompletionProvider::complete(const std::string &source, size_t line, size_t col,
     } else {
       CBindings localBindings;
       TypeRegistry cTypeReg;
-      std::vector<LuxParser::IncludeDeclContext *> includes;
+      std::vector<LucisParser::IncludeDeclContext *> includes;
       for (auto *pre : parsed->tree->preambleDecl())
         if (auto *inc = pre->includeDecl())
           includes.push_back(inc);
@@ -1712,7 +1712,7 @@ CompletionProvider::complete(const std::string &source, size_t line, size_t col,
 CompletionProvider::CompletionRequest
 CompletionProvider::analyzeContext(const std::string &source, size_t line,
                                    size_t col,
-                                   LuxParser::ProgramContext *tree) {
+                                   LucisParser::ProgramContext *tree) {
 
   CompletionRequest req;
 
@@ -2264,7 +2264,7 @@ CompletionProvider::analyzeContext(const std::string &source, size_t line,
 // ═══════════════════════════════════════════════════════════════════════
 
 void CompletionProvider::addLocals(std::vector<CompletionItem> &items,
-                                   LuxParser::ProgramContext *tree,
+                                   LucisParser::ProgramContext *tree,
                                    size_t cursorLine, const CBindings &bindings,
                                    const std::string &prefix) {
   // Check if inside a function
@@ -2316,7 +2316,7 @@ void CompletionProvider::addLocals(std::vector<CompletionItem> &items,
 }
 
 void CompletionProvider::addLocalDecls(std::vector<CompletionItem> &items,
-                                       LuxParser::ProgramContext *tree,
+                                       LucisParser::ProgramContext *tree,
                                        const std::string &prefix) {
   for (auto *tld : tree->topLevelDecl()) {
     // Functions
@@ -2349,7 +2349,7 @@ void CompletionProvider::addLocalDecls(std::vector<CompletionItem> &items,
         item.insertText = name + "()";
       }
       // Documentation with full signature
-      item.documentation = "```lux\n" + item.detail + "\n```";
+      item.documentation = "```lucis\n" + item.detail + "\n```";
       items.push_back(std::move(item));
     }
 
@@ -2493,14 +2493,14 @@ void CompletionProvider::addLocalDecls(std::vector<CompletionItem> &items,
       } else {
         item.insertText = name + "()";
       }
-      item.documentation = "```lux\n" + detail + "\n```";
+      item.documentation = "```lucis\n" + detail + "\n```";
       items.push_back(std::move(item));
     }
   }
 }
 
 void CompletionProvider::addImportedSymbols(std::vector<CompletionItem> &items,
-                                            LuxParser::ProgramContext *tree,
+                                            LucisParser::ProgramContext *tree,
                                             const ProjectContext *project,
                                             const std::string &prefix) {
   if (!project || !project->isValid())
@@ -2513,12 +2513,12 @@ void CompletionProvider::addImportedSymbols(std::vector<CompletionItem> &items,
     std::string modulePath;
     std::vector<std::string> symbolNames;
 
-    if (auto *root = dynamic_cast<LuxParser::UseRootContext *>(useDecl)) {
+    if (auto *root = dynamic_cast<LucisParser::UseRootContext *>(useDecl)) {
       if (!root->IDENTIFIER())
         continue;
       symbolNames.push_back(safeText(root->IDENTIFIER()));
     } else if (auto *item =
-                   dynamic_cast<LuxParser::UseItemContext *>(useDecl)) {
+                   dynamic_cast<LucisParser::UseItemContext *>(useDecl)) {
       if (!item->modulePath() || !item->IDENTIFIER())
         continue;
       for (auto *id : item->modulePath()->IDENTIFIER()) {
@@ -2528,7 +2528,7 @@ void CompletionProvider::addImportedSymbols(std::vector<CompletionItem> &items,
       }
       symbolNames.push_back(safeText(item->IDENTIFIER()));
     } else if (auto *group =
-                   dynamic_cast<LuxParser::UseGroupContext *>(useDecl)) {
+                   dynamic_cast<LucisParser::UseGroupContext *>(useDecl)) {
       if (!group->modulePath())
         continue;
       for (auto *id : group->modulePath()->IDENTIFIER()) {
@@ -2597,7 +2597,7 @@ void CompletionProvider::addImportedSymbols(std::vector<CompletionItem> &items,
             detail += ") -> " + sig->returnType;
             ci.detail = detail;
 
-            ci.documentation = "```lux\nfn " + symName + detail +
+            ci.documentation = "```lucis\nfn " + symName + detail +
                                "\n```\n\nImported from `" + modulePath + "`";
 
             // Build snippet with parameter placeholders
@@ -2634,7 +2634,7 @@ void CompletionProvider::addImportedSymbols(std::vector<CompletionItem> &items,
             ci.label = symName;
             ci.kind = CompletionKind::Constant;
             ci.detail = constType;
-            ci.documentation = "```lux\nconst " + symName + ": " + constType +
+            ci.documentation = "```lucis\nconst " + symName + ": " + constType +
                                "\n```\n\nImported from `" + modulePath + "`";
             items.push_back(std::move(ci));
             continue;
@@ -2649,10 +2649,10 @@ void CompletionProvider::addImportedSymbols(std::vector<CompletionItem> &items,
       switch (sym->kind) {
       case ExportedSymbol::Function: {
         ci.kind = CompletionKind::Function;
-        auto *fd = dynamic_cast<LuxParser::FunctionDeclContext *>(sym->decl);
+        auto *fd = dynamic_cast<LucisParser::FunctionDeclContext *>(sym->decl);
         if (fd) {
           ci.detail = formatFuncSignature(fd);
-          ci.documentation = "```lux\n" + ci.detail + "\n```";
+          ci.documentation = "```lucis\n" + ci.detail + "\n```";
           // Build snippet with parameter placeholders
           if (auto *params = fd->paramList();
               params && !params->param().empty()) {
@@ -2698,7 +2698,7 @@ void CompletionProvider::addImportedSymbols(std::vector<CompletionItem> &items,
   }
 }
 
-static std::string extractBaseTypeName(LuxParser::TypeSpecContext* typeSpec) {
+static std::string extractBaseTypeName(LucisParser::TypeSpecContext* typeSpec) {
     auto text = typeSpec->getText();
     auto pos = text.find('<');
     if (pos != std::string::npos)
@@ -2708,17 +2708,17 @@ static std::string extractBaseTypeName(LuxParser::TypeSpecContext* typeSpec) {
 }
 
 void CompletionProvider::addEnumWildcardVariants(std::vector<CompletionItem>& items,
-                                                  LuxParser::ProgramContext* tree,
+                                                  LucisParser::ProgramContext* tree,
                                                   const ProjectContext* project,
                                                   const std::string& prefix,
                                                   size_t cursorLine) {
-    auto process = [&](LuxParser::UseDeclContext* useDecl) {
-        auto* ew = dynamic_cast<LuxParser::UseEnumWildcardContext*>(useDecl);
+    auto process = [&](LucisParser::UseDeclContext* useDecl) {
+        auto* ew = dynamic_cast<LucisParser::UseEnumWildcardContext*>(useDecl);
         if (!ew) return;
         auto baseName = extractBaseTypeName(ew->typeSpec());
         if (baseName.empty()) return;
 
-        auto addVariants = [&](LuxParser::EnumDeclContext* ed) {
+        auto addVariants = [&](LucisParser::EnumDeclContext* ed) {
             for (auto* variant : ed->enumVariant()) {
                 auto* v = variant->IDENTIFIER();
                 if (!v) continue;
@@ -2741,7 +2741,7 @@ void CompletionProvider::addEnumWildcardVariants(std::vector<CompletionItem>& it
             for (auto& ns : project->registry().allNamespaces()) {
                 auto* sym = project->registry().findSymbol(ns, baseName);
                 if (!sym || sym->kind != ExportedSymbol::Enum) continue;
-                auto* decl = dynamic_cast<LuxParser::EnumDeclContext*>(sym->decl);
+                auto* decl = dynamic_cast<LucisParser::EnumDeclContext*>(sym->decl);
                 if (!decl) continue;
                 addVariants(decl);
                 return;
@@ -2766,9 +2766,9 @@ void CompletionProvider::addEnumWildcardVariants(std::vector<CompletionItem>& it
     if (!func || !func->block()) return;
 
     // Recursive lambda to walk statements for useEnumWildcard
-    std::function<void(const std::vector<LuxParser::StatementContext*>&, size_t)>
+    std::function<void(const std::vector<LucisParser::StatementContext*>&, size_t)>
         scanStmts;
-    std::function<void(LuxParser::StatementContext*, size_t)> scanStmt;
+    std::function<void(LucisParser::StatementContext*, size_t)> scanStmt;
 
     auto cursorInside = [](antlr4::ParserRuleContext* node, size_t beforeLine) {
         if (!node) return false;
@@ -2778,7 +2778,7 @@ void CompletionProvider::addEnumWildcardVariants(std::vector<CompletionItem>& it
         return s->getLine() - 1 <= beforeLine && e->getLine() - 1 >= beforeLine;
     };
 
-    scanStmt = [&](LuxParser::StatementContext* stmt, size_t bline) {
+    scanStmt = [&](LucisParser::StatementContext* stmt, size_t bline) {
         auto* start = stmt->getStart();
         if (start && start->getLine() - 1 > bline) return;
 
@@ -2832,11 +2832,11 @@ void CompletionProvider::addEnumWildcardVariants(std::vector<CompletionItem>& it
             }
         }
         if (auto* fs = stmt->forStmt()) {
-            if (auto* fin = dynamic_cast<LuxParser::ForInStmtContext*>(fs)) {
+            if (auto* fin = dynamic_cast<LucisParser::ForInStmtContext*>(fs)) {
                 if (cursorInside(fin->block(), bline))
                     scanStmts(fin->block()->statement(), bline);
             }
-            if (auto* fc = dynamic_cast<LuxParser::ForClassicStmtContext*>(fs)) {
+            if (auto* fc = dynamic_cast<LucisParser::ForClassicStmtContext*>(fs)) {
                 if (cursorInside(fc->block(), bline))
                     scanStmts(fc->block()->statement(), bline);
             }
@@ -2873,7 +2873,7 @@ void CompletionProvider::addEnumWildcardVariants(std::vector<CompletionItem>& it
         }
     };
 
-    scanStmts = [&](const std::vector<LuxParser::StatementContext*>& stmts, size_t bline) {
+    scanStmts = [&](const std::vector<LucisParser::StatementContext*>& stmts, size_t bline) {
         for (auto* stmt : stmts)
             scanStmt(stmt, bline);
     };
@@ -2908,10 +2908,10 @@ void CompletionProvider::addProjectSymbols(std::vector<CompletionItem> &items,
       switch (sym->kind) {
       case ExportedSymbol::Function: {
         ci.kind = CompletionKind::Function;
-        auto *fd = dynamic_cast<LuxParser::FunctionDeclContext *>(sym->decl);
+        auto *fd = dynamic_cast<LucisParser::FunctionDeclContext *>(sym->decl);
         if (fd) {
           ci.detail = formatFuncSignature(fd) + " [" + currentNs + "]";
-          ci.documentation = "```lux\n" + formatFuncSignature(fd) + "\n```";
+          ci.documentation = "```lucis\n" + formatFuncSignature(fd) + "\n```";
 
           if (auto *params = fd->paramList();
               params && !params->param().empty()) {
@@ -3094,7 +3094,7 @@ void CompletionProvider::addCSymbols(std::vector<CompletionItem> &items,
 
 void CompletionProvider::addStructFields(std::vector<CompletionItem> &items,
                                          const std::string &structName,
-                                         LuxParser::ProgramContext *tree,
+                                         LucisParser::ProgramContext *tree,
                                          const CBindings &bindings,
                                          const ProjectContext *project) {
   if (structName.empty())
@@ -3159,7 +3159,7 @@ void CompletionProvider::addStructFields(std::vector<CompletionItem> &items,
       if (!sym)
         continue;
       if (sym->kind == ExportedSymbol::Struct) {
-        auto *decl = dynamic_cast<LuxParser::StructDeclContext *>(sym->decl);
+        auto *decl = dynamic_cast<LucisParser::StructDeclContext *>(sym->decl);
         if (!decl)
           continue;
         if (!args.empty() && decl->typeParamList()) {
@@ -3181,7 +3181,7 @@ void CompletionProvider::addStructFields(std::vector<CompletionItem> &items,
         return;
       }
       if (sym->kind == ExportedSymbol::Union) {
-        auto *decl = dynamic_cast<LuxParser::UnionDeclContext *>(sym->decl);
+        auto *decl = dynamic_cast<LucisParser::UnionDeclContext *>(sym->decl);
         if (!decl)
           continue;
         if (!args.empty() && decl->typeParamList()) {
@@ -3236,7 +3236,7 @@ void CompletionProvider::addStructFields(std::vector<CompletionItem> &items,
 
 void CompletionProvider::addExtendMethods(std::vector<CompletionItem> &items,
                                           const std::string &typeName,
-                                          LuxParser::ProgramContext *tree,
+                                          LucisParser::ProgramContext *tree,
                                           const ProjectContext *project) {
   if (typeName.empty())
     return;
@@ -3271,7 +3271,7 @@ void CompletionProvider::addExtendMethods(std::vector<CompletionItem> &items,
       ci.label = mName;
       ci.kind = CompletionKind::Method;
       ci.detail = substituteTypeParams(formatMethodSignature(m), subst);
-      ci.documentation = "```lux\n" + ci.detail + "\n```";
+      ci.documentation = "```lucis\n" + ci.detail + "\n```";
       // Snippet with parameter placeholder for instance method params
       auto methodParams = m->param();
       if (!methodParams.empty()) {
@@ -3299,7 +3299,7 @@ void CompletionProvider::addExtendMethods(std::vector<CompletionItem> &items,
       for (auto *sym : syms) {
         if (sym->kind != ExportedSymbol::ExtendBlock)
           continue;
-        auto *ext = dynamic_cast<LuxParser::ExtendDeclContext *>(sym->decl);
+        auto *ext = dynamic_cast<LucisParser::ExtendDeclContext *>(sym->decl);
         if (!ext || safeText(ext->IDENTIFIER()) != lookupName)
           continue;
         if (!args.empty() && ext->typeParamList()) {
@@ -3319,7 +3319,7 @@ void CompletionProvider::addExtendMethods(std::vector<CompletionItem> &items,
           ci.label = mName;
           ci.kind = CompletionKind::Method;
           ci.detail = substituteTypeParams(formatMethodSignature(m), subst);
-          ci.documentation = "```lux\n" + ci.detail + "\n```";
+          ci.documentation = "```lucis\n" + ci.detail + "\n```";
           auto methodParams = m->param();
           if (!methodParams.empty()) {
             std::string snippet = mName + "(";
@@ -3671,7 +3671,7 @@ void CompletionProvider::addUseCompletions(std::vector<CompletionItem> &items,
 
 void CompletionProvider::addEnumVariants(std::vector<CompletionItem> &items,
                                          const std::string &enumName,
-                                         LuxParser::ProgramContext *tree,
+                                         LucisParser::ProgramContext *tree,
                                          const CBindings &bindings,
                                          const ProjectContext *project,
                                          const std::string &prefix) {
@@ -3699,7 +3699,7 @@ void CompletionProvider::addEnumVariants(std::vector<CompletionItem> &items,
       auto *sym = project->registry().findSymbol(ns, enumName);
       if (!sym || sym->kind != ExportedSymbol::Enum)
         continue;
-      auto *decl = dynamic_cast<LuxParser::EnumDeclContext *>(sym->decl);
+      auto *decl = dynamic_cast<LucisParser::EnumDeclContext *>(sym->decl);
       if (!decl)
         continue;
       for (auto *variant : decl->enumVariant()) {
@@ -3735,7 +3735,7 @@ void CompletionProvider::addEnumVariants(std::vector<CompletionItem> &items,
 
 static std::optional<std::string>
 resolveImportedModuleAlias(const std::string &alias,
-                           LuxParser::ProgramContext *tree,
+                           LucisParser::ProgramContext *tree,
                            const ProjectContext *project) {
   if (!tree)
     return std::nullopt;
@@ -3746,7 +3746,7 @@ resolveImportedModuleAlias(const std::string &alias,
       continue;
 
     // use std::log::println; (alias is println, modulePath is std::log)
-    if (auto *item = dynamic_cast<LuxParser::UseItemContext *>(useDecl)) {
+    if (auto *item = dynamic_cast<LucisParser::UseItemContext *>(useDecl)) {
       if (!item->modulePath() || !item->IDENTIFIER())
         continue;
       if (safeText(item->IDENTIFIER()) != alias)
@@ -3771,7 +3771,7 @@ resolveImportedModuleAlias(const std::string &alias,
     }
 
     // use std; (simple root import, alias is the module name itself)
-    if (auto *root = dynamic_cast<LuxParser::UseRootContext *>(useDecl)) {
+    if (auto *root = dynamic_cast<LucisParser::UseRootContext *>(useDecl)) {
       if (!root->IDENTIFIER())
         continue;
       if (safeText(root->IDENTIFIER()) == alias) {
@@ -3784,7 +3784,7 @@ resolveImportedModuleAlias(const std::string &alias,
 
 void CompletionProvider::addStaticMethods(std::vector<CompletionItem> &items,
                                           const std::string &typeName,
-                                          LuxParser::ProgramContext *tree,
+                                          LucisParser::ProgramContext *tree,
                                           const ProjectContext *project,
                                           const std::string &prefix) {
   // Resolve imported module aliases like `use std::log;` → `log`
@@ -3832,7 +3832,7 @@ void CompletionProvider::addStaticMethods(std::vector<CompletionItem> &items,
       ci.label = mName;
       ci.kind = CompletionKind::Function;
       ci.detail = formatMethodSignature(m);
-      ci.documentation = "```lux\n" + ci.detail + "\n```";
+      ci.documentation = "```lucis\n" + ci.detail + "\n```";
       if (auto *pl = m->paramList(); pl && !pl->param().empty()) {
         auto pList = pl->param();
         std::string snippet = mName + "(";
@@ -3859,7 +3859,7 @@ void CompletionProvider::addStaticMethods(std::vector<CompletionItem> &items,
       for (auto *sym : syms) {
         if (sym->kind != ExportedSymbol::ExtendBlock)
           continue;
-        auto *ext = dynamic_cast<LuxParser::ExtendDeclContext *>(sym->decl);
+        auto *ext = dynamic_cast<LucisParser::ExtendDeclContext *>(sym->decl);
         if (!ext || safeText(ext->IDENTIFIER()) != baseTypeName)
           continue;
         for (auto *m : ext->extendMethod()) {
@@ -3873,7 +3873,7 @@ void CompletionProvider::addStaticMethods(std::vector<CompletionItem> &items,
           ci.label = mName;
           ci.kind = CompletionKind::Function;
           ci.detail = formatMethodSignature(m);
-          ci.documentation = "```lux\n" + ci.detail + "\n```";
+          ci.documentation = "```lucis\n" + ci.detail + "\n```";
           if (auto *pl = m->paramList(); pl && !pl->param().empty()) {
             auto pList = pl->param();
             std::string snippet = mName + "(";
@@ -3897,7 +3897,7 @@ void CompletionProvider::addStaticMethods(std::vector<CompletionItem> &items,
 }
 
 void CompletionProvider::addTypeNames(std::vector<CompletionItem> &items,
-                                      LuxParser::ProgramContext *tree,
+                                      LucisParser::ProgramContext *tree,
                                       const CBindings &bindings,
                                       const ProjectContext *project,
                                       const std::string &prefix) {
@@ -4154,14 +4154,14 @@ void CompletionProvider::addGlobalBuiltins(std::vector<CompletionItem> &items,
       {"toString", "(T value)", "string", "toString(${1:value})",
        "Converts any primitive value to string."},
       {"cstr", "(string s)", "*char", "cstr(${1:s})",
-       "Converts a Lux string to a null-terminated C string."},
+       "Converts a Lucis string to a null-terminated C string."},
       {"fromCStr", "(*char ptr)", "string", "fromCStr(${1:ptr})",
-       "Converts a null-terminated C string to a Lux string."},
+       "Converts a null-terminated C string to a Lucis string."},
       {"fromCStrCopy", "(*char ptr)", "string", "fromCStrCopy(${1:ptr})",
-       "Copies a null-terminated C string into owned Lux string memory."},
+       "Copies a null-terminated C string into owned Lucis string memory."},
       {"fromCStrLen", "(*char ptr, usize len)", "string",
        "fromCStrLen(${1:ptr}, ${2:len})",
-       "Converts a C string with explicit length to a Lux string."},
+       "Converts a C string with explicit length to a Lucis string."},
       {"freeStr", "(string s)", "void", "freeStr(${1:s})",
        "Frees memory of a string allocated by fromCStrCopy. Only call on owned "
        "strings."},
@@ -4174,7 +4174,7 @@ void CompletionProvider::addGlobalBuiltins(std::vector<CompletionItem> &items,
     ci.label = g.name;
     ci.kind = CompletionKind::Function;
     ci.detail = std::string(g.params) + " -> " + g.retType;
-    ci.documentation = "```lux\nfn " + std::string(g.name) + g.params + " -> " +
+    ci.documentation = "```lucis\nfn " + std::string(g.name) + g.params + " -> " +
                        g.retType + "\n```\n\n" + g.doc + "\n\n*Global builtin*";
     if (g.snippet) {
       ci.insertText = g.snippet;
@@ -4189,16 +4189,16 @@ void CompletionProvider::addGlobalBuiltins(std::vector<CompletionItem> &items,
 
 void CompletionProvider::addIntrinsicRoot(std::vector<CompletionItem> &items,
                                           const std::string &prefix) {
-  if (!matchesPrefix("lux", prefix)) return;
+  if (!matchesPrefix("lucis", prefix)) return;
   CompletionItem ci;
-  ci.label = "lux";
+  ci.label = "lucis";
   ci.kind = CompletionKind::Module;
   ci.detail = "intrinsic root";
-  ci.documentation = "```lux\nmodule lux\n```\n\nIntrinsic namespace root. "
+  ci.documentation = "```lucis\nmodule lucis\n```\n\nIntrinsic namespace root. "
                      "Contains low-level compiler builtin functions.\n\n"
                      "*Always available without `use`*";
-  ci.insertText = "lux::";
-  ci.sortText = "0_lux";
+  ci.insertText = "lucis::";
+  ci.sortText = "0_lucis";
   items.push_back(std::move(ci));
 }
 
@@ -4206,9 +4206,9 @@ void CompletionProvider::addIntrinsics(std::vector<CompletionItem> &items,
                                        const std::string &scopeName,
                                        const std::string &prefix) {
   // Parse scopeName to extract potential intrinsic namespace
-  // scopeName can be "lux" (list namespaces) or "lux::core" (list functions)
+  // scopeName can be "lucis" (list namespaces) or "lucis::core" (list functions)
   std::string intrinsicNs;
-  if (scopeName == "lux") {
+  if (scopeName == "lucis") {
     // List intrinsic namespaces
     for (auto &ns : intrinsicRegistry_.allNamespaces()) {
       if (!matchesPrefix(ns, prefix)) continue;
@@ -4225,9 +4225,9 @@ void CompletionProvider::addIntrinsics(std::vector<CompletionItem> &items,
     return;
   }
 
-  // Extract namespace from "lux::core" → "core"
-  if (scopeName.rfind("lux::", 0) == 0)
-    intrinsicNs = scopeName.substr(5); // 5 = len("lux::")
+  // Extract namespace from "lucis::core" → "core"
+  if (scopeName.rfind("lucis::", 0) == 0)
+    intrinsicNs = scopeName.substr(5); // 5 = len("lucis::")
 
   if (!intrinsicNs.empty() && intrinsicRegistry_.hasNamespace(intrinsicNs)) {
     // List intrinsic functions in the namespace
@@ -4257,7 +4257,7 @@ void CompletionProvider::addIntrinsics(std::vector<CompletionItem> &items,
         if (!sigParams.empty()) sigParams += ", ";
         sigParams += "...";
       }
-      ci.documentation = "```lux\nfn " + func->name + "(" + sigParams + ") -> " +
+      ci.documentation = "```lucis\nfn " + func->name + "(" + sigParams + ") -> " +
                          func->returnType + "\n```\n\n" + func->description +
                          "\n\n*Intrinsic*";
       ci.insertText = func->name + "()";
@@ -4380,7 +4380,7 @@ void CompletionProvider::addHeaderSuggestions(
 
 std::string CompletionProvider::resolveMethodReturnType(
     const std::string &receiverType, const std::string &methodName,
-    LuxParser::ProgramContext *tree, const ProjectContext *project) {
+    LucisParser::ProgramContext *tree, const ProjectContext *project) {
 
   if (receiverType.empty() || methodName.empty())
     return "";
@@ -4541,7 +4541,7 @@ std::string CompletionProvider::resolveMethodReturnType(
       for (auto *sym : syms) {
         if (sym->kind != ExportedSymbol::ExtendBlock)
           continue;
-        auto *ext = dynamic_cast<LuxParser::ExtendDeclContext *>(sym->decl);
+        auto *ext = dynamic_cast<LucisParser::ExtendDeclContext *>(sym->decl);
         if (!ext || !ext->IDENTIFIER())
           continue;
         if (safeText(ext->IDENTIFIER()) != receiverLookup)
@@ -4574,7 +4574,7 @@ std::string CompletionProvider::resolveMethodReturnType(
 
 std::string CompletionProvider::resolveFieldType(
     const std::string &receiverType, const std::string &fieldName,
-    LuxParser::ProgramContext *tree, const CBindings *bindings,
+    LucisParser::ProgramContext *tree, const CBindings *bindings,
     const ProjectContext *project) {
 
   if (receiverType.empty() || fieldName.empty())
@@ -4636,7 +4636,7 @@ std::string CompletionProvider::resolveFieldType(
       if (!sym)
         continue;
       if (sym->kind == ExportedSymbol::Struct) {
-        auto *decl = dynamic_cast<LuxParser::StructDeclContext *>(sym->decl);
+        auto *decl = dynamic_cast<LucisParser::StructDeclContext *>(sym->decl);
         if (!decl)
           continue;
         if (!rArgs.empty() && decl->typeParamList()) {
@@ -4656,7 +4656,7 @@ std::string CompletionProvider::resolveFieldType(
       }
 
       if (sym->kind == ExportedSymbol::Union) {
-        auto *decl = dynamic_cast<LuxParser::UnionDeclContext *>(sym->decl);
+        auto *decl = dynamic_cast<LucisParser::UnionDeclContext *>(sym->decl);
         if (!decl)
           continue;
         if (!rArgs.empty() && decl->typeParamList()) {
@@ -4701,9 +4701,9 @@ std::string CompletionProvider::resolveFieldType(
 }
 
 std::unordered_map<std::string, CompletionProvider::LocalVar>
-CompletionProvider::collectLocals(LuxParser::FunctionDeclContext *func,
+CompletionProvider::collectLocals(LucisParser::FunctionDeclContext *func,
                                   size_t beforeLine,
-                                  LuxParser::ProgramContext *tree,
+                                  LucisParser::ProgramContext *tree,
                                   const CBindings *bindings,
                                   const ProjectContext *project) {
   std::unordered_map<std::string, LocalVar> result;
@@ -4729,7 +4729,7 @@ CompletionProvider::collectLocals(LuxParser::FunctionDeclContext *func,
 
 std::unordered_map<std::string, CompletionProvider::LocalVar>
 CompletionProvider::collectLocalsFromMethod(
-    LuxParser::ExtendMethodContext *method, size_t beforeLine) {
+    LucisParser::ExtendMethodContext *method, size_t beforeLine) {
   std::unordered_map<std::string, LocalVar> result;
 
   bool isInstance = (method->AMPERSAND() != nullptr);
@@ -4752,8 +4752,8 @@ CompletionProvider::collectLocalsFromMethod(
   return result;
 }
 
-LuxParser::FunctionDeclContext *
-CompletionProvider::findEnclosingFunction(LuxParser::ProgramContext *tree,
+LucisParser::FunctionDeclContext *
+CompletionProvider::findEnclosingFunction(LucisParser::ProgramContext *tree,
                                           size_t line) {
   size_t tokenLine = line + 1; // 0-based → 1-based
   for (auto *tld : tree->topLevelDecl()) {
@@ -4768,8 +4768,8 @@ CompletionProvider::findEnclosingFunction(LuxParser::ProgramContext *tree,
   return nullptr;
 }
 
-LuxParser::ExtendMethodContext *
-CompletionProvider::findEnclosingMethod(LuxParser::ProgramContext *tree,
+LucisParser::ExtendMethodContext *
+CompletionProvider::findEnclosingMethod(LucisParser::ProgramContext *tree,
                                         size_t line) {
   size_t tokenLine = line + 1;
   for (auto *tld : tree->topLevelDecl()) {
@@ -4787,8 +4787,8 @@ CompletionProvider::findEnclosingMethod(LuxParser::ProgramContext *tree,
   return nullptr;
 }
 
-LuxParser::StructDeclContext *
-CompletionProvider::findStructDecl(LuxParser::ProgramContext *tree,
+LucisParser::StructDeclContext *
+CompletionProvider::findStructDecl(LucisParser::ProgramContext *tree,
                                    const std::string &name) {
   for (auto *tld : tree->topLevelDecl()) {
     if (auto *sd = tld->structDecl()) {
@@ -4799,8 +4799,8 @@ CompletionProvider::findStructDecl(LuxParser::ProgramContext *tree,
   return nullptr;
 }
 
-LuxParser::UnionDeclContext *
-CompletionProvider::findUnionDecl(LuxParser::ProgramContext *tree,
+LucisParser::UnionDeclContext *
+CompletionProvider::findUnionDecl(LucisParser::ProgramContext *tree,
                                   const std::string &name) {
   for (auto *tld : tree->topLevelDecl()) {
     if (auto *ud = tld->unionDecl()) {
@@ -4811,8 +4811,8 @@ CompletionProvider::findUnionDecl(LuxParser::ProgramContext *tree,
   return nullptr;
 }
 
-LuxParser::EnumDeclContext *
-CompletionProvider::findEnumDecl(LuxParser::ProgramContext *tree,
+LucisParser::EnumDeclContext *
+CompletionProvider::findEnumDecl(LucisParser::ProgramContext *tree,
                                  const std::string &name) {
   for (auto *tld : tree->topLevelDecl()) {
     if (auto *ed = tld->enumDecl()) {
@@ -4823,8 +4823,8 @@ CompletionProvider::findEnumDecl(LuxParser::ProgramContext *tree,
   return nullptr;
 }
 
-LuxParser::ExtendDeclContext *
-CompletionProvider::findExtendDecl(LuxParser::ProgramContext *tree,
+LucisParser::ExtendDeclContext *
+CompletionProvider::findExtendDecl(LucisParser::ProgramContext *tree,
                                    const std::string &name) {
   for (auto *tld : tree->topLevelDecl()) {
     if (auto *ext = tld->extendDecl()) {
@@ -4836,7 +4836,7 @@ CompletionProvider::findExtendDecl(LuxParser::ProgramContext *tree,
 }
 
 std::string CompletionProvider::inferVarType(const std::string &varName,
-                                             LuxParser::ProgramContext *tree,
+                                             LucisParser::ProgramContext *tree,
                                              size_t cursorLine,
                                              const CBindings *bindings,
                                              const ProjectContext *project) {
@@ -4877,7 +4877,7 @@ std::string CompletionProvider::inferVarType(const std::string &varName,
 }
 
 std::string
-CompletionProvider::formatFuncSignature(LuxParser::FunctionDeclContext *func) {
+CompletionProvider::formatFuncSignature(LucisParser::FunctionDeclContext *func) {
   std::string sig = "fn " + safeIdAt(func, 0) + "(";
   if (auto *params = func->paramList()) {
     bool first = true;
@@ -4898,7 +4898,7 @@ CompletionProvider::formatFuncSignature(LuxParser::FunctionDeclContext *func) {
 }
 
 std::string CompletionProvider::formatMethodSignature(
-    LuxParser::ExtendMethodContext *method) {
+    LucisParser::ExtendMethodContext *method) {
   std::string sig = "fn " + safeIdAt(method, 0) + "(";
   bool isInstance = (method->AMPERSAND() != nullptr);
   if (isInstance) {
@@ -4925,7 +4925,7 @@ std::string CompletionProvider::formatMethodSignature(
 }
 
 std::string
-CompletionProvider::typeSpecToString(LuxParser::TypeSpecContext *ts) {
+CompletionProvider::typeSpecToString(LucisParser::TypeSpecContext *ts) {
   if (!ts)
     return "?";
   return ts->getText();
@@ -4954,7 +4954,7 @@ void CompletionProvider::dedup(std::vector<CompletionItem> &items) {
 }
 
 std::string
-CompletionProvider::buildIncludeFingerprint(LuxParser::ProgramContext *tree) {
+CompletionProvider::buildIncludeFingerprint(LucisParser::ProgramContext *tree) {
   if (!tree)
     return {};
   std::string out;

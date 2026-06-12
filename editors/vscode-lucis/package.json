@@ -1,0 +1,45 @@
+{
+  "name": "lucis",
+  "displayName": "Lucis Language",
+  "description": "Language support for the Lucis language (.lc files)",
+  "version": "0.4.0",
+  "icon": "icons/lucis-ext.png",
+  "engines": {
+    "vscode": "^1.75.0"
+  },
+  "categories": ["Programming Languages"],
+  "activationEvents": [
+    "onLanguage:lucis"
+  ],
+  "main": "./extension.js",
+  "contributes": {
+    "languages": [
+      {
+        "id": "lucis",
+        "aliases": ["Lucis", "lucis"],
+        "extensions": [".lc"],
+        "configuration": "./language-configuration.json",
+        "icon": {
+          "light": "./icons/lucis-file.svg",
+          "dark": "./icons/lucis-file.svg"
+        }
+      }
+    ],
+    "grammars": [
+      {
+        "language": "lucis",
+        "scopeName": "source.lucis",
+        "path": "./syntaxes/lucis.tmLanguage.json"
+      }
+    ],
+    "commands": [
+      {
+        "command": "lucis.restartServer",
+        "title": "Lucis: Restart Language Server"
+      }
+    ]
+  },
+  "dependencies": {
+    "vscode-languageclient": "^9.0.1"
+  }
+}

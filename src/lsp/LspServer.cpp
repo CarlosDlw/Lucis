@@ -21,7 +21,7 @@ LspServer::LspServer() : intrinsicRegistry_(typeRegistry_) {}
 
 int LspServer::run() {
     // LSP uses stderr for logging (stdout is the protocol channel)
-    std::cerr << "[lux-lsp] server started\n";
+    std::cerr << "[lucis-lsp] server started\n";
 
     while (!shutdown_) {
         auto raw = transport_.readMessage();
@@ -33,14 +33,14 @@ int LspServer::run() {
         try {
             msg = json::parse(*raw);
         } catch (const json::parse_error& e) {
-            std::cerr << "[lux-lsp] JSON parse error: " << e.what() << "\n";
+            std::cerr << "[lucis-lsp] JSON parse error: " << e.what() << "\n";
             continue;
         }
 
         dispatch(msg);
     }
 
-    std::cerr << "[lux-lsp] server stopped\n";
+    std::cerr << "[lucis-lsp] server stopped\n";
     return 0;
 }
 
@@ -98,7 +98,7 @@ void LspServer::dispatch(const json& msg) {
 
 void LspServer::handleInitialize(const json& msg) {
     try {
-        std::cerr << "[lux-lsp] initialize\n";
+        std::cerr << "[lucis-lsp] initialize\n";
 
         json capabilities = {
             {"textDocumentSync", {
@@ -127,7 +127,7 @@ void LspServer::handleInitialize(const json& msg) {
         json result = {
             {"capabilities", capabilities},
             {"serverInfo", {
-                {"name", "lux-lsp"},
+                {"name", "lucis-lsp"},
                 {"version", "0.0.1 beta"}
             }}
         };
@@ -135,42 +135,42 @@ void LspServer::handleInitialize(const json& msg) {
         sendResponse(msg["id"], result);
         initialized_ = true;
     } catch (const std::exception& e) {
-        std::cerr << "[lux-lsp] initialize error: " << e.what() << "\n";
+        std::cerr << "[lucis-lsp] initialize error: " << e.what() << "\n";
         sendError(msg["id"], kInvalidRequest, "initialize failed");
     } catch (...) {
-        std::cerr << "[lux-lsp] initialize unknown error\n";
+        std::cerr << "[lucis-lsp] initialize unknown error\n";
         sendError(msg["id"], kInvalidRequest, "initialize failed");
     }
 }
 
 void LspServer::handleInitialized(const json& /*msg*/) {
     try {
-        std::cerr << "[lux-lsp] initialized\n";
+        std::cerr << "[lucis-lsp] initialized\n";
 
         // Warm caches in background to avoid blocking first completion.
         std::thread([] {
-            std::cerr << "[lux-lsp] warming C header cache...\n";
+            std::cerr << "[lucis-lsp] warming C header cache...\n";
             CompletionProvider p;
             p.warmHeaderCache();
-            std::cerr << "[lux-lsp] C header cache ready\n";
+            std::cerr << "[lucis-lsp] C header cache ready\n";
         }).detach();
     } catch (const std::exception& e) {
-        std::cerr << "[lux-lsp] initialized error: " << e.what() << "\n";
+        std::cerr << "[lucis-lsp] initialized error: " << e.what() << "\n";
     } catch (...) {
-        std::cerr << "[lux-lsp] initialized unknown error\n";
+        std::cerr << "[lucis-lsp] initialized unknown error\n";
     }
 }
 
 void LspServer::handleShutdown(const json& msg) {
     try {
-        std::cerr << "[lux-lsp] shutdown\n";
+        std::cerr << "[lucis-lsp] shutdown\n";
         sendResponse(msg["id"], nullptr);
         shutdown_ = true;
     } catch (const std::exception& e) {
-        std::cerr << "[lux-lsp] shutdown error: " << e.what() << "\n";
+        std::cerr << "[lucis-lsp] shutdown error: " << e.what() << "\n";
         sendResponse(msg["id"], nullptr);
     } catch (...) {
-        std::cerr << "[lux-lsp] shutdown unknown error\n";
+        std::cerr << "[lucis-lsp] shutdown unknown error\n";
         sendResponse(msg["id"], nullptr);
     }
 }
@@ -188,7 +188,7 @@ std::string LspServer::findMainFile(const std::string& projectRoot) {
                  projectRoot, fs::directory_options::skip_permission_denied)) {
             std::error_code ec;
             if (!entry.is_regular_file(ec) || ec) continue;
-            if (entry.path().extension() != ".lx") continue;
+            if (entry.path().extension() != ".lc") continue;
 
             std::ifstream f(entry.path());
             if (!f) continue;
@@ -224,7 +224,7 @@ void LspServer::rebuildContext(const std::string& filePath, bool force) {
     if (mainFilePath_.empty()) {
         mainFilePath_ = findMainFile(projectRoot);
         if (!mainFilePath_.empty())
-            std::cerr << "[lux-lsp] main file: " << mainFilePath_ << "\n";
+            std::cerr << "[lucis-lsp] main file: " << mainFilePath_ << "\n";
     } else {
         // If the file being opened/saved declares `namespace Main`, update cache.
         // (handles renames or new main files added to the project)
@@ -255,11 +255,11 @@ void LspServer::rebuildContext(const std::string& filePath, bool force) {
     if (projectContext_.build(anchorFile)) {
         contextProjectRoot_ = projectRoot;
         contextAnchorPath_ = anchorFile;
-        std::cerr << "[lux-lsp] project root: "
+        std::cerr << "[lucis-lsp] project root: "
                   << projectContext_.projectRoot()
                   << " (anchored to " << anchorFile << ")\n";
     } else {
-        std::cerr << "[lux-lsp] project build FAILED for: "
+        std::cerr << "[lucis-lsp] project build FAILED for: "
                   << anchorFile << "\n";
     }
 }
@@ -277,16 +277,16 @@ void LspServer::handleDidOpen(const json& msg) {
 
         documents_.open(uri, text);
         parseCache_.invalidate(uri);
-        std::cerr << "[lux-lsp] opened: " << uri << "\n";
+        std::cerr << "[lucis-lsp] opened: " << uri << "\n";
 
         std::string filePath = DocumentStore::uriToPath(uri);
         rebuildContext(filePath, false);
 
         publishDiagnostics(uri, text);
     } catch (const std::exception& e) {
-        std::cerr << "[lux-lsp] didOpen error: " << e.what() << "\n";
+        std::cerr << "[lucis-lsp] didOpen error: " << e.what() << "\n";
     } catch (...) {
-        std::cerr << "[lux-lsp] didOpen unknown error\n";
+        std::cerr << "[lucis-lsp] didOpen unknown error\n";
     }
 }
 
@@ -306,7 +306,7 @@ void LspServer::handleDidSave(const json& msg) {
             text = documents_.get(uri);
         }
 
-        std::cerr << "[lux-lsp] saved: " << uri << "\n";
+        std::cerr << "[lucis-lsp] saved: " << uri << "\n";
 
         // Rebuild project context on save (files may have changed).
         std::string filePath = DocumentStore::uriToPath(uri);
@@ -314,9 +314,9 @@ void LspServer::handleDidSave(const json& msg) {
 
         publishDiagnostics(uri, text);
     } catch (const std::exception& e) {
-        std::cerr << "[lux-lsp] didSave error: " << e.what() << "\n";
+        std::cerr << "[lucis-lsp] didSave error: " << e.what() << "\n";
     } catch (...) {
-        std::cerr << "[lux-lsp] didSave unknown error\n";
+        std::cerr << "[lucis-lsp] didSave unknown error\n";
     }
 }
 
@@ -336,9 +336,9 @@ void LspServer::handleDidChange(const json& msg) {
 
         publishDiagnostics(uri, text);
     } catch (const std::exception& e) {
-        std::cerr << "[lux-lsp] didChange error: " << e.what() << "\n";
+        std::cerr << "[lucis-lsp] didChange error: " << e.what() << "\n";
     } catch (...) {
-        std::cerr << "[lux-lsp] didChange unknown error\n";
+        std::cerr << "[lucis-lsp] didChange unknown error\n";
     }
 }
 
@@ -350,7 +350,7 @@ void LspServer::handleDidClose(const json& msg) {
         documents_.close(uri);
         parseCache_.invalidate(uri);
         cachedTokens_.erase(uri);
-        std::cerr << "[lux-lsp] closed: " << uri << "\n";
+        std::cerr << "[lucis-lsp] closed: " << uri << "\n";
 
         // Clear diagnostics for the closed file
         sendNotification("textDocument/publishDiagnostics", {
@@ -358,9 +358,9 @@ void LspServer::handleDidClose(const json& msg) {
             {"diagnostics", json::array()}
         });
     } catch (const std::exception& e) {
-        std::cerr << "[lux-lsp] didClose error: " << e.what() << "\n";
+        std::cerr << "[lucis-lsp] didClose error: " << e.what() << "\n";
     } catch (...) {
-        std::cerr << "[lux-lsp] didClose unknown error\n";
+        std::cerr << "[lucis-lsp] didClose unknown error\n";
     }
 }
 
@@ -399,16 +399,16 @@ void LspServer::publishDiagnostics(const std::string& uri,
             {"diagnostics", lspDiags}
         });
 
-        std::cerr << "[lux-lsp] published " << diags.size()
+        std::cerr << "[lucis-lsp] published " << diags.size()
                   << " diagnostic(s) for " << uri << "\n";
     } catch (const std::exception& e) {
-        std::cerr << "[lux-lsp] diagnostics error: " << e.what() << "\n";
+        std::cerr << "[lucis-lsp] diagnostics error: " << e.what() << "\n";
         sendNotification("textDocument/publishDiagnostics", {
             {"uri", uri},
             {"diagnostics", json::array()}
         });
     } catch (...) {
-        std::cerr << "[lux-lsp] diagnostics unknown error\n";
+        std::cerr << "[lucis-lsp] diagnostics unknown error\n";
         sendNotification("textDocument/publishDiagnostics", {
             {"uri", uri},
             {"diagnostics", json::array()}
@@ -461,10 +461,10 @@ void LspServer::handleHover(const json& msg) {
 
         sendResponse(msg["id"], hover);
     } catch (const std::exception& e) {
-        std::cerr << "[lux-lsp] hover error: " << e.what() << "\n";
+        std::cerr << "[lucis-lsp] hover error: " << e.what() << "\n";
         sendResponse(msg["id"], nullptr);
     } catch (...) {
-        std::cerr << "[lux-lsp] hover unknown error\n";
+        std::cerr << "[lucis-lsp] hover unknown error\n";
         sendResponse(msg["id"], nullptr);
     }
 }
@@ -506,10 +506,10 @@ void LspServer::handleDefinition(const json& msg) {
 
         sendResponse(msg["id"], location);
     } catch (const std::exception& e) {
-        std::cerr << "[lux-lsp] definition error: " << e.what() << "\n";
+        std::cerr << "[lucis-lsp] definition error: " << e.what() << "\n";
         sendResponse(msg["id"], nullptr);
     } catch (...) {
-        std::cerr << "[lux-lsp] definition unknown error\n";
+        std::cerr << "[lucis-lsp] definition unknown error\n";
         sendResponse(msg["id"], nullptr);
     }
 }
@@ -563,10 +563,10 @@ void LspServer::handleCompletion(const json& msg) {
 
         sendResponse(msg["id"], result);
     } catch (const std::exception& e) {
-        std::cerr << "[lux-lsp] completion error: " << e.what() << "\n";
+        std::cerr << "[lucis-lsp] completion error: " << e.what() << "\n";
         sendResponse(msg["id"], json::array());
     } catch (...) {
-        std::cerr << "[lux-lsp] completion unknown error\n";
+        std::cerr << "[lucis-lsp] completion unknown error\n";
         sendResponse(msg["id"], json::array());
     }
 }
@@ -631,10 +631,10 @@ void LspServer::handleSignatureHelp(const json& msg) {
 
         sendResponse(msg["id"], response);
     } catch (const std::exception& e) {
-        std::cerr << "[lux-lsp] signatureHelp error: " << e.what() << "\n";
+        std::cerr << "[lucis-lsp] signatureHelp error: " << e.what() << "\n";
         sendResponse(msg["id"], nullptr);
     } catch (...) {
-        std::cerr << "[lux-lsp] signatureHelp unknown error\n";
+        std::cerr << "[lucis-lsp] signatureHelp unknown error\n";
         sendResponse(msg["id"], nullptr);
     }
 }
@@ -668,10 +668,10 @@ void LspServer::handleSemanticTokensFull(const json& msg) {
 
         sendResponse(msg["id"], {{"data", data}});
     } catch (const std::exception& e) {
-        std::cerr << "[lux-lsp] semantic tokens error: " << e.what() << "\n";
+        std::cerr << "[lucis-lsp] semantic tokens error: " << e.what() << "\n";
         sendResponse(msg["id"], {{"data", json::array()}});
     } catch (...) {
-        std::cerr << "[lux-lsp] semantic tokens unknown error\n";
+        std::cerr << "[lucis-lsp] semantic tokens unknown error\n";
         sendResponse(msg["id"], {{"data", json::array()}});
     }
 }

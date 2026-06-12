@@ -25,8 +25,8 @@ void registerUnsafeNamespace(IntrinsicRegistry& reg, TypeRegistry& typeReg) {
         f.description =
             "Reads the next " + returnType +
             " value from the variadic argument list and advances the handle.\n\n"
-            "```lux\n" + returnType +
-            " val = lux::unsafe::" + name + "(args);\n"
+            "```lucis\n" + returnType +
+            " val = lucis::unsafe::" + name + "(args);\n"
             "```";
 
         f.lowering.kind = IntrinsicFunction::Lowering::InlineIR;
@@ -82,8 +82,8 @@ void registerUnsafeNamespace(IntrinsicRegistry& reg, TypeRegistry& typeReg) {
             "Allocates a variadic argument list state handle and returns it.\n"
             "The returned `va_list` must be passed to `va_start`, `va_arg`, "
             "and `va_end`.\n\n"
-            "```lux\n"
-            "va_list args = lux::unsafe::va_list();\n"
+            "```lucis\n"
+            "va_list args = lucis::unsafe::va_list();\n"
             "```";
 
         fn.lowering.kind = IntrinsicFunction::Lowering::InlineIR;
@@ -97,7 +97,7 @@ void registerUnsafeNamespace(IntrinsicRegistry& reg, TypeRegistry& typeReg) {
             auto& dl = module->getDataLayout();
             auto* vaListTagTy = tagTI->toLLVMType(context, dl);
             
-            // va_list() in Lux is an expression that returns a new state pointer.
+            // va_list() in Lucis is an expression that returns a new state pointer.
             // We allocate the storage on the stack.
             return builder.CreateAlloca(vaListTagTy, nullptr, "va_list_storage");
         };
@@ -114,8 +114,8 @@ void registerUnsafeNamespace(IntrinsicRegistry& reg, TypeRegistry& typeReg) {
         fn.description =
             "Initializes a variadic argument list state handle.\n"
             "The state is then advanced by each `va_arg` call.\n\n"
-            "```lux\n"
-            "lux::unsafe::va_start(args);\n"
+            "```lucis\n"
+            "lucis::unsafe::va_start(args);\n"
             "```";
 
         fn.lowering.kind = IntrinsicFunction::Lowering::InlineIR;
@@ -129,7 +129,7 @@ void registerUnsafeNamespace(IntrinsicRegistry& reg, TypeRegistry& typeReg) {
             auto* i8PtrTy = llvm::PointerType::getUnqual(context);
             auto* vaStartFunc = llvm::Intrinsic::getOrInsertDeclaration(module, llvm::Intrinsic::vastart, {i8PtrTy});
 
-            // The va_list type in Lux is a pointer to a va_list_tag struct.
+            // The va_list type in Lucis is a pointer to a va_list_tag struct.
             // But LLVM's va_start expects a pointer directly to the storage area.
             // args[0] is the va_list value (pointer to the struct).
             // We need to get the i8* pointing to the underlying storage.
@@ -152,8 +152,8 @@ void registerUnsafeNamespace(IntrinsicRegistry& reg, TypeRegistry& typeReg) {
         fn.params.push_back({"va_list", false});
         fn.description =
             "Reads the next value of type T from the variadic argument list and advances the handle.\n\n"
-            "```lux\n"
-            "T val = lux::unsafe::va_arg<T>(args);\n"
+            "```lucis\n"
+            "T val = lucis::unsafe::va_arg<T>(args);\n"
             "```";
 
         fn.lowering.kind = IntrinsicFunction::Lowering::InlineIR;
@@ -201,9 +201,9 @@ void registerUnsafeNamespace(IntrinsicRegistry& reg, TypeRegistry& typeReg) {
         fn.params.push_back({"va_list", false});
         fn.description =
             "Reads the next C string (char*) from the variadic argument list, "
-            "converts it to a Lux string via strlen, and advances the handle.\n\n"
-            "```lux\n"
-            "string val = lux::unsafe::va_arg_string(args);\n"
+            "converts it to a Lucis string via strlen, and advances the handle.\n\n"
+            "```lucis\n"
+            "string val = lucis::unsafe::va_arg_string(args);\n"
             "```";
 
         fn.lowering.kind = IntrinsicFunction::Lowering::InlineIR;
@@ -222,12 +222,12 @@ void registerUnsafeNamespace(IntrinsicRegistry& reg, TypeRegistry& typeReg) {
             // Step 1: Read the char* from va_list (safe — same type as va_arg_ptr)
             llvm::Value* cstr = builder.CreateVAArg(args[0], ptrTy, "va_arg_str_ptr");
 
-            // Step 2: Call lux_fromCStr to get { ptr, len }
+            // Step 2: Call lucis_fromCStr to get { ptr, len }
             auto* retStructTy = llvm::StructType::get(context, {ptrTy, i64Ty});
-            auto callee = module->getOrInsertFunction("lux_fromCStr", retStructTy, ptrTy);
+            auto callee = module->getOrInsertFunction("lucis_fromCStr", retStructTy, ptrTy);
             auto* retVal = builder.CreateCall(callee, {cstr}, "va_arg_str");
 
-            // Step 3: Wrap into Lux string type { ptr, len }
+            // Step 3: Wrap into Lucis string type { ptr, len }
             auto* strTy = typeRegistry.lookup("string")->toLLVMType(context, dl);
             llvm::Value* strStruct = llvm::UndefValue::get(strTy);
             strStruct = builder.CreateInsertValue(strStruct,
@@ -248,8 +248,8 @@ void registerUnsafeNamespace(IntrinsicRegistry& reg, TypeRegistry& typeReg) {
         fn.params.push_back({"va_list", false});
         fn.description =
             "Invalidates a variadic argument list state handle.\n"
-            "```lux\n"
-            "lux::unsafe::va_end(args);\n"
+            "```lucis\n"
+            "lucis::unsafe::va_end(args);\n"
             "```";
 
         fn.lowering.kind = IntrinsicFunction::Lowering::InlineIR;

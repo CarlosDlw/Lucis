@@ -1,6 +1,6 @@
 # Variables
 
-This page covers variable declaration, initialization, scope, and reassignment in Lux.
+This page covers variable declaration, initialization, scope, and reassignment in Lucis.
 
 ## Declaration
 
@@ -257,7 +257,7 @@ fn main() int32 {
 
 ## Multiple Declarations
 
-Each variable declaration is a separate statement. Lux does not support declaring multiple variables on one line:
+Each variable declaration is a separate statement. Lucis does not support declaring multiple variables on one line:
 
 ```
 // each on its own line

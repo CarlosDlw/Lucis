@@ -1,7 +1,7 @@
 # FFI — Foreign Function Interface
 
-Lux provides native C interoperability through a zero-cost FFI system.
-C functions can be called directly from LuxM code with no wrappers, thunks,
+Lucis provides native C interoperability through a zero-cost FFI system.
+C functions can be called directly from LucisM code with no wrappers, thunks,
 or runtime overhead — the generated machine code is identical to what a
 C compiler would produce.
 
@@ -78,7 +78,7 @@ printf(c"Value: %d\n", 42);
 *char msg = c"Static C string";
 ```
 
-### Differences from LuxM strings
+### Differences from LucisM strings
 
 | Feature | TM `string` | C `c"..."` |
 |---------|-------------|------------|
@@ -118,7 +118,7 @@ extern int32 scanf(*char fmt, ...);
 When passing arguments to the variadic portion of a C function, the compiler
 automatically applies **C default argument promotions**:
 
-| Lux type | Promoted to | Reason |
+| Lucis type | Promoted to | Reason |
 |---------|------------|--------|
 | `float32` | `float64` | C promotes `float` → `double` in varargs |
 | `int8`, `int16` | `int32` | C promotes small ints → `int` in varargs |
@@ -154,7 +154,7 @@ Allocates a new null-terminated C string from a TM string. The caller
 must `free()` the returned pointer when done.
 
 ```
-string name = "Lux";
+string name = "Lucis";
 *char cname = cstr(name);
 puts(cname);
 free(cname as *void);
@@ -165,7 +165,7 @@ free(cname as *void);
 
 ### `fromCStr(p)` — *char → string
 
-Creates a Lux string from a null-terminated C string. Computes the length
+Creates a Lucis string from a null-terminated C string. Computes the length
 via `strlen()`.
 
 ```
@@ -175,12 +175,12 @@ string s = fromCStr(raw);
 ```
 
 - **Cost**: One `strlen()` call. O(n).
-- **Ownership**: The Lux string wraps the original pointer (zero-copy).
+- **Ownership**: The Lucis string wraps the original pointer (zero-copy).
 
 ### `fromCStrCopy(p)` — *char → string (owned copy)
 
-Creates a Lux string by copying a null-terminated C string into newly
-allocated memory owned by Lux.
+Creates a Lucis string by copying a null-terminated C string into newly
+allocated memory owned by Lucis.
 
 ```
 *char raw = c"Hello from C";
@@ -189,11 +189,11 @@ string s = fromCStrCopy(raw);
 ```
 
 - **Cost**: `strlen()` + `malloc(len + 1)` + `memcpy`. O(n).
-- **Ownership**: The returned Lux string owns its copied buffer.
+- **Ownership**: The returned Lucis string owns its copied buffer.
 
 ### `fromCStrLen(p, len)` — *char + length → string
 
-Creates a Lux string from a pointer and explicit length. Zero-cost — no
+Creates a Lucis string from a pointer and explicit length. Zero-cost — no
 memory allocation or scanning.
 
 ```
@@ -203,9 +203,9 @@ string s = fromCStrLen(c"Hello World!!!!", 5);
 
 - **Cost**: Zero. Just wraps the pointer and length.
 
-### `freeStr(s)` — free owned Lux string buffer
+### `freeStr(s)` — free owned Lucis string buffer
 
-Frees the backing memory of a Lux string previously created by
+Frees the backing memory of a Lucis string previously created by
 `fromCStrCopy()`.
 
 ```
@@ -228,7 +228,7 @@ readable when working with C strings.
 cstring greeting = c"Hello!";
 puts(greeting);
 
-cstring name = cstr("Lux");
+cstring name = cstr("Lucis");
 puts(name);
 free(name as *void);
 ```
@@ -333,7 +333,7 @@ opaque pointers in LLVM make this straightforward.
 `float80` and `float128` provide extended precision floating-point types
 for C interoperability.
 
-| Lux type | C equivalent | LLVM type | Precision |
+| Lucis type | C equivalent | LLVM type | Precision |
 |---------|-------------|-----------|-----------|
 | `float80` | `long double` (x86) | `x86_fp80` | ~18-19 decimal digits |
 | `float128` | `_Float128` / `__float128` | `fp128` | ~33-36 decimal digits |
@@ -371,10 +371,10 @@ float128 d = c as float128;  // fpext: no precision loss
 
 ## #include directives
 
-Use `#include` to import C header files directly into Lux code. The compiler
+Use `#include` to import C header files directly into Lucis code. The compiler
 parses the header with libclang at compile time and extracts all functions,
 structs, enums, and typedefs — making them available as if they were
-native Lux declarations.
+native Lucis declarations.
 
 ```
 #include <stdio.h>
@@ -422,7 +422,7 @@ keeps the generated IR clean even when including large headers like
 
 ### Struct extraction
 
-C structs are fully mapped to Lux struct types with all their fields.
+C structs are fully mapped to Lucis struct types with all their fields.
 Field types are recursively resolved, including nested structs and
 pointer-to-struct types.
 
@@ -483,7 +483,7 @@ you need access to structs, enums, or many functions from a C library.
 When you use `#include "header.h"` with a local header, the compiler
 automatically looks for a matching `.c` source file in the same
 directory. If found, it compiles the C source into an object file
-inside `.lux/build/` and links it into the final binary — no manual
+inside `.lucis/build/` and links it into the final binary — no manual
 compilation step required.
 
 ```
@@ -525,21 +525,21 @@ int multiply(int a, int b) {
 }
 ```
 
-Running `lux main.lx ./main` will:
+Running `lucis main.lc ./main` will:
 
 1. Parse `mymath.h` via libclang to extract `add`, `multiply`, and `PI_APPROX`
 2. Find `mymath.c` in the same directory as `mymath.h`
-3. Compile `mymath.c` → `.lux/build/c__mymath.o` using the system C compiler
+3. Compile `mymath.c` → `.lucis/build/c__mymath.o` using the system C compiler
 4. Link `c__mymath.o` together with the TM object file into the final binary
 
 ### Build directory layout
 
 ```
 project/
-├── main.lx
+├── main.lc
 ├── mymath.h
 ├── mymath.c
-└── .lux/
+└── .lucis/
     ├── build/
     │   ├── MyNamespace__main.o    # compiled TM code
     │   └── c__mymath.o            # auto-compiled C code
@@ -553,7 +553,7 @@ project/
 | Header resolution | `#include "mymath.h"` → libclang parses with `-I<source dir>` |
 | Source discovery | Replaces `.h` → `.c` and checks if the file exists |
 | Compilation | Invokes `cc`, `clang`, or `gcc` (first available) |
-| Deduplication | Each `.c` file is compiled only once, even if included from multiple `.lx` files |
+| Deduplication | Each `.c` file is compiled only once, even if included from multiple `.lc` files |
 | Linking | Compiled `.o` files are appended to the linker command automatically |
 
 ### Notes
@@ -623,7 +623,7 @@ byte-level arithmetic (stride of 1).
 ## #define macro constants
 
 Integer `#define` constants from C headers are automatically extracted
-and available as `int32` values in Lux code. This covers the vast majority
+and available as `int32` values in Lucis code. This covers the vast majority
 of C API constants: error codes, flags, sizes, and sentinel values.
 
 ```
@@ -721,7 +721,7 @@ it through C helper functions if needed.
 
 ## Callbacks
 
-Lux functions can be passed directly as C function pointer arguments.
+Lucis functions can be passed directly as C function pointer arguments.
 This enables use of C APIs that accept callbacks: `qsort`, `bsearch`,
 `atexit`, `signal`, `pthread_create`, etc.
 
@@ -852,7 +852,7 @@ and uses 2-register passing, same as `Pair64`.
 ## Enum type compatibility
 
 C enum types are fully supported as function parameter and return types.
-When a C function uses an enum type (e.g. `Color`), Lux maps it to
+When a C function uses an enum type (e.g. `Color`), Lucis maps it to
 the underlying integer type (typically `uint32` on most platforms) and
 allows implicit conversion between enum constants and integer variables.
 
@@ -899,7 +899,7 @@ fn main() int32 {
 ## CLI linker flags
 
 When linking against external C libraries, use the following flags on
-the `lux` command line:
+the `lucis` command line:
 
 | Flag | Description | Example |
 |------|-------------|---------|
@@ -911,13 +911,13 @@ the `lux` command line:
 
 ```bash
 # Link against SDL2 installed in a custom location
-lux build main.lx -o ./game -lSDL2 -L/opt/sdl2/lib
+lucis build main.lc -o ./game -lSDL2 -L/opt/sdl2/lib
 
 # Link against multiple libraries
-lux build main.lx -o ./app -lcurl -lssl -lcrypto
+lucis build main.lc -o ./app -lcurl -lssl -lcrypto
 
 # Default libraries (-lm, -lz, -lpthread) are always linked automatically
-lux build main.lx -o ./main
+lucis build main.lc -o ./main
 ```
 
 ### Notes
@@ -995,10 +995,10 @@ All extern function calls are **zero-cost**. The generated code is
 identical to what a C compiler would produce:
 
 ```
-Lux source:     puts(c"Hello");
+Lucis source:     puts(c"Hello");
 LLVM IR:        call i32 @puts(ptr @.cstr.0)
 x86-64 asm:     callq puts@PLT
 ```
 
-No wrappers. No thunks. No indirection. Calling a C function from Lux
+No wrappers. No thunks. No indirection. Calling a C function from Lucis
 is exactly as fast as calling it from C.

@@ -1,14 +1,14 @@
 [
   {
-    "file": "/home/carlos/Projects/Cpp/Lux/src/generated/LuxLexer.cpp",
+    "file": "/home/carlos/Projects/Cpp/Lucis/src/generated/LucisLexer.cpp",
     "arguments": [
       "/usr/bin/c++",
       "-DLLVM_VERSION_15_OR_NEWER",
       "-DLLVM_VERSION_18_OR_NEWER",
-      "-DLUX_RUNTIME_DIAGNOSTICS=1",
-      "-I/home/carlos/Projects/Cpp/Lux/src",
-      "-I/home/carlos/Projects/Cpp/Lux/src/generated",
-      "-I/home/carlos/Projects/Cpp/Lux/src/builtins",
+      "-DLUCIS_RUNTIME_DIAGNOSTICS=1",
+      "-I/home/carlos/Projects/Cpp/Lucis/src",
+      "-I/home/carlos/Projects/Cpp/Lucis/src/generated",
+      "-I/home/carlos/Projects/Cpp/Lucis/src/builtins",
       "-I/usr/include/antlr4-runtime",
       "-g",
       "-std=gnu++17",
@@ -21,15 +21,15 @@
       "-fno-omit-frame-pointer",
       "-MD",
       "-MT",
-      "CMakeFiles/lux.dir/src/generated/LuxLexer.cpp.o",
+      "CMakeFiles/lucis.dir/src/generated/LucisLexer.cpp.o",
       "-MF",
-      "CMakeFiles/lux.dir/src/generated/LuxLexer.cpp.o.d",
+      "CMakeFiles/lucis.dir/src/generated/LucisLexer.cpp.o.d",
       "-o",
-      "CMakeFiles/lux.dir/src/generated/LuxLexer.cpp.o",
+      "CMakeFiles/lucis.dir/src/generated/LucisLexer.cpp.o",
       "-c",
-      "/home/carlos/Projects/Cpp/Lux/src/generated/LuxLexer.cpp"
+      "/home/carlos/Projects/Cpp/Lucis/src/generated/LucisLexer.cpp"
     ],
-    "directory": "/home/carlos/Projects/Cpp/Lux/build",
-    "output": "CMakeFiles/lux.dir/src/generated/LuxLexer.cpp.o"
+    "directory": "/home/carlos/Projects/Cpp/Lucis/build",
+    "output": "CMakeFiles/lucis.dir/src/generated/LucisLexer.cpp.o"
   }
 ]

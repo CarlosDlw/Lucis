@@ -1,6 +1,6 @@
-# ─── lux Makefile ──────────────────────────────────────────────────────────
+# ─── lucis Makefile ──────────────────────────────────────────────────────────
 BUILD_DIR  := build
-BINARY     := $(BUILD_DIR)/lux
+BINARY     := $(BUILD_DIR)/lucis
 NPROC      := $(shell nproc 2>/dev/null || getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)
 BUILD_TYPE ?= Debug
 SANITIZERS ?= ON
@@ -20,12 +20,12 @@ configure:
 	@if [ -n "$(GENERATOR)" ]; then \
 		cmake -S . -B $(BUILD_DIR) -G "$(GENERATOR)" \
 			-DCMAKE_BUILD_TYPE=$(BUILD_TYPE) \
-			-DLUX_ENABLE_SANITIZERS=$(SANITIZERS) \
+			-DLUCIS_ENABLE_SANITIZERS=$(SANITIZERS) \
 			$(CMAKE_FLAGS); \
 	else \
 		cmake -S . -B $(BUILD_DIR) \
 			-DCMAKE_BUILD_TYPE=$(BUILD_TYPE) \
-			-DLUX_ENABLE_SANITIZERS=$(SANITIZERS) \
+			-DLUCIS_ENABLE_SANITIZERS=$(SANITIZERS) \
 			$(CMAKE_FLAGS); \
 	fi
 
@@ -47,7 +47,7 @@ clean:
 ## run FILE=<file.tm>  — compila e executa com um arquivo .tm
 run: build
 ifndef FILE
-	@echo "Usage: make run FILE=examples/main.lx [ARGS='...']"
+	@echo "Usage: make run FILE=examples/main.lc [ARGS='...']"
 else
 	@$(BINARY) $(FILE) $(ARGS)
 endif
@@ -60,22 +60,22 @@ grammar:
 		exit 1; \
 	fi
 	@# Remove stale nested outputs produced by some ANTLR invocations.
-	@rm -rf "$(GENERATED_DIR)/grammar" "$(GENERATED_DIR)/Lux"
+	@rm -rf "$(GENERATED_DIR)/grammar" "$(GENERATED_DIR)/Lucis"
 	@mkdir -p $(GENERATED_DIR)
 	@cd "$(GRAMMAR_DIR)" && \
 		java -jar "../$(ANTLR_JAR)" -Dlanguage=Cpp -visitor -no-listener \
 			-Xexact-output-dir \
 			-o "../$(GENERATED_DIR)" \
-			LuxLexer.g4 LuxParser.g4
+			LucisLexer.g4 LucisParser.g4
 	@echo "ANTLR generated sources updated in $(GENERATED_DIR)."
 
 test:
-	./build/lux run tests/main.lx -q
+	./build/lucis run tests/main.lc -q
 
 ## help  — lista os targets disponíveis
 help:
 	@echo ""
-	@echo "  lux — Makefile targets"
+	@echo "  lucis — Makefile targets"
 	@echo ""
 	@grep -E '^##' Makefile | sed 's/## /  make /g'
 	@echo "  make configure BUILD_TYPE=Release SANITIZERS=OFF"

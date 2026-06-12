@@ -26,10 +26,10 @@ static const unsigned char b64_dec_table[256] = {
 
 /* ── Base64 encode (string → string) ────────────────────────────── */
 
-lux_encoding_str_result lux_base64EncodeStr(const char* s, size_t s_len) {
+lucis_encoding_str_result lucis_base64EncodeStr(const char* s, size_t s_len) {
     size_t out_len = 4 * ((s_len + 2) / 3);
     char* out = (char*)malloc(out_len + 1);
-    if (!out) { return (lux_encoding_str_result){ "", 0 }; }
+    if (!out) { return (lucis_encoding_str_result){ "", 0 }; }
 
     size_t i = 0, j = 0;
     while (i + 2 < s_len) {
@@ -54,12 +54,12 @@ lux_encoding_str_result lux_base64EncodeStr(const char* s, size_t s_len) {
     }
 
     out[j] = '\0';
-    return (lux_encoding_str_result){ out, j };
+    return (lucis_encoding_str_result){ out, j };
 }
 
 /* ── Base64 decode (string → string) ────────────────────────────── */
 
-lux_encoding_str_result lux_base64DecodeStr(const char* s, size_t s_len) {
+lucis_encoding_str_result lucis_base64DecodeStr(const char* s, size_t s_len) {
     /* Strip trailing padding for length calculation */
     size_t pad = 0;
     if (s_len >= 1 && s[s_len - 1] == '=') pad++;
@@ -67,7 +67,7 @@ lux_encoding_str_result lux_base64DecodeStr(const char* s, size_t s_len) {
 
     size_t out_len = (s_len / 4) * 3 - pad;
     char* out = (char*)malloc(out_len + 1);
-    if (!out) { return (lux_encoding_str_result){ "", 0 }; }
+    if (!out) { return (lucis_encoding_str_result){ "", 0 }; }
 
     size_t i = 0, j = 0;
     while (i + 3 < s_len) {
@@ -84,7 +84,7 @@ lux_encoding_str_result lux_base64DecodeStr(const char* s, size_t s_len) {
     }
 
     out[j] = '\0';
-    return (lux_encoding_str_result){ out, j };
+    return (lucis_encoding_str_result){ out, j };
 }
 
 /* ── URL encode ─────────────────────────────────────────────────── */
@@ -95,10 +95,10 @@ static int is_unreserved(unsigned char c) {
 
 static const char hex_upper[] = "0123456789ABCDEF";
 
-lux_encoding_str_result lux_urlEncode(const char* s, size_t s_len) {
+lucis_encoding_str_result lucis_urlEncode(const char* s, size_t s_len) {
     /* Worst case: every char becomes %XX → 3× */
     char* out = (char*)malloc(s_len * 3 + 1);
-    if (!out) { return (lux_encoding_str_result){ "", 0 }; }
+    if (!out) { return (lucis_encoding_str_result){ "", 0 }; }
 
     size_t j = 0;
     for (size_t i = 0; i < s_len; i++) {
@@ -116,7 +116,7 @@ lux_encoding_str_result lux_urlEncode(const char* s, size_t s_len) {
     /* Shrink allocation */
     char* shrunk = (char*)realloc(out, j + 1);
     if (shrunk) out = shrunk;
-    return (lux_encoding_str_result){ out, j };
+    return (lucis_encoding_str_result){ out, j };
 }
 
 /* ── URL decode ─────────────────────────────────────────────────── */
@@ -128,9 +128,9 @@ static int hex_val(unsigned char c) {
     return -1;
 }
 
-lux_encoding_str_result lux_urlDecode(const char* s, size_t s_len) {
+lucis_encoding_str_result lucis_urlDecode(const char* s, size_t s_len) {
     char* out = (char*)malloc(s_len + 1);
-    if (!out) { return (lux_encoding_str_result){ "", 0 }; }
+    if (!out) { return (lucis_encoding_str_result){ "", 0 }; }
 
     size_t j = 0;
     for (size_t i = 0; i < s_len; i++) {
@@ -151,19 +151,19 @@ lux_encoding_str_result lux_urlDecode(const char* s, size_t s_len) {
     }
 
     out[j] = '\0';
-    return (lux_encoding_str_result){ out, j };
+    return (lucis_encoding_str_result){ out, j };
 }
 
 /* ── Base64 encode from Vec<uint8> ────────────────────────────── */
 
-lux_encoding_str_result lux_base64EncodeVec(const lux_enc_vec_header* data) {
-    return lux_base64EncodeStr((const char*)data->ptr, data->len);
+lucis_encoding_str_result lucis_base64EncodeVec(const lucis_enc_vec_header* data) {
+    return lucis_base64EncodeStr((const char*)data->ptr, data->len);
 }
 
 /* ── Base64 decode to Vec<uint8> ──────────────────────────────── */
 
-void lux_base64DecodeVec(lux_enc_vec_header* out, const char* s, size_t s_len) {
-    lux_encoding_str_result decoded = lux_base64DecodeStr(s, s_len);
+void lucis_base64DecodeVec(lucis_enc_vec_header* out, const char* s, size_t s_len) {
+    lucis_encoding_str_result decoded = lucis_base64DecodeStr(s, s_len);
 
     uint8_t* buf = (uint8_t*)malloc(decoded.len);
     if (buf && decoded.ptr) {

@@ -5,11 +5,11 @@
 
 /* ── helpers ────────────────────────────────────────────────────────────── */
 
-static lux_compress_str_result make_result(const char* p, size_t n) {
-    return (lux_compress_str_result){ p, n };
+static lucis_compress_str_result make_result(const char* p, size_t n) {
+    return (lucis_compress_str_result){ p, n };
 }
 
-static lux_compress_str_result empty_result(void) {
+static lucis_compress_str_result empty_result(void) {
     char* p = (char*)malloc(1);
     p[0] = '\0';
     return make_result(p, 0);
@@ -17,7 +17,7 @@ static lux_compress_str_result empty_result(void) {
 
 /* ── gzip compress ──────────────────────────────────────────────────────── */
 
-lux_compress_str_result lux_gzipCompress(const char* s, size_t slen) {
+lucis_compress_str_result lucis_gzipCompress(const char* s, size_t slen) {
     if (slen == 0) return empty_result();
 
     z_stream zs;
@@ -50,7 +50,7 @@ lux_compress_str_result lux_gzipCompress(const char* s, size_t slen) {
 
 /* ── gzip decompress ────────────────────────────────────────────────────── */
 
-lux_compress_str_result lux_gzipDecompress(const char* s, size_t slen) {
+lucis_compress_str_result lucis_gzipDecompress(const char* s, size_t slen) {
     if (slen == 0) return empty_result();
 
     z_stream zs;
@@ -93,7 +93,7 @@ lux_compress_str_result lux_gzipDecompress(const char* s, size_t slen) {
 
 /* ── raw deflate ────────────────────────────────────────────────────────── */
 
-lux_compress_str_result lux_deflate(const char* s, size_t slen) {
+lucis_compress_str_result lucis_deflate(const char* s, size_t slen) {
     if (slen == 0) return empty_result();
 
     z_stream zs;
@@ -126,7 +126,7 @@ lux_compress_str_result lux_deflate(const char* s, size_t slen) {
 
 /* ── raw inflate ────────────────────────────────────────────────────────── */
 
-lux_compress_str_result lux_inflate(const char* s, size_t slen) {
+lucis_compress_str_result lucis_inflate(const char* s, size_t slen) {
     if (slen == 0) return empty_result();
 
     z_stream zs;
@@ -169,7 +169,7 @@ lux_compress_str_result lux_inflate(const char* s, size_t slen) {
 
 /* ── compress with level ────────────────────────────────────────────────── */
 
-lux_compress_str_result lux_compressLevel(const char* s, size_t slen, int32_t level) {
+lucis_compress_str_result lucis_compressLevel(const char* s, size_t slen, int32_t level) {
     if (slen == 0) return empty_result();
 
     if (level < 1) level = 1;

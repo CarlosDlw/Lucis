@@ -14,10 +14,10 @@ void TestCommand::buildArgs(ArgParser& parser) const {
 }
 
 int TestCommand::run(const ArgParser& parser) {
-    // Find tests/main.lx relative to the project
+    // Find tests/main.lc relative to the project
     // Try common locations
     std::string testPath;
-    for (auto& candidate : {"tests/main.lx", "../tests/main.lx", "../../tests/main.lx"}) {
+    for (auto& candidate : {"tests/main.lc", "../tests/main.lc", "../../tests/main.lc"}) {
         if (fs::exists(candidate)) {
             testPath = fs::canonical(candidate).string();
             break;
@@ -28,7 +28,7 @@ int TestCommand::run(const ArgParser& parser) {
         // Search up from cwd
         fs::path cur = fs::current_path();
         while (true) {
-            auto candidate = cur / "tests" / "main.lx";
+            auto candidate = cur / "tests" / "main.lc";
             if (fs::exists(candidate)) {
                 testPath = candidate.string();
                 break;
@@ -39,18 +39,18 @@ int TestCommand::run(const ArgParser& parser) {
     }
 
     if (testPath.empty()) {
-        std::cerr << "lux: could not find tests/main.lx\n";
+        std::cerr << "lucis: could not find tests/main.lc\n";
         return 1;
     }
 
     // Reuse RunCommand logic to execute the test suite
     RunCommand runCmd;
-    ArgParser runParser("lux run", "Compile and execute a Lux program via JIT");
+    ArgParser runParser("lucis run", "Compile and execute a Lucis program via JIT");
     runCmd.buildArgs(runParser);
 
     // Build fake argv: [prog, file, -q?]
     std::vector<const char*> fakeArgv;
-    fakeArgv.push_back("lux");
+    fakeArgv.push_back("lucis");
     fakeArgv.push_back(testPath.c_str());
     if (parser.has("quiet"))
         fakeArgv.push_back("-q");

@@ -12,97 +12,97 @@ static struct tm get_local_tm(void) {
     return tm;
 }
 
-uint64_t lux_now(void) {
+uint64_t lucis_now(void) {
     struct timespec ts;
     clock_gettime(CLOCK_REALTIME, &ts);
     return (uint64_t)ts.tv_sec * 1000ULL + (uint64_t)ts.tv_nsec / 1000000ULL;
 }
 
-uint64_t lux_nowNanos(void) {
+uint64_t lucis_nowNanos(void) {
     struct timespec ts;
     clock_gettime(CLOCK_REALTIME, &ts);
     return (uint64_t)ts.tv_sec * 1000000000ULL + (uint64_t)ts.tv_nsec;
 }
 
-uint64_t lux_nowMicros(void) {
+uint64_t lucis_nowMicros(void) {
     struct timespec ts;
     clock_gettime(CLOCK_REALTIME, &ts);
     return (uint64_t)ts.tv_sec * 1000000ULL + (uint64_t)ts.tv_nsec / 1000ULL;
 }
 
-void lux_sleep(uint64_t ms) {
+void lucis_sleep(uint64_t ms) {
     struct timespec req;
     req.tv_sec  = (time_t)(ms / 1000);
     req.tv_nsec = (long)((ms % 1000) * 1000000L);
     nanosleep(&req, NULL);
 }
 
-void lux_sleepMicros(uint64_t us) {
+void lucis_sleepMicros(uint64_t us) {
     struct timespec req;
     req.tv_sec  = (time_t)(us / 1000000);
     req.tv_nsec = (long)((us % 1000000) * 1000L);
     nanosleep(&req, NULL);
 }
 
-uint64_t lux_clock(void) {
+uint64_t lucis_clock(void) {
     struct timespec ts;
     clock_gettime(CLOCK_MONOTONIC, &ts);
     return (uint64_t)ts.tv_sec * 1000000000ULL + (uint64_t)ts.tv_nsec;
 }
 
-int32_t lux_year(void) {
+int32_t lucis_year(void) {
     struct tm tm = get_local_tm();
     return (int32_t)(tm.tm_year + 1900);
 }
 
-int32_t lux_month(void) {
+int32_t lucis_month(void) {
     struct tm tm = get_local_tm();
     return (int32_t)(tm.tm_mon + 1);
 }
 
-int32_t lux_day(void) {
+int32_t lucis_day(void) {
     struct tm tm = get_local_tm();
     return (int32_t)tm.tm_mday;
 }
 
-int32_t lux_hour(void) {
+int32_t lucis_hour(void) {
     struct tm tm = get_local_tm();
     return (int32_t)tm.tm_hour;
 }
 
-int32_t lux_minute(void) {
+int32_t lucis_minute(void) {
     struct tm tm = get_local_tm();
     return (int32_t)tm.tm_min;
 }
 
-int32_t lux_second(void) {
+int32_t lucis_second(void) {
     struct tm tm = get_local_tm();
     return (int32_t)tm.tm_sec;
 }
 
-int32_t lux_weekday(void) {
+int32_t lucis_weekday(void) {
     struct tm tm = get_local_tm();
     return (int32_t)tm.tm_wday;
 }
 
-lux_time_str_result lux_timestamp(void) {
+lucis_time_str_result lucis_timestamp(void) {
     // ISO 8601: "2026-03-23T14:30:45"
     struct tm tm = get_local_tm();
     char* buf = (char*)malloc(32);
     if (!buf) {
-        lux_time_str_result r = {"", 0};
+        lucis_time_str_result r = {"", 0};
         return r;
     }
     size_t n = strftime(buf, 32, "%Y-%m-%dT%H:%M:%S", &tm);
-    lux_time_str_result r = {buf, n};
+    lucis_time_str_result r = {buf, n};
     return r;
 }
 
-uint64_t lux_elapsed(uint64_t since) {
-    return lux_now() - since;
+uint64_t lucis_elapsed(uint64_t since) {
+    return lucis_now() - since;
 }
 
-lux_time_str_result lux_formatTime(uint64_t ms,
+lucis_time_str_result lucis_formatTime(uint64_t ms,
                                          const char* fmt_ptr, size_t fmt_len) {
     // Convert ms timestamp to time_t
     time_t t = (time_t)(ms / 1000);
@@ -112,7 +112,7 @@ lux_time_str_result lux_formatTime(uint64_t ms,
     // Null-terminate the format string
     char* fmt = (char*)malloc(fmt_len + 1);
     if (!fmt) {
-        lux_time_str_result r = {"", 0};
+        lucis_time_str_result r = {"", 0};
         return r;
     }
     memcpy(fmt, fmt_ptr, fmt_len);
@@ -121,17 +121,17 @@ lux_time_str_result lux_formatTime(uint64_t ms,
     char* buf = (char*)malloc(256);
     if (!buf) {
         free(fmt);
-        lux_time_str_result r = {"", 0};
+        lucis_time_str_result r = {"", 0};
         return r;
     }
     size_t n = strftime(buf, 256, fmt, &tm);
     free(fmt);
 
-    lux_time_str_result r = {buf, n};
+    lucis_time_str_result r = {buf, n};
     return r;
 }
 
-uint64_t lux_parseTime(const char* str_ptr, size_t str_len,
+uint64_t lucis_parseTime(const char* str_ptr, size_t str_len,
                           const char* fmt_ptr, size_t fmt_len) {
     // Null-terminate both strings
     char* str = (char*)malloc(str_len + 1);

@@ -1,6 +1,6 @@
 # Calling C Functions
 
-Lux provides two ways to call C functions: manual `extern` declarations and automatic `#include` directives. Both produce identical machine code — there is no performance difference.
+Lucis provides two ways to call C functions: manual `extern` declarations and automatic `#include` directives. Both produce identical machine code — there is no performance difference.
 
 ---
 
@@ -60,7 +60,7 @@ fn main() tm {
 }
 ```
 
-The `...` in an extern declaration is different from Lux's own variadic syntax (`int32 ...values`). C variadic arguments are not type-checked by the compiler — the types must match the format string.
+The `...` in an extern declaration is different from Lucis's own variadic syntax (`int32 ...values`). C variadic arguments are not type-checked by the compiler — the types must match the format string.
 
 ---
 
@@ -145,17 +145,17 @@ When you `#include "header.h"`, the compiler automatically looks for a matching 
 1. Compiles the `.c` file to an object file using the system C compiler
 2. Links the resulting object file into the final executable
 
-This means you don't need a separate build step for your C code. Just place the `.h` and `.c` files next to your `.lx` file:
+This means you don't need a separate build step for your C code. Just place the `.h` and `.c` files next to your `.lc` file:
 
 ```
 my_project/
-├── main.lx          # your Lux code
+├── main.lc          # your Lucis code
 ├── mymath.h         # C header
 └── mymath.c         # C implementation (auto-compiled)
 ```
 
 ```bash
-lux main.lx ./main   # compiles mymath.c automatically
+lucis main.lc ./main   # compiles mymath.c automatically
 ./main
 ```
 
@@ -182,7 +182,7 @@ When the compiler parses a C header, it extracts and makes available:
 
 ### Functions
 
-All function declarations become callable. The compiler maps C types to Lux types automatically:
+All function declarations become callable. The compiler maps C types to Lucis types automatically:
 
 ```c
 // In C header:
@@ -192,7 +192,7 @@ void* malloc(size_t size);
 ```
 
 ```
-// In Lux code (no extern needed):
+// In Lucis code (no extern needed):
 int32 sum = add(10, 20);       // int → int32
 float64 s = sqrt(144.0);       // double → float64
 *void p = malloc(64 as usize); // size_t → usize, void* → *void
@@ -214,7 +214,7 @@ int point_sum(Point p);
 ```
 
 ```
-// In Lux code:
+// In Lucis code:
 Point p = make_point(10, 20);
 printf(c"x=%d y=%d\n", p.x, p.y);
 
@@ -237,7 +237,7 @@ const char* color_name(Color c);
 ```
 
 ```
-// In Lux code:
+// In Lucis code:
 int32 r = COLOR_RED;     // 0
 int32 g = COLOR_GREEN;   // 1
 int32 b = COLOR_BLUE;    // 2
@@ -258,7 +258,7 @@ Numeric `#define` constants become integer constants:
 ```
 
 ```
-// In Lux code:
+// In Lucis code:
 int32 pi = PI_APPROX;     // 314159
 int32 max = MAX_ITEMS;     // 100
 ```
@@ -285,32 +285,32 @@ fn main() int32 {
 
 ---
 
-## Name Conflicts Between C and Lux
+## Name Conflicts Between C and Lucis
 
-When a C header and a Lux `use` import declare a function with the same name (e.g., `sprintf`), the **last declaration wins** based on the order they appear in the preamble.
+When a C header and a Lucis `use` import declare a function with the same name (e.g., `sprintf`), the **last declaration wins** based on the order they appear in the preamble.
 
-### Lux Overrides C (common case)
+### Lucis Overrides C (common case)
 
-If `use` appears **after** `#include`, the Lux stdlib version takes precedence:
+If `use` appears **after** `#include`, the Lucis stdlib version takes precedence:
 
 ```
 #include <stdio.h>          // declares C sprintf (returns int32)
-use std::log::sprintf;      // ← overrides: Lux sprintf (returns string)
+use std::log::sprintf;      // ← overrides: Lucis sprintf (returns string)
 
 fn main() int32 {
-    // Uses Lux sprintf — returns a formatted string
+    // Uses Lucis sprintf — returns a formatted string
     string msg = sprintf("x={}, y={}", 10, 20);
     println(msg);   // x=10, y=20
     ret 0;
 }
 ```
 
-### C Overrides Lux
+### C Overrides Lucis
 
 If `#include` appears **after** `use`, the C version takes precedence:
 
 ```
-use std::log::sprintf;      // declares Lux sprintf (returns string)
+use std::log::sprintf;      // declares Lucis sprintf (returns string)
 #include <stdio.h>          // ← overrides: C sprintf (returns int32)
 
 fn main() int32 {
@@ -322,7 +322,7 @@ fn main() int32 {
 
 ### Recommended Pattern
 
-Place `#include` directives **before** `use` declarations. This way, Lux stdlib functions naturally override any C functions with the same name:
+Place `#include` directives **before** `use` declarations. This way, Lucis stdlib functions naturally override any C functions with the same name:
 
 ```
 #include <stdio.h>
@@ -333,10 +333,10 @@ use std::log::{ println, sprintf };
 use Utils::{ doubleVal, square };
 
 fn main() int32 {
-    // printf → C version (no Lux override)
+    // printf → C version (no Lucis override)
     printf(c"hello %s\n", c"world");
 
-    // sprintf → Lux version (overrides C)
+    // sprintf → Lucis version (overrides C)
     string msg = sprintf("val={}", 42);
     println(msg);
 

@@ -17,9 +17,9 @@
 
 // CodeGenFileType enum was renamed in LLVM 18
 #ifdef LLVM_VERSION_18_OR_NEWER
-#  define LUX_CGFT_OBJECT llvm::CodeGenFileType::ObjectFile
+#  define LUCIS_CGFT_OBJECT llvm::CodeGenFileType::ObjectFile
 #else
-#  define LUX_CGFT_OBJECT llvm::CGFT_ObjectFile
+#  define LUCIS_CGFT_OBJECT llvm::CGFT_ObjectFile
 #endif
 
 #include <iostream>
@@ -110,7 +110,7 @@ static bool tryLink(const char*        linker,
         argv.push_back(linker);
         argv.push_back(objectPath.c_str());
         argv.push_back(builtinsPath.c_str());
-#ifdef LUX_RUNTIME_DIAGNOSTICS
+#ifdef LUCIS_RUNTIME_DIAGNOSTICS
         argv.push_back("-fsanitize=address,undefined");
         argv.push_back("-fno-omit-frame-pointer");
 #endif
@@ -172,7 +172,7 @@ static bool tryLinkMulti(const char*                      linker,
         argv.push_back(builtinsPath.c_str());
 
         if (withSanitizers) {
-#ifdef LUX_RUNTIME_DIAGNOSTICS
+#ifdef LUCIS_RUNTIME_DIAGNOSTICS
             argv.push_back("-fsanitize=address,undefined");
             argv.push_back("-fno-omit-frame-pointer");
 #endif
@@ -216,7 +216,7 @@ static bool tryLinkMulti(const char*                      linker,
     return WIFEXITED(status) && WEXITSTATUS(status) == 0;
 }
 
-// Locate the builtins static library next to the lux executable.
+// Locate the builtins static library next to the lucis executable.
 static std::string findBuiltinsPath() {
     char selfPath[4096];
     ssize_t len = ::readlink("/proc/self/exe", selfPath, sizeof(selfPath) - 1);
@@ -224,9 +224,9 @@ static std::string findBuiltinsPath() {
         selfPath[len] = '\0';
         std::string dir(selfPath);
         dir = dir.substr(0, dir.rfind('/'));
-        return dir + "/liblux_builtins.a";
+        return dir + "/liblucis_builtins.a";
     }
-    return "liblux_builtins.a"; // fallback
+    return "liblucis_builtins.a"; // fallback
 }
 
 // ── Public API ───────────────────────────────────────────────────────────────
@@ -272,7 +272,7 @@ bool CodeGen::compileCSource(const std::string& cSourcePath,
             return true;
     }
 
-    std::cerr << "lux: failed to compile C source '"
+    std::cerr << "lucis: failed to compile C source '"
               << cSourcePath << "' — ensure cc, clang or gcc is installed\n";
     return false;
 }
@@ -296,7 +296,7 @@ bool CodeGen::emitBinary(IRModule& irModule, const std::string& outputPath) {
     llvm::sys::fs::remove(objectPath);
 
     if (!linked) {
-        std::cerr << "lux: linking failed — ensure clang or gcc is installed\n";
+        std::cerr << "lucis: linking failed — ensure clang or gcc is installed\n";
     }
     return linked;
 }
@@ -315,7 +315,7 @@ bool CodeGen::linkObjectFiles(const std::vector<std::string>& objectPaths,
                                extraLinkerFlags, extraLibPaths, withSanitizers, quiet);
 
     if (!linked) {
-        std::cerr << "lux: linking failed — ensure clang or gcc is installed\n";
+        std::cerr << "lucis: linking failed — ensure clang or gcc is installed\n";
     }
     return linked;
 }
@@ -332,7 +332,7 @@ static bool emitToFile(llvm::Module* module, const std::string& outputPath, llvm
     std::string lookupError;
     const auto* target = lookupTargetCompat(targetTriple, lookupError, 0);
     if (!target) {
-        std::cerr << "lux: target lookup failed: " << lookupError << "\n";
+        std::cerr << "lucis: target lookup failed: " << lookupError << "\n";
         return false;
     }
 
@@ -349,14 +349,14 @@ static bool emitToFile(llvm::Module* module, const std::string& outputPath, llvm
     std::error_code ec;
     llvm::raw_fd_ostream dest(outputPath, ec, llvm::sys::fs::OF_None);
     if (ec) {
-        std::cerr << "lux: could not open '" << outputPath << "': "
+        std::cerr << "lucis: could not open '" << outputPath << "': "
                   << ec.message() << "\n";
         return false;
     }
 
     llvm::legacy::PassManager passManager;
     if (machine->addPassesToEmitFile(passManager, dest, nullptr, fileType)) {
-        std::cerr << "lux: target machine cannot emit this file type\n";
+        std::cerr << "lucis: target machine cannot emit this file type\n";
         return false;
     }
 
@@ -366,7 +366,7 @@ static bool emitToFile(llvm::Module* module, const std::string& outputPath, llvm
 }
 
 bool CodeGen::emitObjectFile(llvm::Module* module, const std::string& objectPath, bool pic) {
-    return emitToFile(module, objectPath, LUX_CGFT_OBJECT, pic);
+    return emitToFile(module, objectPath, LUCIS_CGFT_OBJECT, pic);
 }
 
 bool CodeGen::emitAssembly(llvm::Module* module, const std::string& assemblyPath, bool pic) {
@@ -384,7 +384,7 @@ bool CodeGen::emitBitcode(llvm::Module* module, const std::string& bitcodePath) 
     std::error_code ec;
     llvm::raw_fd_ostream dest(bitcodePath, ec, llvm::sys::fs::OF_None);
     if (ec) {
-        std::cerr << "lux: could not open '" << bitcodePath << "': "
+        std::cerr << "lucis: could not open '" << bitcodePath << "': "
                   << ec.message() << "\n";
         return false;
     }

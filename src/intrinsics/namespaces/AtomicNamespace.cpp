@@ -68,8 +68,8 @@ void registerAtomicNamespace(IntrinsicRegistry& reg, TypeRegistry& typeReg) {
         auto fn = makeGenIntrinsic("load", "_any",
             {{"_any", false}},
             "Atomically loads a value of type T from ptr (seq_cst).\n\n"
-            "```lux\n"
-            "int32 val = lux::atomic::load<int32>(&data);\n"
+            "```lucis\n"
+            "int32 val = lucis::atomic::load<int32>(&data);\n"
             "```",
             [](llvm::IRBuilder<>& builder, llvm::LLVMContext& context,
                llvm::Module* module, const TypeInfo* elemTI,
@@ -88,8 +88,8 @@ void registerAtomicNamespace(IntrinsicRegistry& reg, TypeRegistry& typeReg) {
         auto fn = makeGenIntrinsic("store", "void",
             {{"_any", false}, {"_any", false}},
             "Atomically stores a value of type T to ptr (seq_cst).\n\n"
-            "```lux\n"
-            "lux::atomic::store<int32>(&data, 42);\n"
+            "```lucis\n"
+            "lucis::atomic::store<int32>(&data, 42);\n"
             "```",
             [](llvm::IRBuilder<>& builder, llvm::LLVMContext& context,
                llvm::Module* module, const TypeInfo* elemTI,
@@ -109,8 +109,8 @@ void registerAtomicNamespace(IntrinsicRegistry& reg, TypeRegistry& typeReg) {
             {{"_any", false}, {"_any", false}},
             "Atomically adds val to *ptr (seq_cst, fetch_add semantics).\n"
             "Returns the old value.\n\n"
-            "```lux\n"
-            "int32 old = lux::atomic::add<int32>(&counter, 1);\n"
+            "```lucis\n"
+            "int32 old = lucis::atomic::add<int32>(&counter, 1);\n"
             "```",
             [](llvm::IRBuilder<>& builder, llvm::LLVMContext& context,
                llvm::Module* module, const TypeInfo* elemTI,
@@ -129,8 +129,8 @@ void registerAtomicNamespace(IntrinsicRegistry& reg, TypeRegistry& typeReg) {
             {{"_any", false}, {"_any", false}},
             "Atomically subtracts val from *ptr (seq_cst, fetch_sub semantics).\n"
             "Returns the old value.\n\n"
-            "```lux\n"
-            "int32 old = lux::atomic::sub<int32>(&counter, 1);\n"
+            "```lucis\n"
+            "int32 old = lucis::atomic::sub<int32>(&counter, 1);\n"
             "```",
             [](llvm::IRBuilder<>& builder, llvm::LLVMContext& context,
                llvm::Module* module, const TypeInfo* elemTI,
@@ -149,8 +149,8 @@ void registerAtomicNamespace(IntrinsicRegistry& reg, TypeRegistry& typeReg) {
             {{"_any", false}, {"_any", false}},
             "Atomically ANDs val with *ptr (seq_cst, fetch_and semantics).\n"
             "Returns the old value.\n\n"
-            "```lux\n"
-            "int32 old = lux::atomic::bit_and<int32>(&flags, 0xFE);\n"
+            "```lucis\n"
+            "int32 old = lucis::atomic::bit_and<int32>(&flags, 0xFE);\n"
             "```",
             [](llvm::IRBuilder<>& builder, llvm::LLVMContext& context,
                llvm::Module* module, const TypeInfo* elemTI,
@@ -169,8 +169,8 @@ void registerAtomicNamespace(IntrinsicRegistry& reg, TypeRegistry& typeReg) {
             {{"_any", false}, {"_any", false}},
             "Atomically ORs val with *ptr (seq_cst, fetch_or semantics).\n"
             "Returns the old value.\n\n"
-            "```lux\n"
-            "int32 old = lux::atomic::bit_or<int32>(&flags, 0x01);\n"
+            "```lucis\n"
+            "int32 old = lucis::atomic::bit_or<int32>(&flags, 0x01);\n"
             "```",
             [](llvm::IRBuilder<>& builder, llvm::LLVMContext& context,
                llvm::Module* module, const TypeInfo* elemTI,
@@ -189,8 +189,8 @@ void registerAtomicNamespace(IntrinsicRegistry& reg, TypeRegistry& typeReg) {
             {{"_any", false}, {"_any", false}},
             "Atomically XORs val with *ptr (seq_cst, fetch_xor semantics).\n"
             "Returns the old value.\n\n"
-            "```lux\n"
-            "int32 old = lux::atomic::bit_xor<int32>(&flags, 0xFF);\n"
+            "```lucis\n"
+            "int32 old = lucis::atomic::bit_xor<int32>(&flags, 0xFF);\n"
             "```",
             [](llvm::IRBuilder<>& builder, llvm::LLVMContext& context,
                llvm::Module* module, const TypeInfo* elemTI,
@@ -209,8 +209,8 @@ void registerAtomicNamespace(IntrinsicRegistry& reg, TypeRegistry& typeReg) {
             {{"_any", false}, {"_any", false}},
             "Atomically replaces *ptr with val (seq_cst, swap semantics).\n"
             "Returns the old value.\n\n"
-            "```lux\n"
-            "int32 old = lux::atomic::exchange<int32>(&data, 42);\n"
+            "```lucis\n"
+            "int32 old = lucis::atomic::exchange<int32>(&data, 42);\n"
             "```",
             [](llvm::IRBuilder<>& builder, llvm::LLVMContext& context,
                llvm::Module* module, const TypeInfo* elemTI,
@@ -230,8 +230,8 @@ void registerAtomicNamespace(IntrinsicRegistry& reg, TypeRegistry& typeReg) {
             "Atomically compares *ptr with expected and, if equal, "
             "replaces with desired (seq_cst, weak CAS).\n"
             "Returns true if the swap occurred.\n\n"
-            "```lux\n"
-            "bool swapped = lux::atomic::cas<int32>(&data, 0i64, 42i64);\n"
+            "```lucis\n"
+            "bool swapped = lucis::atomic::cas<int32>(&data, 0i64, 42i64);\n"
             "```",
             [](llvm::IRBuilder<>& builder, llvm::LLVMContext& context,
                llvm::Module* module, const TypeInfo* elemTI,

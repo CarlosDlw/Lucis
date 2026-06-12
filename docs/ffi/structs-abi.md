@@ -46,7 +46,7 @@ int point_sum(Point p);
 ```
 
 ```
-// Lux code
+// Lucis code
 #include "structs.h"
 
 Point p = make_point(10, 20);    // returned in rax register
@@ -71,7 +71,7 @@ long pair64_sum(Pair64 p);
 ```
 
 ```
-// Lux code
+// Lucis code
 #include "structs.h"
 
 Pair64 pr = make_pair64(100, 200);    // returned in rax + rdx
@@ -98,7 +98,7 @@ long vec4_sum(Vec4 v);
 ```
 
 ```
-// Lux code
+// Lucis code
 #include "structs.h"
 
 Vec4 v = make_vec4(1, 2, 3, 4);    // caller allocates space, passes hidden ptr
@@ -137,7 +137,7 @@ typedef struct {
 ```
 
 ```
-// Lux code
+// Lucis code
 #include "structs.h"
 
 Rect r = make_rect(5, 10, 20, 30);
@@ -206,7 +206,7 @@ int rect_area(Rect r) { return r.size.x * r.size.y; }
 ```
 
 ```
-// main.lx
+// main.lc
 namespace StructAbiTest;
 
 #include <stdio.h>
@@ -238,7 +238,7 @@ fn main() int32 {
 ```
 
 ```bash
-lux main.lx ./main
+lucis main.lc ./main
 ./main
 ```
 
@@ -253,7 +253,7 @@ rect_area = 600
 
 ## Accessing struct fields
 
-Once you have a C struct in Lux, you access fields with dot notation, just like Lux structs:
+Once you have a C struct in Lucis, you access fields with dot notation, just like Lucis structs:
 
 ```
 Point p = make_point(10, 20);
@@ -285,5 +285,5 @@ printf(c"x=%d\n", pp->x);    // 99
 
 - [FFI Overview](overview.md) — Type correspondence table
 - [Calling C Functions](calling-c.md) — `extern` and `#include` usage
-- [Structs](../language/structs.md) — Lux struct declarations and methods
+- [Structs](../language/structs.md) — Lucis struct declarations and methods
 - [Linking](linking.md) — Linking with external libraries

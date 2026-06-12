@@ -1,10 +1,10 @@
 # Types
 
-This page documents all built-in types in Lux, including their sizes, ranges, methods, and conversion rules.
+This page documents all built-in types in Lucis, including their sizes, ranges, methods, and conversion rules.
 
 ## Overview
 
-Lux has a rich set of primitive types with explicit sizes. There is no implicit type coercion — all conversions must use the `as` keyword.
+Lucis has a rich set of primitive types with explicit sizes. There is no implicit type coercion — all conversions must use the `as` keyword.
 
 ## Integer Types
 
@@ -77,7 +77,7 @@ fn main() int32 {
 
 ### Integer Literal Formats
 
-Lux supports decimal, hexadecimal, octal, and binary integer literals:
+Lucis supports decimal, hexadecimal, octal, and binary integer literals:
 
 ```
 int32 dec = 255;          // decimal
@@ -375,7 +375,7 @@ fn main() int32 {
 |---|---|---|
 | `string` | pointer + length | Length-tracked byte string (`[]uint8` internally) |
 
-Strings in Lux are **not** null-terminated. They carry their length and are backed by a `uint8` array. For null-terminated C strings, use [`cstring`](#c-string-type) or `c"..."` literals.
+Strings in Lucis are **not** null-terminated. They carry their length and are backed by a `uint8` array. For null-terminated C strings, use [`cstring`](#c-string-type) or `c"..."` literals.
 
 ```
 namespace StringDemo;
@@ -493,7 +493,7 @@ fn greet(string name) void {
 |---|---|---|
 | `cstring` | pointer-sized | Alias for `*char` — null-terminated C string |
 
-Lux provides two ways to create C strings:
+Lucis provides two ways to create C strings:
 
 ```
 namespace CStringDemo;
@@ -504,11 +504,11 @@ fn main() int32 {
     // C string literal — produces *char directly
     cstring greeting = c"Hello from C";
 
-    // Convert Lux string to C string
-    string t_str = "Hello from Lux";
+    // Convert Lucis string to C string
+    string t_str = "Hello from Lucis";
     cstring c_str = cstr(t_str);
 
-    // Convert C string back to Lux string
+    // Convert C string back to Lucis string
     string back = fromCStr(c_str);
     println(back);
 

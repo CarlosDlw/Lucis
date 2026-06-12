@@ -1,6 +1,6 @@
-# Creating Lux Intrinsics
+# Creating Lucis Intrinsics
 
-This guide explains how to extend the Lux compiler with custom intrinsic functions, namespaces, and types. Intrinsics are built-in operations exposed as `lux::namespace::function(...)` calls — always available without any `use` declaration.
+This guide explains how to extend the Lucis compiler with custom intrinsic functions, namespaces, and types. Intrinsics are built-in operations exposed as `lucis::namespace::function(...)` calls — always available without any `use` declaration.
 
 ## Architecture Overview
 
@@ -74,8 +74,8 @@ void registerMyNamespace(IntrinsicRegistry& reg, TypeRegistry& typeReg);  // ←
     fn.returnType = "void";
     fn.description =
         "Prints a greeting.\n\n"
-        "```lux\n"
-        "lux::myns::hello();\n"
+        "```lucis\n"
+        "lucis::myns::hello();\n"
         "```";
 
     fn.lowering.kind = IntrinsicFunction::Lowering::InlineIR;
@@ -104,9 +104,9 @@ void registerMyNamespace(IntrinsicRegistry& reg, TypeRegistry& typeReg);  // ←
 }
 ```
 
-**Usage in Lux:**
-```lux
-lux::myns::hello();
+**Usage in Lucis:**
+```lucis
+lucis::myns::hello();
 ```
 
 ---
@@ -123,8 +123,8 @@ Use `fn.params` to declare the required arguments. The checker validates both co
     fn.params.push_back({"int32", false});  // type name, isVariadic (unused)
     fn.description =
         "Returns the input value multiplied by 2.\n\n"
-        "```lux\n"
-        "int32 result = lux::myns::double_it(21);  // 42\n"
+        "```lucis\n"
+        "int32 result = lucis::myns::double_it(21);  // 42\n"
         "```";
 
     fn.lowering.kind = IntrinsicFunction::Lowering::InlineIR;
@@ -147,8 +147,8 @@ Use `fn.params` to declare the required arguments. The checker validates both co
 ```
 
 **Usage:**
-```lux
-int32 x = lux::myns::double_it(21);  // 42
+```lucis
+int32 x = lucis::myns::double_it(21);  // 42
 ```
 
 ---
@@ -165,8 +165,8 @@ Set `isVariadic = true` and add any fixed params before it. The checker allows `
     fn.isVariadic = true;
     fn.description =
         "Sums all variadic arguments.\n\n"
-        "```lux\n"
-        "int32 total = lux::core::sum(1, 2, 3);  // 6\n"
+        "```lucis\n"
+        "int32 total = lucis::core::sum(1, 2, 3);  // 6\n"
         "```";
 
     fn.lowering.kind = IntrinsicFunction::Lowering::InlineIR;
@@ -200,8 +200,8 @@ Set `isVariadic = true` and add any fixed params before it. The checker allows `
     fn.params.push_back({"int32", false});  // required first param: int32 prefix
     fn.description =
         "Adds a prefix to the sum of variadic arguments.\n\n"
-        "```lux\n"
-        "int32 total = lux::myns::sum_prefix(100, 1, 2, 3);  // 106\n"
+        "```lucis\n"
+        "int32 total = lucis::myns::sum_prefix(100, 1, 2, 3);  // 106\n"
         "```";
 
     fn.lowering.kind = IntrinsicFunction::Lowering::InlineIR;
@@ -231,7 +231,7 @@ Set `isVariadic = true` and add any fixed params before it. The checker allows `
 Use `Lowering::LLVMIntrinsic` and set `intrinsicName` to the LLVM intrinsic name.
 
 ```cpp
-// Example: lux::myns::trap() → @llvm.trap
+// Example: lucis::myns::trap() → @llvm.trap
 {
     IntrinsicFunction fn;
     fn.name = "trap";
@@ -251,7 +251,7 @@ The IRGen emits a call to the named LLVM intrinsic and inserts an `unreachable` 
 
 ## Step 6: Call a C Runtime Function
 
-Use `Lowering::BuiltinCall`. The IRGen calls `lux_<intrinsicName>` with all arguments.
+Use `Lowering::BuiltinCall`. The IRGen calls `lucis_<intrinsicName>` with all arguments.
 
 ```cpp
 {
@@ -261,7 +261,7 @@ Use `Lowering::BuiltinCall`. The IRGen calls `lux_<intrinsicName>` with all argu
     fn.description = "Calls abort() from the C runtime.";
 
     fn.lowering.kind = IntrinsicFunction::Lowering::BuiltinCall;
-    fn.lowering.intrinsicName = "abort";  // calls lux_abort
+    fn.lowering.intrinsicName = "abort";  // calls lucis_abort
 
     ns.functions.push_back(std::move(fn));
 }
@@ -339,8 +339,8 @@ Set `isGeneric = true`. The function receives `typeArgs` with the resolved type 
     fn.params.push_back({"_any", false});
     fn.description =
         "Reinterprets the bits of a value as an integer.\n\n"
-        "```lux\n"
-        "int64 bits = lux::myns::to_bits<int64>(3.14);\n"
+        "```lucis\n"
+        "int64 bits = lucis::myns::to_bits<int64>(3.14);\n"
         "```";
 
     fn.lowering.kind = IntrinsicFunction::Lowering::InlineIR;
@@ -371,7 +371,7 @@ Generic intrinsics require special handling in the checker. See `Checker.cpp` li
 | Field | Value | Behaviour |
 |-------|-------|-----------|
 | `Lowering::LLVMIntrinsic` | `intrinsicName = "llvm.xxx"` | Declares and calls the LLVM intrinsic, then emits `unreachable`. No arguments forwarded. |
-| `Lowering::BuiltinCall` | `intrinsicName = "func"` | Calls `lux_func` from the C runtime with all arguments. |
+| `Lowering::BuiltinCall` | `intrinsicName = "func"` | Calls `lucis_func` from the C runtime with all arguments. |
 | `Lowering::InlineIR` | `emitIR` lambda | Emits arbitrary LLVM IR via the builder. Receives all arguments and type args. Most flexible. |
 
 ---
@@ -382,8 +382,8 @@ Generic intrinsics require special handling in the checker. See `Checker.cpp` li
 
 | Field | Type | Default | Purpose |
 |-------|------|---------|---------|
-| `name` | `string` | — | Function name used in Lux code (`lux::ns::name`) |
-| `returnType` | `string` | — | Lux type name of the return value |
+| `name` | `string` | — | Function name used in Lucis code (`lucis::ns::name`) |
+| `returnType` | `string` | — | Lucis type name of the return value |
 | `params` | `vector<IntrinsicParam>` | empty | Fixed parameter declarations |
 | `isVariadic` | `bool` | `false` | Accepts unlimited extra untyped arguments |
 | `isGeneric` | `bool` | `false` | Accepts type parameters (`name<T>`) |
@@ -397,7 +397,7 @@ Generic intrinsics require special handling in the checker. See `Checker.cpp` li
 
 | Field | Type | Default | Purpose |
 |-------|------|---------|---------|
-| `type` | `string` | — | Lux type name (`"int32"`, `"string"`, `"_any"`) |
+| `type` | `string` | — | Lucis type name (`"int32"`, `"string"`, `"_any"`) |
 | `isVariadic` | `bool` | `false` | Reserved for future use |
 
 ### `Lowering::emitIR` Lambda Signature
@@ -422,17 +422,17 @@ After adding your intrinsic and rebuilding the compiler:
 cmake --build build
 ```
 
-Test it with a simple Lux file:
+Test it with a simple Lucis file:
 
-```lux
+```lucis
 namespace Main;
 use std::log::println;
 
 fn main() int32 {
-    lux::myns::hello();
-    int32 x = lux::myns::double_it(21);
+    lucis::myns::hello();
+    int32 x = lucis::myns::double_it(21);
     println(x);
-    int32 s = lux::myns::sum(10, 20, 30);
+    int32 s = lucis::myns::sum(10, 20, 30);
     println(s);
     ret 0;
 }
@@ -442,14 +442,14 @@ Check error handling:
 
 ```bash
 # Wrong type
-lux::myns::double_it("bad");
+lucis::myns::double_it("bad");
 # → intrinsic 'myns::double_it' argument 1: expected 'int32', got 'string'
 
 # Missing args
-lux::myns::double_it();
+lucis::myns::double_it();
 # → intrinsic 'myns::double_it' expects 1 argument(s), got 0
 
 # Unknown intrinsic
-lux::myns::nonexistent();
+lucis::myns::nonexistent();
 # → unknown intrinsic 'myns::nonexistent'
 ```

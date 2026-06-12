@@ -1,6 +1,6 @@
 # Expressions
 
-Expressions in Lux produce values. They can be combined, nested, and used anywhere a value is expected — in assignments, function arguments, return statements, conditions, and more.
+Expressions in Lucis produce values. They can be combined, nested, and used anywhere a value is expected — in assignments, function arguments, return statements, conditions, and more.
 
 This page covers expression forms beyond individual operators (see [Operators](operators.md) for arithmetic, comparison, logical, and bitwise operators).
 

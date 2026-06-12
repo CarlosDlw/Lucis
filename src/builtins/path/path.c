@@ -17,8 +17,8 @@ static char* make_cstr(const char* s, size_t len) {
 }
 
 /* ── helper: build result from buffer + length ───────────────────────── */
-static lux_path_str_result make_result(const char* src, size_t len) {
-    lux_path_str_result res = {NULL, 0};
+static lucis_path_str_result make_result(const char* src, size_t len) {
+    lucis_path_str_result res = {NULL, 0};
     if (len == 0) return res;
     char* buf = (char*)malloc(len);
     if (!buf) return res;
@@ -37,9 +37,9 @@ static size_t find_last_sep(const char* p, size_t len) {
 }
 
 /* ── join ─────────────────────────────────────────────────────────────── */
-lux_path_str_result lux_pathJoin(const char* a, size_t a_len,
+lucis_path_str_result lucis_pathJoin(const char* a, size_t a_len,
                                        const char* b, size_t b_len) {
-    lux_path_str_result res = {NULL, 0};
+    lucis_path_str_result res = {NULL, 0};
 
     /* If b is absolute, return b */
     if (b_len > 0 && b[0] == '/') return make_result(b, b_len);
@@ -72,7 +72,7 @@ lux_path_str_result lux_pathJoin(const char* a, size_t a_len,
 }
 
 /* ── parent ───────────────────────────────────────────────────────────── */
-lux_path_str_result lux_parent(const char* p, size_t len) {
+lucis_path_str_result lucis_parent(const char* p, size_t len) {
     /* Strip trailing slashes */
     size_t end = len;
     while (end > 1 && p[end - 1] == '/') --end;
@@ -90,7 +90,7 @@ lux_path_str_result lux_parent(const char* p, size_t len) {
 }
 
 /* ── fileName ─────────────────────────────────────────────────────────── */
-lux_path_str_result lux_fileName(const char* p, size_t len) {
+lucis_path_str_result lucis_fileName(const char* p, size_t len) {
     /* Strip trailing slashes */
     size_t end = len;
     while (end > 1 && p[end - 1] == '/') --end;
@@ -103,7 +103,7 @@ lux_path_str_result lux_fileName(const char* p, size_t len) {
 }
 
 /* ── stem ─────────────────────────────────────────────────────────────── */
-lux_path_str_result lux_stem(const char* p, size_t len) {
+lucis_path_str_result lucis_stem(const char* p, size_t len) {
     /* Get fileName first */
     size_t end = len;
     while (end > 1 && p[end - 1] == '/') --end;
@@ -129,8 +129,8 @@ lux_path_str_result lux_stem(const char* p, size_t len) {
 }
 
 /* ── extension ────────────────────────────────────────────────────────── */
-lux_path_str_result lux_extension(const char* p, size_t len) {
-    lux_path_str_result res = {NULL, 0};
+lucis_path_str_result lucis_extension(const char* p, size_t len) {
+    lucis_path_str_result res = {NULL, 0};
 
     /* Get fileName first */
     size_t end = len;
@@ -158,18 +158,18 @@ lux_path_str_result lux_extension(const char* p, size_t len) {
 }
 
 /* ── isAbsolute ───────────────────────────────────────────────────────── */
-int32_t lux_isAbsolute(const char* p, size_t len) {
+int32_t lucis_isAbsolute(const char* p, size_t len) {
     return (len > 0 && p[0] == '/') ? 1 : 0;
 }
 
 /* ── isRelative ───────────────────────────────────────────────────────── */
-int32_t lux_isRelative(const char* p, size_t len) {
+int32_t lucis_isRelative(const char* p, size_t len) {
     return (len == 0 || p[0] != '/') ? 1 : 0;
 }
 
 /* ── normalize ────────────────────────────────────────────────────────── */
-lux_path_str_result lux_normalize(const char* p, size_t len) {
-    lux_path_str_result res = {NULL, 0};
+lucis_path_str_result lucis_normalize(const char* p, size_t len) {
+    lucis_path_str_result res = {NULL, 0};
     if (len == 0) return make_result(".", 1);
 
     int absolute = (p[0] == '/');
@@ -261,9 +261,9 @@ lux_path_str_result lux_normalize(const char* p, size_t len) {
 }
 
 /* ── toAbsolute ───────────────────────────────────────────────────────── */
-lux_path_str_result lux_toAbsolute(const char* p, size_t len) {
+lucis_path_str_result lucis_toAbsolute(const char* p, size_t len) {
     if (len > 0 && p[0] == '/') {
-        return lux_normalize(p, len);
+        return lucis_normalize(p, len);
     }
 
     char cwdbuf[PATH_MAX];
@@ -272,21 +272,21 @@ lux_path_str_result lux_toAbsolute(const char* p, size_t len) {
     }
     size_t cwd_len = strlen(cwdbuf);
 
-    lux_path_str_result joined = lux_pathJoin(cwdbuf, cwd_len, p, len);
+    lucis_path_str_result joined = lucis_pathJoin(cwdbuf, cwd_len, p, len);
     if (!joined.ptr) return make_result(p, len);
 
-    lux_path_str_result normalized = lux_normalize(joined.ptr, joined.len);
+    lucis_path_str_result normalized = lucis_normalize(joined.ptr, joined.len);
     free((void*)joined.ptr);
     return normalized;
 }
 
 /* ── separator ────────────────────────────────────────────────────────── */
-uint8_t lux_separator(void) {
+uint8_t lucis_separator(void) {
     return (uint8_t)'/';
 }
 
 /* ── withExtension ────────────────────────────────────────────────────── */
-lux_path_str_result lux_withExtension(const char* p, size_t p_len,
+lucis_path_str_result lucis_withExtension(const char* p, size_t p_len,
                                              const char* ext, size_t ext_len) {
     /* Find parent + stem part */
     size_t end = p_len;
@@ -330,7 +330,7 @@ lux_path_str_result lux_withExtension(const char* p, size_t p_len,
     size_t total = base_len + (has_dot ? 0 : 1) + ext_len;
     char* buf = (char*)malloc(total);
     if (!buf) {
-        lux_path_str_result res = {NULL, 0};
+        lucis_path_str_result res = {NULL, 0};
         return res;
     }
 
@@ -339,14 +339,14 @@ lux_path_str_result lux_withExtension(const char* p, size_t p_len,
     if (!has_dot) buf[pos++] = '.';
     memcpy(buf + pos, ext, ext_len);
 
-    lux_path_str_result res;
+    lucis_path_str_result res;
     res.ptr = buf;
     res.len = total;
     return res;
 }
 
 /* ── withFileName ─────────────────────────────────────────────────────── */
-lux_path_str_result lux_withFileName(const char* p, size_t p_len,
+lucis_path_str_result lucis_withFileName(const char* p, size_t p_len,
                                             const char* name, size_t name_len) {
     /* Find parent part */
     size_t end = p_len;
@@ -363,14 +363,14 @@ lux_path_str_result lux_withFileName(const char* p, size_t p_len,
     size_t total = parent_len + name_len;
     char* buf = (char*)malloc(total);
     if (!buf) {
-        lux_path_str_result res = {NULL, 0};
+        lucis_path_str_result res = {NULL, 0};
         return res;
     }
 
     memcpy(buf, p, parent_len);
     memcpy(buf + parent_len, name, name_len);
 
-    lux_path_str_result res;
+    lucis_path_str_result res;
     res.ptr = buf;
     res.len = total;
     return res;
@@ -378,7 +378,7 @@ lux_path_str_result lux_withFileName(const char* p, size_t p_len,
 
 /* ── joinAll: join Vec<string> of path components ──────────────── */
 
-lux_path_str_result lux_joinAllVec(const lux_path_vec_header* parts) {
+lucis_path_str_result lucis_joinAllVec(const lucis_path_vec_header* parts) {
     typedef struct { const char* ptr; size_t len; } str_elem;
     str_elem* arr = (str_elem*)parts->ptr;
     size_t count = parts->len;
@@ -386,7 +386,7 @@ lux_path_str_result lux_joinAllVec(const lux_path_vec_header* parts) {
     if (count == 0) {
         char* r = (char*)malloc(1);
         r[0] = '\0';
-        return (lux_path_str_result){ r, 0 };
+        return (lucis_path_str_result){ r, 0 };
     }
 
     // Join sequentially using existing pathJoin
@@ -396,14 +396,14 @@ lux_path_str_result lux_joinAllVec(const lux_path_vec_header* parts) {
     size_t curLen = arr[0].len;
 
     for (size_t i = 1; i < count; i++) {
-        lux_path_str_result joined = lux_pathJoin(cur, curLen,
+        lucis_path_str_result joined = lucis_pathJoin(cur, curLen,
                                                         arr[i].ptr, arr[i].len);
         free(cur);
         cur = (char*)joined.ptr;
         curLen = joined.len;
     }
 
-    lux_path_str_result result;
+    lucis_path_str_result result;
     result.ptr = cur;
     result.len = curLen;
     return result;

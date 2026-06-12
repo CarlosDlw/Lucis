@@ -7,7 +7,7 @@
 #include <utility>
 #include <unordered_map>
 #include <unordered_set>
-#include "generated/LuxParser.h"
+#include "generated/LucisParser.h"
 #include "imports/ImportResolver.h"
 #include "types/TypeRegistry.h"
 #include "types/MethodRegistry.h"
@@ -22,7 +22,7 @@ class CBindings;
 class Checker {
 public:
     Checker();
-    bool check(LuxParser::ProgramContext* tree);
+    bool check(LucisParser::ProgramContext* tree);
 
     const std::vector<std::string>& errors() const { return errors_; }
     const std::vector<Diagnostic>& diagnostics() const { return diagnostics_; }
@@ -101,7 +101,7 @@ private:
     // Extract comparison guards from an if condition expression
     // e.g. `n <= 100` → Guard{"n", "<=", 100}
     // Returns all guards found (may be multiple in && chains)
-    std::vector<Guard> extractGuardsFromExpr(LuxParser::ExpressionContext* expr);
+    std::vector<Guard> extractGuardsFromExpr(LucisParser::ExpressionContext* expr);
 
     // Query: does any active guard prove that value <= targetCapacity?
     bool queryGuard(const std::string& varName, uint64_t targetCapacity) const;
@@ -110,7 +110,7 @@ private:
     std::unordered_map<std::string, const TypeInfo*> functions_;
 
     // Function declarations (for error reporting with location of first definition)
-    std::unordered_map<std::string, LuxParser::FunctionDeclContext*> functionDecls_;
+    std::unordered_map<std::string, LucisParser::FunctionDeclContext*> functionDecls_;
 
     // Global builtin names (always available, no import needed)
     std::unordered_set<std::string> globalBuiltins_;
@@ -131,9 +131,9 @@ private:
     std::vector<std::unique_ptr<TypeInfo>> dynamicTypes_;
 
     // ── Type resolution ──────────────────────────────────────────────
-    const TypeInfo* resolveTypeSpec(LuxParser::TypeSpecContext* ctx,
+    const TypeInfo* resolveTypeSpec(LucisParser::TypeSpecContext* ctx,
                                    unsigned& arrayDims);
-    const TypeInfo* resolveExprType(LuxParser::ExpressionContext* expr);
+    const TypeInfo* resolveExprType(LucisParser::ExpressionContext* expr);
     const TypeInfo* tryResolveQualifiedType(antlr4::ParserRuleContext* ctx,
                                            const std::string& first,
                                            const std::string& second);
@@ -141,7 +141,7 @@ private:
     const TypeInfo* makeFunctionType(const TypeInfo* returnType,
                                      const std::vector<const TypeInfo*>& paramTypes,
                                      bool isVariadic = false);
-    std::string resolveBaseTypeName(LuxParser::TypeSpecContext* ctx);
+    std::string resolveBaseTypeName(LucisParser::TypeSpecContext* ctx);
     const TypeInfo* resolveBuiltinReturnType(const std::string& retName);
 
     // ── Type queries ─────────────────────────────────────────────────
@@ -150,53 +150,53 @@ private:
     bool isConditionType(const TypeInfo* ti);
     bool isAssignable(const TypeInfo* lhs, const TypeInfo* rhs);
     void checkNegativeToUnsigned(const TypeInfo* target,
-                                 LuxParser::ExpressionContext* expr,
+                                 LucisParser::ExpressionContext* expr,
                                  antlr4::ParserRuleContext* ctx);
-    unsigned resolveExprArrayDims(LuxParser::ExpressionContext* expr);
+    unsigned resolveExprArrayDims(LucisParser::ExpressionContext* expr);
 
     // ── Top-level checks ─────────────────────────────────────────────
-    void checkUseDecls(LuxParser::ProgramContext* tree);
-    void checkTypeAliasDecl(LuxParser::TypeAliasDeclContext* decl);
-    void checkStructDecl(LuxParser::StructDeclContext* decl);
-    void checkUnionDecl(LuxParser::UnionDeclContext* decl);
-    void checkEnumDecl(LuxParser::EnumDeclContext* decl);
-    void checkExtendDecl(LuxParser::ExtendDeclContext* decl);
-    void checkExtendMethodBodies(LuxParser::ExtendDeclContext* decl);
-    void checkExternDecl(LuxParser::ExternDeclContext* decl);
-    void registerFunctionSignature(LuxParser::FunctionDeclContext* func);
-    void checkFunction(LuxParser::FunctionDeclContext* func);
-    bool blockAlwaysReturns(LuxParser::BlockContext* block);
+    void checkUseDecls(LucisParser::ProgramContext* tree);
+    void checkTypeAliasDecl(LucisParser::TypeAliasDeclContext* decl);
+    void checkStructDecl(LucisParser::StructDeclContext* decl);
+    void checkUnionDecl(LucisParser::UnionDeclContext* decl);
+    void checkEnumDecl(LucisParser::EnumDeclContext* decl);
+    void checkExtendDecl(LucisParser::ExtendDeclContext* decl);
+    void checkExtendMethodBodies(LucisParser::ExtendDeclContext* decl);
+    void checkExternDecl(LucisParser::ExternDeclContext* decl);
+    void registerFunctionSignature(LucisParser::FunctionDeclContext* func);
+    void checkFunction(LucisParser::FunctionDeclContext* func);
+    bool blockAlwaysReturns(LucisParser::BlockContext* block);
     void registerGlobalBuiltins();
 
     // ── Statement checks ────────────────────────────────────────────
-    void checkBlock(LuxParser::BlockContext* block, const TypeInfo* retType,
+    void checkBlock(LucisParser::BlockContext* block, const TypeInfo* retType,
                     std::unordered_set<std::string>* initCapture = nullptr);
-    void checkStmt(LuxParser::StatementContext* stmt, const TypeInfo* retType, bool& terminated);
-    void checkVarDeclStmt(LuxParser::VarDeclStmtContext* stmt);
-    void checkAssignStmt(LuxParser::AssignStmtContext* stmt);
-    void checkCompoundAssignStmt(LuxParser::CompoundAssignStmtContext* stmt);
-    void checkFieldAssignStmt(LuxParser::FieldAssignStmtContext* stmt);
-    void checkFieldCompoundAssignStmt(LuxParser::FieldCompoundAssignStmtContext* stmt);
-    void checkArrowAssignStmt(LuxParser::ArrowAssignStmtContext* stmt);
-    void checkArrowCompoundAssignStmt(LuxParser::ArrowCompoundAssignStmtContext* stmt);
-    void checkDerefAssignStmt(LuxParser::DerefAssignStmtContext* stmt);
-    void checkDerefCompoundAssignStmt(LuxParser::DerefCompoundAssignStmtContext* stmt);
-    void checkCallStmt(LuxParser::CallStmtContext* stmt);
-    void checkExprStmt(LuxParser::ExprStmtContext* stmt);
-    void checkReturnStmt(LuxParser::ReturnStmtContext* stmt,
+    void checkStmt(LucisParser::StatementContext* stmt, const TypeInfo* retType, bool& terminated);
+    void checkVarDeclStmt(LucisParser::VarDeclStmtContext* stmt);
+    void checkAssignStmt(LucisParser::AssignStmtContext* stmt);
+    void checkCompoundAssignStmt(LucisParser::CompoundAssignStmtContext* stmt);
+    void checkFieldAssignStmt(LucisParser::FieldAssignStmtContext* stmt);
+    void checkFieldCompoundAssignStmt(LucisParser::FieldCompoundAssignStmtContext* stmt);
+    void checkArrowAssignStmt(LucisParser::ArrowAssignStmtContext* stmt);
+    void checkArrowCompoundAssignStmt(LucisParser::ArrowCompoundAssignStmtContext* stmt);
+    void checkDerefAssignStmt(LucisParser::DerefAssignStmtContext* stmt);
+    void checkDerefCompoundAssignStmt(LucisParser::DerefCompoundAssignStmtContext* stmt);
+    void checkCallStmt(LucisParser::CallStmtContext* stmt);
+    void checkExprStmt(LucisParser::ExprStmtContext* stmt);
+    void checkReturnStmt(LucisParser::ReturnStmtContext* stmt,
                          const TypeInfo* expectedType);
-    void checkIfStmt(LuxParser::IfStmtContext* stmt,
+    void checkIfStmt(LucisParser::IfStmtContext* stmt,
                      const TypeInfo* retType);
-    void checkForInStmt(LuxParser::ForInStmtContext* stmt,
+    void checkForInStmt(LucisParser::ForInStmtContext* stmt,
                         const TypeInfo* retType);
-    void checkForClassicStmt(LuxParser::ForClassicStmtContext* stmt,
+    void checkForClassicStmt(LucisParser::ForClassicStmtContext* stmt,
                              const TypeInfo* retType);
-    void checkSwitchStmt(LuxParser::SwitchStmtContext* stmt,
+    void checkSwitchStmt(LucisParser::SwitchStmtContext* stmt,
                          const TypeInfo* retType);
 
     // ── Flow analysis helpers ───────────────────────────────────────
-    bool isTerminatorStmt(LuxParser::StatementContext* stmt);
-    void warnUnusedLocals(LuxParser::FunctionDeclContext* func);
+    bool isTerminatorStmt(LucisParser::StatementContext* stmt);
+    void warnUnusedLocals(LucisParser::FunctionDeclContext* func);
     void warnUnusedLocals(antlr4::ParserRuleContext* ctx);
 
     // ── Error reporting with source location ────────────────────────
@@ -210,31 +210,31 @@ private:
                   Diagnostic::Severity sev, const std::string& msg);
 
     // ── Phase 1: FFI buffer safety helpers ──────────────────────────
-    std::optional<uint64_t> tryEvalUSizeExpr(LuxParser::ExpressionContext* expr) const;
+    std::optional<uint64_t> tryEvalUSizeExpr(LucisParser::ExpressionContext* expr) const;
     std::optional<std::pair<uint64_t, uint64_t>>
-        tryEvalUSizeRangeExpr(LuxParser::ExpressionContext* expr) const;
-    std::optional<uint64_t> tryGetCStringLiteralLen(LuxParser::ExpressionContext* expr) const;
-    VarInfo* resolveTrackedVarFromExpr(LuxParser::ExpressionContext* expr);
+        tryEvalUSizeRangeExpr(LucisParser::ExpressionContext* expr) const;
+    std::optional<uint64_t> tryGetCStringLiteralLen(LucisParser::ExpressionContext* expr) const;
+    VarInfo* resolveTrackedVarFromExpr(LucisParser::ExpressionContext* expr);
     void resetTrackedBufferInfo(VarInfo& vi);
     void resetTrackedNumericInfo(VarInfo& vi);
     void trackVarBufferFromExpr(const std::string& varName,
-                                LuxParser::ExpressionContext* expr,
+                                LucisParser::ExpressionContext* expr,
                                 const TypeInfo* declaredType);
     void trackVarNumericRangeFromExpr(const std::string& varName,
-                                      LuxParser::ExpressionContext* expr,
+                                      LucisParser::ExpressionContext* expr,
                                       const TypeInfo* declaredType);
     bool isDropTrackedType(const TypeInfo* type, unsigned arrayDims = 0) const;
-    bool exprConsumesOwnership(LuxParser::ExpressionContext* expr) const;
-    bool isBorrowedStringExpr(LuxParser::ExpressionContext* expr) const;
-    void updateOwnershipOnInitialization(VarInfo& vi, LuxParser::ExpressionContext* expr);
-    void markExprAsMoved(LuxParser::ExpressionContext* expr, antlr4::ParserRuleContext* whereCtx);
-    void validateExprNotMoved(LuxParser::ExpressionContext* expr, antlr4::ParserRuleContext* whereCtx);
+    bool exprConsumesOwnership(LucisParser::ExpressionContext* expr) const;
+    bool isBorrowedStringExpr(LucisParser::ExpressionContext* expr) const;
+    void updateOwnershipOnInitialization(VarInfo& vi, LucisParser::ExpressionContext* expr);
+    void markExprAsMoved(LucisParser::ExpressionContext* expr, antlr4::ParserRuleContext* whereCtx);
+    void validateExprNotMoved(LucisParser::ExpressionContext* expr, antlr4::ParserRuleContext* whereCtx);
     void applyCallOwnershipEffects(const std::string& calleeName,
-                                   const std::vector<LuxParser::ExpressionContext*>& args,
+                                   const std::vector<LucisParser::ExpressionContext*>& args,
                                    antlr4::ParserRuleContext* whereCtx);
     void analyzeUnsafeCBufferCall(const std::string& funcName,
                                   antlr4::ParserRuleContext* ctx,
-                                  const std::vector<LuxParser::ExpressionContext*>& args);
+                                  const std::vector<LucisParser::ExpressionContext*>& args);
 
     // ── Namespace context (set by CLI before check) ─────────────────
     const NamespaceRegistry* nsRegistry_  = nullptr;
@@ -274,23 +274,23 @@ private:
     // ── User-defined generics (monomorphization) ─────────────────────
     struct GenericStructTemplate {
         std::vector<std::string>      typeParams;  // e.g. {"T"} or {"K", "V"}
-        LuxParser::StructDeclContext* decl;        // original AST node (non-owning)
+        LucisParser::StructDeclContext* decl;        // original AST node (non-owning)
     };
     struct GenericUnionTemplate {
         std::vector<std::string>     typeParams;
-        LuxParser::UnionDeclContext* decl;
+        LucisParser::UnionDeclContext* decl;
     };
     struct GenericEnumTemplate {
         std::vector<std::string>    typeParams;
-        LuxParser::EnumDeclContext* decl;
+        LucisParser::EnumDeclContext* decl;
     };
     struct GenericFuncTemplate {
         std::vector<std::string>       typeParams;
-        LuxParser::FunctionDeclContext* decl;
+        LucisParser::FunctionDeclContext* decl;
     };
     struct GenericExtendTemplate {
         std::vector<std::string>       typeParams;
-        LuxParser::ExtendDeclContext*  decl;
+        LucisParser::ExtendDeclContext*  decl;
     };
     std::unordered_map<std::string, GenericStructTemplate>  genericStructTemplates_;
     std::unordered_map<std::string, GenericUnionTemplate>   genericUnionTemplates_;
@@ -337,14 +337,14 @@ private:
     std::optional<std::vector<const TypeInfo*>> inferGenericTypeArgs(
         const std::string& displayName,
         const std::vector<std::string>& typeParams,
-        LuxParser::TypeParamListContext* typeParamList,
-        const std::vector<LuxParser::ParamContext*>& formalParams,
+        LucisParser::TypeParamListContext* typeParamList,
+        const std::vector<LucisParser::ParamContext*>& formalParams,
         const std::vector<const TypeInfo*>& argTypes,
         antlr4::ParserRuleContext* ctx);
 
     // Unifies a formal type spec against an actual argument type for inference.
     bool unifyGenericTypeArg(
-        LuxParser::TypeSpecContext* formalType,
+        LucisParser::TypeSpecContext* formalType,
         const TypeInfo* actualType,
         const std::unordered_set<std::string>& genericParams,
         std::unordered_map<std::string, const TypeInfo*>& inferred,
@@ -354,7 +354,7 @@ private:
 
     // Resolves a type spec under a substitution map (typeParam → concrete TypeInfo*).
     const TypeInfo* resolveTypeSpecWithSubst(
-        LuxParser::TypeSpecContext* typeSpec,
+        LucisParser::TypeSpecContext* typeSpec,
         const std::unordered_map<std::string, const TypeInfo*>& subst,
         unsigned& arrayDims);
 

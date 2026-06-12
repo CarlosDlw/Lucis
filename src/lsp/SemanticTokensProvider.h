@@ -45,7 +45,7 @@ struct RawSemanticToken {
     uint32_t modifiers; // Bitmask of SemanticTokenMod
 };
 
-// Provides semantic token classification for Lux source code.
+// Provides semantic token classification for Lucis source code.
 // Uses the ANTLR parse tree + lexer tokens for accurate classification.
 class SemanticTokensProvider {
 public:

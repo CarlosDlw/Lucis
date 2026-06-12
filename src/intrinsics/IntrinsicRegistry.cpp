@@ -59,7 +59,7 @@ std::vector<std::string> IntrinsicRegistry::allNamespaces() const {
 }
 
 bool IntrinsicRegistry::isIntrinsicPrefix(const std::string& firstSegment) {
-    return firstSegment == "lux";
+    return firstSegment == "lucis";
 }
 
 bool IntrinsicRegistry::parseIntrinsicPath(
@@ -68,7 +68,7 @@ bool IntrinsicRegistry::parseIntrinsicPath(
         std::string& outFunc) {
     if (ids.size() != 3)
         return false;
-    if (ids[0] != "lux")
+    if (ids[0] != "lucis")
         return false;
     outNs = ids[1];
     outFunc = ids[2];

@@ -1,0 +1,58 @@
+namespace Main;
+
+use std::log::println;
+use std::test::{ assertEqual };
+
+fn gIdentity<T>(T value) T {
+    ret value;
+}
+
+fn gPickFirst<T>(T a, T b) T {
+    ret a;
+}
+
+struct GBox<T> {
+    T value;
+}
+
+extend GBox<T> {
+    fn make(T value) GBox<T> {
+        ret GBox<T> { value: value };
+    }
+
+    fn getValue(&self) T {
+        ret self.value;
+    }
+}
+
+fn testGenericsInferenceAndMethods() int32 {
+    println("[Testing generics: inference and methods...]");
+
+    int32 a = gIdentity(10);
+    float64 b = gIdentity(3.5);
+    string s = gIdentity("lucis");
+
+    assertEqual(a, 10);
+    assertEqual(b, 3.5);
+    assertEqual(s, "lucis");
+
+    int32 pickI = gPickFirst(7, 9);
+    float64 pickF = gPickFirst(2.5, 8.5);
+
+    assertEqual(pickI, 7);
+    assertEqual(pickF, 2.5);
+
+    GBox<int32> bi = GBox::make(42);
+    GBox<float64> bf = GBox::make(9.25);
+    GBox<string> bs = GBox::make("boxed");
+
+    assertEqual(bi.getValue(), 42);
+    assertEqual(bf.getValue(), 9.25);
+    assertEqual(bs.getValue(), "boxed");
+
+    GBox<int32> explicitBox = GBox<int32>::make(77);
+    assertEqual(explicitBox.getValue(), 77);
+
+    println("✔ generics inference/method tests passed");
+    ret 0;
+}

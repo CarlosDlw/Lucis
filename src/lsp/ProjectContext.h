@@ -10,11 +10,11 @@
 #include "ffi/CBindings.h"
 #include "types/TypeRegistry.h"
 
-// Holds the parsed state of the entire project (all .lx files).
+// Holds the parsed state of the entire project (all .lc files).
 // Used by LSP components to resolve cross-file symbols.
 class ProjectContext {
 public:
-    // Build context from a file path. Scans the project root for .lx files,
+    // Build context from a file path. Scans the project root for .lc files,
     // parses them all, and builds a NamespaceRegistry + shared CBindings.
     // Returns false if no project could be determined.
     bool build(const std::string& filePath);
@@ -36,7 +36,7 @@ public:
 
 private:
     // Extract namespace from a parse tree.
-    static std::string extractNamespace(LuxParser::ProgramContext* tree);
+    static std::string extractNamespace(LucisParser::ProgramContext* tree);
 
     NamespaceRegistry registry_;
     CBindings         cBindings_;

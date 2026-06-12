@@ -1,7 +1,7 @@
 #include "lsp/SemanticTokensProvider.h"
 #include "parser/Parser.h"
-#include "generated/LuxLexer.h"
-#include "generated/LuxParser.h"
+#include "generated/LucisLexer.h"
+#include "generated/LucisParser.h"
 
 #include <algorithm>
 #include <regex>
@@ -46,19 +46,19 @@ static inline void emit(std::vector<RawSemanticToken>& out,
 // Keyword token types (by lexer token id)
 static bool isKeyword(size_t tokenType) {
     switch (tokenType) {
-        case LuxLexer::NAMESPACE: case LuxLexer::USE: case LuxLexer::RET:
-        case LuxLexer::STRUCT: case LuxLexer::UNION: case LuxLexer::ENUM:
-        case LuxLexer::FN: case LuxLexer::TYPE: case LuxLexer::AS:
-        case LuxLexer::IS: case LuxLexer::SIZEOF: case LuxLexer::TYPEOF:
-        case LuxLexer::IF: case LuxLexer::ELSE: case LuxLexer::FOR:
-        case LuxLexer::IN: case LuxLexer::LOOP: case LuxLexer::WHILE:
-        case LuxLexer::DO: case LuxLexer::BREAK: case LuxLexer::CONTINUE:
-        case LuxLexer::SWITCH: case LuxLexer::CASE: case LuxLexer::DEFAULT:
-        case LuxLexer::SPAWN: case LuxLexer::AWAIT: case LuxLexer::LOCK:
-        case LuxLexer::EXTEND: case LuxLexer::TRY: case LuxLexer::CATCH:
-        case LuxLexer::FINALLY: case LuxLexer::THROW: case LuxLexer::DEFER:
-        case LuxLexer::EXTERN: case LuxLexer::AUTO: case LuxLexer::NULL_LIT:
-        case LuxLexer::INLINE_BLOCK: case LuxLexer::SCOPE_BLOCK:
+        case LucisLexer::NAMESPACE: case LucisLexer::USE: case LucisLexer::RET:
+        case LucisLexer::STRUCT: case LucisLexer::UNION: case LucisLexer::ENUM:
+        case LucisLexer::FN: case LucisLexer::TYPE: case LucisLexer::AS:
+        case LucisLexer::IS: case LucisLexer::SIZEOF: case LucisLexer::TYPEOF:
+        case LucisLexer::IF: case LucisLexer::ELSE: case LucisLexer::FOR:
+        case LucisLexer::IN: case LucisLexer::LOOP: case LucisLexer::WHILE:
+        case LucisLexer::DO: case LucisLexer::BREAK: case LucisLexer::CONTINUE:
+        case LucisLexer::SWITCH: case LucisLexer::CASE: case LucisLexer::DEFAULT:
+        case LucisLexer::SPAWN: case LucisLexer::AWAIT: case LucisLexer::LOCK:
+        case LucisLexer::EXTEND: case LucisLexer::TRY: case LucisLexer::CATCH:
+        case LucisLexer::FINALLY: case LucisLexer::THROW: case LucisLexer::DEFER:
+        case LucisLexer::EXTERN: case LucisLexer::AUTO: case LucisLexer::NULL_LIT:
+        case LucisLexer::INLINE_BLOCK: case LucisLexer::SCOPE_BLOCK:
             return true;
         default:
             return false;
@@ -66,34 +66,34 @@ static bool isKeyword(size_t tokenType) {
 }
 
 static bool isPrimitiveType(size_t tokenType) {
-    if (tokenType >= LuxLexer::INT1 && tokenType <= LuxLexer::CSTRING)
+    if (tokenType >= LucisLexer::INT1 && tokenType <= LucisLexer::CSTRING)
         return true;
     // Native collection type keywords are also types
-    if (tokenType == LuxLexer::VEC || tokenType == LuxLexer::MAP ||
-        tokenType == LuxLexer::SET)
+    if (tokenType == LucisLexer::VEC || tokenType == LucisLexer::MAP ||
+        tokenType == LucisLexer::SET)
         return true;
     return false;
 }
 
 static bool isOperator(size_t tokenType) {
     switch (tokenType) {
-        case LuxLexer::PLUS: case LuxLexer::MINUS: case LuxLexer::STAR:
-        case LuxLexer::SLASH: case LuxLexer::PERCENT:
-        case LuxLexer::EQ: case LuxLexer::NEQ: case LuxLexer::LT:
-        case LuxLexer::GT: case LuxLexer::LTE: case LuxLexer::GTE:
-        case LuxLexer::LAND: case LuxLexer::LOR: case LuxLexer::NOT:
-        case LuxLexer::AMPERSAND: case LuxLexer::PIPE: case LuxLexer::CARET:
-        case LuxLexer::TILDE: case LuxLexer::LSHIFT:
-        case LuxLexer::INCR: case LuxLexer::DECR:
-        case LuxLexer::ASSIGN: case LuxLexer::ARROW:
-        case LuxLexer::PLUS_ASSIGN: case LuxLexer::MINUS_ASSIGN:
-        case LuxLexer::STAR_ASSIGN: case LuxLexer::SLASH_ASSIGN:
-        case LuxLexer::PERCENT_ASSIGN: case LuxLexer::AMP_ASSIGN:
-        case LuxLexer::PIPE_ASSIGN: case LuxLexer::CARET_ASSIGN:
-        case LuxLexer::LSHIFT_ASSIGN: case LuxLexer::RSHIFT_ASSIGN:
-        case LuxLexer::NULLCOAL: case LuxLexer::SPREAD:
-        case LuxLexer::RANGE: case LuxLexer::RANGE_INCL:
-        case LuxLexer::QUESTION:
+        case LucisLexer::PLUS: case LucisLexer::MINUS: case LucisLexer::STAR:
+        case LucisLexer::SLASH: case LucisLexer::PERCENT:
+        case LucisLexer::EQ: case LucisLexer::NEQ: case LucisLexer::LT:
+        case LucisLexer::GT: case LucisLexer::LTE: case LucisLexer::GTE:
+        case LucisLexer::LAND: case LucisLexer::LOR: case LucisLexer::NOT:
+        case LucisLexer::AMPERSAND: case LucisLexer::PIPE: case LucisLexer::CARET:
+        case LucisLexer::TILDE: case LucisLexer::LSHIFT:
+        case LucisLexer::INCR: case LucisLexer::DECR:
+        case LucisLexer::ASSIGN: case LucisLexer::ARROW:
+        case LucisLexer::PLUS_ASSIGN: case LucisLexer::MINUS_ASSIGN:
+        case LucisLexer::STAR_ASSIGN: case LucisLexer::SLASH_ASSIGN:
+        case LucisLexer::PERCENT_ASSIGN: case LucisLexer::AMP_ASSIGN:
+        case LucisLexer::PIPE_ASSIGN: case LucisLexer::CARET_ASSIGN:
+        case LucisLexer::LSHIFT_ASSIGN: case LucisLexer::RSHIFT_ASSIGN:
+        case LucisLexer::NULLCOAL: case LucisLexer::SPREAD:
+        case LucisLexer::RANGE: case LucisLexer::RANGE_INCL:
+        case LucisLexer::QUESTION:
             return true;
         default:
             return false;
@@ -132,18 +132,18 @@ static void walkTree(IdentMap& map, antlr4::tree::ParseTree* node) {
     if (!node) return;
 
     // ── namespace ──
-    if (auto* ctx = dynamic_cast<LuxParser::NamespaceDeclContext*>(node)) {
+    if (auto* ctx = dynamic_cast<LucisParser::NamespaceDeclContext*>(node)) {
         classifyIdent(map, ctx->IDENTIFIER(),
                       SemanticTokenType::Namespace,
                       static_cast<uint32_t>(SemanticTokenMod::Declaration));
     }
 
     // ── use ── modulePath identifiers are namespaces
-    else if (auto* ctx = dynamic_cast<LuxParser::ModulePathContext*>(node)) {
+    else if (auto* ctx = dynamic_cast<LucisParser::ModulePathContext*>(node)) {
         for (auto* id : ctx->IDENTIFIER())
             classifyIdent(map, id, SemanticTokenType::Namespace);
     }
-    else if (auto* ctx = dynamic_cast<LuxParser::UseItemContext*>(node)) {
+    else if (auto* ctx = dynamic_cast<LucisParser::UseItemContext*>(node)) {
         // The last IDENTIFIER is the imported symbol (function/type)
         uint32_t mods = 0;
         if (ctx->modulePath() &&
@@ -152,7 +152,7 @@ static void walkTree(IdentMap& map, antlr4::tree::ParseTree* node) {
         }
         classifyIdent(map, ctx->IDENTIFIER(), SemanticTokenType::Function, mods);
     }
-    else if (auto* ctx = dynamic_cast<LuxParser::UseGroupContext*>(node)) {
+    else if (auto* ctx = dynamic_cast<LucisParser::UseGroupContext*>(node)) {
         uint32_t mods = 0;
         std::string modulePath;
         if (ctx->modulePath()) {
@@ -178,16 +178,16 @@ static void walkTree(IdentMap& map, antlr4::tree::ParseTree* node) {
             classifyIdent(map, id, SemanticTokenType::Function, mods);
         }
     }
-    else if (auto* ctx = dynamic_cast<LuxParser::UseRootContext*>(node)) {
+    else if (auto* ctx = dynamic_cast<LucisParser::UseRootContext*>(node)) {
         classifyIdent(map, ctx->IDENTIFIER(), SemanticTokenType::Namespace);
     }
-    else if (auto* ctx = dynamic_cast<LuxParser::UseEnumWildcardContext*>(node)) {
+    else if (auto* ctx = dynamic_cast<LucisParser::UseEnumWildcardContext*>(node)) {
         if (ctx->typeSpec() && ctx->typeSpec()->IDENTIFIER())
             classifyIdent(map, ctx->typeSpec()->IDENTIFIER(), SemanticTokenType::Enum);
     }
 
     // ── struct ──
-    else if (auto* ctx = dynamic_cast<LuxParser::StructDeclContext*>(node)) {
+    else if (auto* ctx = dynamic_cast<LucisParser::StructDeclContext*>(node)) {
         classifyIdent(map, ctx->IDENTIFIER(), SemanticTokenType::Struct,
                       static_cast<uint32_t>(SemanticTokenMod::Declaration) |
                       static_cast<uint32_t>(SemanticTokenMod::Definition));
@@ -201,13 +201,13 @@ static void walkTree(IdentMap& map, antlr4::tree::ParseTree* node) {
             }
         }
     }
-    else if (auto* ctx = dynamic_cast<LuxParser::StructFieldContext*>(node)) {
+    else if (auto* ctx = dynamic_cast<LucisParser::StructFieldContext*>(node)) {
         classifyIdent(map, ctx->IDENTIFIER(), SemanticTokenType::Property,
                       static_cast<uint32_t>(SemanticTokenMod::Declaration));
     }
 
     // ── union ──
-    else if (auto* ctx = dynamic_cast<LuxParser::UnionDeclContext*>(node)) {
+    else if (auto* ctx = dynamic_cast<LucisParser::UnionDeclContext*>(node)) {
         classifyIdent(map, ctx->IDENTIFIER(), SemanticTokenType::Struct,
                       static_cast<uint32_t>(SemanticTokenMod::Declaration) |
                       static_cast<uint32_t>(SemanticTokenMod::Definition));
@@ -220,13 +220,13 @@ static void walkTree(IdentMap& map, antlr4::tree::ParseTree* node) {
             }
         }
     }
-    else if (auto* ctx = dynamic_cast<LuxParser::UnionFieldContext*>(node)) {
+    else if (auto* ctx = dynamic_cast<LucisParser::UnionFieldContext*>(node)) {
         classifyIdent(map, ctx->IDENTIFIER(), SemanticTokenType::Property,
                       static_cast<uint32_t>(SemanticTokenMod::Declaration));
     }
 
     // ── enum ──
-    else if (auto* ctx = dynamic_cast<LuxParser::EnumDeclContext*>(node)) {
+    else if (auto* ctx = dynamic_cast<LucisParser::EnumDeclContext*>(node)) {
         if (ctx->IDENTIFIER()) {
             classifyIdent(map, ctx->IDENTIFIER(), SemanticTokenType::Enum,
                           static_cast<uint32_t>(SemanticTokenMod::Declaration) |
@@ -241,13 +241,13 @@ static void walkTree(IdentMap& map, antlr4::tree::ParseTree* node) {
     }
 
     // ── type alias ──
-    else if (auto* ctx = dynamic_cast<LuxParser::TypeAliasDeclContext*>(node)) {
+    else if (auto* ctx = dynamic_cast<LucisParser::TypeAliasDeclContext*>(node)) {
         classifyIdent(map, ctx->IDENTIFIER(), SemanticTokenType::Type,
                       static_cast<uint32_t>(SemanticTokenMod::Declaration));
     }
 
     // ── function decl ──
-    else if (auto* ctx = dynamic_cast<LuxParser::FunctionDeclContext*>(node)) {
+    else if (auto* ctx = dynamic_cast<LucisParser::FunctionDeclContext*>(node)) {
         if (!ctx->IDENTIFIER().empty())
             classifyIdent(map, ctx->IDENTIFIER(0), SemanticTokenType::Function,
                           static_cast<uint32_t>(SemanticTokenMod::Declaration) |
@@ -264,13 +264,13 @@ static void walkTree(IdentMap& map, antlr4::tree::ParseTree* node) {
     }
 
     // ── extern decl ──
-    else if (auto* ctx = dynamic_cast<LuxParser::ExternDeclContext*>(node)) {
+    else if (auto* ctx = dynamic_cast<LucisParser::ExternDeclContext*>(node)) {
         classifyIdent(map, ctx->IDENTIFIER(), SemanticTokenType::Function,
                       static_cast<uint32_t>(SemanticTokenMod::Declaration));
     }
 
     // ── extend block ──
-    else if (auto* ctx = dynamic_cast<LuxParser::ExtendDeclContext*>(node)) {
+    else if (auto* ctx = dynamic_cast<LucisParser::ExtendDeclContext*>(node)) {
         classifyIdent(map, ctx->IDENTIFIER(), SemanticTokenType::Struct);
         // Generic type params
         if (ctx->typeParamList()) {
@@ -282,7 +282,7 @@ static void walkTree(IdentMap& map, antlr4::tree::ParseTree* node) {
             }
         }
     }
-    else if (auto* ctx = dynamic_cast<LuxParser::ExtendMethodContext*>(node)) {
+    else if (auto* ctx = dynamic_cast<LucisParser::ExtendMethodContext*>(node)) {
         auto ids = ctx->IDENTIFIER();
         if (!ids.empty()) {
             // extendMethod grammar always places the method name at IDENTIFIER[0]
@@ -300,53 +300,53 @@ static void walkTree(IdentMap& map, antlr4::tree::ParseTree* node) {
     }
 
     // ── parameters ──
-    else if (auto* ctx = dynamic_cast<LuxParser::ParamContext*>(node)) {
+    else if (auto* ctx = dynamic_cast<LucisParser::ParamContext*>(node)) {
         classifyIdent(map, ctx->IDENTIFIER(), SemanticTokenType::Parameter,
                       static_cast<uint32_t>(SemanticTokenMod::Declaration));
     }
-    else if (auto* ctx = dynamic_cast<LuxParser::ExternParamContext*>(node)) {
+    else if (auto* ctx = dynamic_cast<LucisParser::ExternParamContext*>(node)) {
         if (ctx->IDENTIFIER())
             classifyIdent(map, ctx->IDENTIFIER(), SemanticTokenType::Parameter,
                           static_cast<uint32_t>(SemanticTokenMod::Declaration));
     }
 
     // ── variable declarations ──
-    else if (auto* ctx = dynamic_cast<LuxParser::VarDeclStmtContext*>(node)) {
+    else if (auto* ctx = dynamic_cast<LucisParser::VarDeclStmtContext*>(node)) {
         for (auto* id : ctx->IDENTIFIER())
             classifyIdent(map, id, SemanticTokenType::Variable,
                           static_cast<uint32_t>(SemanticTokenMod::Declaration));
     }
 
     // ── for-in variable ──
-    else if (auto* ctx = dynamic_cast<LuxParser::ForInStmtContext*>(node)) {
+    else if (auto* ctx = dynamic_cast<LucisParser::ForInStmtContext*>(node)) {
         classifyIdent(map, ctx->IDENTIFIER(), SemanticTokenType::Variable,
                       static_cast<uint32_t>(SemanticTokenMod::Declaration));
     }
-    else if (auto* ctx = dynamic_cast<LuxParser::ForClassicStmtContext*>(node)) {
+    else if (auto* ctx = dynamic_cast<LucisParser::ForClassicStmtContext*>(node)) {
         classifyIdent(map, ctx->IDENTIFIER(), SemanticTokenType::Variable,
                       static_cast<uint32_t>(SemanticTokenMod::Declaration));
     }
 
     // ── catch variable ──
-    else if (auto* ctx = dynamic_cast<LuxParser::CatchClauseContext*>(node)) {
+    else if (auto* ctx = dynamic_cast<LucisParser::CatchClauseContext*>(node)) {
         classifyIdent(map, ctx->IDENTIFIER(), SemanticTokenType::Variable,
                       static_cast<uint32_t>(SemanticTokenMod::Declaration));
     }
 
     // ── self usage in member assignment statements (LHS) ──
-    else if (auto* ctx = dynamic_cast<LuxParser::ArrowAssignStmtContext*>(node)) {
+    else if (auto* ctx = dynamic_cast<LucisParser::ArrowAssignStmtContext*>(node)) {
         auto* base = ctx->IDENTIFIER(0);
         if (base && base->getText() == "self") {
             classifyIdent(map, base, SemanticTokenType::Parameter);
         }
     }
-    else if (auto* ctx = dynamic_cast<LuxParser::ArrowCompoundAssignStmtContext*>(node)) {
+    else if (auto* ctx = dynamic_cast<LucisParser::ArrowCompoundAssignStmtContext*>(node)) {
         auto* base = ctx->IDENTIFIER(0);
         if (base && base->getText() == "self") {
             classifyIdent(map, base, SemanticTokenType::Parameter);
         }
     }
-    else if (auto* ctx = dynamic_cast<LuxParser::FieldAssignStmtContext*>(node)) {
+    else if (auto* ctx = dynamic_cast<LucisParser::FieldAssignStmtContext*>(node)) {
         auto ids = ctx->IDENTIFIER();
         if (!ids.empty()) {
             if (ids[0]->getText() == "self") {
@@ -356,7 +356,7 @@ static void walkTree(IdentMap& map, antlr4::tree::ParseTree* node) {
                 classifyIdent(map, ids[i], SemanticTokenType::Property);
         }
     }
-    else if (auto* ctx = dynamic_cast<LuxParser::FieldCompoundAssignStmtContext*>(node)) {
+    else if (auto* ctx = dynamic_cast<LucisParser::FieldCompoundAssignStmtContext*>(node)) {
         auto ids = ctx->IDENTIFIER();
         if (!ids.empty()) {
             if (ids[0]->getText() == "self") {
@@ -366,7 +366,7 @@ static void walkTree(IdentMap& map, antlr4::tree::ParseTree* node) {
                 classifyIdent(map, ids[i], SemanticTokenType::Property);
         }
     }
-    else if (auto* ctx = dynamic_cast<LuxParser::IndexFieldAssignStmtContext*>(node)) {
+    else if (auto* ctx = dynamic_cast<LucisParser::IndexFieldAssignStmtContext*>(node)) {
         auto ids = ctx->IDENTIFIER();
         if (!ids.empty()) {
             if (ids[0]->getText() == "self") {
@@ -378,16 +378,16 @@ static void walkTree(IdentMap& map, antlr4::tree::ParseTree* node) {
     }
 
     // ── function/method call expressions ──
-    else if (auto* ctx = dynamic_cast<LuxParser::FnCallExprContext*>(node)) {
+    else if (auto* ctx = dynamic_cast<LucisParser::FnCallExprContext*>(node)) {
         // If the callee is a bare identifier, classify it as function
-        if (auto* identExpr = dynamic_cast<LuxParser::IdentExprContext*>(ctx->expression())) {
+        if (auto* identExpr = dynamic_cast<LucisParser::IdentExprContext*>(ctx->expression())) {
             classifyIdent(map, identExpr->IDENTIFIER(), SemanticTokenType::Function);
         }
     }
-    else if (auto* ctx = dynamic_cast<LuxParser::MethodCallExprContext*>(node)) {
+    else if (auto* ctx = dynamic_cast<LucisParser::MethodCallExprContext*>(node)) {
         classifyIdent(map, ctx->IDENTIFIER(), SemanticTokenType::Method);
     }
-    else if (auto* ctx = dynamic_cast<LuxParser::StaticMethodCallExprContext*>(node)) {
+    else if (auto* ctx = dynamic_cast<LucisParser::StaticMethodCallExprContext*>(node)) {
         auto ids = ctx->IDENTIFIER();
         if (ids.size() >= 2) {
             std::string ownerPath;
@@ -397,7 +397,7 @@ static void walkTree(IdentMap& map, antlr4::tree::ParseTree* node) {
             }
             uint32_t mods = static_cast<uint32_t>(SemanticTokenMod::Static);
             if (ownerPath == "std" || ownerPath.rfind("std::", 0) == 0 ||
-                ownerPath == "lux" || ownerPath.rfind("lux::", 0) == 0) {
+                ownerPath == "lucis" || ownerPath.rfind("lucis::", 0) == 0) {
                 mods |= static_cast<uint32_t>(SemanticTokenMod::DefaultLib);
             }
 
@@ -414,20 +414,20 @@ static void walkTree(IdentMap& map, antlr4::tree::ParseTree* node) {
     }
 
     // ── call statement ──
-    else if (auto* ctx = dynamic_cast<LuxParser::CallStmtContext*>(node)) {
+    else if (auto* ctx = dynamic_cast<LucisParser::CallStmtContext*>(node)) {
         classifyIdent(map, ctx->IDENTIFIER(), SemanticTokenType::Function);
     }
 
     // ── field access ──
-    else if (auto* ctx = dynamic_cast<LuxParser::FieldAccessExprContext*>(node)) {
+    else if (auto* ctx = dynamic_cast<LucisParser::FieldAccessExprContext*>(node)) {
         classifyIdent(map, ctx->IDENTIFIER(), SemanticTokenType::Property);
     }
-    else if (auto* ctx = dynamic_cast<LuxParser::ArrowAccessExprContext*>(node)) {
+    else if (auto* ctx = dynamic_cast<LucisParser::ArrowAccessExprContext*>(node)) {
         classifyIdent(map, ctx->IDENTIFIER(), SemanticTokenType::Property);
     }
 
     // ── enum access ──
-    else if (auto* ctx = dynamic_cast<LuxParser::EnumAccessExprContext*>(node)) {
+    else if (auto* ctx = dynamic_cast<LucisParser::EnumAccessExprContext*>(node)) {
         auto ids = ctx->IDENTIFIER();
         if (ids.size() >= 2) {
             classifyIdent(map, ids[0], SemanticTokenType::Enum);
@@ -436,7 +436,7 @@ static void walkTree(IdentMap& map, antlr4::tree::ParseTree* node) {
     }
 
     // ── generic enum access: Result<int32, string>::Unit ──
-    else if (auto* ctx = dynamic_cast<LuxParser::GenericEnumAccessExprContext*>(node)) {
+    else if (auto* ctx = dynamic_cast<LucisParser::GenericEnumAccessExprContext*>(node)) {
         auto ids = ctx->IDENTIFIER();
         if (ids.size() >= 2) {
             classifyIdent(map, ids[0], SemanticTokenType::Enum);
@@ -445,14 +445,14 @@ static void walkTree(IdentMap& map, antlr4::tree::ParseTree* node) {
     }
 
     // ── qualified struct/enum init lexpr ──
-    else if (auto* ctx = dynamic_cast<LuxParser::QualifiedStructPosInitExprContext*>(node)) {
+    else if (auto* ctx = dynamic_cast<LucisParser::QualifiedStructPosInitExprContext*>(node)) {
         auto ids = ctx->IDENTIFIER();
         if (ids.size() >= 2) {
             classifyIdent(map, ids[0], SemanticTokenType::Namespace);
             classifyIdent(map, ids[1], SemanticTokenType::Type);
         }
     }
-    else if (auto* ctx = dynamic_cast<LuxParser::QualifiedStructNamedInitExprContext*>(node)) {
+    else if (auto* ctx = dynamic_cast<LucisParser::QualifiedStructNamedInitExprContext*>(node)) {
         auto ids = ctx->IDENTIFIER();
         if (ids.size() >= 2) {
             classifyIdent(map, ids[0], SemanticTokenType::Namespace);
@@ -461,7 +461,7 @@ static void walkTree(IdentMap& map, antlr4::tree::ParseTree* node) {
                 classifyIdent(map, ids[i], SemanticTokenType::Property);
         }
     }
-    else if (auto* ctx = dynamic_cast<LuxParser::GenericEnumNamedVariantExprContext*>(node)) {
+    else if (auto* ctx = dynamic_cast<LucisParser::GenericEnumNamedVariantExprContext*>(node)) {
         auto ids = ctx->IDENTIFIER();
         if (ids.size() >= 2) {
             classifyIdent(map, ids[0], SemanticTokenType::Enum);
@@ -472,7 +472,7 @@ static void walkTree(IdentMap& map, antlr4::tree::ParseTree* node) {
     }
 
     // ── is variant check: expr is Type::Variant ──
-    else if (auto* ctx = dynamic_cast<LuxParser::IsExprContext*>(node)) {
+    else if (auto* ctx = dynamic_cast<LucisParser::IsExprContext*>(node)) {
         if (ctx->SCOPE() && ctx->IDENTIFIER(0)) {
             classifyIdent(map, ctx->IDENTIFIER(0), SemanticTokenType::EnumMember);
         }
@@ -483,7 +483,7 @@ static void walkTree(IdentMap& map, antlr4::tree::ParseTree* node) {
     }
 
     // ── struct literal ──
-    else if (auto* ctx = dynamic_cast<LuxParser::StructLitExprContext*>(node)) {
+    else if (auto* ctx = dynamic_cast<LucisParser::StructLitExprContext*>(node)) {
         auto ids = ctx->IDENTIFIER();
         if (!ids.empty()) {
             classifyIdent(map, ids[0], SemanticTokenType::Struct);
@@ -494,12 +494,12 @@ static void walkTree(IdentMap& map, antlr4::tree::ParseTree* node) {
     }
 
     // ── generic function call: max<int32>(a, b) ──
-    else if (auto* ctx = dynamic_cast<LuxParser::GenericFnCallExprContext*>(node)) {
+    else if (auto* ctx = dynamic_cast<LucisParser::GenericFnCallExprContext*>(node)) {
         classifyIdent(map, ctx->IDENTIFIER(), SemanticTokenType::Function);
     }
 
-    // ── generic qualified function call: lux::unsafe::va_arg<int32>(va) ──
-    else if (auto* ctx = dynamic_cast<LuxParser::GenericQualifiedFnCallExprContext*>(node)) {
+    // ── generic qualified function call: lucis::unsafe::va_arg<int32>(va) ──
+    else if (auto* ctx = dynamic_cast<LucisParser::GenericQualifiedFnCallExprContext*>(node)) {
         auto ids = ctx->IDENTIFIER();
         for (size_t i = 0; i + 1 < ids.size(); ++i)
             classifyIdent(map, ids[i], SemanticTokenType::Namespace);
@@ -508,7 +508,7 @@ static void walkTree(IdentMap& map, antlr4::tree::ParseTree* node) {
     }
 
     // ── generic static method call: Node<int32>::create(42) ──
-    else if (auto* ctx = dynamic_cast<LuxParser::GenericStaticMethodCallExprContext*>(node)) {
+    else if (auto* ctx = dynamic_cast<LucisParser::GenericStaticMethodCallExprContext*>(node)) {
         auto ids = ctx->IDENTIFIER();
         if (ids.size() >= 1) classifyIdent(map, ids[0], SemanticTokenType::Struct);
         if (ids.size() >= 2) classifyIdent(map, ids[1], SemanticTokenType::Method,
@@ -516,7 +516,7 @@ static void walkTree(IdentMap& map, antlr4::tree::ParseTree* node) {
     }
 
     // ── generic struct literal: Node<int32> { value: 42 } ──
-    else if (auto* ctx = dynamic_cast<LuxParser::GenericStructLitExprContext*>(node)) {
+    else if (auto* ctx = dynamic_cast<LucisParser::GenericStructLitExprContext*>(node)) {
         auto ids = ctx->IDENTIFIER();
         if (!ids.empty()) {
             classifyIdent(map, ids[0], SemanticTokenType::Struct);
@@ -527,7 +527,7 @@ static void walkTree(IdentMap& map, antlr4::tree::ParseTree* node) {
     }
 
     // ── typeSpec IDENTIFIER → user-defined type ──
-    else if (auto* ctx = dynamic_cast<LuxParser::TypeSpecContext*>(node)) {
+    else if (auto* ctx = dynamic_cast<LucisParser::TypeSpecContext*>(node)) {
         // Only classify if this is a plain IDENTIFIER typeSpec (user type)
         // and there's no other child rule (not pointer, array, fn, etc.)
         if (ctx->IDENTIFIER() && !ctx->LT() &&
@@ -541,7 +541,7 @@ static void walkTree(IdentMap& map, antlr4::tree::ParseTree* node) {
     }
 
     // ── self identifier usage inside extend instance methods ──
-    else if (auto* ctx = dynamic_cast<LuxParser::IdentExprContext*>(node)) {
+    else if (auto* ctx = dynamic_cast<LucisParser::IdentExprContext*>(node)) {
         auto* id = ctx->IDENTIFIER();
         if (id && id->getText() == "self") {
             classifyIdent(map, id, SemanticTokenType::Parameter);
@@ -549,7 +549,7 @@ static void walkTree(IdentMap& map, antlr4::tree::ParseTree* node) {
     }
 
     // ── #scope callback: funcName(args) or varName.methodName(args) ──
-    else if (auto* ctx = dynamic_cast<LuxParser::ScopeCallbackContext*>(node)) {
+    else if (auto* ctx = dynamic_cast<LucisParser::ScopeCallbackContext*>(node)) {
         if (ctx->DOT()) {
             // dot-access: receiver variable + method name
             classifyIdent(map, ctx->IDENTIFIER(0), SemanticTokenType::Variable);
@@ -699,16 +699,16 @@ std::vector<uint32_t> SemanticTokensProvider::tokenize(const std::string& source
                  static_cast<uint32_t>(SemanticTokenMod::DefaultLib));
         }
         // Literals
-        else if (type == LuxLexer::INT_LIT || type == LuxLexer::FLOAT_LIT ||
-                 type == LuxLexer::HEX_LIT || type == LuxLexer::OCT_LIT ||
-                 type == LuxLexer::BIN_LIT) {
+        else if (type == LucisLexer::INT_LIT || type == LucisLexer::FLOAT_LIT ||
+                 type == LucisLexer::HEX_LIT || type == LucisLexer::OCT_LIT ||
+                 type == LucisLexer::BIN_LIT) {
             emit(raw, line, col, len, SemanticTokenType::Number);
         }
-        else if (type == LuxLexer::BOOL_LIT) {
+        else if (type == LucisLexer::BOOL_LIT) {
             emit(raw, line, col, len, SemanticTokenType::Keyword);
         }
-        else if (type == LuxLexer::STR_LIT || type == LuxLexer::C_STR_LIT ||
-                 type == LuxLexer::CHAR_LIT) {
+        else if (type == LucisLexer::STR_LIT || type == LucisLexer::C_STR_LIT ||
+                 type == LucisLexer::CHAR_LIT) {
             emit(raw, line, col, len, SemanticTokenType::String);
         }
         // Operators
@@ -716,11 +716,11 @@ std::vector<uint32_t> SemanticTokensProvider::tokenize(const std::string& source
             emit(raw, line, col, len, SemanticTokenType::Operator);
         }
         // Include directives
-        else if (type == LuxLexer::INCLUDE_SYS || type == LuxLexer::INCLUDE_LOCAL) {
+        else if (type == LucisLexer::INCLUDE_SYS || type == LucisLexer::INCLUDE_LOCAL) {
             emit(raw, line, col, len, SemanticTokenType::Macro);
         }
         // Identifiers — look up in the context map
-        else if (type == LuxLexer::IDENTIFIER) {
+        else if (type == LucisLexer::IDENTIFIER) {
             std::string k = std::to_string(line) + ":" + std::to_string(col);
             auto it = identMap.find(k);
             if (it != identMap.end()) {

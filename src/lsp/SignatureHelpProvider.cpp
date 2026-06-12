@@ -35,7 +35,7 @@ static std::string safeIdAt(T *ctx, size_t i) {
     return n ? n->getText() : "";
 }
 
-std::string SignatureHelpProvider::typeSpecToString(LuxParser::TypeSpecContext* ctx) {
+std::string SignatureHelpProvider::typeSpecToString(LucisParser::TypeSpecContext* ctx) {
     return ctx ? ctx->getText() : "void";
 }
 
@@ -230,7 +230,7 @@ SignatureHelpProvider::analyzeCallSite(const std::string& source,
 // ═══════════════════════════════════════════════════════════════════════
 
 SignatureInfo SignatureHelpProvider::buildFromFunction(
-        LuxParser::FunctionDeclContext* func,
+        LucisParser::FunctionDeclContext* func,
         const std::vector<DocComment>& docs) {
     SignatureInfo sig;
 
@@ -271,7 +271,7 @@ SignatureInfo SignatureHelpProvider::buildFromFunction(
 }
 
 SignatureInfo SignatureHelpProvider::buildFromExtern(
-        LuxParser::ExternDeclContext* ext,
+        LucisParser::ExternDeclContext* ext,
         const std::vector<DocComment>& docs) {
     SignatureInfo sig;
 
@@ -357,7 +357,7 @@ SignatureInfo SignatureHelpProvider::buildFromIntrinsic(const IntrinsicFunction&
     SignatureInfo sig;
 
     std::ostringstream label;
-    label << intrinsic.returnType << " lux::" << intrinsic.name << "(";
+    label << intrinsic.returnType << " lucis::" << intrinsic.name << "(";
 
     for (size_t i = 0; i < intrinsic.params.size(); i++) {
         if (i > 0) label << ", ";
@@ -420,7 +420,7 @@ SignatureInfo SignatureHelpProvider::buildFromCFunction(const CFunction& func) {
 }
 
 SignatureInfo SignatureHelpProvider::buildFromExtendMethod(
-        LuxParser::ExtendMethodContext* method,
+        LucisParser::ExtendMethodContext* method,
         const std::string& structName,
         const std::vector<DocComment>& docs) {
     SignatureInfo sig;
@@ -433,7 +433,7 @@ SignatureInfo SignatureHelpProvider::buildFromExtendMethod(
     label << "(" << structName << ") fn " << name << "(";
 
     // Collect params — skip the &self receiver parameter.
-    std::vector<LuxParser::ParamContext*> params;
+    std::vector<LucisParser::ParamContext*> params;
     if (hasReceiver) {
         params = method->param();
     } else {
@@ -544,7 +544,7 @@ SignatureHelpProvider::signatureHelp(
     if (project && project->isValid()) {
         cBindingsPtr = &project->cBindings();
     } else {
-        std::vector<LuxParser::IncludeDeclContext*> includes;
+        std::vector<LucisParser::IncludeDeclContext*> includes;
         for (auto* pre : parsed.tree->preambleDecl())
             if (auto* inc = pre->includeDecl()) includes.push_back(inc);
         if (!includes.empty()) {
@@ -636,7 +636,7 @@ SignatureHelpProvider::signatureHelp(
                 auto syms = project->registry().getNamespaceSymbols(ns);
                 for (auto* sym : syms) {
                     if (sym->kind != ExportedSymbol::ExtendBlock) continue;
-                    auto* ext = dynamic_cast<LuxParser::ExtendDeclContext*>(sym->decl);
+                    auto* ext = dynamic_cast<LucisParser::ExtendDeclContext*>(sym->decl);
                     if (!ext || !ext->IDENTIFIER()) continue;
                     std::string structName = safeText(ext->IDENTIFIER());
                     for (auto* method : ext->extendMethod()) {
@@ -659,7 +659,7 @@ SignatureHelpProvider::signatureHelp(
 
     // ── Static method calls (Type::method(...)) ─────────────────────
     if (site->isStaticCall && !site->staticTypeName.empty()) {
-        // 0) Intrinsic call: lux::core::trap()
+        // 0) Intrinsic call: lucis::core::trap()
         if (intrinsicRegistry_.hasNamespace(site->staticTypeName)) {
             auto* intrinsic = intrinsicRegistry_.lookup(site->staticTypeName, name);
             if (intrinsic) {
@@ -692,7 +692,7 @@ SignatureHelpProvider::signatureHelp(
                 auto syms = project->registry().getNamespaceSymbols(ns);
                 for (auto* sym : syms) {
                     if (sym->kind != ExportedSymbol::ExtendBlock) continue;
-                    auto* ext = dynamic_cast<LuxParser::ExtendDeclContext*>(sym->decl);
+                    auto* ext = dynamic_cast<LucisParser::ExtendDeclContext*>(sym->decl);
                     if (!ext || !ext->IDENTIFIER()) continue;
                     if (safeText(ext->IDENTIFIER()) != site->staticTypeName) continue;
                     for (auto* method : ext->extendMethod()) {
@@ -767,7 +767,7 @@ SignatureHelpProvider::signatureHelp(
             auto* sym = project->registry().findSymbol(ns, name);
             if (!sym) continue;
             if (sym->kind == ExportedSymbol::Function) {
-                auto* fd = dynamic_cast<LuxParser::FunctionDeclContext*>(sym->decl);
+                auto* fd = dynamic_cast<LucisParser::FunctionDeclContext*>(sym->decl);
                 if (fd) {
                     auto sig = buildFromFunction(fd, {});
                     sig.activeParameter = site->activeParam;

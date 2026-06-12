@@ -1,4 +1,4 @@
-# Lux — Builtins & Standard Library Plan
+# Lucis — Builtins & Standard Library Plan
 
 ## 1. Global Builtins (always available, no `use` required) ✅
 

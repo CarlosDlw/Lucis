@@ -4,17 +4,17 @@
 #include <string>
 #include <vector>
 #include <antlr4-runtime.h>
-#include "generated/LuxLexer.h"
-#include "generated/LuxParser.h"
+#include "generated/LucisLexer.h"
+#include "generated/LucisParser.h"
 #include "lsp/Diagnostic.h"
 
 // Holds the full ANTLR4 pipeline; all objects must outlive the parse tree.
 struct ParseResult {
     std::unique_ptr<antlr4::ANTLRInputStream>  input;
-    std::unique_ptr<LuxLexer>               lexer;
+    std::unique_ptr<LucisLexer>               lexer;
     std::unique_ptr<antlr4::CommonTokenStream> tokens;
-    std::unique_ptr<LuxParser>              parser;
-    LuxParser::ProgramContext*              tree      = nullptr;
+    std::unique_ptr<LucisParser>              parser;
+    LucisParser::ProgramContext*              tree      = nullptr;
     bool                                       hasErrors = false;
     std::vector<Diagnostic>                    diagnostics;  // populated in LSP mode
 };

@@ -1,5 +1,5 @@
-#ifndef LUX_SET_H
-#define LUX_SET_H
+#ifndef LUCIS_SET_H
+#define LUCIS_SET_H
 
 #include <stddef.h>
 #include <stdint.h>
@@ -15,7 +15,7 @@
 typedef struct {
     const char* ptr;
     size_t      len;
-} lux_set_string;
+} lucis_set_string;
 
 typedef struct {
     uint8_t*  states;     // 0=empty, 1=occupied, 2=tombstone
@@ -24,67 +24,67 @@ typedef struct {
     size_t    len;        // active entries
     size_t    cap;        // total slots
     size_t    key_size;   // bytes per key
-} lux_set_header;
+} lucis_set_header;
 
-// Vec out-parameter (mirrors lux_vec_header layout)
+// Vec out-parameter (mirrors lucis_vec_header layout)
 typedef struct {
     void*  ptr;
     size_t len;
     size_t cap;
-} lux_set_vec_out;
+} lucis_set_vec_out;
 
 // ── Macro-generated declarations ─────────────────────────────────────────
 
 // For integer element types: ET = C type, ES = suffix
-#define LUX_SET_DECL_INT(ET, ES)                                          \
-void   lux_set_init_##ES(lux_set_header* s);                           \
-void   lux_set_free_##ES(lux_set_header* s);                           \
-size_t lux_set_len_##ES(const lux_set_header* s);                      \
-int    lux_set_isEmpty_##ES(const lux_set_header* s);                  \
-int    lux_set_add_##ES(lux_set_header* s, ET elem);                   \
-int    lux_set_has_##ES(lux_set_header* s, ET elem);                   \
-int    lux_set_remove_##ES(lux_set_header* s, ET elem);                \
-void   lux_set_clear_##ES(lux_set_header* s);                          \
-void   lux_set_values_##ES(lux_set_header* s, lux_set_vec_out* out);
+#define LUCIS_SET_DECL_INT(ET, ES)                                          \
+void   lucis_set_init_##ES(lucis_set_header* s);                           \
+void   lucis_set_free_##ES(lucis_set_header* s);                           \
+size_t lucis_set_len_##ES(const lucis_set_header* s);                      \
+int    lucis_set_isEmpty_##ES(const lucis_set_header* s);                  \
+int    lucis_set_add_##ES(lucis_set_header* s, ET elem);                   \
+int    lucis_set_has_##ES(lucis_set_header* s, ET elem);                   \
+int    lucis_set_remove_##ES(lucis_set_header* s, ET elem);                \
+void   lucis_set_clear_##ES(lucis_set_header* s);                          \
+void   lucis_set_values_##ES(lucis_set_header* s, lucis_set_vec_out* out);
 
 // For string element type
-#define LUX_SET_DECL_STR()                                                \
-void   lux_set_init_str(lux_set_header* s);                            \
-void   lux_set_free_str(lux_set_header* s);                            \
-size_t lux_set_len_str(const lux_set_header* s);                       \
-int    lux_set_isEmpty_str(const lux_set_header* s);                   \
-int    lux_set_add_str(lux_set_header* s, lux_set_string elem);     \
-int    lux_set_has_str(lux_set_header* s, lux_set_string elem);     \
-int    lux_set_remove_str(lux_set_header* s, lux_set_string elem);  \
-void   lux_set_clear_str(lux_set_header* s);                           \
-void   lux_set_values_str(lux_set_header* s, lux_set_vec_out* out);
+#define LUCIS_SET_DECL_STR()                                                \
+void   lucis_set_init_str(lucis_set_header* s);                            \
+void   lucis_set_free_str(lucis_set_header* s);                            \
+size_t lucis_set_len_str(const lucis_set_header* s);                       \
+int    lucis_set_isEmpty_str(const lucis_set_header* s);                   \
+int    lucis_set_add_str(lucis_set_header* s, lucis_set_string elem);     \
+int    lucis_set_has_str(lucis_set_header* s, lucis_set_string elem);     \
+int    lucis_set_remove_str(lucis_set_header* s, lucis_set_string elem);  \
+void   lucis_set_clear_str(lucis_set_header* s);                           \
+void   lucis_set_values_str(lucis_set_header* s, lucis_set_vec_out* out);
 
 // ── Instantiate declarations ─────────────────────────────────────────────
 
 // Integer element types
-LUX_SET_DECL_INT(int8_t,   i8)
-LUX_SET_DECL_INT(int16_t,  i16)
-LUX_SET_DECL_INT(int32_t,  i32)
-LUX_SET_DECL_INT(int64_t,  i64)
-LUX_SET_DECL_INT(uint8_t,  u8)
-LUX_SET_DECL_INT(uint16_t, u16)
-LUX_SET_DECL_INT(uint32_t, u32)
-LUX_SET_DECL_INT(uint64_t, u64)
+LUCIS_SET_DECL_INT(int8_t,   i8)
+LUCIS_SET_DECL_INT(int16_t,  i16)
+LUCIS_SET_DECL_INT(int32_t,  i32)
+LUCIS_SET_DECL_INT(int64_t,  i64)
+LUCIS_SET_DECL_INT(uint8_t,  u8)
+LUCIS_SET_DECL_INT(uint16_t, u16)
+LUCIS_SET_DECL_INT(uint32_t, u32)
+LUCIS_SET_DECL_INT(uint64_t, u64)
 
 // String element type
-LUX_SET_DECL_STR()
+LUCIS_SET_DECL_STR()
 
 // ── Raw (opaque struct) element variant ───────────────────────────────
 // Used when element is a user-defined struct (builtinSuffix == "raw").
 // Hashing is byte-level FNV-1a; equality is bitwise memcmp.
-void   lux_set_init_raw(lux_set_header* s, size_t elem_size);
-void   lux_set_free_raw(lux_set_header* s);
-size_t lux_set_len_raw(const lux_set_header* s);
-int    lux_set_add_raw(lux_set_header* s, const void* elem);
-int    lux_set_has_raw(lux_set_header* s, const void* elem);
-int    lux_set_remove_raw(lux_set_header* s, const void* elem);
-void   lux_set_values_raw(lux_set_header* s, lux_set_vec_out* out);
-int    lux_set_isEmpty_raw(const lux_set_header* s);
-void   lux_set_clear_raw(lux_set_header* s);
+void   lucis_set_init_raw(lucis_set_header* s, size_t elem_size);
+void   lucis_set_free_raw(lucis_set_header* s);
+size_t lucis_set_len_raw(const lucis_set_header* s);
+int    lucis_set_add_raw(lucis_set_header* s, const void* elem);
+int    lucis_set_has_raw(lucis_set_header* s, const void* elem);
+int    lucis_set_remove_raw(lucis_set_header* s, const void* elem);
+void   lucis_set_values_raw(lucis_set_header* s, lucis_set_vec_out* out);
+int    lucis_set_isEmpty_raw(const lucis_set_header* s);
+void   lucis_set_clear_raw(lucis_set_header* s);
 
-#endif // LUX_SET_H
+#endif // LUCIS_SET_H

@@ -424,7 +424,7 @@ std::string formatDocComment(const DocComment& doc) {
     for (auto& tag : doc.tags) {
         if (tag.kind == DocTagKind::Example) {
             ss << "**" << tagLabel(tag.kind) << "**\n";
-            ss << "```lux\n";
+            ss << "```lucis\n";
             ss << trim(tag.text) << "\n";
             ss << "```\n\n";
         }

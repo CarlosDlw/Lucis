@@ -9,7 +9,7 @@ class Command {
 public:
     virtual ~Command() = default;
 
-    // Name used in `lux <name>` and `lux help <name>`
+    // Name used in `lucis <name>` and `lucis help <name>`
     virtual std::string name() const = 0;
 
     // Short description for help listing

@@ -9,7 +9,7 @@ public:
 
     std::string name() const override { return "help"; }
     std::string description() const override {
-        return "Show help information for lux or a specific command";
+        return "Show help information for lucis or a specific command";
     }
     void buildArgs(ArgParser& parser) const override;
     int run(const ArgParser& parser) override;

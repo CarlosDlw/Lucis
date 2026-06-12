@@ -4,7 +4,7 @@ This page covers the general syntax rules of T: how statements are structured, h
 
 ## Statements and Semicolons
 
-Every statement in Lux ends with a semicolon:
+Every statement in Lucis ends with a semicolon:
 
 ```
 int32 x = 10;
@@ -47,7 +47,7 @@ T supports two comment styles:
 
 Block comments do not nest.
 
-Lux also supports **doc-comments** (`/** ... */`) for documenting functions, structs, enums, and other declarations. Doc-comments are parsed by the LSP and displayed as hover information in the editor. See [Doc-Comments](doc-comments.md) for full details.
+Lucis also supports **doc-comments** (`/** ... */`) for documenting functions, structs, enums, and other declarations. Doc-comments are parsed by the LSP and displayed as hover information in the editor. See [Doc-Comments](doc-comments.md) for full details.
 
 ## Identifiers
 
@@ -60,11 +60,11 @@ float64 _temp = 98.6;
 bool isReady = true;
 ```
 
-Lux is case-sensitive: `count`, `Count`, and `COUNT` are three different identifiers.
+Lucis is case-sensitive: `count`, `Count`, and `COUNT` are three different identifiers.
 
 ## Namespaces
 
-Every `.lx` file must begin with a namespace declaration:
+Every `.lc` file must begin with a namespace declaration:
 
 ```
 namespace MyModule;
@@ -97,7 +97,7 @@ Include directives are processed before compilation and make C functions, struct
 
 ## Type-First Declarations
 
-All declarations in Lux place the type before the name (except functions, which use `fn`):
+All declarations in Lucis place the type before the name (except functions, which use `fn`):
 
 ```
 int32 age = 25;                               // variable

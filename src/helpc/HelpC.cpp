@@ -9,17 +9,17 @@
 
 void HelpC::printUsage() {
     std::cout
-        << "lux helpc — C Library Reference\n\n"
+        << "lucis helpc — C Library Reference\n\n"
         << "Usage:\n"
-        << "  lux helpc <lib> [symbol]     Look up a symbol\n"
-        << "  lux helpc <lib> --list       List all symbols (summary)\n"
-        << "  lux helpc <lib> -l functions  List functions\n"
-        << "  lux helpc <lib> -l structs    List structs\n"
-        << "  lux helpc <lib> -l enums      List enums\n"
-        << "  lux helpc <lib> -l macros     List macros\n"
-        << "  lux helpc <lib> -l typedefs   List typedefs\n"
-        << "  lux helpc <lib> -l globals    List globals\n"
-        << "  lux helpc <lib> -s <query>    Search symbols\n\n"
+        << "  lucis helpc <lib> [symbol]     Look up a symbol\n"
+        << "  lucis helpc <lib> --list       List all symbols (summary)\n"
+        << "  lucis helpc <lib> -l functions  List functions\n"
+        << "  lucis helpc <lib> -l structs    List structs\n"
+        << "  lucis helpc <lib> -l enums      List enums\n"
+        << "  lucis helpc <lib> -l macros     List macros\n"
+        << "  lucis helpc <lib> -l typedefs   List typedefs\n"
+        << "  lucis helpc <lib> -l globals    List globals\n"
+        << "  lucis helpc <lib> -s <query>    Search symbols\n\n"
         << "Flags:\n"
         << "  --all, -a         Show all values (don't truncate)\n"
         << "  --verbose, -v     Show offsets, sizes, raw C details\n"
@@ -29,19 +29,19 @@ void HelpC::printUsage() {
         << "  --regex           Treat search query as regex\n"
         << "  -I<path>          Extra include path\n\n"
         << "Examples:\n"
-        << "  lux helpc raylib InitWindow\n"
-        << "  lux helpc raylib Color -r\n"
-        << "  lux helpc raylib --list\n"
-        << "  lux helpc stdio printf\n"
-        << "  lux helpc raylib -s Draw\n"
-        << "  lux helpc raylib KeyboardKey --all\n"
-        << "  lux helpc raylib InitWindow --json\n";
+        << "  lucis helpc raylib InitWindow\n"
+        << "  lucis helpc raylib Color -r\n"
+        << "  lucis helpc raylib --list\n"
+        << "  lucis helpc stdio printf\n"
+        << "  lucis helpc raylib -s Draw\n"
+        << "  lucis helpc raylib KeyboardKey --all\n"
+        << "  lucis helpc raylib InitWindow --json\n";
 }
 
 // ── Argument parsing ────────────────────────────────────────────────────────
 
 bool HelpC::parseArgs(int argc, char* argv[], HelpCCommand& cmd) {
-    // argv[0] = "lux", argv[1] = "helpc"
+    // argv[0] = "lucis", argv[1] = "helpc"
     // We need at least argv[2] (the header/lib)
     if (argc < 3) return false;
 
@@ -60,7 +60,7 @@ bool HelpC::parseArgs(int argc, char* argv[], HelpCCommand& cmd) {
             if (i + 1 < argc) {
                 cmd.searchQuery = argv[++i];
             } else {
-                std::cerr << "lux helpc: --search requires a query\n";
+                std::cerr << "lucis helpc: --search requires a query\n";
                 return false;
             }
         } else if (arg == "--all" || arg == "-a") {
@@ -85,7 +85,7 @@ bool HelpC::parseArgs(int argc, char* argv[], HelpCCommand& cmd) {
             // Positional: the symbol name
             cmd.symbol = arg;
         } else {
-            std::cerr << "lux helpc: unknown flag '" << arg << "'\n";
+            std::cerr << "lucis helpc: unknown flag '" << arg << "'\n";
             return false;
         }
     }
@@ -237,7 +237,7 @@ int HelpC::run(const HelpCCommand& cmd) {
         } else if (cmd.listCategory == "globals") {
             fmt.printListGlobals(hdr);
         } else {
-            std::cerr << "lux helpc: unknown category '" << cmd.listCategory
+            std::cerr << "lucis helpc: unknown category '" << cmd.listCategory
                       << "'\n";
             std::cerr << "Valid: functions, structs, enums, macros, typedefs, globals, all\n";
             return 1;

@@ -1,12 +1,12 @@
 # Namespaces
 
-Every Lux source file begins with a `namespace` declaration. Namespaces identify the module a file belongs to and enable cross-file symbol resolution.
+Every Lucis source file begins with a `namespace` declaration. Namespaces identify the module a file belongs to and enable cross-file symbol resolution.
 
 ---
 
 ## Declaration
 
-The `namespace` keyword must be the first declaration in every `.lx` file:
+The `namespace` keyword must be the first declaration in every `.lc` file:
 
 ```
 namespace MyApp;
@@ -24,7 +24,7 @@ The name is a single identifier — typically PascalCase.
 
 Namespaces enable multi-file compilation. Functions defined in one file can be imported in another using `use`:
 
-### File: `math.lx`
+### File: `math.lc`
 
 ```
 namespace Math;
@@ -38,7 +38,7 @@ fn multiply(int32 a, int32 b) int32 {
 }
 ```
 
-### File: `main.lx`
+### File: `main.lc`
 
 ```
 namespace Main;
@@ -75,7 +75,7 @@ The `::` operator resolves symbols within a namespace or type:
 
 ## Namespace Rules
 
-- Every `.lx` file must have exactly one `namespace` declaration
+- Every `.lc` file must have exactly one `namespace` declaration
 - It must be the first declaration in the file (before `use`, `#include`, or any other code)
 - The standard library uses the `std` namespace hierarchy (`std::log`, `std::math`, etc.)
 - User namespaces are flat identifiers — no nesting like `App::Utils::Math`

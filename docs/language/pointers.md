@@ -1,6 +1,6 @@
 # Pointers
 
-Pointers in Lux hold the memory address of a value. They support address-of, dereference, arrow notation for struct fields, null, and pointer casting.
+Pointers in Lucis hold the memory address of a value. They support address-of, dereference, arrow notation for struct fields, null, and pointer casting.
 
 ---
 

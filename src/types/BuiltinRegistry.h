@@ -6,7 +6,7 @@
 #include <initializer_list>
 
 // Describes a single builtin function signature for the checker.
-// Types use lux-level names: "int32", "int64", "float64", "string", "bool",
+// Types use lucis-level names: "int32", "int64", "float64", "string", "bool",
 // "char", "void", "usize", "*void", etc.
 // Special placeholders:
 //   "_any"     — accepts any single type (polymorphic arg)
@@ -16,8 +16,8 @@
 
 struct BuiltinSignature {
     std::string              name;
-    std::string              returnType;  // lux type name
-    std::vector<std::string> paramTypes;  // lux type names (fixed params only)
+    std::string              returnType;  // lucis type name
+    std::vector<std::string> paramTypes;  // lucis type names (fixed params only)
     bool isPolymorphic = false; // return type depends on argument type
     bool isVariadic    = false; // accepts extra args beyond paramTypes
     bool returnsOwned  = false; // return transfers ownership to caller
@@ -33,7 +33,7 @@ class BuiltinRegistry {
 public:
     BuiltinRegistry();
 
-    // Look up a function by its lux-level name (e.g. "println", "sqrt").
+    // Look up a function by its lucis-level name (e.g. "println", "sqrt").
     // Returns nullptr if not found.
     const BuiltinSignature* lookup(const std::string& name) const;
 

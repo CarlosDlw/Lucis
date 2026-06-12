@@ -1,14 +1,14 @@
 # Linking
 
-When your Lux program calls C functions, the compiler needs to link against the libraries that provide them. This page explains how linking works, the default libraries, and how to add custom ones.
+When your Lucis program calls C functions, the compiler needs to link against the libraries that provide them. This page explains how linking works, the default libraries, and how to add custom ones.
 
 ---
 
 ## How Linking Works
 
-After compiling your `.lx` files to machine code, the compiler invokes a linker (usually `clang` or `gcc`) to combine:
+After compiling your `.lc` files to machine code, the compiler invokes a linker (usually `clang` or `gcc`) to combine:
 
-1. Your compiled Lux code (object files)
+1. Your compiled Lucis code (object files)
 2. The T runtime builtins (string, collections, etc.)
 3. External C libraries (system or custom)
 
@@ -38,7 +38,7 @@ Because these are linked by default, you can call math functions, use compressio
 The `-l` flag tells the linker to search for a shared or static library:
 
 ```bash
-lux main.lx ./main -lssl -lcrypto
+lucis main.lc ./main -lssl -lcrypto
 ```
 
 This searches for `libssl.so` (or `libssl.a`) and `libcrypto.so` (or `libcrypto.a`) in the system's library search paths.
@@ -47,13 +47,13 @@ This searches for `libssl.so` (or `libssl.a`) and `libcrypto.so` (or `libcrypto.
 
 ```bash
 # Link with SQLite
-lux main.lx ./main -lsqlite3
+lucis main.lc ./main -lsqlite3
 
 # Link with cURL
-lux main.lx ./main -lcurl
+lucis main.lc ./main -lcurl
 
 # Link with multiple libraries
-lux main.lx ./main -lssl -lcrypto -lcurl
+lucis main.lc ./main -lssl -lcrypto -lcurl
 ```
 
 ### `-L` — Add Library Search Path
@@ -61,17 +61,17 @@ lux main.lx ./main -lssl -lcrypto -lcurl
 If the library is in a non-standard directory, use `-L` to add the path:
 
 ```bash
-lux main.lx ./main -L/opt/mylibs -lmylib
+lucis main.lc ./main -L/opt/mylibs -lmylib
 ```
 
 The linker searches the specified directory for `libmylib.so` or `libmylib.a`.
 
 ```bash
 # Library in a local build directory
-lux main.lx ./main -L./build/lib -lmyengine
+lucis main.lc ./main -L./build/lib -lmyengine
 
 # Library in a custom prefix
-lux main.lx ./main -L/usr/local/lib -lspecial
+lucis main.lc ./main -L/usr/local/lib -lspecial
 ```
 
 ### `-I` — Add Include Search Path
@@ -79,17 +79,17 @@ lux main.lx ./main -L/usr/local/lib -lspecial
 If your C headers are in a non-standard directory, use `-I` to add an include search path:
 
 ```bash
-lux main.lx ./main -I/opt/mylibs/include
+lucis main.lc ./main -I/opt/mylibs/include
 ```
 
 This lets `#include <mylib.h>` find headers that aren't in `/usr/include`.
 
 ```bash
 # Include path for a local project
-lux main.lx ./main -I./vendor/include -L./vendor/lib -lvendor
+lucis main.lc ./main -I./vendor/include -L./vendor/lib -lvendor
 
 # Multiple include paths
-lux main.lx ./main -I/opt/ssl/include -I/opt/curl/include -lssl -lcurl
+lucis main.lc ./main -I/opt/ssl/include -I/opt/curl/include -lssl -lcurl
 ```
 
 ---
@@ -111,7 +111,7 @@ sudo dnf install sqlite-devel
 brew install sqlite
 ```
 
-2. Write your Lux code with `extern` declarations or `#include`:
+2. Write your Lucis code with `extern` declarations or `#include`:
 
 ```
 namespace SQLiteDemo;
@@ -130,7 +130,7 @@ fn main() int32 {
 3. Compile and link:
 
 ```bash
-lux main.lx ./main -lsqlite3
+lucis main.lc ./main -lsqlite3
 ./main
 ```
 
@@ -159,7 +159,7 @@ int add(int a, int b) { return a + b; }
 int multiply(int a, int b) { return a * b; }
 ```
 
-2. Use it from Lux with `#include "..."`:
+2. Use it from Lucis with `#include "..."`:
 
 ```
 namespace LocalLib;
@@ -182,7 +182,7 @@ fn main() int32 {
 3. Compile and run — the `.c` file is compiled automatically:
 
 ```bash
-lux main.lx ./main
+lucis main.lc ./main
 ./main
 ```
 
@@ -206,11 +206,11 @@ This means a typical project structure with C interop looks like:
 
 ```
 my_project/
-├── main.lx              # Lux source
+├── main.lc              # Lucis source
 ├── native_lib.h         # C header (parsed by compiler)
 ├── native_lib.c         # C implementation (auto-compiled)
 └── build/
-    ├── main.o           # compiled Lux code
+    ├── main.o           # compiled Lucis code
     ├── c__native_lib.o  # auto-compiled C code
     └── main             # linked executable
 ```
@@ -225,7 +225,7 @@ To force static linking of a specific library, the library must have a `.a` arch
 
 ```bash
 # If only libmylib.a exists in the search path, it links statically
-lux main.lx ./main -L./lib -lmylib
+lucis main.lc ./main -L./lib -lmylib
 ```
 
 The linker resolves in order of preference:
@@ -242,8 +242,8 @@ The function is declared (via `extern` or `#include`) but the library providing 
 
 ```bash
 # Missing -lm for math functions
-lux main.lx ./main           # error: undefined reference to 'sqrt'
-lux main.lx ./main -lm       # works (but -lm is already default)
+lucis main.lc ./main           # error: undefined reference to 'sqrt'
+lucis main.lc ./main -lm       # works (but -lm is already default)
 ```
 
 ### "cannot find -lxxx"
@@ -252,11 +252,11 @@ The library isn't installed or isn't in the search path:
 
 ```bash
 # Library not found
-lux main.lx ./main -lmissing    # error: cannot find -lmissing
+lucis main.lc ./main -lmissing    # error: cannot find -lmissing
 
 # Fix: install it or add -L path
 sudo apt install libmissing-dev
-lux main.lx ./main -lmissing    # works
+lucis main.lc ./main -lmissing    # works
 ```
 
 ### "fatal error: 'xxx.h' file not found"
@@ -265,10 +265,10 @@ The header isn't in the include search path:
 
 ```bash
 # Header not found
-lux main.lx ./main              # error: 'mylib.h' not found
+lucis main.lc ./main              # error: 'mylib.h' not found
 
 # Fix: add -I path
-lux main.lx ./main -I/opt/mylib/include
+lucis main.lc ./main -I/opt/mylib/include
 ```
 
 ---

@@ -21,7 +21,7 @@ bool ProjectContext::build(const std::string& filePath) {
     projectRoot_ = findProjectRoot(filePath);
     if (projectRoot_.empty()) return false;
 
-    // Scan all .lx files in the project.
+    // Scan all .lc files in the project.
     auto allFiles = ProjectScanner::scan(projectRoot_);
     if (allFiles.empty()) return false;
 
@@ -48,7 +48,7 @@ bool ProjectContext::build(const std::string& filePath) {
         } catch (...) {}
 
         // Resolve C headers from this file.
-        std::vector<LuxParser::IncludeDeclContext*> includes;
+        std::vector<LucisParser::IncludeDeclContext*> includes;
         for (auto* pre : unit.parseResult.tree->preambleDecl())
             if (auto* inc = pre->includeDecl()) includes.push_back(inc);
         if (!includes.empty()) {
@@ -116,7 +116,7 @@ std::string ProjectContext::namespaceFor(const std::string& filePath) const {
 std::string ProjectContext::findProjectRoot(const std::string& filePath) {
     // Walk up from the file's directory looking for an explicit project marker.
     // Using project markers (CMakeLists.txt, Makefile, .git, etc.) is far more
-    // reliable than scanning for .lx files, which can cause runaway traversal
+    // reliable than scanning for .lc files, which can cause runaway traversal
     // into system directories like /proc when no marker is found.
     static const std::vector<std::string> kMarkers = {
         "CMakeLists.txt", "Makefile", "makefile", ".git", ".hg", ".svn"
@@ -141,7 +141,7 @@ std::string ProjectContext::findProjectRoot(const std::string& filePath) {
     }
 }
 
-std::string ProjectContext::extractNamespace(LuxParser::ProgramContext* tree) {
+std::string ProjectContext::extractNamespace(LucisParser::ProgramContext* tree) {
     if (!tree) return "";
     auto* nsDecl = tree->namespaceDecl();
     if (!nsDecl) return "";

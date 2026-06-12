@@ -118,12 +118,12 @@ void HelpCFormatter::printFunction(const HelpCFunction& fn,
     printBoxTop("function", 62);
 
     // Signature
-    printBoxLine(cyan(fn.returnLuxType) + " " + bold(fn.name) + "(" +
+    printBoxLine(cyan(fn.returnLucisType) + " " + bold(fn.name) + "(" +
         [&]() {
             std::string args;
             for (size_t i = 0; i < fn.params.size(); i++) {
                 if (i > 0) args += ", ";
-                args += cyan(fn.params[i].luxType) + " " + fn.params[i].name;
+                args += cyan(fn.params[i].lucisType) + " " + fn.params[i].name;
             }
             if (fn.isVariadic) {
                 if (!fn.params.empty()) args += ", ";
@@ -144,11 +144,11 @@ void HelpCFormatter::printFunction(const HelpCFunction& fn,
         printBoxLine(bold("Parameters:"));
 
         // Calculate column widths
-        size_t maxName = 0, maxCType = 0, maxLuxType = 0;
+        size_t maxName = 0, maxCType = 0, maxLucisType = 0;
         for (auto& p : fn.params) {
             maxName  = std::max(maxName, p.name.size());
             maxCType = std::max(maxCType, p.cType.size());
-            maxLuxType = std::max(maxLuxType, p.luxType.size());
+            maxLucisType = std::max(maxLucisType, p.lucisType.size());
         }
         maxName  = std::max(maxName, (size_t)4);
         maxCType = std::max(maxCType, (size_t)4);
@@ -156,7 +156,7 @@ void HelpCFormatter::printFunction(const HelpCFunction& fn,
         for (auto& p : fn.params) {
             printBoxLine("  " + green(padRight(p.name, maxName)) + "  " +
                         dim(padRight(p.cType, maxCType)) + "  " +
-                        cyan("(" + p.luxType + ")"));
+                        cyan("(" + p.lucisType + ")"));
         }
         if (fn.isVariadic) {
             printBoxLine("  " + green(padRight("...", maxName)) + "  " +
@@ -166,7 +166,7 @@ void HelpCFormatter::printFunction(const HelpCFunction& fn,
 
     // Returns
     printBoxEmpty();
-    printBoxLine(bold("Returns: ") + cyan(fn.returnLuxType) +
+    printBoxLine(bold("Returns: ") + cyan(fn.returnLucisType) +
                 dim(" (" + fn.returnCType + ")"));
 
     // Header and link
@@ -182,15 +182,15 @@ void HelpCFormatter::printFunction(const HelpCFunction& fn,
         for (size_t i = 0; i < fn.params.size(); i++) {
             if (i > 0) call += ", ";
             // Generate example argument
-            if (fn.params[i].luxType == "*char")
+            if (fn.params[i].lucisType == "*char")
                 call += "c\"...\"";
-            else if (fn.params[i].luxType == "int32")
+            else if (fn.params[i].lucisType == "int32")
                 call += "0";
-            else if (fn.params[i].luxType == "float32" || fn.params[i].luxType == "float64")
+            else if (fn.params[i].lucisType == "float32" || fn.params[i].lucisType == "float64")
                 call += "0.0";
-            else if (fn.params[i].luxType == "bool")
+            else if (fn.params[i].lucisType == "bool")
                 call += "true";
-            else if (fn.params[i].luxType.find('*') == 0)
+            else if (fn.params[i].lucisType.find('*') == 0)
                 call += "ptr";
             else
                 call += fn.params[i].name;
@@ -232,18 +232,18 @@ void HelpCFormatter::printStruct(const HelpCStruct& s,
         printBoxEmpty();
         printBoxLine(bold("Fields:"));
 
-        size_t maxName = 0, maxCType = 0, maxLuxType = 0;
+        size_t maxName = 0, maxCType = 0, maxLucisType = 0;
         for (auto& f : s.fields) {
             maxName  = std::max(maxName, f.name.size());
             maxCType = std::max(maxCType, f.cType.size());
-            maxLuxType = std::max(maxLuxType, f.luxType.size());
+            maxLucisType = std::max(maxLucisType, f.lucisType.size());
         }
         maxName = std::max(maxName, (size_t)4);
 
         for (auto& f : s.fields) {
             std::string line = "  " + green(padRight(f.name, maxName)) + "  " +
                               dim(padRight(f.cType, maxCType)) + "  " +
-                              cyan("(" + f.luxType + ")");
+                              cyan("(" + f.lucisType + ")");
             if (opts_.verbose && f.offset >= 0)
                 line += dim("  offset " + std::to_string(f.offset));
             if (opts_.verbose && f.size >= 0)
@@ -367,11 +367,11 @@ void HelpCFormatter::printTypedef(const HelpCTypedef& td,
 
     printBoxEmpty();
     printBoxLine(bold("Alias for: ") + dim(td.underlyingCType));
-    printBoxLine(bold("Lux type:    ") + cyan(td.underlyingLuxType));
+    printBoxLine(bold("Lucis type:    ") + cyan(td.underlyingLucisType));
 
     // If underlying is a struct, try to show its fields
     for (auto& s : hdr.structs) {
-        if (s.name == td.underlyingLuxType || s.name == td.name) {
+        if (s.name == td.underlyingLucisType || s.name == td.name) {
             if (!s.fields.empty()) {
                 printBoxEmpty();
                 printBoxLine(bold("Resolved fields:"));
@@ -380,7 +380,7 @@ void HelpCFormatter::printTypedef(const HelpCTypedef& td,
                     maxName = std::max(maxName, f.name.size());
                 for (auto& f : s.fields) {
                     printBoxLine("  " + green(padRight(f.name, maxName)) + "  " +
-                                cyan("(" + f.luxType + ")"));
+                                cyan("(" + f.lucisType + ")"));
                 }
                 if (s.size >= 0)
                     printBoxLine(dim("  Size: " + std::to_string(s.size) + " bytes"));
@@ -485,7 +485,7 @@ void HelpCFormatter::printGlobal(const HelpCGlobal& g,
                                  const HelpCHeaderInfo& hdr) const {
     printBoxTop("global", 62);
 
-    printBoxLine(cyan(g.luxType) + " " + bold(g.name));
+    printBoxLine(cyan(g.lucisType) + " " + bold(g.name));
 
     if (!g.doc.empty()) {
         printBoxEmpty();
@@ -494,7 +494,7 @@ void HelpCFormatter::printGlobal(const HelpCGlobal& g,
 
     printBoxEmpty();
     printBoxLine(bold("C type: ") + dim(g.cType));
-    printBoxLine(bold("Lux type: ") + cyan(g.luxType));
+    printBoxLine(bold("Lucis type: ") + cyan(g.lucisType));
     printBoxLine(bold("Header: ") + "<" + hdr.headerName + ">");
 
     printBoxBottom(62);
@@ -573,7 +573,7 @@ void HelpCFormatter::printListFunctions(const HelpCHeaderInfo& hdr) const {
                 }
                 std::cout << "    " << green(padRight(fn->name, 36))
                           << dim("(" + sig + ")") << " → "
-                          << cyan(fn->returnLuxType) << "\n";
+                          << cyan(fn->returnLucisType) << "\n";
             }
             std::cout << "\n";
         }
@@ -595,7 +595,7 @@ void HelpCFormatter::printListFunctions(const HelpCHeaderInfo& hdr) const {
             }
             std::cout << "  " << green(padRight(fn.name, maxName + 2))
                       << dim("(" + sig + ")") << " → "
-                      << cyan(fn.returnLuxType) << "\n";
+                      << cyan(fn.returnLucisType) << "\n";
         }
     }
 
@@ -745,7 +745,7 @@ void HelpCFormatter::printListTypedefs(const HelpCHeaderInfo& hdr) const {
     for (auto& td : hdr.typedefs) {
         std::cout << "  " << green(padRight(td.name, maxName + 2))
                   << "→ " << dim(td.underlyingCType)
-                  << "  " << cyan("(" + td.underlyingLuxType + ")") << "\n";
+                  << "  " << cyan("(" + td.underlyingLucisType + ")") << "\n";
     }
 
     std::cout << "\n";
@@ -769,7 +769,7 @@ void HelpCFormatter::printListGlobals(const HelpCHeaderInfo& hdr) const {
 
     for (auto& g : hdr.globals) {
         std::cout << "  " << green(padRight(g.name, maxName + 2))
-                  << cyan(g.luxType) << dim("  (" + g.cType + ")") << "\n";
+                  << cyan(g.lucisType) << dim("  (" + g.cType + ")") << "\n";
     }
 
     std::cout << "\n";
@@ -815,9 +815,9 @@ void HelpCFormatter::printRelatedFunctions(const std::string& typeName,
     for (auto& fn : hdr.functions) {
         // Check if any parameter or return uses this type
         bool uses = false;
-        if (fn.returnLuxType == typeName) uses = true;
+        if (fn.returnLucisType == typeName) uses = true;
         for (auto& p : fn.params) {
-            if (p.luxType == typeName || p.cType.find(typeName) != std::string::npos)
+            if (p.lucisType == typeName || p.cType.find(typeName) != std::string::npos)
                 uses = true;
         }
         if (uses) related.push_back(&fn);
@@ -840,7 +840,7 @@ void HelpCFormatter::printRelatedFunctions(const std::string& typeName,
         }
         std::cout << "  " << green(padRight(fn->name, 36))
                   << dim("(" + sig + ")") << " → "
-                  << cyan(fn->returnLuxType) << "\n";
+                  << cyan(fn->returnLucisType) << "\n";
     }
     if (show < related.size())
         std::cout << dim("  ... (" + std::to_string(related.size() - show) +
@@ -895,13 +895,13 @@ void HelpCFormatter::printFunctionJson(const HelpCFunction& fn,
     if (!fn.doc.empty())
         std::cout << "  \"doc\": \"" << jsonEscape(fn.doc) << "\",\n";
     std::cout << "  \"returnType\": { \"c\": \"" << jsonEscape(fn.returnCType)
-              << "\", \"t\": \"" << jsonEscape(fn.returnLuxType) << "\" },\n";
+              << "\", \"t\": \"" << jsonEscape(fn.returnLucisType) << "\" },\n";
     std::cout << "  \"parameters\": [\n";
     for (size_t i = 0; i < fn.params.size(); i++) {
         auto& p = fn.params[i];
         std::cout << "    { \"name\": \"" << jsonEscape(p.name)
                   << "\", \"cType\": \"" << jsonEscape(p.cType)
-                  << "\", \"luxType\": \"" << jsonEscape(p.luxType) << "\" }";
+                  << "\", \"lucisType\": \"" << jsonEscape(p.lucisType) << "\" }";
         if (i + 1 < fn.params.size()) std::cout << ",";
         std::cout << "\n";
     }
@@ -927,7 +927,7 @@ void HelpCFormatter::printStructJson(const HelpCStruct& s,
         auto& f = s.fields[i];
         std::cout << "    { \"name\": \"" << jsonEscape(f.name)
                   << "\", \"cType\": \"" << jsonEscape(f.cType)
-                  << "\", \"luxType\": \"" << jsonEscape(f.luxType) << "\"";
+                  << "\", \"lucisType\": \"" << jsonEscape(f.lucisType) << "\"";
         if (f.offset >= 0)
             std::cout << ", \"offset\": " << f.offset;
         if (f.size >= 0)

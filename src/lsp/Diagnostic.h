@@ -18,6 +18,6 @@ struct Diagnostic {
     size_t    endCol   = 0;  // 0-based (same as col if unknown)
     Severity  severity = Error;
     std::string message;
-    std::string source = "lux";
+    std::string source = "lucis";
     std::string code;
 };

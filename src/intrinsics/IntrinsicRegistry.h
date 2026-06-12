@@ -10,7 +10,7 @@ struct TypeInfo;
 class TypeRegistry;
 
 struct IntrinsicParam {
-    std::string type;        // Lux type name: "void", "int32", "string", "_any"
+    std::string type;        // Lucis type name: "void", "int32", "string", "_any"
     bool isVariadic = false; // future: start of variadic region
 };
 

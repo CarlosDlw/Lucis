@@ -70,7 +70,7 @@ if x == 1 {
 
 ## For Loops
 
-Lux has two forms of `for` loops: C-style and for-in.
+Lucis has two forms of `for` loops: C-style and for-in.
 
 ### C-Style For Loop
 
@@ -384,7 +384,7 @@ fn main() int32 {
 // Output:
 // before throw
 // something went wrong
-// TryCatchDemo.lx
+// TryCatchDemo.lc
 // 7
 // 9
 // finally block

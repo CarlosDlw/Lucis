@@ -6,7 +6,7 @@
 #include <unordered_map>
 #include <unordered_set>
 
-#include "generated/LuxParser.h"
+#include "generated/LucisParser.h"
 #include "ffi/CBindings.h"
 #include "types/BuiltinRegistry.h"
 #include "types/TypeRegistry.h"
@@ -65,7 +65,7 @@ struct CompletionItem {
     std::string      filterText;       // controls filtering (empty = use label)
 };
 
-// Provides autocompletion for Lux source code.
+// Provides autocompletion for Lucis source code.
 class CompletionProvider {
 public:
     CompletionProvider();
@@ -125,30 +125,30 @@ private:
     // Analyze the source text around the cursor to determine context.
     CompletionRequest analyzeContext(const std::string& source,
                                     size_t line, size_t col,
-                                    LuxParser::ProgramContext* tree);
+                                    LucisParser::ProgramContext* tree);
 
     // ── Collectors ──────────────────────────────────────────────────
 
     // Add locals + params in scope at cursor position.
     void addLocals(std::vector<CompletionItem>& items,
-                   LuxParser::ProgramContext* tree, size_t cursorLine,
+                   LucisParser::ProgramContext* tree, size_t cursorLine,
                    const CBindings& bindings,
                    const std::string& prefix);
 
     // Add same-file top-level declarations (functions, structs, enums, etc).
     void addLocalDecls(std::vector<CompletionItem>& items,
-                       LuxParser::ProgramContext* tree,
+                       LucisParser::ProgramContext* tree,
                        const std::string& prefix);
 
     // Add imported symbols from `use` declarations.
     void addImportedSymbols(std::vector<CompletionItem>& items,
-                            LuxParser::ProgramContext* tree,
+                            LucisParser::ProgramContext* tree,
                             const ProjectContext* project,
                             const std::string& prefix);
 
     // Add enum variant names from `use EnumType::*;` declarations.
     void addEnumWildcardVariants(std::vector<CompletionItem>& items,
-                                 LuxParser::ProgramContext* tree,
+                                 LucisParser::ProgramContext* tree,
                                  const ProjectContext* project,
                                  const std::string& prefix,
                                  size_t cursorLine);
@@ -167,14 +167,14 @@ private:
     // Add struct fields for dot/arrow access.
     void addStructFields(std::vector<CompletionItem>& items,
                          const std::string& structName,
-                         LuxParser::ProgramContext* tree,
+                         LucisParser::ProgramContext* tree,
                          const CBindings& bindings,
                          const ProjectContext* project);
 
     // Add extend methods for dot/arrow access.
     void addExtendMethods(std::vector<CompletionItem>& items,
                           const std::string& typeName,
-                          LuxParser::ProgramContext* tree,
+                          LucisParser::ProgramContext* tree,
                           const ProjectContext* project);
 
     // Add built-in type methods (int.abs, string.len, vec.push, etc.).
@@ -185,7 +185,7 @@ private:
     // Add enum variants for scope (::) access.
     void addEnumVariants(std::vector<CompletionItem>& items,
                          const std::string& enumName,
-                         LuxParser::ProgramContext* tree,
+                         LucisParser::ProgramContext* tree,
                          const CBindings& bindings,
                          const ProjectContext* project,
                          const std::string& prefix);
@@ -193,13 +193,13 @@ private:
     // Add static methods for scope (::) access.
     void addStaticMethods(std::vector<CompletionItem>& items,
                           const std::string& typeName,
-                          LuxParser::ProgramContext* tree,
+                          LucisParser::ProgramContext* tree,
                           const ProjectContext* project,
                           const std::string& prefix);
 
     // Add type names (for type annotation positions).
     void addTypeNames(std::vector<CompletionItem>& items,
-                      LuxParser::ProgramContext* tree,
+                      LucisParser::ProgramContext* tree,
                       const CBindings& bindings,
                       const ProjectContext* project,
                       const std::string& prefix);
@@ -218,12 +218,12 @@ private:
     void addGlobalBuiltins(std::vector<CompletionItem>& items,
                             const std::string& prefix);
 
-    // Add intrinsic functions (lux::core::trap, etc.).
+    // Add intrinsic functions (lucis::core::trap, etc.).
     void addIntrinsics(std::vector<CompletionItem>& items,
                        const std::string& scopeName,
                        const std::string& prefix);
 
-    // Add the 'lux' intrinsic root in general context.
+    // Add the 'lucis' intrinsic root in general context.
     void addIntrinsicRoot(std::vector<CompletionItem>& items,
                           const std::string& prefix);
 
@@ -242,61 +242,61 @@ private:
     // Used for method chaining: x.abs().toString() → resolve return type at each step.
     std::string resolveMethodReturnType(
         const std::string& receiverType, const std::string& methodName,
-        LuxParser::ProgramContext* tree, const ProjectContext* project);
+        LucisParser::ProgramContext* tree, const ProjectContext* project);
 
     // Resolve the type of a field access on a given receiver type.
     std::string resolveFieldType(
         const std::string& receiverType, const std::string& fieldName,
-        LuxParser::ProgramContext* tree, const CBindings* bindings,
+        LucisParser::ProgramContext* tree, const CBindings* bindings,
         const ProjectContext* project);
 
     // Collect locals from a function body.
     std::unordered_map<std::string, LocalVar>
-    collectLocals(LuxParser::FunctionDeclContext* func, size_t beforeLine,
-                  LuxParser::ProgramContext* tree = nullptr,
+    collectLocals(LucisParser::FunctionDeclContext* func, size_t beforeLine,
+                  LucisParser::ProgramContext* tree = nullptr,
                   const CBindings* bindings = nullptr,
                   const ProjectContext* project = nullptr);
 
     // Collect locals from an extend method body.
     std::unordered_map<std::string, LocalVar>
-    collectLocalsFromMethod(LuxParser::ExtendMethodContext* method, size_t beforeLine);
+    collectLocalsFromMethod(LucisParser::ExtendMethodContext* method, size_t beforeLine);
 
     // Find enclosing function at a line.
-    LuxParser::FunctionDeclContext*
-    findEnclosingFunction(LuxParser::ProgramContext* tree, size_t line);
+    LucisParser::FunctionDeclContext*
+    findEnclosingFunction(LucisParser::ProgramContext* tree, size_t line);
 
     // Find enclosing extend method at a line.
-    LuxParser::ExtendMethodContext*
-    findEnclosingMethod(LuxParser::ProgramContext* tree, size_t line);
+    LucisParser::ExtendMethodContext*
+    findEnclosingMethod(LucisParser::ProgramContext* tree, size_t line);
 
     // Find struct/enum/extend declarations by name.
-    LuxParser::StructDeclContext*
-    findStructDecl(LuxParser::ProgramContext* tree, const std::string& name);
+    LucisParser::StructDeclContext*
+    findStructDecl(LucisParser::ProgramContext* tree, const std::string& name);
 
-    LuxParser::UnionDeclContext*
-    findUnionDecl(LuxParser::ProgramContext* tree, const std::string& name);
+    LucisParser::UnionDeclContext*
+    findUnionDecl(LucisParser::ProgramContext* tree, const std::string& name);
 
-    LuxParser::EnumDeclContext*
-    findEnumDecl(LuxParser::ProgramContext* tree, const std::string& name);
+    LucisParser::EnumDeclContext*
+    findEnumDecl(LucisParser::ProgramContext* tree, const std::string& name);
 
-    LuxParser::ExtendDeclContext*
-    findExtendDecl(LuxParser::ProgramContext* tree, const std::string& name);
+    LucisParser::ExtendDeclContext*
+    findExtendDecl(LucisParser::ProgramContext* tree, const std::string& name);
 
     // Infer struct type from a variable name at cursor line.
     std::string inferVarType(const std::string& varName,
-                             LuxParser::ProgramContext* tree,
+                             LucisParser::ProgramContext* tree,
                              size_t cursorLine,
                              const CBindings* bindings = nullptr,
                              const ProjectContext* project = nullptr);
 
     // Format a function signature for display.
-    static std::string formatFuncSignature(LuxParser::FunctionDeclContext* func);
+    static std::string formatFuncSignature(LucisParser::FunctionDeclContext* func);
 
     // Format an extend method signature for display.
-    static std::string formatMethodSignature(LuxParser::ExtendMethodContext* method);
+    static std::string formatMethodSignature(LucisParser::ExtendMethodContext* method);
 
     // Format a typeSpec as human-readable string.
-    static std::string typeSpecToString(LuxParser::TypeSpecContext* ts);
+    static std::string typeSpecToString(LucisParser::TypeSpecContext* ts);
 
     // Check if a string starts with a prefix (case-insensitive).
     static bool matchesPrefix(const std::string& name, const std::string& prefix);
@@ -305,5 +305,5 @@ private:
     static void dedup(std::vector<CompletionItem>& items);
 
     // Build a stable key from include declarations for C binding cache.
-    static std::string buildIncludeFingerprint(LuxParser::ProgramContext* tree);
+    static std::string buildIncludeFingerprint(LucisParser::ProgramContext* tree);
 };

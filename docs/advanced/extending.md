@@ -1,12 +1,12 @@
 # Extending the Compiler
 
-The Lux compiler is designed to be extended in three ways: adding builtin functions, creating new stdlib modules, and introducing new language features. This page walks through each process with concrete examples.
+The Lucis compiler is designed to be extended in three ways: adding builtin functions, creating new stdlib modules, and introducing new language features. This page walks through each process with concrete examples.
 
 ---
 
 ## Adding a Builtin Function
 
-A builtin function is a function that's available to Lux programs through `use std::*` imports but is implemented in C. Adding one requires changes in three places.
+A builtin function is a function that's available to Lucis programs through `use std::*` imports but is implemented in C. Adding one requires changes in three places.
 
 ### Example: `gcd(int32, int32) -> int32`
 
@@ -36,7 +36,7 @@ Create the C implementation in the builtins directory.
 **File:** `src/builtins/math/math.h`
 
 ```c
-int32_t lux_gcd(int32_t a, int32_t b);
+int32_t lucis_gcd(int32_t a, int32_t b);
 ```
 
 **File:** `src/builtins/math/math.c`
@@ -44,7 +44,7 @@ int32_t lux_gcd(int32_t a, int32_t b);
 ```c
 #include <stdint.h>
 
-int32_t lux_gcd(int32_t a, int32_t b) {
+int32_t lucis_gcd(int32_t a, int32_t b) {
     while (b != 0) {
         int32_t temp = b;
         b = a % b;
@@ -54,7 +54,7 @@ int32_t lux_gcd(int32_t a, int32_t b) {
 }
 ```
 
-All builtin C functions are prefixed with `lux_` to avoid name conflicts with system libraries.
+All builtin C functions are prefixed with `lucis_` to avoid name conflicts with system libraries.
 
 #### Step 3: Add IR Generation
 
@@ -68,13 +68,13 @@ if (funcName == "gcd") {
     auto* arg2 = std::any_cast<llvm::Value*>(visit(ctx->exprList()->expr(1)));
 
     auto* i32Ty = llvm::Type::getInt32Ty(*context_);
-    auto callee = declareBuiltin("lux_gcd", i32Ty, {i32Ty, i32Ty});
+    auto callee = declareBuiltin("lucis_gcd", i32Ty, {i32Ty, i32Ty});
 
     return builder_->CreateCall(callee, {arg1, arg2});
 }
 ```
 
-#### Step 4: Use in Lux Code
+#### Step 4: Use in Lucis Code
 
 ```
 use std::math::gcd;
@@ -88,8 +88,8 @@ fn main() int32 {
 
 **What happens at each stage:**
 1. Checker validates `gcd` exists, takes 2 `int32`, returns `int32`
-2. IRGen emits `call i32 @lux_gcd(i32 48, i32 18)`
-3. Linker resolves `lux_gcd` from the builtins static library (`liblux.a`)
+2. IRGen emits `call i32 @lucis_gcd(i32 48, i32 18)`
+3. Linker resolves `lucis_gcd` from the builtins static library (`liblucis.a`)
 
 ---
 
@@ -110,10 +110,10 @@ The special marker `_numeric` means "any numeric type." The `true` flag marks it
 Each concrete type gets its own C function:
 
 ```c
-int32_t lux_abs_i32(int32_t x) { return x < 0 ? -x : x; }
-int64_t lux_abs_i64(int64_t x) { return x < 0 ? -x : x; }
-float   lux_abs_f32(float x)   { return x < 0.0f ? -x : x; }
-double  lux_abs_f64(double x)  { return x < 0.0 ? -x : x; }
+int32_t lucis_abs_i32(int32_t x) { return x < 0 ? -x : x; }
+int64_t lucis_abs_i64(int64_t x) { return x < 0 ? -x : x; }
+float   lucis_abs_f32(float x)   { return x < 0.0f ? -x : x; }
+double  lucis_abs_f64(double x)  { return x < 0.0 ? -x : x; }
 ```
 
 ### IR Dispatch
@@ -126,7 +126,7 @@ if (funcName == "abs") {
     auto* argTypeInfo = resolveExprTypeInfo(ctx->exprList()->expr(0));
 
     std::string suffix = argTypeInfo->builtinSuffix;  // "i32", "i64", "f64"
-    std::string absFuncName = "lux_abs_" + suffix;
+    std::string absFuncName = "lucis_abs_" + suffix;
 
     auto* fnType = llvm::FunctionType::get(argVal->getType(), {argVal->getType()}, false);
     auto callee = declareBuiltin(absFuncName, fnType);
@@ -138,9 +138,9 @@ if (funcName == "abs") {
 ### Usage
 
 ```
-int32 a = abs(-42);             // calls lux_abs_i32
-int64 b = abs(-1000000i64);     // calls lux_abs_i64
-float64 c = abs(-3.14);         // calls lux_abs_f64
+int32 a = abs(-42);             // calls lucis_abs_i32
+int64 b = abs(-1000000i64);     // calls lucis_abs_i64
+float64 c = abs(-3.14);         // calls lucis_abs_f64
 ```
 
 ---
@@ -187,15 +187,15 @@ A stdlib module is a collection of related builtin functions grouped under a nam
 **File:** `src/builtins/random/random.h`
 
 ```c
-#ifndef LUX_RANDOM_H
-#define LUX_RANDOM_H
+#ifndef LUCIS_RANDOM_H
+#define LUCIS_RANDOM_H
 
 #include <stdint.h>
 
-void    lux_seed(uint32_t seed);
-int32_t lux_randInt(void);
-int64_t lux_randIntRange(int64_t min, int64_t max);
-double  lux_randFloat(void);
+void    lucis_seed(uint32_t seed);
+int32_t lucis_randInt(void);
+int64_t lucis_randIntRange(int64_t min, int64_t max);
+double  lucis_randFloat(void);
 
 #endif
 ```
@@ -206,20 +206,20 @@ double  lux_randFloat(void);
 #include "random.h"
 #include <stdlib.h>
 
-void lux_seed(uint32_t seed) {
+void lucis_seed(uint32_t seed) {
     srand(seed);
 }
 
-int32_t lux_randInt(void) {
+int32_t lucis_randInt(void) {
     return (int32_t)(rand() & 0x7FFFFFFF);
 }
 
-int64_t lux_randIntRange(int64_t min, int64_t max) {
+int64_t lucis_randIntRange(int64_t min, int64_t max) {
     if (min >= max) return min;
     return min + (rand() % (max - min));
 }
 
-double lux_randFloat(void) {
+double lucis_randFloat(void) {
     return ((double)rand()) / RAND_MAX;
 }
 ```
@@ -242,7 +242,7 @@ BuiltinRegistry::BuiltinRegistry() {
 
 The import resolver automatically picks up all functions registered in the `BuiltinRegistry`, so no extra import configuration is needed.
 
-#### Step 3: Use in Lux Code
+#### Step 3: Use in Lucis Code
 
 ```
 use std::random::{seed, randIntRange};
@@ -280,7 +280,7 @@ void ExtendedTypeRegistry::registerBuiltins() {
         { "back_idx",  "usize" },
         { "cap",       "usize" },
     };
-    deque.cPrefix = "lux_deque";
+    deque.cPrefix = "lucis_deque";
 
     // Methods
     deque.methods.push_back({ "len",       {TypeKind::Extended}, {},       "usize" });
@@ -302,8 +302,8 @@ The `_elem` marker means "same type as the generic parameter." This is resolved 
 **File:** `src/builtins/collections/deque.h`
 
 ```c
-#ifndef LUX_DEQUE_H
-#define LUX_DEQUE_H
+#ifndef LUCIS_DEQUE_H
+#define LUCIS_DEQUE_H
 
 #include <stdint.h>
 #include <stddef.h>
@@ -313,15 +313,15 @@ typedef struct {
     size_t front_idx;
     size_t back_idx;
     size_t cap;
-} lux_deque_header;
+} lucis_deque_header;
 
-void   lux_deque_init_i32(lux_deque_header* d);
-void   lux_deque_free_i32(lux_deque_header* d);
-void   lux_deque_pushBack_i32(lux_deque_header* d, int32_t val);
-void   lux_deque_pushFront_i32(lux_deque_header* d, int32_t val);
-int32_t lux_deque_popFront_i32(lux_deque_header* d);
-int32_t lux_deque_popBack_i32(lux_deque_header* d);
-size_t lux_deque_len_i32(const lux_deque_header* d);
+void   lucis_deque_init_i32(lucis_deque_header* d);
+void   lucis_deque_free_i32(lucis_deque_header* d);
+void   lucis_deque_pushBack_i32(lucis_deque_header* d, int32_t val);
+void   lucis_deque_pushFront_i32(lucis_deque_header* d, int32_t val);
+int32_t lucis_deque_popFront_i32(lucis_deque_header* d);
+int32_t lucis_deque_popBack_i32(lucis_deque_header* d);
+size_t lucis_deque_len_i32(const lucis_deque_header* d);
 // ... repeat for i64, f64, str, etc.
 
 #endif
@@ -335,7 +335,7 @@ The `ExtendedTypeRegistry` framework already handles method dispatch for any reg
 
 1. Looks up `Deque` in the extended type registry
 2. Finds the method descriptor for `pushBack`
-3. Generates the suffixed function name: `lux_deque_pushBack_i32`
+3. Generates the suffixed function name: `lucis_deque_pushBack_i32`
 4. Emits the call
 
 #### Step 4: Usage
@@ -369,7 +369,7 @@ A `while-else` executes the else block if the loop condition was false from the 
 
 #### Step 1: Update the Grammar
 
-**File:** `grammar/LuxParser.g4`
+**File:** `grammar/LucisParser.g4`
 
 ```antlr
 statement
@@ -391,7 +391,7 @@ whileElseStmt
 ```bash
 antlr4 -Dlanguage=Cpp_runtime -visitor -no-listener \
     -o src/generated/ \
-    grammar/LuxLexer.g4 grammar/LuxParser.g4
+    grammar/LucisLexer.g4 grammar/LucisParser.g4
 ```
 
 This regenerates the lexer, parser, and base visitor classes. The base visitor will have a new `visitWhileElseStmt()` method that returns a default value.
@@ -401,7 +401,7 @@ This regenerates the lexer, parser, and base visitor classes. The base visitor w
 **File:** `src/checkers/Checker.cpp`
 
 ```cpp
-std::any Checker::visitWhileElseStmt(LuxParser::WhileElseStmtContext* ctx) {
+std::any Checker::visitWhileElseStmt(LucisParser::WhileElseStmtContext* ctx) {
     auto* condTypeInfo = resolveExprTypeInfo(ctx->expr());
     if (!condTypeInfo || condTypeInfo->kind != TypeKind::Bool) {
         error(ctx, "while condition must be bool");
@@ -420,7 +420,7 @@ std::any Checker::visitWhileElseStmt(LuxParser::WhileElseStmtContext* ctx) {
 **File:** `src/IRBuilder/IRGen.cpp`
 
 ```cpp
-std::any IRGen::visitWhileElseStmt(LuxParser::WhileElseStmtContext* ctx) {
+std::any IRGen::visitWhileElseStmt(LucisParser::WhileElseStmtContext* ctx) {
     auto* func = currentFunction_;
     auto* condBB = llvm::BasicBlock::Create(*context_, "while_cond", func);
     auto* bodyBB = llvm::BasicBlock::Create(*context_, "while_body", func);
@@ -496,7 +496,7 @@ The `.requireNumeric = true` constraint makes the checker reject `vec<string>.su
 **File:** `src/builtins/collections/vec.c`
 
 ```c
-int32_t lux_vec_sum_i32(const lux_vec_header* v) {
+int32_t lucis_vec_sum_i32(const lucis_vec_header* v) {
     int32_t sum = 0;
     const int32_t* data = (const int32_t*)v->ptr;
     for (size_t i = 0; i < v->len; i++) {
@@ -518,7 +518,7 @@ if (methodName == "sum") {
     auto* recvTypeInfo = resolveExprTypeInfo(ctx->expr());
     auto* elemTypeInfo = recvTypeInfo->elementType;
 
-    std::string sumFn = "lux_vec_sum_" + elemTypeInfo->builtinSuffix;
+    std::string sumFn = "lucis_vec_sum_" + elemTypeInfo->builtinSuffix;
     auto* elemLLVMTy = elemTypeInfo->toLLVMType(*context_, dl);
     auto callee = declareBuiltin(sumFn, elemLLVMTy, {ptrTy});
 
@@ -545,16 +545,16 @@ fn main() int32 {
 The compiler follows several principles that keep extensions consistent:
 
 **C Runtime, T Wrapper:**
-All core logic is implemented in C for portability and performance. Lux provides nicer syntax on top. C functions are always prefixed with `lux_`.
+All core logic is implemented in C for portability and performance. Lucis provides nicer syntax on top. C functions are always prefixed with `lucis_`.
 
 **Monomorphization:**
-Generic types generate type-specific C functions. `vec<int32>` uses `lux_vec_push_i32`, `vec<string>` uses `lux_vec_push_str`. This trades binary size for type safety and performance (no runtime dispatch).
+Generic types generate type-specific C functions. `vec<int32>` uses `lucis_vec_push_i32`, `vec<string>` uses `lucis_vec_push_str`. This trades binary size for type safety and performance (no runtime dispatch).
 
 **Registry Pattern:**
 All extensions register in central registries (`BuiltinRegistry`, `ExtendedTypeRegistry`, `TypeRegistry`). The checker and IR generator query these registries rather than hardcoding knowledge of specific types or functions. This makes adding new features non-invasive.
 
 **Cleanup Semantics:**
-Every collection type must register a `free` method. The auto-cleanup system scans locals at function exit and emits the appropriate `lux_{type}_free_{suffix}()` call. Defer handles explicit ordering.
+Every collection type must register a `free` method. The auto-cleanup system scans locals at function exit and emits the appropriate `lucis_{type}_free_{suffix}()` call. Defer handles explicit ordering.
 
 ---
 
@@ -564,11 +564,11 @@ Every collection type must register a `free` method. The auto-cleanup system sca
 - [ ] Register in `BuiltinRegistry` (name, return type, param types)
 - [ ] Implement C function in `src/builtins/` (header + source)
 - [ ] Add IR generation in `IRGen::visitFnCallExpr()`
-- [ ] Test with sample Lux code
+- [ ] Test with sample Lucis code
 
 ### Adding a Stdlib Module
 - [ ] Create module directory `src/builtins/modulename/`
-- [ ] Implement all functions in C (with `lux_` prefix)
+- [ ] Implement all functions in C (with `lucis_` prefix)
 - [ ] Register all functions in `BuiltinRegistry`
 - [ ] Test with `use std::modulename::*` imports
 
@@ -579,7 +579,7 @@ Every collection type must register a `free` method. The auto-cleanup system sca
 - [ ] Test monomorphization with multiple concrete types
 
 ### Adding a Language Feature
-- [ ] Update grammar (`LuxParser.g4` and/or `LuxLexer.g4`)
+- [ ] Update grammar (`LucisParser.g4` and/or `LucisLexer.g4`)
 - [ ] Regenerate parser with ANTLR4
 - [ ] Add type checking in `Checker`
 - [ ] Add IR generation in `IRGen`

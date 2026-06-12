@@ -8,7 +8,7 @@
 #include "lsp/Diagnostic.h"
 
 // Silences the default ANTLR error output and reformats syntax errors
-// to match the lux diagnostic style:  lux: <line>:<col>: <message>
+// to match the lucis diagnostic style:  lucis: <line>:<col>: <message>
 //
 // Two modes:
 //   - Default (collectMode_ = false): prints to stderr (CLI usage)
@@ -46,7 +46,7 @@ public:
             d.message  = clean;
             collected_.push_back(std::move(d));
         } else {
-            std::cerr << "lux: " << line << ":" << charPositionInLine
+            std::cerr << "lucis: " << line << ":" << charPositionInLine
                       << ": " << clean << "\n";
         }
     }

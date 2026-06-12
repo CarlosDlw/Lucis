@@ -18,22 +18,22 @@ int HelpCommand::run(const ArgParser& parser) {
     // Show help for a specific command
     for (auto* c : commands_) {
         if (c->name() == cmd) {
-            ArgParser cmdParser("lux " + c->name(), c->description());
+            ArgParser cmdParser("lucis " + c->name(), c->description());
             c->buildArgs(cmdParser);
             cmdParser.printHelp();
             return 0;
         }
     }
 
-    std::cerr << "lux: unknown command '" << cmd << "'\n";
-    std::cerr << "Run 'lux help' for usage.\n";
+    std::cerr << "lucis: unknown command '" << cmd << "'\n";
+    std::cerr << "Run 'lucis help' for usage.\n";
     return 1;
 }
 
 void HelpCommand::printGeneralHelp() const {
-    std::cout << "lux — The Lux compiler\n\n"
+    std::cout << "lucis — The Lucis compiler\n\n"
               << "Usage:\n"
-              << "  lux <command> [args...]\n\n"
+              << "  lucis <command> [args...]\n\n"
               << "Commands:\n";
 
     for (auto* c : commands_) {
@@ -44,11 +44,11 @@ void HelpCommand::printGeneralHelp() const {
     }
 
     std::cout << "\nExamples:\n"
-              << "  lux build main.lx -o ./main -O2\n"
-              << "  lux build main.lx --emit-llvm\n"
-              << "  lux run main.lx\n"
-              << "  lux check main.lx\n"
-              << "  lux test\n"
-              << "  lux help build\n"
-              << "  lux helpc raylib InitWindow\n";
+              << "  lucis build main.lc -o ./main -O2\n"
+              << "  lucis build main.lc --emit-llvm\n"
+              << "  lucis run main.lc\n"
+              << "  lucis check main.lc\n"
+              << "  lucis test\n"
+              << "  lucis help build\n"
+              << "  lucis helpc raylib InitWindow\n";
 }

@@ -11,7 +11,7 @@
 // hashString — FNV-1a hash of a string
 // ═══════════════════════════════════════════════════════════════════════════════
 
-uint64_t lux_hashString(const char* data, size_t len) {
+uint64_t lucis_hashString(const char* data, size_t len) {
     uint64_t hash = FNV_OFFSET_BASIS;
     for (size_t i = 0; i < len; i++) {
         hash ^= (uint8_t)data[i];
@@ -24,7 +24,7 @@ uint64_t lux_hashString(const char* data, size_t len) {
 // hashInt — splitmix64-style integer hash
 // ═══════════════════════════════════════════════════════════════════════════════
 
-uint64_t lux_hashInt(int64_t value) {
+uint64_t lucis_hashInt(int64_t value) {
     uint64_t x = (uint64_t)value;
     x ^= x >> 30;
     x *= 0xbf58476d1ce4e5b9ULL;
@@ -38,7 +38,7 @@ uint64_t lux_hashInt(int64_t value) {
 // hashCombine — boost-style hash combining
 // ═══════════════════════════════════════════════════════════════════════════════
 
-uint64_t lux_hashCombine(uint64_t h1, uint64_t h2) {
+uint64_t lucis_hashCombine(uint64_t h1, uint64_t h2) {
     h1 ^= h2 + 0x9e3779b97f4a7c15ULL + (h1 << 12) + (h1 >> 4);
     return h1;
 }
@@ -47,11 +47,11 @@ uint64_t lux_hashCombine(uint64_t h1, uint64_t h2) {
 // Vec-based hashing
 // ═══════════════════════════════════════════════════════════════════════════════
 
-uint64_t lux_hashBytesVec(const lux_hash_vec_header* data) {
-    return lux_hashString((const char*)data->ptr, data->len);
+uint64_t lucis_hashBytesVec(const lucis_hash_vec_header* data) {
+    return lucis_hashString((const char*)data->ptr, data->len);
 }
 
-uint32_t lux_crc32Bytes(const lux_hash_vec_header* data) {
+uint32_t lucis_crc32Bytes(const lucis_hash_vec_header* data) {
     static uint32_t table[256];
     static int inited = 0;
     if (!inited) {

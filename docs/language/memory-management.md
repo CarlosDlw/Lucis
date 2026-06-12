@@ -57,7 +57,7 @@ Structural blocks are special block constructs for scope isolation, code injecti
 
 A pair of braces creates a new lexical scope. Variables declared inside are not visible outside.
 
-```lux
+```lucis
 fn main() int32 {
     int32 x = 1;
     {
@@ -78,7 +78,7 @@ Use naked blocks to limit variable lifetime or to avoid name collisions.
 
 `#inline {}` injects the block's body into the enclosing scope. Variables declared inside become visible in the surrounding scope, as if written inline. This is useful for grouping logically related setup code without introducing a new scope.
 
-```lux
+```lucis
 fn main() int32 {
     #inline {
         int32 result = compute();
@@ -98,7 +98,7 @@ fn main() int32 {
 
 `#scope (callbacks...) {}` registers one or more cleanup callbacks that run automatically when the block exits, in **LIFO order**. This enables RAII-style resource management scoped to a block rather than a full function.
 
-```lux
+```lucis
 #include <raylib.h>
 
 fn main() int32 {
@@ -119,7 +119,7 @@ fn main() int32 {
 
 Multiple callbacks run in reverse order (LIFO):
 
-```lux
+```lucis
 #scope (releaseB(), releaseA()) {
     acquireA();
     acquireB();
@@ -134,7 +134,7 @@ Multiple callbacks run in reverse order (LIFO):
 
 ## Strings, Ownership, and `freeStr`
 
-Lux `string` values are not all equivalent from a lifetime perspective.
+Lucis `string` values are not all equivalent from a lifetime perspective.
 
 - String literals like `"hello"` do not need `freeStr`.
 - Borrowed strings such as `Error.message` do not need `freeStr` by themselves.
@@ -146,9 +146,9 @@ Common sources of owned strings:
 - `sprintf(...)`
 - string transformation methods that return a new `string`, such as `toUpper()`, `toLower()`, `trim()`, `reverse()`, `capitalize()`, `replace()`, `substring()`, `slice()`, `concat()`, and similar APIs that produce a fresh buffer
 
-In most cases, if you store the result in a local variable, Lux will auto-drop it at scope exit:
+In most cases, if you store the result in a local variable, Lucis will auto-drop it at scope exit:
 
-```lux
+```lucis
 use std::log::{ println };
 
 fn main() int32 {
@@ -160,7 +160,7 @@ fn main() int32 {
 
 Use `freeStr` only when you need an early/manual release (before scope exit):
 
-```lux
+```lucis
 use std::log::{ println };
 
 fn main() int32 {
@@ -350,7 +350,7 @@ extern void free(*void ptr);
 
 ## Ownership Model (Current)
 
-Lux now treats heap-backed values (`string`, `vec`, `map`, `set`) as ownership-tracked values.
+Lucis now treats heap-backed values (`string`, `vec`, `map`, `set`) as ownership-tracked values.
 
 - Assignments and returns can transfer ownership.
 - Using a value after it is moved triggers diagnostics (`use-after-move` / `double-move`).

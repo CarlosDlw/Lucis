@@ -9,15 +9,15 @@ ParseResult Parser::parse(const std::string& filePath) {
 
     std::ifstream file(filePath);
     if (!file.is_open()) {
-        std::cerr << "lux: cannot open file '" << filePath << "'\n";
+        std::cerr << "lucis: cannot open file '" << filePath << "'\n";
         result.hasErrors = true;
         return result;
     }
 
     result.input  = std::make_unique<antlr4::ANTLRInputStream>(file);
-    result.lexer  = std::make_unique<LuxLexer>(result.input.get());
+    result.lexer  = std::make_unique<LucisLexer>(result.input.get());
     result.tokens = std::make_unique<antlr4::CommonTokenStream>(result.lexer.get());
-    result.parser = std::make_unique<LuxParser>(result.tokens.get());
+    result.parser = std::make_unique<LucisParser>(result.tokens.get());
 
     // Replace ANTLR's default stderr output with our formatted diagnostics
     static DiagnosticErrorListener errorListener;
@@ -41,11 +41,11 @@ void Parser::fixContextualKeywords(antlr4::CommonTokenStream* tokens) {
     auto allTokens = tokens->getTokens();
     for (size_t i = 1; i < allTokens.size(); i++) {
         auto* curr = allTokens[i];
-        if (curr->getType() != LuxLexer::TYPE) continue;
+        if (curr->getType() != LucisLexer::TYPE) continue;
         auto* prev = allTokens[i - 1];
-        if (prev->getType() == LuxLexer::DOT || prev->getType() == LuxLexer::ARROW) {
+        if (prev->getType() == LucisLexer::DOT || prev->getType() == LucisLexer::ARROW) {
             if (auto* w = dynamic_cast<antlr4::WritableToken*>(curr)) {
-                w->setType(LuxLexer::IDENTIFIER);
+                w->setType(LucisLexer::IDENTIFIER);
             }
         }
     }
@@ -55,9 +55,9 @@ ParseResult Parser::parseString(const std::string& source) {
     ParseResult result;
 
     result.input  = std::make_unique<antlr4::ANTLRInputStream>(source);
-    result.lexer  = std::make_unique<LuxLexer>(result.input.get());
+    result.lexer  = std::make_unique<LucisLexer>(result.input.get());
     result.tokens = std::make_unique<antlr4::CommonTokenStream>(result.lexer.get());
-    result.parser = std::make_unique<LuxParser>(result.tokens.get());
+    result.parser = std::make_unique<LucisParser>(result.tokens.get());
 
     fixContextualKeywords(result.tokens.get());
 

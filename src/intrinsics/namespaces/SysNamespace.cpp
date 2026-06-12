@@ -31,8 +31,8 @@ void registerSysNamespace(IntrinsicRegistry& reg, TypeRegistry& typeReg) {
         fn.description =
             "Copies n bytes from src memory to dst memory.\n"
             "The source and destination regions must not overlap.\n\n"
-            "```lux\n"
-            "lux::sys::memcpy(dst, src, 16);\n"
+            "```lucis\n"
+            "lucis::sys::memcpy(dst, src, 16);\n"
             "```";
 
         fn.lowering.kind = IntrinsicFunction::Lowering::InlineIR;
@@ -66,8 +66,8 @@ void registerSysNamespace(IntrinsicRegistry& reg, TypeRegistry& typeReg) {
         fn.description =
             "Copies n bytes from src memory to dst memory.\n"
             "The source and destination regions may overlap.\n\n"
-            "```lux\n"
-            "lux::sys::memmove(dst, src, 16);\n"
+            "```lucis\n"
+            "lucis::sys::memmove(dst, src, 16);\n"
             "```";
 
         fn.lowering.kind = IntrinsicFunction::Lowering::InlineIR;
@@ -100,8 +100,8 @@ void registerSysNamespace(IntrinsicRegistry& reg, TypeRegistry& typeReg) {
         fn.params.push_back({"_any", false});
         fn.description =
             "Sets n bytes at dst memory to byte value val.\n\n"
-            "```lux\n"
-            "lux::sys::memset(dst, 0, 16);\n"
+            "```lucis\n"
+            "lucis::sys::memset(dst, 0, 16);\n"
             "```";
 
         fn.lowering.kind = IntrinsicFunction::Lowering::InlineIR;
@@ -136,8 +136,8 @@ void registerSysNamespace(IntrinsicRegistry& reg, TypeRegistry& typeReg) {
         fn.description =
             "Performs a volatile load of type T from the given pointer.\n"
             "The compiler will not optimize away repeated loads.\n\n"
-            "```lux\n"
-            "int32 val = lux::sys::volatile_load<int32>(ptr);\n"
+            "```lucis\n"
+            "int32 val = lucis::sys::volatile_load<int32>(ptr);\n"
             "```";
 
         fn.lowering.kind = IntrinsicFunction::Lowering::InlineIR;
@@ -170,8 +170,8 @@ void registerSysNamespace(IntrinsicRegistry& reg, TypeRegistry& typeReg) {
         fn.description =
             "Performs a volatile store of a value of type T to the given pointer.\n"
             "The compiler will not optimize away the store.\n\n"
-            "```lux\n"
-            "lux::sys::volatile_store<int32>(ptr, val);\n"
+            "```lucis\n"
+            "lucis::sys::volatile_store<int32>(ptr, val);\n"
             "```";
 
         fn.lowering.kind = IntrinsicFunction::Lowering::InlineIR;
@@ -225,24 +225,24 @@ void registerSysNamespace(IntrinsicRegistry& reg, TypeRegistry& typeReg) {
         llvm::Intrinsic::bitreverse,
         "Reverses the bit pattern of an integer value.\n"
         "Every bit position is mirrored: bit 0 ↔ bit N-1.\n\n"
-        "```lux\n"
-        "int32 rev = lux::sys::bitreverse<int32>(x);\n"
+        "```lucis\n"
+        "int32 rev = lucis::sys::bitreverse<int32>(x);\n"
         "```"));
 
     sys.functions.push_back(makeBitOp("bswap",
         llvm::Intrinsic::bswap,
         "Reverses the byte order of an integer value.\n"
         "The value must have a byte-swapped form (16, 32, 64, or 128 bits).\n\n"
-        "```lux\n"
-        "int32 swapped = lux::sys::bswap<int32>(x);\n"
+        "```lucis\n"
+        "int32 swapped = lucis::sys::bswap<int32>(x);\n"
         "```"));
 
     sys.functions.push_back(makeBitOp("ctpop",
         llvm::Intrinsic::ctpop,
         "Counts the number of set (1) bits in an integer value.\n"
         "Also known as population count.\n\n"
-        "```lux\n"
-        "int32 ones = lux::sys::ctpop<int32>(x);\n"
+        "```lucis\n"
+        "int32 ones = lucis::sys::ctpop<int32>(x);\n"
         "```"));
 
     // ctlz/cttz need a second arg (is_zero_undef = false → defined at zero)
@@ -280,16 +280,16 @@ void registerSysNamespace(IntrinsicRegistry& reg, TypeRegistry& typeReg) {
         llvm::Intrinsic::ctlz,
         "Counts the number of leading zero bits in an integer value.\n"
         "If the value is zero, the result is the bit width of the type.\n\n"
-        "```lux\n"
-        "int32 lz = lux::sys::ctlz<int32>(x);\n"
+        "```lucis\n"
+        "int32 lz = lucis::sys::ctlz<int32>(x);\n"
         "```"));
 
     sys.functions.push_back(makeBitOpWithBool("cttz",
         llvm::Intrinsic::cttz,
         "Counts the number of trailing zero bits in an integer value.\n"
         "If the value is zero, the result is the bit width of the type.\n\n"
-        "```lux\n"
-        "int32 tz = lux::sys::cttz<int32>(x);\n"
+        "```lucis\n"
+        "int32 tz = lucis::sys::cttz<int32>(x);\n"
         "```"));
 
     // ── Arithmetic with overflow (LLVM intrinsics) ───────────────
@@ -334,9 +334,9 @@ void registerSysNamespace(IntrinsicRegistry& reg, TypeRegistry& typeReg) {
         "Signed integer addition with overflow detection.\n"
         "Returns true if the result overflowed.\n"
         "The result is written through the third argument.\n\n"
-        "```lux\n"
+        "```lucis\n"
         "int32 result;\n"
-        "bool overflow = lux::sys::sadd_with_overflow<int32>(a, b, &result);\n"
+        "bool overflow = lucis::sys::sadd_with_overflow<int32>(a, b, &result);\n"
         "```"));
 
     sys.functions.push_back(makeOverflowOp("uadd_with_overflow",
@@ -344,9 +344,9 @@ void registerSysNamespace(IntrinsicRegistry& reg, TypeRegistry& typeReg) {
         "Unsigned integer addition with overflow detection.\n"
         "Returns true if the result overflowed.\n"
         "The result is written through the third argument.\n\n"
-        "```lux\n"
+        "```lucis\n"
         "uint32 result;\n"
-        "bool overflow = lux::sys::uadd_with_overflow<uint32>(a, b, &result);\n"
+        "bool overflow = lucis::sys::uadd_with_overflow<uint32>(a, b, &result);\n"
         "```"));
 
     sys.functions.push_back(makeOverflowOp("ssub_with_overflow",
@@ -354,9 +354,9 @@ void registerSysNamespace(IntrinsicRegistry& reg, TypeRegistry& typeReg) {
         "Signed integer subtraction with overflow detection.\n"
         "Returns true if the result overflowed.\n"
         "The result is written through the third argument.\n\n"
-        "```lux\n"
+        "```lucis\n"
         "int32 result;\n"
-        "bool overflow = lux::sys::ssub_with_overflow<int32>(a, b, &result);\n"
+        "bool overflow = lucis::sys::ssub_with_overflow<int32>(a, b, &result);\n"
         "```"));
 
     sys.functions.push_back(makeOverflowOp("usub_with_overflow",
@@ -364,9 +364,9 @@ void registerSysNamespace(IntrinsicRegistry& reg, TypeRegistry& typeReg) {
         "Unsigned integer subtraction with overflow detection.\n"
         "Returns true if the result overflowed.\n"
         "The result is written through the third argument.\n\n"
-        "```lux\n"
+        "```lucis\n"
         "uint32 result;\n"
-        "bool overflow = lux::sys::usub_with_overflow<uint32>(a, b, &result);\n"
+        "bool overflow = lucis::sys::usub_with_overflow<uint32>(a, b, &result);\n"
         "```"));
 
     sys.functions.push_back(makeOverflowOp("smul_with_overflow",
@@ -374,9 +374,9 @@ void registerSysNamespace(IntrinsicRegistry& reg, TypeRegistry& typeReg) {
         "Signed integer multiplication with overflow detection.\n"
         "Returns true if the result overflowed.\n"
         "The result is written through the third argument.\n\n"
-        "```lux\n"
+        "```lucis\n"
         "int32 result;\n"
-        "bool overflow = lux::sys::smul_with_overflow<int32>(a, b, &result);\n"
+        "bool overflow = lucis::sys::smul_with_overflow<int32>(a, b, &result);\n"
         "```"));
 
     sys.functions.push_back(makeOverflowOp("umul_with_overflow",
@@ -384,9 +384,9 @@ void registerSysNamespace(IntrinsicRegistry& reg, TypeRegistry& typeReg) {
         "Unsigned integer multiplication with overflow detection.\n"
         "Returns true if the result overflowed.\n"
         "The result is written through the third argument.\n\n"
-        "```lux\n"
+        "```lucis\n"
         "uint32 result;\n"
-        "bool overflow = lux::sys::umul_with_overflow<uint32>(a, b, &result);\n"
+        "bool overflow = lucis::sys::umul_with_overflow<uint32>(a, b, &result);\n"
         "```"));
 
     // ── Stack / frame intrinsics ────────────────────────────────
@@ -399,8 +399,8 @@ void registerSysNamespace(IntrinsicRegistry& reg, TypeRegistry& typeReg) {
         fn.description =
             "Returns the frame pointer address at the given stack level.\n"
             "Level 0 is the current function's frame.\n\n"
-            "```lux\n"
-            "usize fp = lux::sys::frame_address(0);\n"
+            "```lucis\n"
+            "usize fp = lucis::sys::frame_address(0);\n"
             "```";
 
         fn.lowering.kind = IntrinsicFunction::Lowering::InlineIR;
@@ -432,8 +432,8 @@ void registerSysNamespace(IntrinsicRegistry& reg, TypeRegistry& typeReg) {
         fn.description =
             "Returns the return address at the given stack level.\n"
             "Level 0 is the current function's return address.\n\n"
-            "```lux\n"
-            "usize ra = lux::sys::return_address(0);\n"
+            "```lucis\n"
+            "usize ra = lucis::sys::return_address(0);\n"
             "```";
 
         fn.lowering.kind = IntrinsicFunction::Lowering::InlineIR;
@@ -464,8 +464,8 @@ void registerSysNamespace(IntrinsicRegistry& reg, TypeRegistry& typeReg) {
         fn.description =
             "Saves the current stack pointer.\n"
             "Used with stack_restore to implement alloca-free dynamic stack frames.\n\n"
-            "```lux\n"
-            "usize sp = lux::sys::stack_save();\n"
+            "```lucis\n"
+            "usize sp = lucis::sys::stack_save();\n"
             "```";
 
         fn.lowering.kind = IntrinsicFunction::Lowering::InlineIR;
@@ -497,8 +497,8 @@ void registerSysNamespace(IntrinsicRegistry& reg, TypeRegistry& typeReg) {
         fn.description =
             "Restores the stack pointer to a previously saved value.\n"
             "Used with stack_save to implement alloca-free dynamic stack frames.\n\n"
-            "```lux\n"
-            "lux::sys::stack_restore(sp);\n"
+            "```lucis\n"
+            "lucis::sys::stack_restore(sp);\n"
             "```";
 
         fn.lowering.kind = IntrinsicFunction::Lowering::InlineIR;
@@ -550,8 +550,8 @@ void registerSysNamespace(IntrinsicRegistry& reg, TypeRegistry& typeReg) {
         "Memory fence with acquire semantics.\n"
         "All loads and stores after this fence will not be reordered "
         "before it.\n\n"
-        "```lux\n"
-        "lux::sys::fence_acquire();\n"
+        "```lucis\n"
+        "lucis::sys::fence_acquire();\n"
         "```"));
 
     sys.functions.push_back(makeFence("fence_release",
@@ -559,24 +559,24 @@ void registerSysNamespace(IntrinsicRegistry& reg, TypeRegistry& typeReg) {
         "Memory fence with release semantics.\n"
         "All loads and stores before this fence will not be reordered "
         "after it.\n\n"
-        "```lux\n"
-        "lux::sys::fence_release();\n"
+        "```lucis\n"
+        "lucis::sys::fence_release();\n"
         "```"));
 
     sys.functions.push_back(makeFence("fence_acq_rel",
         llvm::AtomicOrdering::AcquireRelease,
         "Memory fence with acquire-release semantics.\n"
         "Combines acquire and release barriers.\n\n"
-        "```lux\n"
-        "lux::sys::fence_acq_rel();\n"
+        "```lucis\n"
+        "lucis::sys::fence_acq_rel();\n"
         "```"));
 
     sys.functions.push_back(makeFence("fence_seq_cst",
         llvm::AtomicOrdering::SequentiallyConsistent,
         "Memory fence with sequentially-consistent semantics.\n"
         "The strongest fence — establishes a single total order.\n\n"
-        "```lux\n"
-        "lux::sys::fence_seq_cst();\n"
+        "```lucis\n"
+        "lucis::sys::fence_seq_cst();\n"
         "```"));
 
     // ── Prefetch intrinsics ──────────────────────────────────────
@@ -615,16 +615,16 @@ void registerSysNamespace(IntrinsicRegistry& reg, TypeRegistry& typeReg) {
         "Prefetches data from memory for reading.\n"
         "addr must be a pointer. locality: 0 (no temporal reuse), "
         "1-3 (increasing persistence).\n\n"
-        "```lux\n"
-        "lux::sys::prefetch_read(&data, 3);\n"
+        "```lucis\n"
+        "lucis::sys::prefetch_read(&data, 3);\n"
         "```"));
 
     sys.functions.push_back(makePrefetch("prefetch_write", 1,
         "Prefetches data from memory for writing.\n"
         "addr must be a pointer. locality: 0 (no temporal reuse), "
         "1-3 (increasing persistence).\n\n"
-        "```lux\n"
-        "lux::sys::prefetch_write(&data, 3);\n"
+        "```lucis\n"
+        "lucis::sys::prefetch_write(&data, 3);\n"
         "```"));
 
     // ── CPU intrinsics ───────────────────────────────────────────
@@ -638,9 +638,9 @@ void registerSysNamespace(IntrinsicRegistry& reg, TypeRegistry& typeReg) {
             "Triggers a debugger breakpoint.\n"
             "Execution pauses if a debugger is attached; otherwise "
             "the instruction may be ignored.\n"
-            "Unlike lux::core::trap(), execution continues after the breakpoint.\n\n"
-            "```lux\n"
-            "lux::sys::breakpoint();\n"
+            "Unlike lucis::core::trap(), execution continues after the breakpoint.\n\n"
+            "```lucis\n"
+            "lucis::sys::breakpoint();\n"
             "```";
 
         fn.lowering.kind = IntrinsicFunction::Lowering::InlineIR;
@@ -670,8 +670,8 @@ void registerSysNamespace(IntrinsicRegistry& reg, TypeRegistry& typeReg) {
             "Reads the current CPU cycle counter.\n"
             "On x86_64 this is `rdtsc`, on AArch64 `mrs cntvct_el0`.\n"
             "The result is a 64-bit monotonically-increasing counter.\n\n"
-            "```lux\n"
-            "u64 start = lux::sys::read_cycle_counter();\n"
+            "```lucis\n"
+            "u64 start = lucis::sys::read_cycle_counter();\n"
             "```";
 
         fn.lowering.kind = IntrinsicFunction::Lowering::InlineIR;
@@ -700,8 +700,8 @@ void registerSysNamespace(IntrinsicRegistry& reg, TypeRegistry& typeReg) {
             "Hints the CPU that the current thread is in a spin-wait loop.\n"
             "On x86_64 this emits `pause`; on AArch64 `yield`.\n"
             "Improves performance and power efficiency of spinlocks.\n\n"
-            "```lux\n"
-            "lux::sys::cpu_relax();\n"
+            "```lucis\n"
+            "lucis::sys::cpu_relax();\n"
             "```";
 
         fn.lowering.kind = IntrinsicFunction::Lowering::InlineIR;
@@ -743,8 +743,8 @@ void registerSysNamespace(IntrinsicRegistry& reg, TypeRegistry& typeReg) {
             "Returns the syscall return value (rax on x86_64).\n"
             "Target-dependent: x86_64 `syscall`, AArch64 `svc #0`, "
             "RISC-V `ecall`.\n\n"
-            "```lux\n"
-            "int64 ret = lux::sys::" + fnName + "(" +
+            "```lucis\n"
+            "int64 ret = lucis::sys::" + fnName + "(" +
             std::to_string(numArgs == 0 ? 0 : 0) +
             (numArgs >= 1 ? ", arg1" : "") +
             (numArgs >= 2 ? ", arg2" : "") +

@@ -1,6 +1,6 @@
-# The Lux Language
+# The Lucis Language
 
-Lux is a compiled systems programming language that targets LLVM IR. It combines the performance and control of C with modern syntax, a rich standard library, and native C interoperability.
+Lucis is a compiled systems programming language that targets LLVM IR. It combines the performance and control of C with modern syntax, a rich standard library, and native C interoperability.
 
 ```
 use std::log::println;
@@ -15,10 +15,10 @@ fn main() int32 {
 
 ## Getting Started
 
-Learn how to install, configure, and write your first Lux program.
+Learn how to install, configure, and write your first Lucis program.
 
 - [Installation](getting-started/installation.md) — Build the compiler from source
-- [Hello World](getting-started/hello-world.md) — Your first Lux program, step by step
+- [Hello World](getting-started/hello-world.md) — Your first Lucis program, step by step
 - [Editor Setup](getting-started/editor-setup.md) — Syntax highlighting and tooling (planned)
 - [CLI Usage](getting-started/cli-usage.md) — Compiler flags, options, and output modes
 
@@ -80,7 +80,7 @@ The complete guide to T's syntax and semantics, from basics to advanced features
 
 ## Standard Library
 
-Lux's standard library provides modules for I/O, math, strings, file system, networking, and more.
+Lucis's standard library provides modules for I/O, math, strings, file system, networking, and more.
 
 - [Overview](stdlib/overview.md) — How the stdlib is organized and how to import
 
@@ -150,7 +150,7 @@ Lux's standard library provides modules for I/O, math, strings, file system, net
 
 ## C Interoperability (FFI)
 
-Lux has first-class support for calling C libraries and linking with native code.
+Lucis has first-class support for calling C libraries and linking with native code.
 
 - [Overview](ffi/overview.md) — How FFI works in T
 - [Calling C Functions](ffi/calling-c.md) — `extern` declarations and `#include` directives

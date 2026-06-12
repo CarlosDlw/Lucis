@@ -2,9 +2,9 @@ build/
 build-asan/
 .cache/
 *.vsix
-.lux/
-.luxbuild/
-.luxcache
+.lucis/
+.lucisbuild/
+.luciscache
 *.o
 errors/
 node_modules/

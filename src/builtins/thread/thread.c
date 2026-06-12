@@ -6,19 +6,19 @@
 
 /* ── Task implementation ───────────────────────────────────────────────── */
 
-struct lux_Task {
+struct lucis_Task {
     pthread_t thread;
     void*     result;
     int       completed;
 };
 
-lux_Task* lux_taskCreate(void* (*fn)(void*), void* arg) {
-    lux_Task* t = (lux_Task*)calloc(1, sizeof(lux_Task));
+lucis_Task* lucis_taskCreate(void* (*fn)(void*), void* arg) {
+    lucis_Task* t = (lucis_Task*)calloc(1, sizeof(lucis_Task));
     pthread_create(&t->thread, NULL, fn, arg);
     return t;
 }
 
-void* lux_taskAwait(lux_Task* task) {
+void* lucis_taskAwait(lucis_Task* task) {
     if (!task) return NULL;
     if (!task->completed) {
         void* retval;
@@ -29,36 +29,36 @@ void* lux_taskAwait(lux_Task* task) {
     return task->result;
 }
 
-void lux_taskFree(lux_Task* task) {
+void lucis_taskFree(lucis_Task* task) {
     if (task) free(task);
 }
 
 /* ── Mutex implementation ──────────────────────────────────────────────── */
 
-struct lux_Mutex {
+struct lucis_Mutex {
     pthread_mutex_t mtx;
 };
 
-lux_Mutex* lux_mutexCreate(void) {
-    lux_Mutex* m = (lux_Mutex*)malloc(sizeof(lux_Mutex));
+lucis_Mutex* lucis_mutexCreate(void) {
+    lucis_Mutex* m = (lucis_Mutex*)malloc(sizeof(lucis_Mutex));
     pthread_mutex_init(&m->mtx, NULL);
     return m;
 }
 
-void lux_mutexLock(lux_Mutex* m) {
+void lucis_mutexLock(lucis_Mutex* m) {
     if (m) pthread_mutex_lock(&m->mtx);
 }
 
-void lux_mutexUnlock(lux_Mutex* m) {
+void lucis_mutexUnlock(lucis_Mutex* m) {
     if (m) pthread_mutex_unlock(&m->mtx);
 }
 
-int32_t lux_mutexTryLock(lux_Mutex* m) {
+int32_t lucis_mutexTryLock(lucis_Mutex* m) {
     if (!m) return 0;
     return pthread_mutex_trylock(&m->mtx) == 0 ? 1 : 0;
 }
 
-void lux_mutexFree(lux_Mutex* m) {
+void lucis_mutexFree(lucis_Mutex* m) {
     if (m) {
         pthread_mutex_destroy(&m->mtx);
         free(m);
@@ -67,15 +67,15 @@ void lux_mutexFree(lux_Mutex* m) {
 
 /* ── Utilities ─────────────────────────────────────────────────────────── */
 
-uint32_t lux_cpuCount(void) {
+uint32_t lucis_cpuCount(void) {
     long n = sysconf(_SC_NPROCESSORS_ONLN);
     return n > 0 ? (uint32_t)n : 1;
 }
 
-uint64_t lux_threadId(void) {
+uint64_t lucis_threadId(void) {
     return (uint64_t)pthread_self();
 }
 
-void lux_yield(void) {
+void lucis_yield(void) {
     sched_yield();
 }

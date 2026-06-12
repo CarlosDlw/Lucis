@@ -7,7 +7,7 @@
 
 void NamespaceRegistry::registerFile(const std::string& namespaceName,
                                       const std::string& filePath,
-                                      LuxParser::ProgramContext* tree) {
+                                      LucisParser::ProgramContext* tree) {
     auto& symbols = namespaces_[namespaceName];
 
     for (auto* topLevel : tree->topLevelDecl()) {

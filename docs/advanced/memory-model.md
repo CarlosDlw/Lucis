@@ -1,6 +1,6 @@
 # Memory Model
 
-Lux uses a straightforward memory model: local variables live on the stack, heap-backed values (`string`, `vec`, `map`, `set`) allocate dynamic storage when needed, and cleanup is handled through explicit `defer` plus automatic scope-based cleanup. There is no garbage collector.
+Lucis uses a straightforward memory model: local variables live on the stack, heap-backed values (`string`, `vec`, `map`, `set`) allocate dynamic storage when needed, and cleanup is handled through explicit `defer` plus automatic scope-based cleanup. There is no garbage collector.
 
 This page explains how each part works and what the compiler does behind the scenes.
 
@@ -252,11 +252,11 @@ Before return and at block/control-flow scope exits, after deferred cleanups whe
 
 | Type | Cleanup function called |
 |------|-------------------------|
-| `string` | `lux_freeStr()` |
-| `vec<int32>` | `lux_vec_free_i32()` |
-| `vec<string>` | `lux_vec_free_str()` |
-| `map<string, int32>` | `lux_map_free_str_i32()` |
-| `set<float64>` | `lux_set_free_f64()` |
+| `string` | `lucis_freeStr()` |
+| `vec<int32>` | `lucis_vec_free_i32()` |
+| `vec<string>` | `lucis_vec_free_str()` |
+| `map<string, int32>` | `lucis_map_free_str_i32()` |
+| `set<float64>` | `lucis_set_free_f64()` |
 
 ### Cleanup Order
 
@@ -273,8 +273,8 @@ fn example() void {
 
     // At ret:
     // 1. println("goodbye")          ← defer
-    // 2. lux_vec_free_i32(&a)     ← auto cleanup
-    // 3. lux_map_free_str_i32(&m) ← auto cleanup
+    // 2. lucis_vec_free_i32(&a)     ← auto cleanup
+    // 3. lucis_map_free_str_i32(&m) ← auto cleanup
 }
 ```
 
@@ -299,7 +299,7 @@ T uses `setjmp`/`longjmp` for exception handling, with a thread-local stack of e
 
 ```
 ┌─────────────────────────────┐
-│  lux_error               │
+│  lucis_error               │
 │  ┌─────────────────────┐    │
 │  │ message (string)    │    │
 │  │   ptr + len         │    │
@@ -344,7 +344,7 @@ try {
     // longjmp() jumps back to setjmp location
 } catch (Error e) {
     println(e.message);   // "something went wrong"
-    println(e.file);      // "main.lx"
+    println(e.file);      // "main.lc"
     println(e.line);      // line number of panic()
 }
 ```

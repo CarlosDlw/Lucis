@@ -4,7 +4,7 @@
 #include <vector>
 #include <optional>
 
-#include "generated/LuxParser.h"
+#include "generated/LucisParser.h"
 #include "types/BuiltinRegistry.h"
 #include "types/TypeRegistry.h"
 #include "types/MethodRegistry.h"
@@ -71,24 +71,24 @@ private:
     // ── Signature builders ──────────────────────────────────────────
 
     // Build signature from a user-defined function declaration.
-    SignatureInfo buildFromFunction(LuxParser::FunctionDeclContext* func,
+    SignatureInfo buildFromFunction(LucisParser::FunctionDeclContext* func,
                                    const std::vector<DocComment>& docs);
 
     // Build signature from an extern declaration.
-    SignatureInfo buildFromExtern(LuxParser::ExternDeclContext* ext,
+    SignatureInfo buildFromExtern(LucisParser::ExternDeclContext* ext,
                                  const std::vector<DocComment>& docs);
 
     // Build signature from a builtin function.
     SignatureInfo buildFromBuiltin(const BuiltinSignature& sig);
 
-    // Build signature from an intrinsic function (lux::core::trap, etc.)
+    // Build signature from an intrinsic function (lucis::core::trap, etc.)
     SignatureInfo buildFromIntrinsic(const IntrinsicFunction& intrinsic);
 
     // Build signature from a C function binding.
     SignatureInfo buildFromCFunction(const CFunction& func);
 
     // Build signature from an extend method declaration.
-    SignatureInfo buildFromExtendMethod(LuxParser::ExtendMethodContext* method,
+    SignatureInfo buildFromExtendMethod(LucisParser::ExtendMethodContext* method,
                                        const std::string& structName,
                                        const std::vector<DocComment>& docs);
 
@@ -98,7 +98,7 @@ private:
 
     // ── Helpers ─────────────────────────────────────────────────────
 
-    static std::string typeSpecToString(LuxParser::TypeSpecContext* ctx);
+    static std::string typeSpecToString(LucisParser::TypeSpecContext* ctx);
     static std::string paramNameFromType(const std::string& type);
     static std::string resolveTypePlaceholder(const std::string& raw,
                                               const std::string& selfType,

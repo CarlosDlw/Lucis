@@ -1,6 +1,6 @@
 # FFI Overview
 
-T provides zero-cost interoperability with C. You can call any C function, use C structs, enums, and macros directly from Lux code — without wrappers, bindings generators, or runtime overhead. The compiled output uses the exact same calling conventions and memory layout as C.
+T provides zero-cost interoperability with C. You can call any C function, use C structs, enums, and macros directly from Lucis code — without wrappers, bindings generators, or runtime overhead. The compiled output uses the exact same calling conventions and memory layout as C.
 
 ---
 
@@ -45,7 +45,7 @@ With `#include`, you don't need to write any `extern` declarations — the compi
 
 When you use `#include`, the compiler parses the C header with libclang and extracts:
 
-| C Declaration | Available in Lux as |
+| C Declaration | Available in Lucis as |
 |---------------|-------------------|
 | Function declarations | Callable functions (same as `extern`) |
 | `struct` definitions | Usable struct types with all fields |
@@ -59,7 +59,7 @@ Function-like macros (`#define FOO(x) ...`) and non-numeric macros are ignored.
 
 ## C String Literals
 
-C functions expect null-terminated strings. Lux provides the `c"..."` literal syntax for this:
+C functions expect null-terminated strings. Lucis provides the `c"..."` literal syntax for this:
 
 ```
 extern int32 puts(*char s);
@@ -67,13 +67,13 @@ extern int32 puts(*char s);
 puts(c"Hello, World!");    // null-terminated, type is *char
 ```
 
-Regular Lux strings (`"..."`) are **not** null-terminated — they are length-prefixed. To convert between the two, use `cstr()`, `fromCStr()`, and `fromCStrLen()`.
+Regular Lucis strings (`"..."`) are **not** null-terminated — they are length-prefixed. To convert between the two, use `cstr()`, `fromCStr()`, and `fromCStrLen()`.
 
 ---
 
 ## Type Correspondence
 
-Lux types map directly to C types with no conversion:
+Lucis types map directly to C types with no conversion:
 
 | C Type | T Type |
 |--------|--------|

@@ -1,6 +1,6 @@
 # C Strings
 
-Lux strings and C strings have different internal representations. This page explains the difference, how to work with C string literals, and how to convert between the two formats.
+Lucis strings and C strings have different internal representations. This page explains the difference, how to work with C string literals, and how to convert between the two formats.
 
 ---
 
@@ -18,7 +18,7 @@ In T, strings are length-prefixed — they carry a pointer and a length, and are
 "hello"  →  { ptr: → 'h','e','l','l','o', len: 5 }
 ```
 
-This means you **cannot** pass a T `string` directly to a C function that expects `char*`. You need to convert it. Lux provides three tools for this.
+This means you **cannot** pass a T `string` directly to a C function that expects `char*`. You need to convert it. Lucis provides three tools for this.
 
 ---
 
@@ -74,7 +74,7 @@ fn main() int32 {
 Use C string literals when:
 - The string is a **constant** known at compile time
 - You're passing it directly to a C function
-- You don't need to manipulate it as a Lux string first
+- You don't need to manipulate it as a Lucis string first
 
 ```
 puts(c"This is a constant");                 // direct use
@@ -113,8 +113,8 @@ extern int32 puts(*char s);
 extern void free(*void ptr);
 
 fn main() int32 {
-    string name = "Lux";
-    *char c_name = cstr(name);   // allocates: "Lux\0"
+    string name = "Lucis";
+    *char c_name = cstr(name);   // allocates: "Lucis\0"
     puts(c_name);                // passes to C
     free(c_name as *void);       // you own the memory — free it!
     ret 0;
@@ -131,7 +131,7 @@ fn main() int32 {
 **Important:** The returned pointer is heap-allocated. You are responsible for freeing it when done. Use `defer` for automatic cleanup:
 
 ```
-string message = "Hello from Lux";
+string message = "Hello from Lucis";
 *char c_msg = cstr(message);
 defer free(c_msg as *void);    // cleaned up at function exit
 
@@ -171,10 +171,10 @@ fn main() int32 {
 ### How `fromCStr()` Works
 
 1. Calls `strlen()` on the pointer to determine the length
-2. Wraps the pointer and length into a Lux string struct
-3. **Does NOT copy** — the Lux string points to the original C memory
+2. Wraps the pointer and length into a Lucis string struct
+3. **Does NOT copy** — the Lucis string points to the original C memory
 
-**Important:** Since `fromCStr()` does not copy, the returned string is only valid as long as the original `*char` pointer is valid. If the C function uses a static buffer or the pointer is freed, the Lux string becomes dangling.
+**Important:** Since `fromCStr()` does not copy, the returned string is only valid as long as the original `*char` pointer is valid. If the C function uses a static buffer or the pointer is freed, the Lucis string becomes dangling.
 
 ### Signature
 
@@ -185,7 +185,7 @@ fromCStr(*char) -> string
 - **Parameter:** A null-terminated `*char` pointer
 - **Returns:** A T `string` wrapping the pointer
 - **Cost:** O(n) for the `strlen()` call, but zero-copy
-- **Ownership:** The Lux string does NOT own the memory — it borrows it
+- **Ownership:** The Lucis string does NOT own the memory — it borrows it
 
 ### Null Safety
 
@@ -219,7 +219,7 @@ fromCStrLen(*char, usize) -> string
 - **Parameter 2:** The number of bytes to use
 - **Returns:** A T `string` wrapping the pointer with the given length
 - **Cost:** O(1) — zero-cost, just wraps the pointer and length
-- **Ownership:** The Lux string does NOT own the memory
+- **Ownership:** The Lucis string does NOT own the memory
 
 This is useful when:
 - You know the length from another source (e.g., a `read()` return value)
@@ -230,21 +230,21 @@ This is useful when:
 
 ## Round-Trip Conversion
 
-You can safely convert back and forth between Lux strings and C strings:
+You can safely convert back and forth between Lucis strings and C strings:
 
 ```
 extern int32 strcmp(*char s1, *char s2);
 extern void free(*void ptr);
 
 fn main() int32 {
-    // Start with a Lux string
+    // Start with a Lucis string
     string original = "Round Trip Test";
 
     // Convert to C string
     *char c1 = cstr(original);
     defer free(c1 as *void);
 
-    // Convert back to Lux string
+    // Convert back to Lucis string
     string back = fromCStr(c1);
 
     // Convert again to C string
@@ -266,9 +266,9 @@ fn main() int32 {
 | Function | Direction | Copies? | Cost | Ownership |
 |----------|-----------|---------|------|-----------|
 | `c"..."` | Compile-time C string | N/A (static) | Zero | Static (program lifetime) |
-| `cstr(s)` | Lux string → `*char` | Yes (malloc) | O(n) | Caller must `free()` |
-| `fromCStr(p)` | `*char` → Lux string | No (wraps) | O(n) strlen | Borrows original |
-| `fromCStrLen(p, n)` | `*char` → Lux string | No (wraps) | O(1) | Borrows original |
+| `cstr(s)` | Lucis string → `*char` | Yes (malloc) | O(n) | Caller must `free()` |
+| `fromCStr(p)` | `*char` → Lucis string | No (wraps) | O(n) strlen | Borrows original |
+| `fromCStrLen(p, n)` | `*char` → Lucis string | No (wraps) | O(1) | Borrows original |
 
 ---
 

@@ -12,8 +12,8 @@
 #include <llvm/IR/IRBuilder.h>
 #include <llvm/IR/Function.h>
 
-#include "generated/LuxParserBaseVisitor.h"
-#include "generated/LuxParser.h"
+#include "generated/LucisParserBaseVisitor.h"
+#include "generated/LucisParser.h"
 #include "LLVM_IR/IRModule.h"
 #include "imports/ImportResolver.h"
 #include "types/TypeRegistry.h"
@@ -26,12 +26,12 @@ class NamespaceRegistry;
 class CBindings;
 struct CStructMacro;
 
-class IRGen : public LuxParserBaseVisitor {
+class IRGen : public LucisParserBaseVisitor {
 public:
     IRGen();
 
     // Walk the parse tree and produce an IRModule.
-    std::unique_ptr<IRModule> generate(LuxParser::ProgramContext* tree,
+    std::unique_ptr<IRModule> generate(LucisParser::ProgramContext* tree,
                                        const std::string& moduleName);
 
     // Set namespace context for cross-file symbol resolution and mangling.
@@ -43,130 +43,130 @@ public:
     void setCBindings(const CBindings* bindings);
 
     // ── Visitor overrides ───────────────────────────────────────────────────
-    std::any visitProgram(LuxParser::ProgramContext* ctx)             override;
-    std::any visitStructDecl(LuxParser::StructDeclContext* ctx)       override;
-    std::any visitUnionDecl(LuxParser::UnionDeclContext* ctx)         override;
-    std::any visitEnumDecl(LuxParser::EnumDeclContext* ctx)           override;
-    std::any visitExternDecl(LuxParser::ExternDeclContext* ctx)       override;
-    std::any visitFunctionDecl(LuxParser::FunctionDeclContext* ctx)   override;
-    std::any visitBlock(LuxParser::BlockContext* ctx)                 override;
-    std::any visitUseRoot(LuxParser::UseRootContext* ctx)             override;
-    std::any visitUseItem(LuxParser::UseItemContext* ctx)             override;
-    std::any visitUseGroup(LuxParser::UseGroupContext* ctx)           override;
-    std::any visitUseEnumWildcard(LuxParser::UseEnumWildcardContext* ctx) override;
-    std::any visitVarDeclStmt(LuxParser::VarDeclStmtContext* ctx)     override;
-    std::any visitAssignStmt(LuxParser::AssignStmtContext* ctx)       override;
-    std::any visitCompoundAssignStmt(LuxParser::CompoundAssignStmtContext* ctx) override;
-    std::any visitFieldAssignStmt(LuxParser::FieldAssignStmtContext* ctx) override;
-    std::any visitFieldCompoundAssignStmt(LuxParser::FieldCompoundAssignStmtContext* ctx) override;
-    std::any visitIndexFieldAssignStmt(LuxParser::IndexFieldAssignStmtContext* ctx) override;
-    std::any visitFieldIndexAssignStmt(LuxParser::FieldIndexAssignStmtContext* ctx) override;
-    std::any visitArrowAssignStmt(LuxParser::ArrowAssignStmtContext* ctx) override;
-    std::any visitArrowCompoundAssignStmt(LuxParser::ArrowCompoundAssignStmtContext* ctx) override;
-    std::any visitCallStmt(LuxParser::CallStmtContext* ctx)           override;
-    std::any visitExprStmt(LuxParser::ExprStmtContext* ctx)           override;
-    std::any visitReturnStmt(LuxParser::ReturnStmtContext* ctx)       override;
-    std::any visitIfStmt(LuxParser::IfStmtContext* ctx)               override;
-    std::any visitForInStmt(LuxParser::ForInStmtContext* ctx)         override;
-    std::any visitForClassicStmt(LuxParser::ForClassicStmtContext* ctx) override;
-    std::any visitBreakStmt(LuxParser::BreakStmtContext* ctx)         override;
-    std::any visitContinueStmt(LuxParser::ContinueStmtContext* ctx)   override;
-    std::any visitLoopStmt(LuxParser::LoopStmtContext* ctx)           override;
-    std::any visitWhileStmt(LuxParser::WhileStmtContext* ctx)         override;
-    std::any visitDoWhileStmt(LuxParser::DoWhileStmtContext* ctx)     override;
-    std::any visitSwitchStmt(LuxParser::SwitchStmtContext* ctx)       override;
-    std::any visitMethodCallExpr(LuxParser::MethodCallExprContext* ctx) override;
-    std::any visitArrowMethodCallExpr(LuxParser::ArrowMethodCallExprContext* ctx) override;
-    std::any visitTypeSpec(LuxParser::TypeSpecContext* ctx)           override;
+    std::any visitProgram(LucisParser::ProgramContext* ctx)             override;
+    std::any visitStructDecl(LucisParser::StructDeclContext* ctx)       override;
+    std::any visitUnionDecl(LucisParser::UnionDeclContext* ctx)         override;
+    std::any visitEnumDecl(LucisParser::EnumDeclContext* ctx)           override;
+    std::any visitExternDecl(LucisParser::ExternDeclContext* ctx)       override;
+    std::any visitFunctionDecl(LucisParser::FunctionDeclContext* ctx)   override;
+    std::any visitBlock(LucisParser::BlockContext* ctx)                 override;
+    std::any visitUseRoot(LucisParser::UseRootContext* ctx)             override;
+    std::any visitUseItem(LucisParser::UseItemContext* ctx)             override;
+    std::any visitUseGroup(LucisParser::UseGroupContext* ctx)           override;
+    std::any visitUseEnumWildcard(LucisParser::UseEnumWildcardContext* ctx) override;
+    std::any visitVarDeclStmt(LucisParser::VarDeclStmtContext* ctx)     override;
+    std::any visitAssignStmt(LucisParser::AssignStmtContext* ctx)       override;
+    std::any visitCompoundAssignStmt(LucisParser::CompoundAssignStmtContext* ctx) override;
+    std::any visitFieldAssignStmt(LucisParser::FieldAssignStmtContext* ctx) override;
+    std::any visitFieldCompoundAssignStmt(LucisParser::FieldCompoundAssignStmtContext* ctx) override;
+    std::any visitIndexFieldAssignStmt(LucisParser::IndexFieldAssignStmtContext* ctx) override;
+    std::any visitFieldIndexAssignStmt(LucisParser::FieldIndexAssignStmtContext* ctx) override;
+    std::any visitArrowAssignStmt(LucisParser::ArrowAssignStmtContext* ctx) override;
+    std::any visitArrowCompoundAssignStmt(LucisParser::ArrowCompoundAssignStmtContext* ctx) override;
+    std::any visitCallStmt(LucisParser::CallStmtContext* ctx)           override;
+    std::any visitExprStmt(LucisParser::ExprStmtContext* ctx)           override;
+    std::any visitReturnStmt(LucisParser::ReturnStmtContext* ctx)       override;
+    std::any visitIfStmt(LucisParser::IfStmtContext* ctx)               override;
+    std::any visitForInStmt(LucisParser::ForInStmtContext* ctx)         override;
+    std::any visitForClassicStmt(LucisParser::ForClassicStmtContext* ctx) override;
+    std::any visitBreakStmt(LucisParser::BreakStmtContext* ctx)         override;
+    std::any visitContinueStmt(LucisParser::ContinueStmtContext* ctx)   override;
+    std::any visitLoopStmt(LucisParser::LoopStmtContext* ctx)           override;
+    std::any visitWhileStmt(LucisParser::WhileStmtContext* ctx)         override;
+    std::any visitDoWhileStmt(LucisParser::DoWhileStmtContext* ctx)     override;
+    std::any visitSwitchStmt(LucisParser::SwitchStmtContext* ctx)       override;
+    std::any visitMethodCallExpr(LucisParser::MethodCallExprContext* ctx) override;
+    std::any visitArrowMethodCallExpr(LucisParser::ArrowMethodCallExprContext* ctx) override;
+    std::any visitTypeSpec(LucisParser::TypeSpecContext* ctx)           override;
 
     // Expression visitors (labeled alternatives)
-    std::any visitIntLitExpr(LuxParser::IntLitExprContext* ctx)       override;
-    std::any visitHexLitExpr(LuxParser::HexLitExprContext* ctx)       override;
-    std::any visitOctLitExpr(LuxParser::OctLitExprContext* ctx)       override;
-    std::any visitBinLitExpr(LuxParser::BinLitExprContext* ctx)       override;
-    std::any visitFloatLitExpr(LuxParser::FloatLitExprContext* ctx)   override;
-    std::any visitLeadingDotFloatLitExpr(LuxParser::LeadingDotFloatLitExprContext* ctx) override;
-    std::any visitBoolLitExpr(LuxParser::BoolLitExprContext* ctx)     override;
-    std::any visitCharLitExpr(LuxParser::CharLitExprContext* ctx)     override;
-    std::any visitStrLitExpr(LuxParser::StrLitExprContext* ctx)       override;
-    std::any visitCStrLitExpr(LuxParser::CStrLitExprContext* ctx)   override;
-    std::any visitIdentExpr(LuxParser::IdentExprContext* ctx)         override;
-    std::any visitArrayLitExpr(LuxParser::ArrayLitExprContext* ctx)   override;
-    std::any visitListCompExpr(LuxParser::ListCompExprContext* ctx)   override;
-    std::any visitIndexExpr(LuxParser::IndexExprContext* ctx)         override;
-    std::any visitStructLitExpr(LuxParser::StructLitExprContext* ctx) override;
-    std::any visitStructPosInitExpr(LuxParser::StructPosInitExprContext* ctx) override;
-    std::any visitFieldAccessExpr(LuxParser::FieldAccessExprContext* ctx) override;
-    std::any visitArrowAccessExpr(LuxParser::ArrowAccessExprContext* ctx) override;
-    std::any visitEnumAccessExpr(LuxParser::EnumAccessExprContext* ctx) override;
-    std::any visitGenericEnumAccessExpr(LuxParser::GenericEnumAccessExprContext* ctx) override;
-    std::any visitQualifiedStructPosInitExpr(LuxParser::QualifiedStructPosInitExprContext* ctx) override;
-    std::any visitQualifiedStructNamedInitExpr(LuxParser::QualifiedStructNamedInitExprContext* ctx) override;
-    std::any visitGenericEnumNamedVariantExpr(LuxParser::GenericEnumNamedVariantExprContext* ctx) override;
-    std::any visitGenericEnumPosVariantExpr(LuxParser::GenericEnumPosVariantExprContext* ctx) override;
-    std::any visitStaticMethodCallExpr(LuxParser::StaticMethodCallExprContext* ctx) override;
-    std::any visitNullLitExpr(LuxParser::NullLitExprContext* ctx)     override;
-    std::any visitAddrOfExpr(LuxParser::AddrOfExprContext* ctx)       override;
-    std::any visitDerefExpr(LuxParser::DerefExprContext* ctx)         override;
-    std::any visitDerefAssignStmt(LuxParser::DerefAssignStmtContext* ctx) override;
-    std::any visitDerefCompoundAssignStmt(LuxParser::DerefCompoundAssignStmtContext* ctx) override;
-    std::any visitTypeAliasDecl(LuxParser::TypeAliasDeclContext* ctx) override;
-    std::any visitFnCallExpr(LuxParser::FnCallExprContext* ctx)       override;
-    std::any visitNegExpr(LuxParser::NegExprContext* ctx)             override;
-    std::any visitMulExpr(LuxParser::MulExprContext* ctx)             override;
-    std::any visitAddSubExpr(LuxParser::AddSubExprContext* ctx)       override;
-    std::any visitRelExpr(LuxParser::RelExprContext* ctx)             override;
-    std::any visitEqExpr(LuxParser::EqExprContext* ctx)               override;
-    std::any visitLogicalNotExpr(LuxParser::LogicalNotExprContext* ctx) override;
-    std::any visitLogicalAndExpr(LuxParser::LogicalAndExprContext* ctx) override;
-    std::any visitLogicalOrExpr(LuxParser::LogicalOrExprContext* ctx) override;
-    std::any visitBitNotExpr(LuxParser::BitNotExprContext* ctx)       override;
-    std::any visitLshiftExpr(LuxParser::LshiftExprContext* ctx)       override;
-    std::any visitRshiftExpr(LuxParser::RshiftExprContext* ctx)       override;
-    std::any visitBitAndExpr(LuxParser::BitAndExprContext* ctx)       override;
-    std::any visitBitXorExpr(LuxParser::BitXorExprContext* ctx)       override;
-    std::any visitBitOrExpr(LuxParser::BitOrExprContext* ctx)         override;
+    std::any visitIntLitExpr(LucisParser::IntLitExprContext* ctx)       override;
+    std::any visitHexLitExpr(LucisParser::HexLitExprContext* ctx)       override;
+    std::any visitOctLitExpr(LucisParser::OctLitExprContext* ctx)       override;
+    std::any visitBinLitExpr(LucisParser::BinLitExprContext* ctx)       override;
+    std::any visitFloatLitExpr(LucisParser::FloatLitExprContext* ctx)   override;
+    std::any visitLeadingDotFloatLitExpr(LucisParser::LeadingDotFloatLitExprContext* ctx) override;
+    std::any visitBoolLitExpr(LucisParser::BoolLitExprContext* ctx)     override;
+    std::any visitCharLitExpr(LucisParser::CharLitExprContext* ctx)     override;
+    std::any visitStrLitExpr(LucisParser::StrLitExprContext* ctx)       override;
+    std::any visitCStrLitExpr(LucisParser::CStrLitExprContext* ctx)   override;
+    std::any visitIdentExpr(LucisParser::IdentExprContext* ctx)         override;
+    std::any visitArrayLitExpr(LucisParser::ArrayLitExprContext* ctx)   override;
+    std::any visitListCompExpr(LucisParser::ListCompExprContext* ctx)   override;
+    std::any visitIndexExpr(LucisParser::IndexExprContext* ctx)         override;
+    std::any visitStructLitExpr(LucisParser::StructLitExprContext* ctx) override;
+    std::any visitStructPosInitExpr(LucisParser::StructPosInitExprContext* ctx) override;
+    std::any visitFieldAccessExpr(LucisParser::FieldAccessExprContext* ctx) override;
+    std::any visitArrowAccessExpr(LucisParser::ArrowAccessExprContext* ctx) override;
+    std::any visitEnumAccessExpr(LucisParser::EnumAccessExprContext* ctx) override;
+    std::any visitGenericEnumAccessExpr(LucisParser::GenericEnumAccessExprContext* ctx) override;
+    std::any visitQualifiedStructPosInitExpr(LucisParser::QualifiedStructPosInitExprContext* ctx) override;
+    std::any visitQualifiedStructNamedInitExpr(LucisParser::QualifiedStructNamedInitExprContext* ctx) override;
+    std::any visitGenericEnumNamedVariantExpr(LucisParser::GenericEnumNamedVariantExprContext* ctx) override;
+    std::any visitGenericEnumPosVariantExpr(LucisParser::GenericEnumPosVariantExprContext* ctx) override;
+    std::any visitStaticMethodCallExpr(LucisParser::StaticMethodCallExprContext* ctx) override;
+    std::any visitNullLitExpr(LucisParser::NullLitExprContext* ctx)     override;
+    std::any visitAddrOfExpr(LucisParser::AddrOfExprContext* ctx)       override;
+    std::any visitDerefExpr(LucisParser::DerefExprContext* ctx)         override;
+    std::any visitDerefAssignStmt(LucisParser::DerefAssignStmtContext* ctx) override;
+    std::any visitDerefCompoundAssignStmt(LucisParser::DerefCompoundAssignStmtContext* ctx) override;
+    std::any visitTypeAliasDecl(LucisParser::TypeAliasDeclContext* ctx) override;
+    std::any visitFnCallExpr(LucisParser::FnCallExprContext* ctx)       override;
+    std::any visitNegExpr(LucisParser::NegExprContext* ctx)             override;
+    std::any visitMulExpr(LucisParser::MulExprContext* ctx)             override;
+    std::any visitAddSubExpr(LucisParser::AddSubExprContext* ctx)       override;
+    std::any visitRelExpr(LucisParser::RelExprContext* ctx)             override;
+    std::any visitEqExpr(LucisParser::EqExprContext* ctx)               override;
+    std::any visitLogicalNotExpr(LucisParser::LogicalNotExprContext* ctx) override;
+    std::any visitLogicalAndExpr(LucisParser::LogicalAndExprContext* ctx) override;
+    std::any visitLogicalOrExpr(LucisParser::LogicalOrExprContext* ctx) override;
+    std::any visitBitNotExpr(LucisParser::BitNotExprContext* ctx)       override;
+    std::any visitLshiftExpr(LucisParser::LshiftExprContext* ctx)       override;
+    std::any visitRshiftExpr(LucisParser::RshiftExprContext* ctx)       override;
+    std::any visitBitAndExpr(LucisParser::BitAndExprContext* ctx)       override;
+    std::any visitBitXorExpr(LucisParser::BitXorExprContext* ctx)       override;
+    std::any visitBitOrExpr(LucisParser::BitOrExprContext* ctx)         override;
     std::pair<llvm::Value*, llvm::Type*>
-        resolveIncrDecrTarget(LuxParser::ExpressionContext* expr);
-    llvm::Value* resolveMethodReceiverAddress(LuxParser::ExpressionContext* expr);
-    std::any visitPreIncrExpr(LuxParser::PreIncrExprContext* ctx)     override;
-    std::any visitPreDecrExpr(LuxParser::PreDecrExprContext* ctx)     override;
-    std::any visitPostIncrExpr(LuxParser::PostIncrExprContext* ctx)   override;
-    std::any visitPostDecrExpr(LuxParser::PostDecrExprContext* ctx)   override;
-    std::any visitCastExpr(LuxParser::CastExprContext* ctx)           override;
-    std::any visitSizeofExpr(LuxParser::SizeofExprContext* ctx)       override;
-    std::any visitTypeofExpr(LuxParser::TypeofExprContext* ctx)      override;
-    std::any visitTernaryExpr(LuxParser::TernaryExprContext* ctx)     override;
-    std::any visitIsExpr(LuxParser::IsExprContext* ctx)               override;
-    std::any visitNullCoalExpr(LuxParser::NullCoalExprContext* ctx)   override;
-    std::any visitRangeExpr(LuxParser::RangeExprContext* ctx)         override;
-    std::any visitRangeInclExpr(LuxParser::RangeInclExprContext* ctx) override;
-    std::any visitSpreadExpr(LuxParser::SpreadExprContext* ctx)       override;
-    std::any visitParenExpr(LuxParser::ParenExprContext* ctx)         override;
-    std::any visitTupleLitExpr(LuxParser::TupleLitExprContext* ctx)   override;
-    std::any visitTupleIndexExpr(LuxParser::TupleIndexExprContext* ctx) override;
-    std::any visitChainedTupleIndexExpr(LuxParser::ChainedTupleIndexExprContext* ctx) override;
-    std::any visitTupleArrowIndexExpr(LuxParser::TupleArrowIndexExprContext* ctx) override;
-    std::any visitChainedTupleArrowIndexExpr(LuxParser::ChainedTupleArrowIndexExprContext* ctx) override;
-    std::any visitSpawnExpr(LuxParser::SpawnExprContext* ctx)         override;
-    std::any visitAwaitExpr(LuxParser::AwaitExprContext* ctx)         override;
-    std::any visitLockStmt(LuxParser::LockStmtContext* ctx)           override;
-    std::any visitTryCatchStmt(LuxParser::TryCatchStmtContext* ctx)   override;
-    std::any visitThrowStmt(LuxParser::ThrowStmtContext* ctx)         override;
-    std::any visitTryExpr(LuxParser::TryExprContext* ctx)             override;
-    std::any visitCatchUnwrapExpr(LuxParser::CatchUnwrapExprContext* ctx) override;
-    std::any visitPropagateExpr(LuxParser::PropagateExprContext* ctx) override;
-    std::any visitExtendDecl(LuxParser::ExtendDeclContext* ctx)        override;
-    std::any visitDeferStmt(LuxParser::DeferStmtContext* ctx)           override;
-    std::any visitNakedBlockStmt(LuxParser::NakedBlockStmtContext* ctx) override;
-    std::any visitInlineBlockStmt(LuxParser::InlineBlockStmtContext* ctx) override;
-    std::any visitScopeBlockStmt(LuxParser::ScopeBlockStmtContext* ctx) override;
+        resolveIncrDecrTarget(LucisParser::ExpressionContext* expr);
+    llvm::Value* resolveMethodReceiverAddress(LucisParser::ExpressionContext* expr);
+    std::any visitPreIncrExpr(LucisParser::PreIncrExprContext* ctx)     override;
+    std::any visitPreDecrExpr(LucisParser::PreDecrExprContext* ctx)     override;
+    std::any visitPostIncrExpr(LucisParser::PostIncrExprContext* ctx)   override;
+    std::any visitPostDecrExpr(LucisParser::PostDecrExprContext* ctx)   override;
+    std::any visitCastExpr(LucisParser::CastExprContext* ctx)           override;
+    std::any visitSizeofExpr(LucisParser::SizeofExprContext* ctx)       override;
+    std::any visitTypeofExpr(LucisParser::TypeofExprContext* ctx)      override;
+    std::any visitTernaryExpr(LucisParser::TernaryExprContext* ctx)     override;
+    std::any visitIsExpr(LucisParser::IsExprContext* ctx)               override;
+    std::any visitNullCoalExpr(LucisParser::NullCoalExprContext* ctx)   override;
+    std::any visitRangeExpr(LucisParser::RangeExprContext* ctx)         override;
+    std::any visitRangeInclExpr(LucisParser::RangeInclExprContext* ctx) override;
+    std::any visitSpreadExpr(LucisParser::SpreadExprContext* ctx)       override;
+    std::any visitParenExpr(LucisParser::ParenExprContext* ctx)         override;
+    std::any visitTupleLitExpr(LucisParser::TupleLitExprContext* ctx)   override;
+    std::any visitTupleIndexExpr(LucisParser::TupleIndexExprContext* ctx) override;
+    std::any visitChainedTupleIndexExpr(LucisParser::ChainedTupleIndexExprContext* ctx) override;
+    std::any visitTupleArrowIndexExpr(LucisParser::TupleArrowIndexExprContext* ctx) override;
+    std::any visitChainedTupleArrowIndexExpr(LucisParser::ChainedTupleArrowIndexExprContext* ctx) override;
+    std::any visitSpawnExpr(LucisParser::SpawnExprContext* ctx)         override;
+    std::any visitAwaitExpr(LucisParser::AwaitExprContext* ctx)         override;
+    std::any visitLockStmt(LucisParser::LockStmtContext* ctx)           override;
+    std::any visitTryCatchStmt(LucisParser::TryCatchStmtContext* ctx)   override;
+    std::any visitThrowStmt(LucisParser::ThrowStmtContext* ctx)         override;
+    std::any visitTryExpr(LucisParser::TryExprContext* ctx)             override;
+    std::any visitCatchUnwrapExpr(LucisParser::CatchUnwrapExprContext* ctx) override;
+    std::any visitPropagateExpr(LucisParser::PropagateExprContext* ctx) override;
+    std::any visitExtendDecl(LucisParser::ExtendDeclContext* ctx)        override;
+    std::any visitDeferStmt(LucisParser::DeferStmtContext* ctx)           override;
+    std::any visitNakedBlockStmt(LucisParser::NakedBlockStmtContext* ctx) override;
+    std::any visitInlineBlockStmt(LucisParser::InlineBlockStmtContext* ctx) override;
+    std::any visitScopeBlockStmt(LucisParser::ScopeBlockStmtContext* ctx) override;
     // Generic expression visitors
-    std::any visitGenericFnCallExpr(LuxParser::GenericFnCallExprContext* ctx) override;
-    std::any visitGenericStaticMethodCallExpr(LuxParser::GenericStaticMethodCallExprContext* ctx) override;
-    std::any visitGenericQualifiedFnCallExpr(LuxParser::GenericQualifiedFnCallExprContext* ctx) override;
-    std::any visitGenericStructLitExpr(LuxParser::GenericStructLitExprContext* ctx) override;
-    std::any visitGenericStructPosInitExpr(LuxParser::GenericStructPosInitExprContext* ctx) override;
+    std::any visitGenericFnCallExpr(LucisParser::GenericFnCallExprContext* ctx) override;
+    std::any visitGenericStaticMethodCallExpr(LucisParser::GenericStaticMethodCallExprContext* ctx) override;
+    std::any visitGenericQualifiedFnCallExpr(LucisParser::GenericQualifiedFnCallExprContext* ctx) override;
+    std::any visitGenericStructLitExpr(LucisParser::GenericStructLitExprContext* ctx) override;
+    std::any visitGenericStructPosInitExpr(LucisParser::GenericStructPosInitExprContext* ctx) override;
 
 private:
     // Non-owning pointers valid only during generate().
@@ -219,7 +219,7 @@ private:
     // Extended type registry (vec, map, etc.)
     ExtendedTypeRegistry extTypeRegistry_;
 
-    // Intrinsic functions (lux::core::trap, etc.)
+    // Intrinsic functions (lucis::core::trap, etc.)
     IntrinsicRegistry intrinsicRegistry_;
 
     // Loop break/continue target stack
@@ -232,9 +232,9 @@ private:
 
     // Deferred statements (function-scoped, LIFO execution order)
     struct DeferredStmt {
-        LuxParser::CallStmtContext* callCtx = nullptr;
-        LuxParser::ExprStmtContext* exprCtx = nullptr;
-        LuxParser::ScopeCallbackContext* scopeCbCtx = nullptr;
+        LucisParser::CallStmtContext* callCtx = nullptr;
+        LucisParser::ExprStmtContext* exprCtx = nullptr;
+        LucisParser::ScopeCallbackContext* scopeCbCtx = nullptr;
     };
     std::vector<DeferredStmt> deferStack_;
 
@@ -314,12 +314,12 @@ private:
     llvm::Function* declareCFunction(const std::string& name);
 
     // Pre-processing helpers for cross-file symbols
-    void registerCrossFileSymbols(LuxParser::ProgramContext* ctx);
+    void registerCrossFileSymbols(LucisParser::ProgramContext* ctx);
     void declareExternFunction(const std::string& mangledName,
-                               LuxParser::FunctionDeclContext* decl);
+                               LucisParser::FunctionDeclContext* decl);
 
     // Forward-declare a user function (signature only, no body)
-    void forwardDeclareFunction(LuxParser::FunctionDeclContext* decl);
+    void forwardDeclareFunction(LucisParser::FunctionDeclContext* decl);
     std::string resolveCallTarget(const std::string& name) const;
 
     // Recursively coerce scalars/aggregates to a target LLVM type.
@@ -331,23 +331,23 @@ private:
     // Generic struct and function template registries
     struct GenericStructTemplate {
         std::vector<std::string>      typeParams;
-        LuxParser::StructDeclContext* decl;
+        LucisParser::StructDeclContext* decl;
     };
     struct GenericUnionTemplate {
         std::vector<std::string>     typeParams;
-        LuxParser::UnionDeclContext* decl;
+        LucisParser::UnionDeclContext* decl;
     };
     struct GenericEnumTemplate {
         std::vector<std::string>    typeParams;
-        LuxParser::EnumDeclContext* decl;
+        LucisParser::EnumDeclContext* decl;
     };
     struct GenericFuncTemplate {
         std::vector<std::string>        typeParams;
-        LuxParser::FunctionDeclContext* decl;
+        LucisParser::FunctionDeclContext* decl;
     };
     struct GenericExtendTemplate {
         std::vector<std::string>      typeParams;
-        LuxParser::ExtendDeclContext*  decl;
+        LucisParser::ExtendDeclContext*  decl;
     };
     std::unordered_map<std::string, GenericStructTemplate>  genericStructTemplates_;
     std::unordered_map<std::string, GenericUnionTemplate>   genericUnionTemplates_;
@@ -365,7 +365,7 @@ private:
 
     // Resolves a type spec with a substitution map (type param → concrete TypeInfo*)
     const TypeInfo* resolveTypeInfoWithSubst(
-        LuxParser::TypeSpecContext* ctx,
+        LucisParser::TypeSpecContext* ctx,
         const std::unordered_map<std::string, const TypeInfo*>& subst);
 
     // Ensures the LLVM struct type for a generic struct instance exists.
@@ -399,21 +399,21 @@ private:
 
     std::optional<std::vector<const TypeInfo*>> inferGenericTypeArgs(
         const std::vector<std::string>& typeParams,
-        const std::vector<LuxParser::ParamContext*>& formalParams,
+        const std::vector<LucisParser::ParamContext*>& formalParams,
         const std::vector<const TypeInfo*>& argTypes);
 
     bool unifyGenericTypeArg(
-        LuxParser::TypeSpecContext* formalType,
+        LucisParser::TypeSpecContext* formalType,
         const TypeInfo* actualType,
         const std::unordered_set<std::string>& genericParams,
         std::unordered_map<std::string, const TypeInfo*>& inferred);
 
     // Helpers
-    const TypeInfo*    resolveTypeInfo(LuxParser::TypeSpecContext* ctx);
-    const TypeInfo*    resolveExprTypeInfo(LuxParser::ExpressionContext* ctx);
-    unsigned           resolveExprArrayDims(LuxParser::ExpressionContext* ctx);
-    bool               isPointerType(LuxParser::TypeSpecContext* ctx);
-    unsigned           countArrayDims(LuxParser::TypeSpecContext* ctx);
+    const TypeInfo*    resolveTypeInfo(LucisParser::TypeSpecContext* ctx);
+    const TypeInfo*    resolveExprTypeInfo(LucisParser::ExpressionContext* ctx);
+    unsigned           resolveExprArrayDims(LucisParser::ExpressionContext* ctx);
+    bool               isPointerType(LucisParser::TypeSpecContext* ctx);
+    unsigned           countArrayDims(LucisParser::TypeSpecContext* ctx);
     llvm::ArrayType*   buildTargetArrayType(llvm::Type* srcTy, llvm::Type* elemTy);
     void               storeArrayElements(llvm::Value* src, llvm::Value* destPtr,
                                           llvm::Type* destArrTy, const TypeInfo* elemTI,
@@ -435,15 +435,15 @@ private:
     void                emitAllCleanups(const std::string& skipVar = "");
     void                emitCleanupForLocal(const std::string& name, const VarInfo& info);
     llvm::Value*        buildVecValueFromArrayLiteral(
-                            LuxParser::ArrayLitExprContext* arrLit,
+                            LucisParser::ArrayLitExprContext* arrLit,
                             const TypeInfo* vecType,
                             const std::string& tempNameHint = "vec_lit");
     void                emitBlockExitCleanups(const std::unordered_map<std::string, VarInfo>& savedLocals);
     bool                isDropTrackedLocal(const VarInfo& info) const;
-    bool                isBorrowedStringValueExpr(LuxParser::ExpressionContext* expr) const;
+    bool                isBorrowedStringValueExpr(LucisParser::ExpressionContext* expr) const;
     void                consumeLocalByName(const std::string& name);
-    void                consumeExprIfOwnedLocal(LuxParser::ExpressionContext* expr);
-    void                emitScopeCallback(LuxParser::ScopeCallbackContext* ctx);
+    void                consumeExprIfOwnedLocal(LucisParser::ExpressionContext* expr);
+    void                emitScopeCallback(LucisParser::ScopeCallbackContext* ctx);
     void                emitDivByZeroGuard(llvm::Value* divisor,
                                            antlr4::Token* opToken);
     bool                requireArgs(const std::string& funcName,

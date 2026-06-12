@@ -52,7 +52,7 @@ static int eq_key_u64(const void* a, const void* b) {
 }
 
 static uint64_t hash_key_str(const void* key) {
-    const lux_map_string* s = (const lux_map_string*)key;
+    const lucis_map_string* s = (const lucis_map_string*)key;
     uint64_t h = 14695981039346656037ULL;
     for (size_t i = 0; i < s->len; i++) {
         h ^= (uint8_t)s->ptr[i];
@@ -61,15 +61,15 @@ static uint64_t hash_key_str(const void* key) {
     return h;
 }
 static int eq_key_str(const void* a, const void* b) {
-    const lux_map_string* sa = (const lux_map_string*)a;
-    const lux_map_string* sb = (const lux_map_string*)b;
+    const lucis_map_string* sa = (const lucis_map_string*)a;
+    const lucis_map_string* sb = (const lucis_map_string*)b;
     return sa->len == sb->len &&
            (sa->len == 0 || memcmp(sa->ptr, sb->ptr, sa->len) == 0);
 }
 
 // ── Core operations ──────────────────────────────────────────────────────
 
-static void map_core_init(lux_map_header* m, size_t key_size, size_t val_size) {
+static void map_core_init(lucis_map_header* m, size_t key_size, size_t val_size) {
     m->states   = (uint8_t*)calloc(MAP_INITIAL_CAP, 1);
     m->keys     = calloc(MAP_INITIAL_CAP, key_size);
     m->values   = calloc(MAP_INITIAL_CAP, val_size);
@@ -80,7 +80,7 @@ static void map_core_init(lux_map_header* m, size_t key_size, size_t val_size) {
     m->val_size = val_size;
 }
 
-static void map_core_free(lux_map_header* m) {
+static void map_core_free(lucis_map_header* m) {
     free(m->states);
     free(m->keys);
     free(m->values);
@@ -93,23 +93,23 @@ static void map_core_free(lux_map_header* m) {
     m->cap    = 0;
 }
 
-static void map_core_clear(lux_map_header* m) {
+static void map_core_clear(lucis_map_header* m) {
     memset(m->states, 0, m->cap);
     m->len = 0;
 }
 
-static inline void* key_at(lux_map_header* m, size_t idx) {
+static inline void* key_at(lucis_map_header* m, size_t idx) {
     return (uint8_t*)m->keys + idx * m->key_size;
 }
 
-static inline void* val_at(lux_map_header* m, size_t idx) {
+static inline void* val_at(lucis_map_header* m, size_t idx) {
     return (uint8_t*)m->values + idx * m->val_size;
 }
 
 // Find the slot for a key. Returns the slot index.
 // If the key is found, *found is set to 1 and the slot has the key.
 // If not found, *found is set to 0 and the slot is the best insertion point.
-static size_t map_core_find(lux_map_header* m, const void* key,
+static size_t map_core_find(lucis_map_header* m, const void* key,
                             uint64_t hash, map_eq_fn eq, int* found) {
     size_t mask = m->cap - 1;
     size_t idx  = (size_t)(hash & mask);
@@ -140,7 +140,7 @@ static size_t map_core_find(lux_map_header* m, const void* key,
     return (first_tombstone != SIZE_MAX) ? first_tombstone : 0;
 }
 
-static void map_core_grow(lux_map_header* m, map_hash_fn hash_fn, map_eq_fn eq) {
+static void map_core_grow(lucis_map_header* m, map_hash_fn hash_fn, map_eq_fn eq) {
     size_t old_cap = m->cap;
     uint8_t* old_states = m->states;
     void*    old_keys   = m->keys;
@@ -177,7 +177,7 @@ static void map_core_grow(lux_map_header* m, map_hash_fn hash_fn, map_eq_fn eq) 
     free(old_hashes);
 }
 
-static void map_core_set(lux_map_header* m, const void* key, const void* val,
+static void map_core_set(lucis_map_header* m, const void* key, const void* val,
                          map_hash_fn hash_fn, map_eq_fn eq) {
     // Grow if load > 75%
     if ((m->len + 1) * MAP_LOAD_FACTOR_DEN > m->cap * MAP_LOAD_FACTOR_NUM)
@@ -201,7 +201,7 @@ static void map_core_set(lux_map_header* m, const void* key, const void* val,
 }
 
 // Returns 1 if found and copies value, 0 if not found.
-static int map_core_get(lux_map_header* m, const void* key, void* val_out,
+static int map_core_get(lucis_map_header* m, const void* key, void* val_out,
                         map_hash_fn hash_fn, map_eq_fn eq) {
     if (m->len == 0) return 0;
     uint64_t h = hash_fn(key);
@@ -214,7 +214,7 @@ static int map_core_get(lux_map_header* m, const void* key, void* val_out,
     return 0;
 }
 
-static int map_core_has(lux_map_header* m, const void* key,
+static int map_core_has(lucis_map_header* m, const void* key,
                         map_hash_fn hash_fn, map_eq_fn eq) {
     if (m->len == 0) return 0;
     uint64_t h = hash_fn(key);
@@ -223,7 +223,7 @@ static int map_core_has(lux_map_header* m, const void* key,
     return found;
 }
 
-static int map_core_remove(lux_map_header* m, const void* key,
+static int map_core_remove(lucis_map_header* m, const void* key,
                            map_hash_fn hash_fn, map_eq_fn eq) {
     if (m->len == 0) return 0;
     uint64_t h = hash_fn(key);
@@ -243,47 +243,47 @@ static int map_core_remove(lux_map_header* m, const void* key,
 
 // ── Integer key × numeric value ──────────────────────────────────────────
 
-#define LUX_MAP_IMPL_INT(KT, KS, VT, VS, HASH_FN, EQ_FN)                \
-void lux_map_init_##KS##_##VS(lux_map_header* m) {                     \
+#define LUCIS_MAP_IMPL_INT(KT, KS, VT, VS, HASH_FN, EQ_FN)                \
+void lucis_map_init_##KS##_##VS(lucis_map_header* m) {                     \
     map_core_init(m, sizeof(KT), sizeof(VT));                                \
 }                                                                            \
-void lux_map_free_##KS##_##VS(lux_map_header* m) {                     \
+void lucis_map_free_##KS##_##VS(lucis_map_header* m) {                     \
     map_core_free(m);                                                        \
 }                                                                            \
-size_t lux_map_len_##KS##_##VS(const lux_map_header* m) {              \
+size_t lucis_map_len_##KS##_##VS(const lucis_map_header* m) {              \
     return m->len;                                                           \
 }                                                                            \
-int lux_map_isEmpty_##KS##_##VS(const lux_map_header* m) {             \
+int lucis_map_isEmpty_##KS##_##VS(const lucis_map_header* m) {             \
     return m->len == 0;                                                      \
 }                                                                            \
-void lux_map_set_##KS##_##VS(lux_map_header* m, KT key, VT val) {     \
+void lucis_map_set_##KS##_##VS(lucis_map_header* m, KT key, VT val) {     \
     map_core_set(m, &key, &val, HASH_FN, EQ_FN);                            \
 }                                                                            \
-VT lux_map_get_##KS##_##VS(lux_map_header* m, KT key) {               \
+VT lucis_map_get_##KS##_##VS(lucis_map_header* m, KT key) {               \
     VT result;                                                               \
     if (!map_core_get(m, &key, &result, HASH_FN, EQ_FN)) {                  \
-        fprintf(stderr, "lux panic: Map::get key not found\n");           \
+        fprintf(stderr, "lucis panic: Map::get key not found\n");           \
         abort();                                                             \
     }                                                                        \
     return result;                                                           \
 }                                                                            \
-VT lux_map_getOrDefault_##KS##_##VS(lux_map_header* m,                \
+VT lucis_map_getOrDefault_##KS##_##VS(lucis_map_header* m,                \
                                        KT key, VT def) {                    \
     VT result;                                                               \
     if (map_core_get(m, &key, &result, HASH_FN, EQ_FN)) return result;      \
     return def;                                                              \
 }                                                                            \
-int lux_map_has_##KS##_##VS(lux_map_header* m, KT key) {              \
+int lucis_map_has_##KS##_##VS(lucis_map_header* m, KT key) {              \
     return map_core_has(m, &key, HASH_FN, EQ_FN);                           \
 }                                                                            \
-int lux_map_remove_##KS##_##VS(lux_map_header* m, KT key) {           \
+int lucis_map_remove_##KS##_##VS(lucis_map_header* m, KT key) {           \
     return map_core_remove(m, &key, HASH_FN, EQ_FN);                        \
 }                                                                            \
-void lux_map_clear_##KS##_##VS(lux_map_header* m) {                   \
+void lucis_map_clear_##KS##_##VS(lucis_map_header* m) {                   \
     map_core_clear(m);                                                       \
 }                                                                            \
-void lux_map_keys_##KS##_##VS(lux_map_header* m,                      \
-                                  lux_map_vec_out* out) {                \
+void lucis_map_keys_##KS##_##VS(lucis_map_header* m,                      \
+                                  lucis_map_vec_out* out) {                \
     KT* arr = (KT*)malloc(m->len * sizeof(KT));                             \
     size_t n = 0;                                                            \
     for (size_t i = 0; i < m->cap; i++) {                                    \
@@ -292,8 +292,8 @@ void lux_map_keys_##KS##_##VS(lux_map_header* m,                      \
     }                                                                        \
     out->ptr = arr; out->len = n; out->cap = n;                              \
 }                                                                            \
-void lux_map_values_##KS##_##VS(lux_map_header* m,                    \
-                                    lux_map_vec_out* out) {              \
+void lucis_map_values_##KS##_##VS(lucis_map_header* m,                    \
+                                    lucis_map_vec_out* out) {              \
     VT* arr = (VT*)malloc(m->len * sizeof(VT));                             \
     size_t n = 0;                                                            \
     for (size_t i = 0; i < m->cap; i++) {                                    \
@@ -305,95 +305,95 @@ void lux_map_values_##KS##_##VS(lux_map_header* m,                    \
 
 // ── String key × numeric value ───────────────────────────────────────────
 
-#define LUX_MAP_IMPL_STR(VT, VS)                                          \
-void lux_map_init_str_##VS(lux_map_header* m) {                        \
-    map_core_init(m, sizeof(lux_map_string), sizeof(VT));                 \
+#define LUCIS_MAP_IMPL_STR(VT, VS)                                          \
+void lucis_map_init_str_##VS(lucis_map_header* m) {                        \
+    map_core_init(m, sizeof(lucis_map_string), sizeof(VT));                 \
 }                                                                            \
-void lux_map_free_str_##VS(lux_map_header* m) {                        \
+void lucis_map_free_str_##VS(lucis_map_header* m) {                        \
     for (size_t i = 0; i < m->cap; i++) {                              \
         if (m->states[i] == MAP_STATE_OCCUPIED) {                      \
-            lux_map_string* key =                                       \
-                (lux_map_string*)((uint8_t*)m->keys + i * m->key_size); \
-            lux_freeStr(key->ptr, key->len);                           \
+            lucis_map_string* key =                                       \
+                (lucis_map_string*)((uint8_t*)m->keys + i * m->key_size); \
+            lucis_freeStr(key->ptr, key->len);                           \
         }                                                                \
     }                                                                    \
     map_core_free(m);                                                        \
 }                                                                            \
-size_t lux_map_len_str_##VS(const lux_map_header* m) {                 \
+size_t lucis_map_len_str_##VS(const lucis_map_header* m) {                 \
     return m->len;                                                           \
 }                                                                            \
-int lux_map_isEmpty_str_##VS(const lux_map_header* m) {                \
+int lucis_map_isEmpty_str_##VS(const lucis_map_header* m) {                \
     return m->len == 0;                                                      \
 }                                                                            \
-void lux_map_set_str_##VS(lux_map_header* m,                           \
-                             lux_map_string key, VT val) {               \
+void lucis_map_set_str_##VS(lucis_map_header* m,                           \
+                             lucis_map_string key, VT val) {               \
     uint64_t h = hash_key_str(&key);                                          \
     int found;                                                                 \
     size_t slot = map_core_find(m, &key, h, eq_key_str, &found);              \
     if (found) {                                                               \
-        lux_freeStr(key.ptr, key.len);                                         \
+        lucis_freeStr(key.ptr, key.len);                                         \
         memcpy(val_at(m, slot), &val, m->val_size);                            \
         return;                                                                 \
     }                                                                           \
     map_core_set(m, &key, &val, hash_key_str, eq_key_str);                     \
 }                                                                            \
-VT lux_map_get_str_##VS(lux_map_header* m,                             \
-                           lux_map_string key) {                         \
+VT lucis_map_get_str_##VS(lucis_map_header* m,                             \
+                           lucis_map_string key) {                         \
     VT result;                                                               \
     if (!map_core_get(m, &key, &result, hash_key_str, eq_key_str)) {         \
-        fprintf(stderr, "lux panic: Map::get key not found\n");           \
+        fprintf(stderr, "lucis panic: Map::get key not found\n");           \
         abort();                                                             \
     }                                                                        \
     return result;                                                           \
 }                                                                            \
-VT lux_map_getOrDefault_str_##VS(lux_map_header* m,                    \
-                                    lux_map_string key, VT def) {        \
+VT lucis_map_getOrDefault_str_##VS(lucis_map_header* m,                    \
+                                    lucis_map_string key, VT def) {        \
     VT result;                                                               \
     if (map_core_get(m, &key, &result, hash_key_str, eq_key_str))            \
         return result;                                                       \
     return def;                                                              \
 }                                                                            \
-int lux_map_has_str_##VS(lux_map_header* m,                            \
-                            lux_map_string key) {                        \
+int lucis_map_has_str_##VS(lucis_map_header* m,                            \
+                            lucis_map_string key) {                        \
     return map_core_has(m, &key, hash_key_str, eq_key_str);                  \
 }                                                                            \
-int lux_map_remove_str_##VS(lux_map_header* m,                         \
-                               lux_map_string key) {                     \
+int lucis_map_remove_str_##VS(lucis_map_header* m,                         \
+                               lucis_map_string key) {                     \
     if (m->len == 0) return 0;                                                 \
     uint64_t h = hash_key_str(&key);                                           \
     int found;                                                                  \
     size_t slot = map_core_find(m, &key, h, eq_key_str, &found);               \
     if (!found) return 0;                                                       \
-    lux_map_string* stored_key =                                                \
-        (lux_map_string*)((uint8_t*)m->keys + slot * m->key_size);             \
-    lux_freeStr(stored_key->ptr, stored_key->len);                              \
+    lucis_map_string* stored_key =                                                \
+        (lucis_map_string*)((uint8_t*)m->keys + slot * m->key_size);             \
+    lucis_freeStr(stored_key->ptr, stored_key->len);                              \
     m->states[slot] = MAP_STATE_TOMBSTONE;                                      \
     m->len--;                                                                    \
     return 1;                                                                    \
 }                                                                            \
-void lux_map_clear_str_##VS(lux_map_header* m) {                       \
+void lucis_map_clear_str_##VS(lucis_map_header* m) {                       \
     for (size_t i = 0; i < m->cap; i++) {                                       \
         if (m->states[i] != MAP_STATE_OCCUPIED) continue;                       \
-        lux_map_string* key_ptr =                                                \
-            (lux_map_string*)((uint8_t*)m->keys + i * m->key_size);             \
-        lux_freeStr(key_ptr->ptr, key_ptr->len);                                 \
+        lucis_map_string* key_ptr =                                                \
+            (lucis_map_string*)((uint8_t*)m->keys + i * m->key_size);             \
+        lucis_freeStr(key_ptr->ptr, key_ptr->len);                                 \
     }                                                                            \
     map_core_clear(m);                                                           \
 }                                                                            \
-void lux_map_keys_str_##VS(lux_map_header* m,                          \
-                               lux_map_vec_out* out) {                   \
-    lux_map_string* arr =                                                 \
-        (lux_map_string*)malloc(m->len * sizeof(lux_map_string));      \
+void lucis_map_keys_str_##VS(lucis_map_header* m,                          \
+                               lucis_map_vec_out* out) {                   \
+    lucis_map_string* arr =                                                 \
+        (lucis_map_string*)malloc(m->len * sizeof(lucis_map_string));      \
     size_t n = 0;                                                            \
     for (size_t i = 0; i < m->cap; i++) {                                    \
         if (m->states[i] == MAP_STATE_OCCUPIED)                              \
-            arr[n++] = *(lux_map_string*)                                 \
+            arr[n++] = *(lucis_map_string*)                                 \
                 ((uint8_t*)m->keys + i * m->key_size);                      \
     }                                                                        \
     out->ptr = arr; out->len = n; out->cap = n;                              \
 }                                                                            \
-void lux_map_values_str_##VS(lux_map_header* m,                        \
-                                 lux_map_vec_out* out) {                 \
+void lucis_map_values_str_##VS(lucis_map_header* m,                        \
+                                 lucis_map_vec_out* out) {                 \
     VT* arr = (VT*)malloc(m->len * sizeof(VT));                             \
     size_t n = 0;                                                            \
     for (size_t i = 0; i < m->cap; i++) {                                    \
@@ -405,82 +405,82 @@ void lux_map_values_str_##VS(lux_map_header* m,                        \
 
 // ── Integer key × string value ───────────────────────────────────────────
 
-#define LUX_MAP_IMPL_INT_STR(KT, KS, HASH_FN, EQ_FN)                     \
-void lux_map_init_##KS##_str(lux_map_header* m) {                      \
-    map_core_init(m, sizeof(KT), sizeof(lux_map_string));                 \
+#define LUCIS_MAP_IMPL_INT_STR(KT, KS, HASH_FN, EQ_FN)                     \
+void lucis_map_init_##KS##_str(lucis_map_header* m) {                      \
+    map_core_init(m, sizeof(KT), sizeof(lucis_map_string));                 \
 }                                                                            \
-void lux_map_free_##KS##_str(lux_map_header* m) {                      \
+void lucis_map_free_##KS##_str(lucis_map_header* m) {                      \
     for (size_t i = 0; i < m->cap; i++) {                              \
         if (m->states[i] == MAP_STATE_OCCUPIED) {                      \
-            lux_map_string* val =                                       \
-                (lux_map_string*)((uint8_t*)m->values + i * m->val_size); \
-            lux_freeStr(val->ptr, val->len);                           \
+            lucis_map_string* val =                                       \
+                (lucis_map_string*)((uint8_t*)m->values + i * m->val_size); \
+            lucis_freeStr(val->ptr, val->len);                           \
         }                                                                \
     }                                                                    \
     map_core_free(m);                                                        \
 }                                                                            \
-size_t lux_map_len_##KS##_str(const lux_map_header* m) {               \
+size_t lucis_map_len_##KS##_str(const lucis_map_header* m) {               \
     return m->len;                                                           \
 }                                                                            \
-int lux_map_isEmpty_##KS##_str(const lux_map_header* m) {              \
+int lucis_map_isEmpty_##KS##_str(const lucis_map_header* m) {              \
     return m->len == 0;                                                      \
 }                                                                            \
-void lux_map_set_##KS##_str(lux_map_header* m, KT key,                \
-                               lux_map_string val) {                     \
+void lucis_map_set_##KS##_str(lucis_map_header* m, KT key,                \
+                               lucis_map_string val) {                     \
     uint64_t h = HASH_FN(&key);                                                \
     int found;                                                                  \
     size_t slot = map_core_find(m, &key, h, EQ_FN, &found);                    \
     if (found) {                                                                \
-        lux_map_string* old_val =                                               \
-            (lux_map_string*)((uint8_t*)m->values + slot * m->val_size);        \
+        lucis_map_string* old_val =                                               \
+            (lucis_map_string*)((uint8_t*)m->values + slot * m->val_size);        \
         if (old_val->ptr != val.ptr || old_val->len != val.len)                 \
-            lux_freeStr(old_val->ptr, old_val->len);                            \
+            lucis_freeStr(old_val->ptr, old_val->len);                            \
         memcpy(val_at(m, slot), &val, m->val_size);                             \
         return;                                                                  \
     }                                                                            \
     map_core_set(m, &key, &val, HASH_FN, EQ_FN);                                \
 }                                                                            \
-lux_map_string lux_map_get_##KS##_str(lux_map_header* m, KT key) {  \
-    lux_map_string result;                                                \
+lucis_map_string lucis_map_get_##KS##_str(lucis_map_header* m, KT key) {  \
+    lucis_map_string result;                                                \
     if (!map_core_get(m, &key, &result, HASH_FN, EQ_FN)) {                  \
-        fprintf(stderr, "lux panic: Map::get key not found\n");           \
+        fprintf(stderr, "lucis panic: Map::get key not found\n");           \
         abort();                                                             \
     }                                                                        \
     return result;                                                           \
 }                                                                            \
-lux_map_string lux_map_getOrDefault_##KS##_str(                        \
-        lux_map_header* m, KT key, lux_map_string def) {              \
-    lux_map_string result;                                                \
+lucis_map_string lucis_map_getOrDefault_##KS##_str(                        \
+        lucis_map_header* m, KT key, lucis_map_string def) {              \
+    lucis_map_string result;                                                \
     if (map_core_get(m, &key, &result, HASH_FN, EQ_FN)) return result;      \
     return def;                                                              \
 }                                                                            \
-int lux_map_has_##KS##_str(lux_map_header* m, KT key) {               \
+int lucis_map_has_##KS##_str(lucis_map_header* m, KT key) {               \
     return map_core_has(m, &key, HASH_FN, EQ_FN);                           \
 }                                                                            \
-int lux_map_remove_##KS##_str(lux_map_header* m, KT key) {            \
+int lucis_map_remove_##KS##_str(lucis_map_header* m, KT key) {            \
     if (m->len == 0) return 0;                                                 \
     uint64_t h = HASH_FN(&key);                                                \
     int found;                                                                  \
     size_t slot = map_core_find(m, &key, h, EQ_FN, &found);                    \
     if (!found) return 0;                                                       \
-    lux_map_string* stored_val =                                                \
-        (lux_map_string*)((uint8_t*)m->values + slot * m->val_size);           \
-    lux_freeStr(stored_val->ptr, stored_val->len);                              \
+    lucis_map_string* stored_val =                                                \
+        (lucis_map_string*)((uint8_t*)m->values + slot * m->val_size);           \
+    lucis_freeStr(stored_val->ptr, stored_val->len);                              \
     m->states[slot] = MAP_STATE_TOMBSTONE;                                      \
     m->len--;                                                                    \
     return 1;                                                                    \
 }                                                                            \
-void lux_map_clear_##KS##_str(lux_map_header* m) {                    \
+void lucis_map_clear_##KS##_str(lucis_map_header* m) {                    \
     for (size_t i = 0; i < m->cap; i++) {                                       \
         if (m->states[i] != MAP_STATE_OCCUPIED) continue;                       \
-        lux_map_string* val_ptr =                                                \
-            (lux_map_string*)((uint8_t*)m->values + i * m->val_size);           \
-        lux_freeStr(val_ptr->ptr, val_ptr->len);                                 \
+        lucis_map_string* val_ptr =                                                \
+            (lucis_map_string*)((uint8_t*)m->values + i * m->val_size);           \
+        lucis_freeStr(val_ptr->ptr, val_ptr->len);                                 \
     }                                                                            \
     map_core_clear(m);                                                           \
 }                                                                            \
-void lux_map_keys_##KS##_str(lux_map_header* m,                       \
-                                 lux_map_vec_out* out) {                 \
+void lucis_map_keys_##KS##_str(lucis_map_header* m,                       \
+                                 lucis_map_vec_out* out) {                 \
     KT* arr = (KT*)malloc(m->len * sizeof(KT));                             \
     size_t n = 0;                                                            \
     for (size_t i = 0; i < m->cap; i++) {                                    \
@@ -489,14 +489,14 @@ void lux_map_keys_##KS##_str(lux_map_header* m,                       \
     }                                                                        \
     out->ptr = arr; out->len = n; out->cap = n;                              \
 }                                                                            \
-void lux_map_values_##KS##_str(lux_map_header* m,                     \
-                                   lux_map_vec_out* out) {               \
-    lux_map_string* arr =                                                 \
-        (lux_map_string*)malloc(m->len * sizeof(lux_map_string));      \
+void lucis_map_values_##KS##_str(lucis_map_header* m,                     \
+                                   lucis_map_vec_out* out) {               \
+    lucis_map_string* arr =                                                 \
+        (lucis_map_string*)malloc(m->len * sizeof(lucis_map_string));      \
     size_t n = 0;                                                            \
     for (size_t i = 0; i < m->cap; i++) {                                    \
         if (m->states[i] == MAP_STATE_OCCUPIED)                              \
-            arr[n++] = *(lux_map_string*)                                 \
+            arr[n++] = *(lucis_map_string*)                                 \
                 ((uint8_t*)m->values + i * m->val_size);                    \
     }                                                                        \
     out->ptr = arr; out->len = n; out->cap = n;                              \
@@ -507,214 +507,214 @@ void lux_map_values_##KS##_str(lux_map_header* m,                     \
 // ═══════════════════════════════════════════════════════════════════════════
 
 // ── String key × numeric values ──────────────────────────────────────────
-LUX_MAP_IMPL_STR(int8_t,   i8)
-LUX_MAP_IMPL_STR(int16_t,  i16)
-LUX_MAP_IMPL_STR(int32_t,  i32)
-LUX_MAP_IMPL_STR(int64_t,  i64)
-LUX_MAP_IMPL_STR(uint8_t,  u8)
-LUX_MAP_IMPL_STR(uint16_t, u16)
-LUX_MAP_IMPL_STR(uint32_t, u32)
-LUX_MAP_IMPL_STR(uint64_t, u64)
-LUX_MAP_IMPL_STR(float,    f32)
-LUX_MAP_IMPL_STR(double,   f64)
+LUCIS_MAP_IMPL_STR(int8_t,   i8)
+LUCIS_MAP_IMPL_STR(int16_t,  i16)
+LUCIS_MAP_IMPL_STR(int32_t,  i32)
+LUCIS_MAP_IMPL_STR(int64_t,  i64)
+LUCIS_MAP_IMPL_STR(uint8_t,  u8)
+LUCIS_MAP_IMPL_STR(uint16_t, u16)
+LUCIS_MAP_IMPL_STR(uint32_t, u32)
+LUCIS_MAP_IMPL_STR(uint64_t, u64)
+LUCIS_MAP_IMPL_STR(float,    f32)
+LUCIS_MAP_IMPL_STR(double,   f64)
 
 // ── String key × string value ────────────────────────────────────────────
-// Handled by LUX_MAP_IMPL_STR with VT=lux_map_string
-void lux_map_init_str_str(lux_map_header* m) {
-    map_core_init(m, sizeof(lux_map_string), sizeof(lux_map_string));
+// Handled by LUCIS_MAP_IMPL_STR with VT=lucis_map_string
+void lucis_map_init_str_str(lucis_map_header* m) {
+    map_core_init(m, sizeof(lucis_map_string), sizeof(lucis_map_string));
 }
-void lux_map_free_str_str(lux_map_header* m) {
+void lucis_map_free_str_str(lucis_map_header* m) {
     for (size_t i = 0; i < m->cap; i++) {
         if (m->states[i] != MAP_STATE_OCCUPIED) continue;
-        lux_map_string* key =
-            (lux_map_string*)((uint8_t*)m->keys + i * m->key_size);
-        lux_map_string* val =
-            (lux_map_string*)((uint8_t*)m->values + i * m->val_size);
-        lux_freeStr(key->ptr, key->len);
-        lux_freeStr(val->ptr, val->len);
+        lucis_map_string* key =
+            (lucis_map_string*)((uint8_t*)m->keys + i * m->key_size);
+        lucis_map_string* val =
+            (lucis_map_string*)((uint8_t*)m->values + i * m->val_size);
+        lucis_freeStr(key->ptr, key->len);
+        lucis_freeStr(val->ptr, val->len);
     }
     map_core_free(m);
 }
-size_t lux_map_len_str_str(const lux_map_header* m) {
+size_t lucis_map_len_str_str(const lucis_map_header* m) {
     return m->len;
 }
-int lux_map_isEmpty_str_str(const lux_map_header* m) {
+int lucis_map_isEmpty_str_str(const lucis_map_header* m) {
     return m->len == 0;
 }
-void lux_map_set_str_str(lux_map_header* m,
-                            lux_map_string key, lux_map_string val) {
+void lucis_map_set_str_str(lucis_map_header* m,
+                            lucis_map_string key, lucis_map_string val) {
     uint64_t h = hash_key_str(&key);
     int found;
     size_t slot = map_core_find(m, &key, h, eq_key_str, &found);
     if (found) {
-        lux_map_string* old_val =
-            (lux_map_string*)((uint8_t*)m->values + slot * m->val_size);
-        lux_freeStr(key.ptr, key.len);
+        lucis_map_string* old_val =
+            (lucis_map_string*)((uint8_t*)m->values + slot * m->val_size);
+        lucis_freeStr(key.ptr, key.len);
         if (old_val->ptr != val.ptr || old_val->len != val.len)
-            lux_freeStr(old_val->ptr, old_val->len);
+            lucis_freeStr(old_val->ptr, old_val->len);
         memcpy(val_at(m, slot), &val, m->val_size);
         return;
     }
     map_core_set(m, &key, &val, hash_key_str, eq_key_str);
 }
-lux_map_string lux_map_get_str_str(lux_map_header* m,
-                                          lux_map_string key) {
-    lux_map_string result;
+lucis_map_string lucis_map_get_str_str(lucis_map_header* m,
+                                          lucis_map_string key) {
+    lucis_map_string result;
     if (!map_core_get(m, &key, &result, hash_key_str, eq_key_str)) {
-        fprintf(stderr, "lux panic: Map::get key not found\n");
+        fprintf(stderr, "lucis panic: Map::get key not found\n");
         abort();
     }
     return result;
 }
-lux_map_string lux_map_getOrDefault_str_str(lux_map_header* m,
-                                                   lux_map_string key,
-                                                   lux_map_string def) {
-    lux_map_string result;
+lucis_map_string lucis_map_getOrDefault_str_str(lucis_map_header* m,
+                                                   lucis_map_string key,
+                                                   lucis_map_string def) {
+    lucis_map_string result;
     if (map_core_get(m, &key, &result, hash_key_str, eq_key_str))
         return result;
     return def;
 }
-int lux_map_has_str_str(lux_map_header* m, lux_map_string key) {
+int lucis_map_has_str_str(lucis_map_header* m, lucis_map_string key) {
     return map_core_has(m, &key, hash_key_str, eq_key_str);
 }
-int lux_map_remove_str_str(lux_map_header* m, lux_map_string key) {
+int lucis_map_remove_str_str(lucis_map_header* m, lucis_map_string key) {
     if (m->len == 0) return 0;
     uint64_t h = hash_key_str(&key);
     int found;
     size_t slot = map_core_find(m, &key, h, eq_key_str, &found);
     if (!found) return 0;
-    lux_map_string* stored_key =
-        (lux_map_string*)((uint8_t*)m->keys + slot * m->key_size);
-    lux_map_string* stored_val =
-        (lux_map_string*)((uint8_t*)m->values + slot * m->val_size);
-    lux_freeStr(stored_key->ptr, stored_key->len);
-    lux_freeStr(stored_val->ptr, stored_val->len);
+    lucis_map_string* stored_key =
+        (lucis_map_string*)((uint8_t*)m->keys + slot * m->key_size);
+    lucis_map_string* stored_val =
+        (lucis_map_string*)((uint8_t*)m->values + slot * m->val_size);
+    lucis_freeStr(stored_key->ptr, stored_key->len);
+    lucis_freeStr(stored_val->ptr, stored_val->len);
     m->states[slot] = MAP_STATE_TOMBSTONE;
     m->len--;
     return 1;
 }
-void lux_map_clear_str_str(lux_map_header* m) {
+void lucis_map_clear_str_str(lucis_map_header* m) {
     for (size_t i = 0; i < m->cap; i++) {
         if (m->states[i] != MAP_STATE_OCCUPIED) continue;
-        lux_map_string* key_ptr =
-            (lux_map_string*)((uint8_t*)m->keys + i * m->key_size);
-        lux_map_string* val_ptr =
-            (lux_map_string*)((uint8_t*)m->values + i * m->val_size);
-        lux_freeStr(key_ptr->ptr, key_ptr->len);
-        lux_freeStr(val_ptr->ptr, val_ptr->len);
+        lucis_map_string* key_ptr =
+            (lucis_map_string*)((uint8_t*)m->keys + i * m->key_size);
+        lucis_map_string* val_ptr =
+            (lucis_map_string*)((uint8_t*)m->values + i * m->val_size);
+        lucis_freeStr(key_ptr->ptr, key_ptr->len);
+        lucis_freeStr(val_ptr->ptr, val_ptr->len);
     }
     map_core_clear(m);
 }
-void lux_map_keys_str_str(lux_map_header* m, lux_map_vec_out* out) {
-    lux_map_string* arr =
-        (lux_map_string*)malloc(m->len * sizeof(lux_map_string));
+void lucis_map_keys_str_str(lucis_map_header* m, lucis_map_vec_out* out) {
+    lucis_map_string* arr =
+        (lucis_map_string*)malloc(m->len * sizeof(lucis_map_string));
     size_t n = 0;
     for (size_t i = 0; i < m->cap; i++) {
         if (m->states[i] == MAP_STATE_OCCUPIED)
-            arr[n++] = *(lux_map_string*)
+            arr[n++] = *(lucis_map_string*)
                 ((uint8_t*)m->keys + i * m->key_size);
     }
     out->ptr = arr; out->len = n; out->cap = n;
 }
-void lux_map_values_str_str(lux_map_header* m, lux_map_vec_out* out) {
-    lux_map_string* arr =
-        (lux_map_string*)malloc(m->len * sizeof(lux_map_string));
+void lucis_map_values_str_str(lucis_map_header* m, lucis_map_vec_out* out) {
+    lucis_map_string* arr =
+        (lucis_map_string*)malloc(m->len * sizeof(lucis_map_string));
     size_t n = 0;
     for (size_t i = 0; i < m->cap; i++) {
         if (m->states[i] == MAP_STATE_OCCUPIED)
-            arr[n++] = *(lux_map_string*)
+            arr[n++] = *(lucis_map_string*)
                 ((uint8_t*)m->values + i * m->val_size);
     }
     out->ptr = arr; out->len = n; out->cap = n;
 }
 
 // ── Int32 key × all numeric values ───────────────────────────────────────
-LUX_MAP_IMPL_INT(int32_t, i32, int8_t,   i8,  hash_key_i32, eq_key_i32)
-LUX_MAP_IMPL_INT(int32_t, i32, int16_t,  i16, hash_key_i32, eq_key_i32)
-LUX_MAP_IMPL_INT(int32_t, i32, int32_t,  i32, hash_key_i32, eq_key_i32)
-LUX_MAP_IMPL_INT(int32_t, i32, int64_t,  i64, hash_key_i32, eq_key_i32)
-LUX_MAP_IMPL_INT(int32_t, i32, uint8_t,  u8,  hash_key_i32, eq_key_i32)
-LUX_MAP_IMPL_INT(int32_t, i32, uint16_t, u16, hash_key_i32, eq_key_i32)
-LUX_MAP_IMPL_INT(int32_t, i32, uint32_t, u32, hash_key_i32, eq_key_i32)
-LUX_MAP_IMPL_INT(int32_t, i32, uint64_t, u64, hash_key_i32, eq_key_i32)
-LUX_MAP_IMPL_INT(int32_t, i32, float,    f32, hash_key_i32, eq_key_i32)
-LUX_MAP_IMPL_INT(int32_t, i32, double,   f64, hash_key_i32, eq_key_i32)
-LUX_MAP_IMPL_INT_STR(int32_t, i32, hash_key_i32, eq_key_i32)
+LUCIS_MAP_IMPL_INT(int32_t, i32, int8_t,   i8,  hash_key_i32, eq_key_i32)
+LUCIS_MAP_IMPL_INT(int32_t, i32, int16_t,  i16, hash_key_i32, eq_key_i32)
+LUCIS_MAP_IMPL_INT(int32_t, i32, int32_t,  i32, hash_key_i32, eq_key_i32)
+LUCIS_MAP_IMPL_INT(int32_t, i32, int64_t,  i64, hash_key_i32, eq_key_i32)
+LUCIS_MAP_IMPL_INT(int32_t, i32, uint8_t,  u8,  hash_key_i32, eq_key_i32)
+LUCIS_MAP_IMPL_INT(int32_t, i32, uint16_t, u16, hash_key_i32, eq_key_i32)
+LUCIS_MAP_IMPL_INT(int32_t, i32, uint32_t, u32, hash_key_i32, eq_key_i32)
+LUCIS_MAP_IMPL_INT(int32_t, i32, uint64_t, u64, hash_key_i32, eq_key_i32)
+LUCIS_MAP_IMPL_INT(int32_t, i32, float,    f32, hash_key_i32, eq_key_i32)
+LUCIS_MAP_IMPL_INT(int32_t, i32, double,   f64, hash_key_i32, eq_key_i32)
+LUCIS_MAP_IMPL_INT_STR(int32_t, i32, hash_key_i32, eq_key_i32)
 
 // ── Int64 key × all numeric values ───────────────────────────────────────
-LUX_MAP_IMPL_INT(int64_t, i64, int8_t,   i8,  hash_key_i64, eq_key_i64)
-LUX_MAP_IMPL_INT(int64_t, i64, int16_t,  i16, hash_key_i64, eq_key_i64)
-LUX_MAP_IMPL_INT(int64_t, i64, int32_t,  i32, hash_key_i64, eq_key_i64)
-LUX_MAP_IMPL_INT(int64_t, i64, int64_t,  i64, hash_key_i64, eq_key_i64)
-LUX_MAP_IMPL_INT(int64_t, i64, uint8_t,  u8,  hash_key_i64, eq_key_i64)
-LUX_MAP_IMPL_INT(int64_t, i64, uint16_t, u16, hash_key_i64, eq_key_i64)
-LUX_MAP_IMPL_INT(int64_t, i64, uint32_t, u32, hash_key_i64, eq_key_i64)
-LUX_MAP_IMPL_INT(int64_t, i64, uint64_t, u64, hash_key_i64, eq_key_i64)
-LUX_MAP_IMPL_INT(int64_t, i64, float,    f32, hash_key_i64, eq_key_i64)
-LUX_MAP_IMPL_INT(int64_t, i64, double,   f64, hash_key_i64, eq_key_i64)
-LUX_MAP_IMPL_INT_STR(int64_t, i64, hash_key_i64, eq_key_i64)
+LUCIS_MAP_IMPL_INT(int64_t, i64, int8_t,   i8,  hash_key_i64, eq_key_i64)
+LUCIS_MAP_IMPL_INT(int64_t, i64, int16_t,  i16, hash_key_i64, eq_key_i64)
+LUCIS_MAP_IMPL_INT(int64_t, i64, int32_t,  i32, hash_key_i64, eq_key_i64)
+LUCIS_MAP_IMPL_INT(int64_t, i64, int64_t,  i64, hash_key_i64, eq_key_i64)
+LUCIS_MAP_IMPL_INT(int64_t, i64, uint8_t,  u8,  hash_key_i64, eq_key_i64)
+LUCIS_MAP_IMPL_INT(int64_t, i64, uint16_t, u16, hash_key_i64, eq_key_i64)
+LUCIS_MAP_IMPL_INT(int64_t, i64, uint32_t, u32, hash_key_i64, eq_key_i64)
+LUCIS_MAP_IMPL_INT(int64_t, i64, uint64_t, u64, hash_key_i64, eq_key_i64)
+LUCIS_MAP_IMPL_INT(int64_t, i64, float,    f32, hash_key_i64, eq_key_i64)
+LUCIS_MAP_IMPL_INT(int64_t, i64, double,   f64, hash_key_i64, eq_key_i64)
+LUCIS_MAP_IMPL_INT_STR(int64_t, i64, hash_key_i64, eq_key_i64)
 
 // ── Uint64 key × all numeric values ──────────────────────────────────────
-LUX_MAP_IMPL_INT(uint64_t, u64, int8_t,   i8,  hash_key_u64, eq_key_u64)
-LUX_MAP_IMPL_INT(uint64_t, u64, int16_t,  i16, hash_key_u64, eq_key_u64)
-LUX_MAP_IMPL_INT(uint64_t, u64, int32_t,  i32, hash_key_u64, eq_key_u64)
-LUX_MAP_IMPL_INT(uint64_t, u64, int64_t,  i64, hash_key_u64, eq_key_u64)
-LUX_MAP_IMPL_INT(uint64_t, u64, uint8_t,  u8,  hash_key_u64, eq_key_u64)
-LUX_MAP_IMPL_INT(uint64_t, u64, uint16_t, u16, hash_key_u64, eq_key_u64)
-LUX_MAP_IMPL_INT(uint64_t, u64, uint32_t, u32, hash_key_u64, eq_key_u64)
-LUX_MAP_IMPL_INT(uint64_t, u64, uint64_t, u64, hash_key_u64, eq_key_u64)
-LUX_MAP_IMPL_INT(uint64_t, u64, float,    f32, hash_key_u64, eq_key_u64)
-LUX_MAP_IMPL_INT(uint64_t, u64, double,   f64, hash_key_u64, eq_key_u64)
-LUX_MAP_IMPL_INT_STR(uint64_t, u64, hash_key_u64, eq_key_u64)
+LUCIS_MAP_IMPL_INT(uint64_t, u64, int8_t,   i8,  hash_key_u64, eq_key_u64)
+LUCIS_MAP_IMPL_INT(uint64_t, u64, int16_t,  i16, hash_key_u64, eq_key_u64)
+LUCIS_MAP_IMPL_INT(uint64_t, u64, int32_t,  i32, hash_key_u64, eq_key_u64)
+LUCIS_MAP_IMPL_INT(uint64_t, u64, int64_t,  i64, hash_key_u64, eq_key_u64)
+LUCIS_MAP_IMPL_INT(uint64_t, u64, uint8_t,  u8,  hash_key_u64, eq_key_u64)
+LUCIS_MAP_IMPL_INT(uint64_t, u64, uint16_t, u16, hash_key_u64, eq_key_u64)
+LUCIS_MAP_IMPL_INT(uint64_t, u64, uint32_t, u32, hash_key_u64, eq_key_u64)
+LUCIS_MAP_IMPL_INT(uint64_t, u64, uint64_t, u64, hash_key_u64, eq_key_u64)
+LUCIS_MAP_IMPL_INT(uint64_t, u64, float,    f32, hash_key_u64, eq_key_u64)
+LUCIS_MAP_IMPL_INT(uint64_t, u64, double,   f64, hash_key_u64, eq_key_u64)
+LUCIS_MAP_IMPL_INT_STR(uint64_t, u64, hash_key_u64, eq_key_u64)
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Raw (opaque struct) value — str key, struct val of runtime-known size
 // ═══════════════════════════════════════════════════════════════════════════
 
-void lux_map_init_str_raw(lux_map_header* m, size_t val_size) {
-    map_core_init(m, sizeof(lux_map_string), val_size);
+void lucis_map_init_str_raw(lucis_map_header* m, size_t val_size) {
+    map_core_init(m, sizeof(lucis_map_string), val_size);
 }
 
-void lux_map_free_str_raw(lux_map_header* m) {
+void lucis_map_free_str_raw(lucis_map_header* m) {
     for (size_t i = 0; i < m->cap; i++) {
         if (m->states[i] != MAP_STATE_OCCUPIED) continue;
-        lux_map_string* key =
-            (lux_map_string*)((uint8_t*)m->keys + i * m->key_size);
-        lux_freeStr(key->ptr, key->len);
+        lucis_map_string* key =
+            (lucis_map_string*)((uint8_t*)m->keys + i * m->key_size);
+        lucis_freeStr(key->ptr, key->len);
     }
     map_core_free(m);
 }
 
-size_t lux_map_len_str_raw(const lux_map_header* m) {
+size_t lucis_map_len_str_raw(const lucis_map_header* m) {
     return m->len;
 }
 
-void lux_map_set_str_raw(lux_map_header* m, lux_map_string key,
+void lucis_map_set_str_raw(lucis_map_header* m, lucis_map_string key,
                           const void* val) {
     uint64_t h = hash_key_str(&key);
     int found;
     size_t slot = map_core_find(m, &key, h, eq_key_str, &found);
     if (found) {
-        lux_freeStr(key.ptr, key.len);
+        lucis_freeStr(key.ptr, key.len);
         memcpy(val_at(m, slot), val, m->val_size);
         return;
     }
     map_core_set(m, &key, val, hash_key_str, eq_key_str);
 }
 
-void lux_map_get_str_raw(lux_map_header* m, lux_map_string key,
+void lucis_map_get_str_raw(lucis_map_header* m, lucis_map_string key,
                           void* val_out) {
     if (!map_core_get(m, &key, val_out, hash_key_str, eq_key_str)) {
-        fprintf(stderr, "lux panic: Map::get key not found\n");
+        fprintf(stderr, "lucis panic: Map::get key not found\n");
         abort();
     }
 }
 
-int lux_map_has_str_raw(lux_map_header* m, lux_map_string key) {
+int lucis_map_has_str_raw(lucis_map_header* m, lucis_map_string key) {
     return map_core_has(m, &key, hash_key_str, eq_key_str);
 }
 
-void lux_map_values_str_raw(lux_map_header* m, lux_map_vec_out* out) {
+void lucis_map_values_str_raw(lucis_map_header* m, lucis_map_vec_out* out) {
     char* arr = (char*)malloc(m->len * m->val_size);
     size_t n = 0;
     for (size_t i = 0; i < m->cap; i++) {
@@ -728,30 +728,30 @@ void lux_map_values_str_raw(lux_map_header* m, lux_map_vec_out* out) {
     out->ptr = arr; out->len = n; out->cap = n;
 }
 
-int lux_map_isEmpty_str_raw(const lux_map_header* m) {
+int lucis_map_isEmpty_str_raw(const lucis_map_header* m) {
     return m->len == 0;
 }
 
-int lux_map_remove_str_raw(lux_map_header* m, lux_map_string key) {
+int lucis_map_remove_str_raw(lucis_map_header* m, lucis_map_string key) {
     if (m->len == 0) return 0;
     uint64_t h = hash_key_str(&key);
     int found;
     size_t slot = map_core_find(m, &key, h, eq_key_str, &found);
     if (!found) return 0;
-    lux_map_string* stored_key =
-        (lux_map_string*)((uint8_t*)m->keys + slot * m->key_size);
-    lux_freeStr(stored_key->ptr, stored_key->len);
+    lucis_map_string* stored_key =
+        (lucis_map_string*)((uint8_t*)m->keys + slot * m->key_size);
+    lucis_freeStr(stored_key->ptr, stored_key->len);
     m->states[slot] = MAP_STATE_TOMBSTONE;
     m->len--;
     return 1;
 }
 
-void lux_map_clear_str_raw(lux_map_header* m) {
+void lucis_map_clear_str_raw(lucis_map_header* m) {
     for (size_t i = 0; i < m->cap; i++) {
         if (m->states[i] != MAP_STATE_OCCUPIED) continue;
-        lux_map_string* key_ptr =
-            (lux_map_string*)((uint8_t*)m->keys + i * m->key_size);
-        lux_freeStr(key_ptr->ptr, key_ptr->len);
+        lucis_map_string* key_ptr =
+            (lucis_map_string*)((uint8_t*)m->keys + i * m->key_size);
+        lucis_freeStr(key_ptr->ptr, key_ptr->len);
     }
     map_core_clear(m);
 }

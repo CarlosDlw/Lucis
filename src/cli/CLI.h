@@ -18,7 +18,7 @@ struct CLIOptions {
     bool        showIR      = false;
     bool        showHelp    = false;
     bool        showVersion = false;
-    bool        runJIT      = false;   // lux run <file.lx>
+    bool        runJIT      = false;   // lucis run <file.lc>
 
     std::vector<std::string> linkerFlags;
     std::vector<std::string> libPaths;

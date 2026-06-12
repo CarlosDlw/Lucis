@@ -1,5 +1,5 @@
-#ifndef LUX_THREAD_H
-#define LUX_THREAD_H
+#ifndef LUCIS_THREAD_H
+#define LUCIS_THREAD_H
 
 #include <stdint.h>
 #include <stddef.h>
@@ -9,35 +9,35 @@ extern "C" {
 #endif
 
 /* ── Task ──────────────────────────────────────────────────────────────── */
-typedef struct lux_Task lux_Task;
+typedef struct lucis_Task lucis_Task;
 
 /* Create a task that runs `fn(arg)` on a new thread.
    `fn` must return a heap-allocated result pointer (or NULL for void). */
-lux_Task* lux_taskCreate(void* (*fn)(void*), void* arg);
+lucis_Task* lucis_taskCreate(void* (*fn)(void*), void* arg);
 
 /* Block until the task finishes, return the result pointer.
    The caller owns the returned pointer and must free() it. */
-void* lux_taskAwait(lux_Task* task);
+void* lucis_taskAwait(lucis_Task* task);
 
 /* Free the task handle (call after await). */
-void lux_taskFree(lux_Task* task);
+void lucis_taskFree(lucis_Task* task);
 
 /* ── Mutex ─────────────────────────────────────────────────────────────── */
-typedef struct lux_Mutex lux_Mutex;
+typedef struct lucis_Mutex lucis_Mutex;
 
-lux_Mutex* lux_mutexCreate(void);
-void          lux_mutexLock(lux_Mutex* m);
-void          lux_mutexUnlock(lux_Mutex* m);
-int32_t       lux_mutexTryLock(lux_Mutex* m);
-void          lux_mutexFree(lux_Mutex* m);
+lucis_Mutex* lucis_mutexCreate(void);
+void          lucis_mutexLock(lucis_Mutex* m);
+void          lucis_mutexUnlock(lucis_Mutex* m);
+int32_t       lucis_mutexTryLock(lucis_Mutex* m);
+void          lucis_mutexFree(lucis_Mutex* m);
 
 /* ── Utilities ─────────────────────────────────────────────────────────── */
-uint32_t lux_cpuCount(void);
-uint64_t lux_threadId(void);
-void     lux_yield(void);
+uint32_t lucis_cpuCount(void);
+uint64_t lucis_threadId(void);
+void     lucis_yield(void);
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif /* LUX_THREAD_H */
+#endif /* LUCIS_THREAD_H */

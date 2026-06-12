@@ -78,7 +78,7 @@ For payload variants, construct values by passing payload data:
 ```
 Token t1 = Token::Eof;
 Token t2 = Token::Number(42.0);
-Token t3 = Token::Ident("lux");
+Token t3 = Token::Ident("lucis");
 
 Shape s1 = Shape::Circle { r: 4.0 };
 Shape s2 = Shape::Rect { w: 10.0, h: 6.0 };

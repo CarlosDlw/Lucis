@@ -6,7 +6,7 @@ class TestCommand : public Command {
 public:
     std::string name() const override { return "test"; }
     std::string description() const override {
-        return "Run the Lux test suite";
+        return "Run the Lucis test suite";
     }
     void buildArgs(ArgParser& parser) const override;
     int run(const ArgParser& parser) override;

@@ -1,6 +1,6 @@
 # Operators
 
-This page documents all operators in Lux, organized by category, with examples and a complete precedence table.
+This page documents all operators in Lucis, organized by category, with examples and a complete precedence table.
 
 ## Arithmetic Operators
 

@@ -1,6 +1,6 @@
 # Functions
 
-This page covers function declaration, parameters, return values, variadic functions, and function pointers in Lux.
+This page covers function declaration, parameters, return values, variadic functions, and function pointers in Lucis.
 
 ## Declaration
 
@@ -177,11 +177,11 @@ fn main() int32 {
 }
 ```
 
-This is different from Lux variadic functions — C variadic arguments are not type-checked and must match the format string.
+This is different from Lucis variadic functions — C variadic arguments are not type-checked and must match the format string.
 
 ## C-Style Untyped Variadic Functions
 
-Lux also supports untyped variadic functions — functions declared with a bare `...` as the last parameter, without a type or parameter name:
+Lucis also supports untyped variadic functions — functions declared with a bare `...` as the last parameter, without a type or parameter name:
 
 ```
 namespace UntypedVariadicDemo;
@@ -191,14 +191,14 @@ use std::log::println;
 fn sum(int32 count, ...) void {
     int32 total = 0;
 
-    va_list va = lux::unsafe::va_list();
-    lux::unsafe::va_start(va);
+    va_list va = lucis::unsafe::va_list();
+    lucis::unsafe::va_start(va);
 
     for int32 _ in 0..count {
-        total += lux::unsafe::va_arg_int32(va);
+        total += lucis::unsafe::va_arg_int32(va);
     }
 
-    lux::unsafe::va_end(va);
+    lucis::unsafe::va_end(va);
 
     println(total);
 }
@@ -214,20 +214,20 @@ When arguments of different types are needed, use the corresponding typed helper
 
 ```
 fn print_mixed(int32 count, ...) void {
-    va_list va = lux::unsafe::va_list();
-    lux::unsafe::va_start(va);
+    va_list va = lucis::unsafe::va_list();
+    lucis::unsafe::va_start(va);
 
-    int32   i = lux::unsafe::va_arg_int32(va);
-    float64 f = lux::unsafe::va_arg_float64(va);
-    bool    b = lux::unsafe::va_arg_bool(va);
-    string  s = lux::unsafe::va_arg_string(va);
+    int32   i = lucis::unsafe::va_arg_int32(va);
+    float64 f = lucis::unsafe::va_arg_float64(va);
+    bool    b = lucis::unsafe::va_arg_bool(va);
+    string  s = lucis::unsafe::va_arg_string(va);
 
     println(i);
     println(f);
     println(b);
     println(s);
 
-    lux::unsafe::va_end(va);
+    lucis::unsafe::va_end(va);
 }
 
 fn main() int32 {
@@ -241,7 +241,7 @@ fn main() int32 {
 | Aspect | Typed `int32 ...values` | Untyped `...` |
 |--------|-------------------------|---------------|
 | Argument type | Homogeneous (all `int32`) | Any type per call |
-| Access method | Array-like (`values[0]`, `for..in`) | Must use `lux::unsafe::va_*` intrinsics |
+| Access method | Array-like (`values[0]`, `for..in`) | Must use `lucis::unsafe::va_*` intrinsics |
 | Type safety | Fully type-checked at compile time | Unchecked — `va_arg<T>` read type must match what was passed |
 | Zero-argument calls | Allowed (`sum()`) | Not possible (need at least one fixed param for counting) |
 
@@ -254,7 +254,7 @@ fn main() int32 {
 
 - The untyped `...` must be the last parameter.
 - At least one fixed parameter is required before `...` (unlike typed variadics which can stand alone).
-- The function body must use `lux::unsafe::va_list`, `va_start`, `va_arg_*`, and `va_end` to access the arguments (see [Intrinsics](intrinsics.md#variadic-argument-support)).
+- The function body must use `lucis::unsafe::va_list`, `va_start`, `va_arg_*`, and `va_end` to access the arguments (see [Intrinsics](intrinsics.md#variadic-argument-support)).
 - The caller is responsible for passing arguments that match the types read by the `va_arg_*` helpers — there is no compile-time type checking for individual variadic arguments.
 
 ## Function Pointers
@@ -358,7 +358,7 @@ fn double_value(int32 x) int32 {
 
 ## The `main` Function
 
-Every Lux program must have a `main` function that:
+Every Lucis program must have a `main` function that:
 
 - Returns `int32` (the exit code)
 - Takes no parameters, or a single `vec<string>` parameter for command-line arguments

@@ -20,7 +20,7 @@ static uint64_t splitmix64(uint64_t* state) {
 
 static void ensure_initialized(void) {
     if (!rng_initialized) {
-        lux_seedTime();
+        lucis_seedTime();
     }
 }
 
@@ -37,7 +37,7 @@ static uint64_t next_random(void) {
     return result;
 }
 
-void lux_seed(uint64_t s) {
+void lucis_seed(uint64_t s) {
     uint64_t sm = s;
     rng_state[0] = splitmix64(&sm);
     rng_state[1] = splitmix64(&sm);
@@ -46,47 +46,47 @@ void lux_seed(uint64_t s) {
     rng_initialized = 1;
 }
 
-void lux_seedTime(void) {
+void lucis_seedTime(void) {
     struct timespec ts;
     clock_gettime(CLOCK_REALTIME, &ts);
     uint64_t s = (uint64_t)ts.tv_sec * 1000000000ULL + (uint64_t)ts.tv_nsec;
-    lux_seed(s);
+    lucis_seed(s);
 }
 
-int64_t lux_randInt(void) {
+int64_t lucis_randInt(void) {
     return (int64_t)next_random();
 }
 
-int64_t lux_randIntRange(int64_t min, int64_t max) {
+int64_t lucis_randIntRange(int64_t min, int64_t max) {
     if (min >= max) return min;
     uint64_t range = (uint64_t)(max - min) + 1;
     uint64_t r = next_random();
     return min + (int64_t)(r % range);
 }
 
-uint64_t lux_randUint(void) {
+uint64_t lucis_randUint(void) {
     return next_random();
 }
 
-double lux_randFloat(void) {
+double lucis_randFloat(void) {
     return (double)(next_random() >> 11) * 0x1.0p-53;
 }
 
-double lux_randFloatRange(double min, double max) {
+double lucis_randFloatRange(double min, double max) {
     if (min >= max) return min;
-    return min + lux_randFloat() * (max - min);
+    return min + lucis_randFloat() * (max - min);
 }
 
-int32_t lux_randBool(void) {
+int32_t lucis_randBool(void) {
     return (next_random() & 1) ? 1 : 0;
 }
 
-uint8_t lux_randChar(void) {
+uint8_t lucis_randChar(void) {
     // Printable ASCII: 32 ('space') to 126 ('~') = 95 chars
     return (uint8_t)(32 + (next_random() % 95));
 }
 
-lux_random_str_result lux_uuid_v4(void) {
+lucis_random_str_result lucis_uuid_v4(void) {
     static const char hex[] = "0123456789abcdef";
     uint8_t bytes[16];
 
@@ -100,7 +100,7 @@ lux_random_str_result lux_uuid_v4(void) {
 
     char* out = (char*)malloc(37);
     if (!out) {
-        lux_random_str_result r = {"", 0};
+        lucis_random_str_result r = {"", 0};
         return r;
     }
 
@@ -113,6 +113,6 @@ lux_random_str_result lux_uuid_v4(void) {
     }
     out[36] = '\0';
 
-    lux_random_str_result r = {out, 36};
+    lucis_random_str_result r = {out, 36};
     return r;
 }

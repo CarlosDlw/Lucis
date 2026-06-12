@@ -1,6 +1,6 @@
 # Keywords
 
-Lux has 39 reserved keywords and 20 type keywords. All keywords are lowercase.
+Lucis has 39 reserved keywords and 20 type keywords. All keywords are lowercase.
 
 ---
 

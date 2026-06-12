@@ -334,55 +334,55 @@ static void sha512_hash(const uint8_t* msg, size_t len, uint8_t out[64]) {
 
 /* ─── public API ───────────────────────────────────────────────────────── */
 
-lux_crypto_str_result lux_md5String(const char* s, size_t slen) {
+lucis_crypto_str_result lucis_md5String(const char* s, size_t slen) {
     uint8_t digest[16];
     md5_hash((const uint8_t*)s, slen, digest);
     char* hex = bytes_to_hex(digest, 16);
-    return (lux_crypto_str_result){ hex, 32 };
+    return (lucis_crypto_str_result){ hex, 32 };
 }
 
-lux_crypto_str_result lux_sha1String(const char* s, size_t slen) {
+lucis_crypto_str_result lucis_sha1String(const char* s, size_t slen) {
     uint8_t digest[20];
     sha1_hash((const uint8_t*)s, slen, digest);
     char* hex = bytes_to_hex(digest, 20);
-    return (lux_crypto_str_result){ hex, 40 };
+    return (lucis_crypto_str_result){ hex, 40 };
 }
 
-lux_crypto_str_result lux_sha256String(const char* s, size_t slen) {
+lucis_crypto_str_result lucis_sha256String(const char* s, size_t slen) {
     uint8_t digest[32];
     sha256_hash((const uint8_t*)s, slen, digest);
     char* hex = bytes_to_hex(digest, 32);
-    return (lux_crypto_str_result){ hex, 64 };
+    return (lucis_crypto_str_result){ hex, 64 };
 }
 
-lux_crypto_str_result lux_sha512String(const char* s, size_t slen) {
+lucis_crypto_str_result lucis_sha512String(const char* s, size_t slen) {
     uint8_t digest[64];
     sha512_hash((const uint8_t*)s, slen, digest);
     char* hex = bytes_to_hex(digest, 64);
-    return (lux_crypto_str_result){ hex, 128 };
+    return (lucis_crypto_str_result){ hex, 128 };
 }
 
 /* ── Vec<uint8> variants ───────────────────────────────────────── */
 
-lux_crypto_str_result lux_md5Bytes(const lux_crypto_vec_header* data) {
-    return lux_md5String((const char*)data->ptr, data->len);
+lucis_crypto_str_result lucis_md5Bytes(const lucis_crypto_vec_header* data) {
+    return lucis_md5String((const char*)data->ptr, data->len);
 }
 
-lux_crypto_str_result lux_sha1Bytes(const lux_crypto_vec_header* data) {
-    return lux_sha1String((const char*)data->ptr, data->len);
+lucis_crypto_str_result lucis_sha1Bytes(const lucis_crypto_vec_header* data) {
+    return lucis_sha1String((const char*)data->ptr, data->len);
 }
 
-lux_crypto_str_result lux_sha256Bytes(const lux_crypto_vec_header* data) {
-    return lux_sha256String((const char*)data->ptr, data->len);
+lucis_crypto_str_result lucis_sha256Bytes(const lucis_crypto_vec_header* data) {
+    return lucis_sha256String((const char*)data->ptr, data->len);
 }
 
-lux_crypto_str_result lux_sha512Bytes(const lux_crypto_vec_header* data) {
-    return lux_sha512String((const char*)data->ptr, data->len);
+lucis_crypto_str_result lucis_sha512Bytes(const lucis_crypto_vec_header* data) {
+    return lucis_sha512String((const char*)data->ptr, data->len);
 }
 
-void lux_hmacSha256(lux_crypto_vec_header* out,
-                       const lux_crypto_vec_header* key,
-                       const lux_crypto_vec_header* data) {
+void lucis_hmacSha256(lucis_crypto_vec_header* out,
+                       const lucis_crypto_vec_header* key,
+                       const lucis_crypto_vec_header* data) {
     const uint8_t* keyBytes = (const uint8_t*)key->ptr;
     size_t keyLen = key->len;
     const uint8_t* msgBytes = (const uint8_t*)data->ptr;
@@ -427,7 +427,7 @@ void lux_hmacSha256(lux_crypto_vec_header* out,
     out->cap = 32;
 }
 
-void lux_randomBytes(lux_crypto_vec_header* out, size_t n) {
+void lucis_randomBytes(lucis_crypto_vec_header* out, size_t n) {
     uint8_t* buf = (uint8_t*)malloc(n);
 
     FILE* f = fopen("/dev/urandom", "rb");

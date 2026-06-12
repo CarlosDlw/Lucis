@@ -1,6 +1,6 @@
 # Optimization
 
-The Lux compiler uses LLVM's PassBuilder infrastructure to optimize generated IR before emitting machine code. Four optimization levels are available, from no optimization (default) to aggressive inlining and vectorization.
+The Lucis compiler uses LLVM's PassBuilder infrastructure to optimize generated IR before emitting machine code. Four optimization levels are available, from no optimization (default) to aggressive inlining and vectorization.
 
 ---
 
@@ -17,16 +17,16 @@ The Lux compiler uses LLVM's PassBuilder infrastructure to optimize generated IR
 
 ```bash
 # No optimization (default)
-lux main.lx ./main
+lucis main.lc ./main
 
 # O1 — good for development
-lux main.lx ./main -o1
+lucis main.lc ./main -o1
 
 # O2 — balanced, recommended for production-like testing
-lux main.lx ./main -o2
+lucis main.lc ./main -o2
 
 # O3 — maximum performance, use for release builds
-lux main.lx ./main -o3
+lucis main.lc ./main -o3
 ```
 
 ---
@@ -277,7 +277,7 @@ To see the LLVM IR that the compiler produces (before and after optimization), c
 
 ```bash
 # Prints IR to stdout (unoptimized)
-lux build main.lx --emit-llvm
+lucis build main.lc --emit-llvm
 
 # To see optimized IR, you'd need to add optimization flags
 # Currently, IR stdout mode always shows unoptimized IR

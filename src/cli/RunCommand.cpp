@@ -1,6 +1,6 @@
 #include "cli/RunCommand.h"
 #include "cli/ArgParser.h"
-#include "cli/LuxPipeline.h"
+#include "cli/LucisPipeline.h"
 #include "IRBuilder/IRGen.h"
 #include "LLVM_IR/IRModule.h"
 #include "LLVM_Optimizer/Optimizer.h"
@@ -28,7 +28,7 @@
 namespace fs = std::filesystem;
 
 void RunCommand::buildArgs(ArgParser& parser) const {
-    parser.addPositional("file", "Path to the .lx entrypoint file");
+    parser.addPositional("file", "Path to the .lc entrypoint file");
     parser.addOption("opt", 'O', "LEVEL", "Optimization level: 0, 1, 2, 3, s, z, or fast (default: 0)");
     parser.addFlag("lto", '\0', "Enable Link Time Optimization");
     parser.addFlag("quiet", 'q', "Suppress pipeline logs");
@@ -40,33 +40,33 @@ void RunCommand::buildArgs(ArgParser& parser) const {
 }
 
 int RunCommand::run(const ArgParser& parser) {
-    LuxPipeline::Options pipeOpts;
+    LucisPipeline::Options pipeOpts;
     pipeOpts.inputFile        = parser.get("file");
     pipeOpts.quiet            = parser.has("quiet");
     pipeOpts.includePaths     = parser.getAll("include");
     pipeOpts.userLinkerFlags  = parser.getAll("link");
 
-    OptimizationLevel luxOptLevel = OptimizationLevel::O0;
+    OptimizationLevel lucisOptLevel = OptimizationLevel::O0;
     if (parser.has("opt")) {
         std::string optStr = parser.get("opt");
-        if (optStr == "0")      luxOptLevel = OptimizationLevel::O0;
-        else if (optStr == "1") luxOptLevel = OptimizationLevel::O1;
-        else if (optStr == "2") luxOptLevel = OptimizationLevel::O2;
-        else if (optStr == "3") luxOptLevel = OptimizationLevel::O3;
-        else if (optStr == "s") luxOptLevel = OptimizationLevel::Os;
-        else if (optStr == "z") luxOptLevel = OptimizationLevel::Oz;
-        else if (optStr == "fast") luxOptLevel = OptimizationLevel::Ofast;
+        if (optStr == "0")      lucisOptLevel = OptimizationLevel::O0;
+        else if (optStr == "1") lucisOptLevel = OptimizationLevel::O1;
+        else if (optStr == "2") lucisOptLevel = OptimizationLevel::O2;
+        else if (optStr == "3") lucisOptLevel = OptimizationLevel::O3;
+        else if (optStr == "s") lucisOptLevel = OptimizationLevel::Os;
+        else if (optStr == "z") lucisOptLevel = OptimizationLevel::Oz;
+        else if (optStr == "fast") lucisOptLevel = OptimizationLevel::Ofast;
         else {
             try {
                 int level = std::stoi(optStr);
                 if (level >= 0 && level <= 3)
-                    luxOptLevel = static_cast<OptimizationLevel>(level);
+                    lucisOptLevel = static_cast<OptimizationLevel>(level);
             } catch (...) {}
         }
     }
     bool useLTO = parser.has("lto");
 
-    auto pipeline = LuxPipeline::run(pipeOpts);
+    auto pipeline = LucisPipeline::run(pipeOpts);
     if (!pipeline || pipeline->hasErrors) return 1;
 
     // ── Generate IR, link into one module ──────────────────────────────────
@@ -78,7 +78,7 @@ int RunCommand::run(const ArgParser& parser) {
     for (auto& unit : pipeline->units) {
         ++irIdx;
         if (!pipeOpts.quiet)
-            std::cerr << "lux: [run ir " << irIdx << "/" << pipeline->units.size()
+            std::cerr << "lucis: [run ir " << irIdx << "/" << pipeline->units.size()
                       << "] " << unit.filePath << "\n";
 
         IRGen irGen;
@@ -86,7 +86,7 @@ int RunCommand::run(const ArgParser& parser) {
         irGen.setCBindings(pipeline->cBindings.get());
         auto irMod = irGen.generate(unit.parseResult.tree, unit.filePath);
         if (!irMod) {
-            std::cerr << "lux: IR generation failed for '" << unit.filePath << "'\n";
+            std::cerr << "lucis: IR generation failed for '" << unit.filePath << "'\n";
             return 1;
         }
 
@@ -99,8 +99,8 @@ int RunCommand::run(const ArgParser& parser) {
                 llvm::StringRef(buf.data(), buf.size()), unit.filePath);
             auto parsed = llvm::parseBitcodeFile(memBuf->getMemBufferRef(), targetCtx);
             if (!parsed) {
-                std::cerr << "lux: bitcode re-parse failed for '" << unit.filePath << "'\n";
-                std::cerr << "lux: " << llvm::toString(parsed.takeError()) << "\n";
+                std::cerr << "lucis: bitcode re-parse failed for '" << unit.filePath << "'\n";
+                std::cerr << "lucis: " << llvm::toString(parsed.takeError()) << "\n";
                 return std::unique_ptr<llvm::Module>(nullptr);
             }
             return std::move(parsed.get());
@@ -115,30 +115,30 @@ int RunCommand::run(const ArgParser& parser) {
             auto parsedMod = doBitcode(irMod->module(), *masterCtx);
             if (!parsedMod) return 1;
             if (llvm::Linker::linkModules(*masterMod, std::move(parsedMod))) {
-                std::cerr << "lux: failed to link module '" << unit.filePath << "'\n";
+                std::cerr << "lucis: failed to link module '" << unit.filePath << "'\n";
                 return 1;
             }
         }
     }
 
     if (!masterMod) {
-        std::cerr << "lux: no IR generated\n";
+        std::cerr << "lucis: no IR generated\n";
         return 1;
     }
 
     // Optimize master module
-    if (luxOptLevel != OptimizationLevel::O0) {
+    if (lucisOptLevel != OptimizationLevel::O0) {
         IRModule wrap(std::move(masterCtx), std::move(masterMod));
-        Optimizer::optimize(wrap, luxOptLevel);
+        Optimizer::optimize(wrap, lucisOptLevel);
         masterMod = wrap.takeModule();
         masterCtx = wrap.takeContext();
     }
 
     // ── Cache and produce temp binary ──────────────────────────────────────
-    const std::string cacheDir = pipeline->projectRoot + "/.lux/cache";
+    const std::string cacheDir = pipeline->projectRoot + "/.lucis/cache";
     if (parser.has("clean")) {
         if (!pipeOpts.quiet)
-            std::cerr << "lux: [run] clearing cache...";
+            std::cerr << "lucis: [run] clearing cache...";
         std::error_code ec;
         fs::remove_all(cacheDir, ec);
     }
@@ -150,7 +150,7 @@ int RunCommand::run(const ArgParser& parser) {
 
     std::string cacheKeyData = irText;
     cacheKeyData += "\n#builtins=" + CodeGen::builtinsLibraryPath();
-    cacheKeyData += "\n#opt=" + std::to_string(static_cast<int>(luxOptLevel));
+    cacheKeyData += "\n#opt=" + std::to_string(static_cast<int>(lucisOptLevel));
     if (useLTO) cacheKeyData += "\n#lto=1";
     for (auto& lf : pipeline->linkerFlags)
         cacheKeyData += "\n#l=" + lf;
@@ -191,12 +191,12 @@ int RunCommand::run(const ArgParser& parser) {
 
             // Add optimization flag
             std::string optArg;
-            if (luxOptLevel == OptimizationLevel::O1) optArg = "-O1";
-            else if (luxOptLevel == OptimizationLevel::O2) optArg = "-O2";
-            else if (luxOptLevel == OptimizationLevel::O3) optArg = "-O3";
-            else if (luxOptLevel == OptimizationLevel::Os) optArg = "-Os";
-            else if (luxOptLevel == OptimizationLevel::Oz) optArg = "-Oz";
-            else if (luxOptLevel == OptimizationLevel::Ofast) optArg = "-Ofast";
+            if (lucisOptLevel == OptimizationLevel::O1) optArg = "-O1";
+            else if (lucisOptLevel == OptimizationLevel::O2) optArg = "-O2";
+            else if (lucisOptLevel == OptimizationLevel::O3) optArg = "-O3";
+            else if (lucisOptLevel == OptimizationLevel::Os) optArg = "-Os";
+            else if (lucisOptLevel == OptimizationLevel::Oz) optArg = "-Oz";
+            else if (lucisOptLevel == OptimizationLevel::Ofast) optArg = "-Ofast";
             if (!optArg.empty()) argv.push_back(optArg.c_str());
 
             if (useLTO) argv.push_back("-flto");
@@ -207,7 +207,7 @@ int RunCommand::run(const ArgParser& parser) {
 
             auto builtinsPath = CodeGen::builtinsLibraryPath();
             argv.push_back(builtinsPath.c_str());
-#ifdef LUX_RUNTIME_DIAGNOSTICS
+#ifdef LUCIS_RUNTIME_DIAGNOSTICS
             argv.push_back("-fsanitize=address,undefined");
             argv.push_back("-fno-omit-frame-pointer");
 #endif
@@ -232,7 +232,7 @@ int RunCommand::run(const ArgParser& parser) {
 
     if (needBuild) {
         if (!pipeOpts.quiet)
-            std::cerr << "\nlux: [run] --- compiler/linker output ---\n\n";
+            std::cerr << "\nlucis: [run] --- compiler/linker output ---\n\n";
 
         // ── Compile C sources if any ───────────────────────────────────────
         std::vector<std::string> cObjectFiles;
@@ -245,7 +245,7 @@ int RunCommand::run(const ArgParser& parser) {
                 cIncFlags.push_back("-I" + fs::path(cSrc).parent_path().string());
                 auto objPath = pipeline->buildDir + "/c__" + stem + ".o";
                 if (!CodeGen::compileCSource(cSrc, objPath, cIncFlags, pipeOpts.quiet)) {
-                    std::cerr << "lux: failed to compile C source '" << cSrc << "'\n";
+                    std::cerr << "lucis: failed to compile C source '" << cSrc << "'\n";
                     return 1;
                 }
                 cObjectFiles.push_back(objPath);
@@ -254,12 +254,12 @@ int RunCommand::run(const ArgParser& parser) {
 
         // Emit object file directly via LLVM backend, then link with clang.
         // Using .ll + clang leads to incorrect va_arg lowering on x86-64.
-        std::string runObjTemplate = fs::temp_directory_path().string() + "/lux-run-obj-XXXXXX.o";
+        std::string runObjTemplate = fs::temp_directory_path().string() + "/lucis-run-obj-XXXXXX.o";
         std::vector<char> objTmpl(runObjTemplate.begin(), runObjTemplate.end());
         objTmpl.push_back('\0');
         int objfd = ::mkstemps(objTmpl.data(), 2);
         if (objfd < 0) {
-            std::cerr << "lux: could not create temporary object path: "
+            std::cerr << "lucis: could not create temporary object path: "
                       << std::strerror(errno) << "\n";
             return 1;
         }
@@ -267,7 +267,7 @@ int RunCommand::run(const ArgParser& parser) {
         const std::string runObjPath(objTmpl.data());
 
         if (!CodeGen::emitObjectFile(masterMod.get(), runObjPath)) {
-            std::cerr << "lux: failed to emit object file\n";
+            std::cerr << "lucis: failed to emit object file\n";
             fs::remove(runObjPath);
             return 1;
         }
@@ -276,7 +276,7 @@ int RunCommand::run(const ArgParser& parser) {
         fs::remove(runBinTempPath);
         if (!linkWithCompiler("clang", runObjPath, cObjectFiles, runBinTempPath)
             && !linkWithCompiler("gcc", runObjPath, cObjectFiles, runBinTempPath)) {
-            std::cerr << "lux: linking failed — ensure clang or gcc is installed\n";
+            std::cerr << "lucis: linking failed — ensure clang or gcc is installed\n";
             fs::remove(runObjPath);
             return 1;
         }
@@ -287,23 +287,23 @@ int RunCommand::run(const ArgParser& parser) {
         if (renameEc) {
             fs::remove(runBinTempPath);
             if (!fs::exists(runBinPath)) {
-                std::cerr << "lux: failed to finalize cached run binary: "
+                std::cerr << "lucis: failed to finalize cached run binary: "
                           << renameEc.message() << "\n";
                 return 1;
             }
         }
     } else {
         if (!pipeOpts.quiet)
-            std::cerr << "lux: [run] cache hit: reusing run binary\n";
+            std::cerr << "lucis: [run] cache hit: reusing run binary\n";
     }
 
     // ── Execute ────────────────────────────────────────────────────────────
     if (!pipeOpts.quiet)
-        std::cerr << "\nlux: [run] --- program output ---\n\n";
+        std::cerr << "\nlucis: [run] --- program output ---\n\n";
 
     pid_t pid = ::fork();
     if (pid < 0) {
-        std::cerr << "lux: failed to execute run binary: " << std::strerror(errno) << "\n";
+        std::cerr << "lucis: failed to execute run binary: " << std::strerror(errno) << "\n";
         return 1;
     }
 
@@ -320,7 +320,7 @@ int RunCommand::run(const ArgParser& parser) {
     int status = 0;
     while (::waitpid(pid, &status, 0) < 0) {
         if (errno != EINTR) {
-            std::cerr << "lux: waitpid failed: " << std::strerror(errno) << "\n";
+            std::cerr << "lucis: waitpid failed: " << std::strerror(errno) << "\n";
             return 1;
         }
     }

@@ -12,7 +12,7 @@ struct ImportedSymbol {
 };
 
 // Manages all `use` declarations in a file and resolves
-// which builtin C function to call for a given Lux symbol.
+// which builtin C function to call for a given Lucis symbol.
 class ImportResolver {
 public:
     // Register a single import:  use std::log::println;
@@ -22,7 +22,7 @@ public:
     bool isImported(const std::string& symbol) const;
 
     // Given an imported symbol and the LLVM type suffix (e.g. "i32", "i64"),
-    // returns the mangled C function name (e.g. "lux_println_i32").
+    // returns the mangled C function name (e.g. "lucis_println_i32").
     // Returns empty string if the symbol is unknown.
     std::string resolve(const std::string& symbol,
                         const std::string& typeSuffix) const;

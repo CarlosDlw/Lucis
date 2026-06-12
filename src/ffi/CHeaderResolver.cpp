@@ -171,13 +171,13 @@ std::string CHeaderResolver::extractLocalHeader(const std::string& tokenText) {
 }
 
 static std::string getHeaderCachePath() {
-    // Try to find .lux directory by walking up from current directory
+    // Try to find .lucis directory by walking up from current directory
     try {
         fs::path p = fs::current_path();
         while (true) {
-            if (fs::exists(p / ".lux")) {
-                std::string cachePath = (p / ".lux" / "headers.cache").string();
-                std::cerr << "[lux-lsp] found project cache path: " << cachePath << "\n";
+            if (fs::exists(p / ".lucis")) {
+                std::string cachePath = (p / ".lucis" / "headers.cache").string();
+                std::cerr << "[lucis-lsp] found project cache path: " << cachePath << "\n";
                 return cachePath;
             }
             if (!p.has_parent_path()) break;
@@ -188,11 +188,11 @@ static std::string getHeaderCachePath() {
     // Fallback to a home-based location
     const char* home = getenv("HOME");
     if (home) {
-        std::string cachePath = (fs::path(home) / ".lux_headers.cache").string();
-        std::cerr << "[lux-lsp] falling back to home cache: " << cachePath << "\n";
+        std::string cachePath = (fs::path(home) / ".lucis_headers.cache").string();
+        std::cerr << "[lucis-lsp] falling back to home cache: " << cachePath << "\n";
         return cachePath;
     }
-    return "/tmp/lux_headers.cache";
+    return "/tmp/lucis_headers.cache";
 }
 
 static void saveHeaderCache(const std::vector<std::string>& headers) {
@@ -202,22 +202,22 @@ static void saveHeaderCache(const std::vector<std::string>& headers) {
         fs::create_directories(p.parent_path());
         std::ofstream ofs(path);
         if (!ofs) {
-            std::cerr << "[lux-lsp] failed to open cache for writing: " << path << "\n";
+            std::cerr << "[lucis-lsp] failed to open cache for writing: " << path << "\n";
             return;
         }
         for (const auto& h : headers) {
             ofs << h << "\n";
         }
-        std::cerr << "[lux-lsp] saved " << headers.size() << " headers to cache\n";
+        std::cerr << "[lucis-lsp] saved " << headers.size() << " headers to cache\n";
     } catch (const std::exception& e) {
-        std::cerr << "[lux-lsp] cache save error: " << e.what() << "\n";
+        std::cerr << "[lucis-lsp] cache save error: " << e.what() << "\n";
     }
 }
 
 static std::vector<std::string> loadHeaderCache() {
     std::string path = getHeaderCachePath();
     if (!fs::exists(path)) {
-        std::cerr << "[lux-lsp] cache file not found: " << path << "\n";
+        std::cerr << "[lucis-lsp] cache file not found: " << path << "\n";
         return {};
     }
     try {
@@ -227,10 +227,10 @@ static std::vector<std::string> loadHeaderCache() {
         while (std::getline(ifs, line)) {
             if (!line.empty()) headers.push_back(line);
         }
-        std::cerr << "[lux-lsp] loaded " << headers.size() << " headers from cache\n";
+        std::cerr << "[lucis-lsp] loaded " << headers.size() << " headers from cache\n";
         return headers;
     } catch (const std::exception& e) {
-        std::cerr << "[lux-lsp] cache load error: " << e.what() << "\n";
+        std::cerr << "[lucis-lsp] cache load error: " << e.what() << "\n";
         return {};
     }
 }
@@ -240,7 +240,7 @@ std::vector<std::string> CHeaderResolver::listSystemHeaders() {
     auto cached = loadHeaderCache();
     if (!cached.empty()) return cached;
 
-    std::cerr << "[lux-lsp] scanning system headers (this may take a while)...\n";
+    std::cerr << "[lucis-lsp] scanning system headers (this may take a while)...\n";
 
     // 2. Scan disk if cache missing
     std::vector<std::string> result;
@@ -1096,13 +1096,13 @@ bool CHeaderResolver::parseHeader(const std::string& headerContent,
 
     // Create an unsaved file with the #include directive
     CXUnsavedFile unsavedFile;
-    unsavedFile.Filename = "lux_include.c";
+    unsavedFile.Filename = "lucis_include.c";
     unsavedFile.Contents = headerContent.c_str();
     unsavedFile.Length   = headerContent.size();
 
     CXTranslationUnit tu = clang_parseTranslationUnit(
         index,
-        "lux_include.c",
+        "lucis_include.c",
         argv.data(),
         static_cast<int>(argv.size()),
         &unsavedFile,
@@ -1123,7 +1123,7 @@ bool CHeaderResolver::parseHeader(const std::string& headerContent,
         CXDiagnostic diag = clang_getDiagnostic(tu, i);
         if (clang_getDiagnosticSeverity(diag) >= CXDiagnostic_Error) {
             CXString msg = clang_getDiagnosticSpelling(diag);
-            std::cerr << "lux: C header error: " << clang_getCString(msg) << "\n";
+            std::cerr << "lucis: C header error: " << clang_getCString(msg) << "\n";
             clang_disposeString(msg);
             hasFatal = true;
         }
@@ -1160,19 +1160,19 @@ bool CHeaderResolver::parseHeader(const std::string& headerContent,
             std::string evalSource = headerContent;
             for (size_t i = 0; i < macros.size(); i++) {
                 if (resolved[i]) continue;
-                evalSource += "static const " + cType + " __lux_eval_" +
+                evalSource += "static const " + cType + " __lucis_eval_" +
                               std::to_string(i) + " = " +
                               macros[i].name + ";\n";
             }
 
             CXUnsavedFile evalUnsaved;
-            evalUnsaved.Filename = "lux_eval.c";
+            evalUnsaved.Filename = "lucis_eval.c";
             evalUnsaved.Contents = evalSource.c_str();
             evalUnsaved.Length   = evalSource.size();
 
             CXTranslationUnit evalTU = clang_parseTranslationUnit(
                 index,
-                "lux_eval.c",
+                "lucis_eval.c",
                 argv.data(),
                 static_cast<int>(argv.size()),
                 &evalUnsaved,
@@ -1196,7 +1196,7 @@ bool CHeaderResolver::parseHeader(const std::string& headerContent,
                     clang_disposeString(cxN);
 
                     if (vn.size() <= 11 ||
-                        vn.substr(0, 11) != "__lux_eval_")
+                        vn.substr(0, 11) != "__lucis_eval_")
                         return CXChildVisit_Continue;
 
                     size_t idx = 0;

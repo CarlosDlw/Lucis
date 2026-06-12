@@ -483,7 +483,7 @@ BuiltinRegistry::BuiltinRegistry() {
     add("toString",      "string",  {"_any"}, true);
     add("cstr",          "*char",   {"string"},
         false, false, false, {}, {},
-        "Allocate and return a null-terminated C copy of a Lux string. "
+        "Allocate and return a null-terminated C copy of a Lucis string. "
         "The caller **owns** the returned `*char` and must `free()` it when done.");
     add("fromCStr",      "string",  {"*char"},
         false, false, false, {}, {0},
@@ -502,7 +502,7 @@ BuiltinRegistry::BuiltinRegistry() {
         "while the string is in use. Use `fromCStrCopy` instead if you need an "
         "owned copy.");
     add("freeStr",       "void",    {"string"}, false, false, false, {0},
-        {}, "Free the underlying buffer of a Lux string. "
+        {}, "Free the underlying buffer of a Lucis string. "
         "Only needed for strings whose memory must be reclaimed before scope exit. "
         "Calling `freeStr` on a borrowed string (literal, `fromCStr`, `fromCStrLen`) "
         "is undefined behaviour.");

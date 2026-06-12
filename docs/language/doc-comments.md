@@ -6,13 +6,13 @@ Doc-comments are special comments that document functions, structs, enums, exten
 
 Doc-comments use the `/** ... */` delimiter — exactly **two** stars after the slash:
 
-```lux
+```lucis
 /** This is a doc-comment. */
 ```
 
 Multi-line doc-comments follow the conventional star-prefix style:
 
-```lux
+```lucis
 /**
  * This is a multi-line doc-comment.
  * Each line can start with ` * ` which is automatically stripped.
@@ -29,14 +29,14 @@ Multi-line doc-comments follow the conventional star-prefix style:
 
 A doc-comment must appear **immediately before** the declaration it documents, with at most one blank line between them:
 
-```lux
+```lucis
 /** Computes the absolute value of n. */
 fn abs(int32 n) int32 {
     ret n < 0 ? -n : n;
 }
 ```
 
-```lux
+```lucis
 /** Computes the absolute value of n. */
 
 fn abs(int32 n) int32 {   // one blank line — still valid
@@ -50,7 +50,7 @@ If there are two or more blank lines between the doc-comment and the declaration
 
 The text before the first `@tag` is the **summary** — a free-form description of the declaration:
 
-```lux
+```lucis
 /**
  * Computes the greatest common divisor of two integers
  * using the Euclidean algorithm.
@@ -74,7 +74,7 @@ Document function parameters, struct fields, or properties. Syntax: `@tag name d
 | `@field` | `@field name description` | Document a struct field |
 | `@property` | `@property name description` | Document a property |
 
-```lux
+```lucis
 /**
  * Creates a new point at the given coordinates.
  * @param x The horizontal position
@@ -84,7 +84,7 @@ Document function parameters, struct fields, or properties. Syntax: `@tag name d
 fn create(int32 x, int32 y) Point { ... }
 ```
 
-```lux
+```lucis
 /**
  * A 2D point in Cartesian space.
  * @field x The horizontal coordinate
@@ -113,7 +113,7 @@ Provide a single-line or short description. Syntax: `@tag description`
 | `@see` | `@see reference` | Cross-reference to related symbols or docs |
 | `@todo` | `@todo description` | Note a pending task |
 
-```lux
+```lucis
 /**
  * Reads the entire file at the given path.
  * @param path The file path to read
@@ -124,7 +124,7 @@ Provide a single-line or short description. Syntax: `@tag description`
 fn readFile(string path) string { ... }
 ```
 
-```lux
+```lucis
 /**
  * Use newFunction() instead.
  * @deprecated This function will be removed in v2.0
@@ -139,12 +139,12 @@ Capture multi-line content until the next `@tag` or end of comment. Syntax: `@ta
 
 | Tag | Usage | Purpose |
 |-----|-------|---------|
-| `@example` | Code example (rendered as `lux` code block) | Show usage examples |
+| `@example` | Code example (rendered as `lucis` code block) | Show usage examples |
 | `@remarks` | Additional details | Extended discussion |
 | `@note` | Informational note (rendered as blockquote) | Highlight important info |
 | `@warning` | Warning message (rendered as blockquote with ⚠) | Highlight dangers or pitfalls |
 
-```lux
+```lucis
 /**
  * Sorts the vector in ascending order.
  * @warning Mutates the vector in place
@@ -155,7 +155,7 @@ Capture multi-line content until the next `@tag` or end of comment. Syntax: `@ta
  */
 ```
 
-```lux
+```lucis
 /**
  * Computes the factorial of n.
  * @param n Must be non-negative
@@ -181,7 +181,7 @@ Markers with no arguments. Syntax: just `@tag` alone.
 | `@struct` | `@struct` | Mark as struct documentation |
 | `@namespace` | `@namespace` | Mark as namespace documentation |
 
-```lux
+```lucis
 /**
  * Internal helper — do not call directly.
  * @internal
@@ -233,7 +233,7 @@ When typing inside a `/** */` block and pressing `@`, the editor suggests all av
 
 ## Complete Example
 
-```lux
+```lucis
 /**
  * A cardinal direction in a 2D grid.
  *

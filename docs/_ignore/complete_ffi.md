@@ -1,8 +1,8 @@
-# Complete FFI — Native C Interop for Lux
+# Complete FFI — Native C Interop for Lucis
 
 ## 1. Executive Summary
 
-This document defines the complete plan for adding **native C FFI** to the Lux compiler.
+This document defines the complete plan for adding **native C FFI** to the Lucis compiler.
 The goal is **total, seamless, zero-cost interoperability** between TM and C — they must be
 siblings. A TM program should be able to `#include` a C header, call any C function, pass
 and receive any C type, and do so with **no runtime overhead** compared to calling from C itself.
@@ -44,9 +44,9 @@ C compiler would produce.
 | `struct S` | `%S = type { ... }` | `struct S { ... }` | **Yes** (same layout) |
 | `enum E` | `i32` | `enum E` | **Yes** |
 | `fn(A)->R` | `ptr` | `R(*)(A)` | **Yes** (opaque pointer) |
-| `vec<T>` | `{ ptr, usize, usize }` | — | **No** (Lux-only) |
-| `map<K,V>` | 8-field struct | — | **No** (Lux-only) |
-| `set<T>` | 6-field struct | — | **No** (Lux-only) |
+| `vec<T>` | `{ ptr, usize, usize }` | — | **No** (Lucis-only) |
+| `map<K,V>` | 8-field struct | — | **No** (Lucis-only) |
+| `set<T>` | 6-field struct | — | **No** (Lucis-only) |
 | `int1` | `i1` | — | **No** (C has no 1-bit int) |
 | `uint1` | `i1` | — | **No** (C has no 1-bit uint) |
 | `intinf` | `i256` | — | **No** (TM-only) |
@@ -61,7 +61,7 @@ C compiler would produce.
 6. **Enums**: TM enums are `i32` — same as C enums.
 7. **Object files**: TM emits standard ELF `.o` files — linkable with any C code.
 8. **Linking**: Already uses `clang`/`gcc` for linking — can link against any C library.
-9. **Builtins**: All Lux builtins are C functions with `lux_` prefix — the pattern is proven.
+9. **Builtins**: All Lucis builtins are C functions with `lucis_` prefix — the pattern is proven.
 10. **Cast**: `as` operator supports `int↔ptr`, `int↔int`, `float↔float`, `int↔float`.
 
 ### 2.3 What's Missing
@@ -124,7 +124,7 @@ C compiler would produce.
 
 5. **Library linking via CLI** — the user specifies linker flags:
    ```
-   lux main.lx ./main -lSDL2 -lm -lpng
+   lucis main.lc ./main -lSDL2 -lm -lpng
    ```
 
 ---
@@ -201,8 +201,8 @@ TM currently uses `[]T` without explicit size. For FFI, we need:
 
 **Grammar addition:**
 ```antlr
-typeSpec: LBRACKET INT_LIT RBRACKELux typeSpec    // [10]int32
-        | LBRACKET RBRACKELux typeSpec             // []int32 (existing)
+typeSpec: LBRACKET INT_LIT RBRACKELucis typeSpec    // [10]int32
+        | LBRACKET RBRACKELucis typeSpec             // []int32 (existing)
         | ...
         ;
 ```
@@ -273,12 +273,12 @@ externParam
     ;
 ```
 
-**Key distinction from LuxM functions**: `extern` functions have no body — they
+**Key distinction from LucisM functions**: `extern` functions have no body — they
 generate `declare` in LLVM IR and are resolved at link time.
 
 ### 5.3 C Variadic Functions (`...`)
 
-C's `...` variadic (e.g., `printf`) is fundamentally different from LuxM's
+C's `...` variadic (e.g., `printf`) is fundamentally different from LucisM's
 spread (`int32 ...args`). C variadic uses `va_list` internally and has no
 type safety.
 
@@ -435,7 +435,7 @@ This is the complete mapping the CHeaderResolver uses:
 The user specifies external C libraries via the command line:
 
 ```bash
-lux main.lx ./main -lSDL2 -lm -lpng -I/usr/include/SDL2
+lucis main.lc ./main -lSDL2 -lm -lpng -I/usr/include/SDL2
 ```
 
 **New CLI flags:**
@@ -468,7 +468,7 @@ These are useful on their own even without FFI.
 - Add to NamespaceRegistry export
 
 #### 1.2 Fixed-size array syntax `[N]T`
-- Add grammar rule: `LBRACKET INT_LIT RBRACKELux typeSpec`
+- Add grammar rule: `LBRACKET INT_LIT RBRACKELucis typeSpec`
 - Implement in IRGen: emit `[N x T]` exactly
 - Update countArrayDims to handle sized arrays
 - Can coerce `[N]T` to `*T` for function calls (decay, like C)
@@ -487,8 +487,8 @@ These are useful on their own even without FFI.
 - Add cast support between floating point widths
 
 #### 1.6 String conversion builtins
-- `cstr(string) -> *char` — call `lux_cstr` (allocate + null-terminate)
-- `fromCStr(*char) -> string` — call `lux_from_cstr` (strlen + wrap)
+- `cstr(string) -> *char` — call `lucis_cstr` (allocate + null-terminate)
+- `fromCStr(*char) -> string` — call `lucis_from_cstr` (strlen + wrap)
 - `fromCStrLen(*char, usize) -> string` — wrap pointer directly
 - Implement C builtins in `src/builtins/string/string.c`
 
@@ -690,8 +690,8 @@ extern int32_t Math__add(int32_t a, int32_t b);
 extern int32_t Math__multiply(int32_t a, int32_t b);
 ```
 
-**Future improvement**: The compiler could auto-generate C header files from LuxM
-namespaces (`lux --emit-header Math > math_tm.h`).
+**Future improvement**: The compiler could auto-generate C header files from LucisM
+namespaces (`lucis --emit-header Math > math_tm.h`).
 
 ---
 
@@ -729,8 +729,8 @@ src/
 ├── types/
 │   └── TypeRegistry.cpp         — Add float80, float128, cstring alias
 ├── grammar/
-│   ├── LuxLexer.g4           — Add EXTERN, UNION, C_STRING_LIT, ELLIPSIS, HASH_INCLUDE
-│   └── LuxParser.g4          — Add externDecl, unionDecl, includeDecl, [N]T syntax
+│   ├── LucisLexer.g4           — Add EXTERN, UNION, C_STRING_LIT, ELLIPSIS, HASH_INCLUDE
+│   └── LucisParser.g4          — Add externDecl, unionDecl, includeDecl, [N]T syntax
 └── ...
 ```
 
@@ -785,7 +785,7 @@ fn main() int32 {
 
 **Compiled with:**
 ```bash
-lux main.lx ./main -lm
+lucis main.lc ./main -lm
 ```
 
 ---
@@ -796,8 +796,8 @@ lux main.lx ./main -lm
 
 | File | Change |
 |------|--------|
-| `LuxLexer.g4` | Add tokens: `EXTERN`, `UNION`, `HASH_INCLUDE`, `C_STRING_LIT`, `ELLIPSIS`, `FLOAT80`, `FLOAT128` |
-| `LuxParser.g4` | Add rules: `includeDecl`, `externDecl`, `unionDecl`, `[N]T` in typeSpec, `c"..."` literal, `...` in extern params |
+| `LucisLexer.g4` | Add tokens: `EXTERN`, `UNION`, `HASH_INCLUDE`, `C_STRING_LIT`, `ELLIPSIS`, `FLOAT80`, `FLOAT128` |
+| `LucisParser.g4` | Add rules: `includeDecl`, `externDecl`, `unionDecl`, `[N]T` in typeSpec, `c"..."` literal, `...` in extern params |
 
 ### New Files
 
@@ -817,7 +817,7 @@ lux main.lx ./main -lm
 | `src/IRBuilder/IRGen.cpp` | Emit extern declares, union alloca, C string literals, bool promotion |
 | `src/machine_code/CodeGen.cpp` | Accept `-l`, `-L` flags for linking |
 | `src/cli/CLI.h/.cpp` | Parse `-l`, `-L`, `-I` flags, pass to pipeline |
-| `src/builtins/string/string.c` | Add `lux_cstr`, `lux_from_cstr`, `lux_from_cstr_len` |
+| `src/builtins/string/string.c` | Add `lucis_cstr`, `lucis_from_cstr`, `lucis_from_cstr_len` |
 | `CMakeLists.txt` | Add libclang dependency, new source files |
 
 ### New Types Summary
@@ -838,8 +838,8 @@ lux main.lx ./main -lm
 | `extern` | `extern int32 puts(cstring s);` | Manual C function declaration |
 | C string literal | `c"Hello\n"` | Null-terminated string constant |
 | C variadic | `extern int32 printf(cstring, ...);` | Call C variadic functions |
-| `-l` flag | `lux main.lx ./out -lSDL2` | Link against C libraries |
-| `-I` flag | `lux main.lx ./out -I/opt/include` | Header search path |
-| `-L` flag | `lux main.lx ./out -L/opt/lib` | Library search path |
+| `-l` flag | `lucis main.lc ./out -lSDL2` | Link against C libraries |
+| `-I` flag | `lucis main.lc ./out -I/opt/include` | Header search path |
+| `-L` flag | `lucis main.lc ./out -L/opt/lib` | Library search path |
 | `cstr()` | `*char c = cstr(myString);` | TM string → C string conversion |
 | `fromCStr()` | `string s = fromCStr(cptr);` | C string → TM string conversion |

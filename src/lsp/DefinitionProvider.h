@@ -4,7 +4,7 @@
 #include <optional>
 #include <unordered_map>
 
-#include "generated/LuxParser.h"
+#include "generated/LucisParser.h"
 #include "ffi/CBindings.h"
 
 struct ParseResult;
@@ -12,14 +12,14 @@ class ProjectContext;
 
 // Result of a go-to-definition query — target location.
 struct DefinitionResult {
-    std::string uri;       // file URI (file:///path/to/file.lx)
+    std::string uri;       // file URI (file:///path/to/file.lc)
     size_t line    = 0;    // 0-based
     size_t col     = 0;    // 0-based
     size_t endLine = 0;    // 0-based
     size_t endCol  = 0;    // 0-based
 };
 
-// Provides go-to-definition for Lux source code.
+// Provides go-to-definition for Lucis source code.
 // Parses the document, resolves symbols, and returns target locations.
 class DefinitionProvider {
 public:
@@ -40,52 +40,52 @@ public:
 private:
     // Collect local variables + params with their declaration tokens.
     std::unordered_map<std::string, LocalVar>
-    collectLocals(LuxParser::FunctionDeclContext* func, size_t beforeLine);
+    collectLocals(LucisParser::FunctionDeclContext* func, size_t beforeLine);
 
     // Find the function declaration that encloses a given line.
-    LuxParser::FunctionDeclContext*
-    findEnclosingFunction(LuxParser::ProgramContext* tree, size_t line);
+    LucisParser::FunctionDeclContext*
+    findEnclosingFunction(LucisParser::ProgramContext* tree, size_t line);
 
     // ── Symbol finders (return AST nodes for declarations) ──────────
 
-    LuxParser::FunctionDeclContext*
-    findFunctionDecl(LuxParser::ProgramContext* tree, const std::string& name);
+    LucisParser::FunctionDeclContext*
+    findFunctionDecl(LucisParser::ProgramContext* tree, const std::string& name);
 
-    LuxParser::StructDeclContext*
-    findStructDecl(LuxParser::ProgramContext* tree, const std::string& name);
+    LucisParser::StructDeclContext*
+    findStructDecl(LucisParser::ProgramContext* tree, const std::string& name);
 
-    LuxParser::EnumDeclContext*
-    findEnumDecl(LuxParser::ProgramContext* tree, const std::string& name);
+    LucisParser::EnumDeclContext*
+    findEnumDecl(LucisParser::ProgramContext* tree, const std::string& name);
 
-    LuxParser::UnionDeclContext*
-    findUnionDecl(LuxParser::ProgramContext* tree, const std::string& name);
+    LucisParser::UnionDeclContext*
+    findUnionDecl(LucisParser::ProgramContext* tree, const std::string& name);
 
-    LuxParser::TypeAliasDeclContext*
-    findTypeAliasDecl(LuxParser::ProgramContext* tree, const std::string& name);
+    LucisParser::TypeAliasDeclContext*
+    findTypeAliasDecl(LucisParser::ProgramContext* tree, const std::string& name);
 
-    LuxParser::ExtendDeclContext*
-    findExtendDecl(LuxParser::ProgramContext* tree, const std::string& name);
+    LucisParser::ExtendDeclContext*
+    findExtendDecl(LucisParser::ProgramContext* tree, const std::string& name);
 
-    LuxParser::ExternDeclContext*
-    findExternDecl(LuxParser::ProgramContext* tree, const std::string& name);
+    LucisParser::ExternDeclContext*
+    findExternDecl(LucisParser::ProgramContext* tree, const std::string& name);
 
     // ── AST walkers ─────────────────────────────────────────────────
 
     std::optional<DefinitionResult> resolveAtPosition(
-        LuxParser::ProgramContext* tree, antlr4::Token* hoveredToken,
+        LucisParser::ProgramContext* tree, antlr4::Token* hoveredToken,
         const std::string& tokenText, const CBindings& bindings,
         size_t cursorLine, const std::string& filePath,
         const ProjectContext* project);
 
     // Resolve an identifier to its definition.
     std::optional<DefinitionResult> resolveIdent(
-        const std::string& name, LuxParser::ProgramContext* tree,
+        const std::string& name, LucisParser::ProgramContext* tree,
         const CBindings& bindings, size_t cursorLine,
         const std::string& filePath, const ProjectContext* project);
 
     // Resolve a type name to its definition.
     std::optional<DefinitionResult> resolveTypeName(
-        const std::string& name, LuxParser::ProgramContext* tree,
+        const std::string& name, LucisParser::ProgramContext* tree,
         const CBindings& bindings, const std::string& filePath,
         const ProjectContext* project);
 
@@ -96,26 +96,26 @@ private:
 
     // Resolve a type spec token (IDENTIFIER inside a typeSpec node).
     std::optional<DefinitionResult> resolveTypeSpecToken(
-        LuxParser::TypeSpecContext* typeSpec, antlr4::Token* hoveredToken,
-        LuxParser::ProgramContext* tree, const CBindings& bindings,
+        LucisParser::TypeSpecContext* typeSpec, antlr4::Token* hoveredToken,
+        LucisParser::ProgramContext* tree, const CBindings& bindings,
         const std::string& filePath, const ProjectContext* project);
 
     // Walk expressions to find the hovered token and resolve.
     std::optional<DefinitionResult> walkExprForDef(
-        LuxParser::ExpressionContext* expr, antlr4::Token* hoveredToken,
-        const std::string& tokenText, LuxParser::ProgramContext* tree,
+        LucisParser::ExpressionContext* expr, antlr4::Token* hoveredToken,
+        const std::string& tokenText, LucisParser::ProgramContext* tree,
         const CBindings& bindings, size_t cursorLine,
         const std::string& filePath, const ProjectContext* project);
 
     std::optional<DefinitionResult> walkStmtForDef(
-        LuxParser::StatementContext* stmt, antlr4::Token* hoveredToken,
-        const std::string& tokenText, LuxParser::ProgramContext* tree,
+        LucisParser::StatementContext* stmt, antlr4::Token* hoveredToken,
+        const std::string& tokenText, LucisParser::ProgramContext* tree,
         const CBindings& bindings, size_t cursorLine,
         const std::string& filePath, const ProjectContext* project);
 
     std::optional<DefinitionResult> walkBlockForDef(
-        LuxParser::BlockContext* block, antlr4::Token* hoveredToken,
-        const std::string& tokenText, LuxParser::ProgramContext* tree,
+        LucisParser::BlockContext* block, antlr4::Token* hoveredToken,
+        const std::string& tokenText, LucisParser::ProgramContext* tree,
         const CBindings& bindings, size_t cursorLine,
         const std::string& filePath, const ProjectContext* project);
 
@@ -133,14 +133,14 @@ private:
     // Attempt to infer the struct type name produced by an expression.
     // E.g. an IdentExpr "p" declared as "Point" → returns "Point".
     // An IdentExpr "ptr" declared as "*Point" → returns "Point" (strips pointer).
-    std::string inferExprStructType(LuxParser::ExpressionContext* expr,
-                                    LuxParser::ProgramContext* tree,
+    std::string inferExprStructType(LucisParser::ExpressionContext* expr,
+                                    LucisParser::ProgramContext* tree,
                                     size_t cursorLine);
 
     // Given a struct name and field name, resolve to the field's declaration.
     std::optional<DefinitionResult> resolveStructField(
         const std::string& structName, const std::string& fieldName,
-        LuxParser::ProgramContext* tree, const CBindings& bindings,
+        LucisParser::ProgramContext* tree, const CBindings& bindings,
         const std::string& filePath, const ProjectContext* project);
 
     // Check if a parse tree node contains a token.

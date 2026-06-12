@@ -12,11 +12,11 @@
 
 /* ── helpers ────────────────────────────────────────────────────────────── */
 
-static lux_net_str_result make_str(const char* p, size_t n) {
-    return (lux_net_str_result){ p, n };
+static lucis_net_str_result make_str(const char* p, size_t n) {
+    return (lucis_net_str_result){ p, n };
 }
 
-static lux_net_str_result empty_str(void) {
+static lucis_net_str_result empty_str(void) {
     char* p = (char*)malloc(1);
     p[0] = '\0';
     return make_str(p, 0);
@@ -32,7 +32,7 @@ static char* to_cstr(const char* s, size_t len) {
 
 /* ── TCP ────────────────────────────────────────────────────────────────── */
 
-int32_t lux_tcpConnect(const char* host, size_t hostLen, uint16_t port) {
+int32_t lucis_tcpConnect(const char* host, size_t hostLen, uint16_t port) {
     char* h = to_cstr(host, hostLen);
 
     struct addrinfo hints, *res;
@@ -60,7 +60,7 @@ int32_t lux_tcpConnect(const char* host, size_t hostLen, uint16_t port) {
     return (int32_t)fd;
 }
 
-int32_t lux_tcpListen(const char* host, size_t hostLen, uint16_t port) {
+int32_t lucis_tcpListen(const char* host, size_t hostLen, uint16_t port) {
     char* h = to_cstr(host, hostLen);
 
     struct addrinfo hints, *res;
@@ -97,19 +97,19 @@ int32_t lux_tcpListen(const char* host, size_t hostLen, uint16_t port) {
     return (int32_t)fd;
 }
 
-int32_t lux_tcpAccept(int32_t fd) {
+int32_t lucis_tcpAccept(int32_t fd) {
     struct sockaddr_storage addr;
     socklen_t addrLen = sizeof(addr);
     int client = accept(fd, (struct sockaddr*)&addr, &addrLen);
     return (int32_t)client;
 }
 
-int64_t lux_tcpSend(int32_t fd, const char* data, size_t dataLen) {
+int64_t lucis_tcpSend(int32_t fd, const char* data, size_t dataLen) {
     ssize_t sent = send(fd, data, dataLen, 0);
     return (int64_t)sent;
 }
 
-lux_net_str_result lux_tcpRecv(int32_t fd, size_t maxLen) {
+lucis_net_str_result lucis_tcpRecv(int32_t fd, size_t maxLen) {
     char* buf = (char*)malloc(maxLen);
     if (!buf) return empty_str();
 
@@ -124,7 +124,7 @@ lux_net_str_result lux_tcpRecv(int32_t fd, size_t maxLen) {
 
 /* ── UDP ────────────────────────────────────────────────────────────────── */
 
-int32_t lux_udpBind(const char* host, size_t hostLen, uint16_t port) {
+int32_t lucis_udpBind(const char* host, size_t hostLen, uint16_t port) {
     char* h = to_cstr(host, hostLen);
 
     struct addrinfo hints, *res;
@@ -153,7 +153,7 @@ int32_t lux_udpBind(const char* host, size_t hostLen, uint16_t port) {
     return (int32_t)fd;
 }
 
-int64_t lux_udpSendTo(int32_t fd, const char* data, size_t dataLen,
+int64_t lucis_udpSendTo(int32_t fd, const char* data, size_t dataLen,
                           const char* host, size_t hostLen, uint16_t port) {
     char* h = to_cstr(host, hostLen);
 
@@ -174,7 +174,7 @@ int64_t lux_udpSendTo(int32_t fd, const char* data, size_t dataLen,
     return (int64_t)sent;
 }
 
-lux_net_str_result lux_udpRecvFrom(int32_t fd, size_t maxLen) {
+lucis_net_str_result lucis_udpRecvFrom(int32_t fd, size_t maxLen) {
     char* buf = (char*)malloc(maxLen);
     if (!buf) return empty_str();
 
@@ -192,11 +192,11 @@ lux_net_str_result lux_udpRecvFrom(int32_t fd, size_t maxLen) {
 
 /* ── General ────────────────────────────────────────────────────────────── */
 
-void lux_netClose(int32_t fd) {
+void lucis_netClose(int32_t fd) {
     close(fd);
 }
 
-void lux_netSetTimeout(int32_t fd, uint64_t ms) {
+void lucis_netSetTimeout(int32_t fd, uint64_t ms) {
     struct timeval tv;
     tv.tv_sec  = (time_t)(ms / 1000);
     tv.tv_usec = (suseconds_t)((ms % 1000) * 1000);
@@ -204,7 +204,7 @@ void lux_netSetTimeout(int32_t fd, uint64_t ms) {
     setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
 }
 
-lux_net_str_result lux_netResolve(const char* host, size_t hostLen) {
+lucis_net_str_result lucis_netResolve(const char* host, size_t hostLen) {
     char* h = to_cstr(host, hostLen);
 
     struct addrinfo hints, *res;

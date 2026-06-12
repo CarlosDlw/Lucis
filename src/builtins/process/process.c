@@ -18,8 +18,8 @@ static char* make_cstr(const char* s, size_t len) {
     return buf;
 }
 
-static lux_proc_str_result make_result(const char* s) {
-    lux_proc_str_result res;
+static lucis_proc_str_result make_result(const char* s) {
+    lucis_proc_str_result res;
     if (s) {
         size_t len = strlen(s);
         char* out = (char*)malloc(len);
@@ -39,15 +39,15 @@ static lux_proc_str_result make_result(const char* s) {
 }
 
 /* ── abort ───────────────────────────────────────────────────────────── */
-void lux_abort(void) {
+void lucis_abort(void) {
     abort();
 }
 
 /* ── env ─────────────────────────────────────────────────────────────── */
-lux_proc_str_result lux_env(const char* name, size_t name_len) {
+lucis_proc_str_result lucis_env(const char* name, size_t name_len) {
     char* cname = make_cstr(name, name_len);
     if (!cname) {
-        lux_proc_str_result r = {NULL, 0};
+        lucis_proc_str_result r = {NULL, 0};
         return r;
     }
     const char* val = getenv(cname);
@@ -56,7 +56,7 @@ lux_proc_str_result lux_env(const char* name, size_t name_len) {
 }
 
 /* ── setEnv ──────────────────────────────────────────────────────────── */
-void lux_setEnv(const char* name, size_t name_len,
+void lucis_setEnv(const char* name, size_t name_len,
                    const char* value, size_t value_len) {
     char* cname  = make_cstr(name,  name_len);
     char* cvalue = make_cstr(value, value_len);
@@ -67,7 +67,7 @@ void lux_setEnv(const char* name, size_t name_len,
 }
 
 /* ── hasEnv ──────────────────────────────────────────────────────────── */
-int32_t lux_hasEnv(const char* name, size_t name_len) {
+int32_t lucis_hasEnv(const char* name, size_t name_len) {
     char* cname = make_cstr(name, name_len);
     if (!cname) return 0;
     const char* val = getenv(cname);
@@ -76,7 +76,7 @@ int32_t lux_hasEnv(const char* name, size_t name_len) {
 }
 
 /* ── exec ────────────────────────────────────────────────────────────── */
-int32_t lux_exec(const char* cmd, size_t cmd_len) {
+int32_t lucis_exec(const char* cmd, size_t cmd_len) {
     char* ccmd = make_cstr(cmd, cmd_len);
     if (!ccmd) return -1;
     int status = system(ccmd);
@@ -87,8 +87,8 @@ int32_t lux_exec(const char* cmd, size_t cmd_len) {
 }
 
 /* ── execOutput ──────────────────────────────────────────────────────── */
-lux_proc_str_result lux_execOutput(const char* cmd, size_t cmd_len) {
-    lux_proc_str_result res = {NULL, 0};
+lucis_proc_str_result lucis_execOutput(const char* cmd, size_t cmd_len) {
+    lucis_proc_str_result res = {NULL, 0};
     char* ccmd = make_cstr(cmd, cmd_len);
     if (!ccmd) return res;
 
@@ -119,12 +119,12 @@ lux_proc_str_result lux_execOutput(const char* cmd, size_t cmd_len) {
 }
 
 /* ── pid ─────────────────────────────────────────────────────────────── */
-int32_t lux_pid(void) {
+int32_t lucis_pid(void) {
     return (int32_t)getpid();
 }
 
 /* ── platform ────────────────────────────────────────────────────────── */
-lux_proc_str_result lux_platform(void) {
+lucis_proc_str_result lucis_platform(void) {
 #if defined(__linux__)
     return make_result("linux");
 #elif defined(__APPLE__)
@@ -137,7 +137,7 @@ lux_proc_str_result lux_platform(void) {
 }
 
 /* ── arch ────────────────────────────────────────────────────────────── */
-lux_proc_str_result lux_arch(void) {
+lucis_proc_str_result lucis_arch(void) {
 #if defined(__x86_64__) || defined(_M_X64)
     return make_result("x86_64");
 #elif defined(__aarch64__) || defined(_M_ARM64)
@@ -154,14 +154,14 @@ lux_proc_str_result lux_arch(void) {
 }
 
 /* ── homeDir ─────────────────────────────────────────────────────────── */
-lux_proc_str_result lux_homeDir(void) {
+lucis_proc_str_result lucis_homeDir(void) {
     const char* home = getenv("HOME");
     return make_result(home);
 }
 
 /* ── executablePath ──────────────────────────────────────────────────── */
-lux_proc_str_result lux_executablePath(void) {
-    lux_proc_str_result res = {NULL, 0};
+lucis_proc_str_result lucis_executablePath(void) {
+    lucis_proc_str_result res = {NULL, 0};
     char buf[PATH_MAX];
     ssize_t len = readlink("/proc/self/exe", buf, sizeof(buf) - 1);
     if (len > 0) {

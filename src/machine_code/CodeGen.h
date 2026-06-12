@@ -32,7 +32,7 @@ public:
                                const std::vector<std::string>& extraIncludePaths = {},
                                bool quiet = false);
 
-    // Locate runtime builtins static library next to the lux executable.
+    // Locate runtime builtins static library next to the lucis executable.
     static std::string builtinsLibraryPath();
 
 private:

@@ -11,7 +11,7 @@ string value.
 
 If you keep the result, release it with `freeStr(...)` when you're done:
 
-```lux
+```lucis
 use std::str::{ toUpper };
 use std::log::{ println };
 
@@ -28,7 +28,7 @@ If a string is borrowed from elsewhere, such as a field access like
 `err.message`, do not free the borrowed value itself. Only free the new owned
 string returned by the transformation:
 
-```lux
+```lucis
 string msg = err.message.capitalize();
 defer freeStr(msg);
 ```

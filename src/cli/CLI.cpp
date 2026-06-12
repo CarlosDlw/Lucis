@@ -49,7 +49,7 @@ int CLI::run() {
         // No args → show help
         auto* help = findCommand("help");
         if (help) {
-            ArgParser parser("lux", "The Lux compiler");
+            ArgParser parser("lucis", "The Lucis compiler");
             help->buildArgs(parser);
             return help->run(parser);
         }
@@ -76,7 +76,7 @@ int CLI::run() {
     if (first == "--version" || first == "-v") {
         auto* ver = findCommand("version");
         if (ver) {
-            ArgParser parser("lux version", ver->description());
+            ArgParser parser("lucis version", ver->description());
             ver->buildArgs(parser);
             return ver->run(parser);
         }
@@ -96,7 +96,7 @@ int CLI::run() {
         for (int i = 2; i < argc_; i++)
             stripped.push_back(argv_[i]);
 
-        ArgParser parser("lux " + cmd->name(), cmd->description());
+        ArgParser parser("lucis " + cmd->name(), cmd->description());
         cmd->buildArgs(parser);
 
         if (!parser.parse(stripped.size(), const_cast<char**>(stripped.data()))) {
@@ -107,13 +107,13 @@ int CLI::run() {
         return cmd->run(parser);
     }
 
-    // Legacy: handle positional args (lux <file.lx> ...) — deprecated
+    // Legacy: handle positional args (lucis <file.lc> ...) — deprecated
     bool legacyResult = parseLegacy(argc_, argv_);
     if (legacyResult) {
         if (legacyOpts_.showHelp) {
             auto* help = findCommand("help");
             if (help) {
-                ArgParser parser("lux", "The Lux compiler");
+                ArgParser parser("lucis", "The Lucis compiler");
                 help->buildArgs(parser);
                 return help->run(parser);
             }
@@ -123,13 +123,13 @@ int CLI::run() {
         // Legacy compile mode: delegate to BuildCommand
         if (auto* build = findCommand("build")) {
             // Build args from legacy options
-            ArgParser parser("lux build", build->description());
+            ArgParser parser("lucis build", build->description());
             build->buildArgs(parser);
 
             // Simulate parse with legacy options
             // We need to reconstruct argv for the build parser
             std::vector<std::string> buildArgs;
-            buildArgs.push_back("lux");
+            buildArgs.push_back("lucis");
             buildArgs.push_back("build");
             buildArgs.push_back(legacyOpts_.inputFile);
             if (!legacyOpts_.outputFile.empty()) {
@@ -158,8 +158,8 @@ int CLI::run() {
         }
     }
 
-    std::cerr << "lux: unknown command '" << first << "'\n";
-    std::cerr << "Run 'lux help' for usage.\n";
+    std::cerr << "lucis: unknown command '" << first << "'\n";
+    std::cerr << "Run 'lucis help' for usage.\n";
     return 1;
 }
 
@@ -201,8 +201,8 @@ bool CLI::parseLegacy(int argc, char* argv[]) {
         } else if (arg[0] != '-') {
             legacyOpts_.outputFile = arg;
         } else {
-            std::cerr << "\033[1;31mlux:\033[0m unknown flag '" << arg << "'\n";
-            std::cerr << "Run 'lux help' for usage.\n";
+            std::cerr << "\033[1;31mlucis:\033[0m unknown flag '" << arg << "'\n";
+            std::cerr << "Run 'lucis help' for usage.\n";
             return false;
         }
     }

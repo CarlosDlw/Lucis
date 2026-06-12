@@ -1,0 +1,13 @@
+{
+  "iconDefinitions": {
+    "_lucis_file": {
+      "iconPath": "../icons/lucis-file.png"
+    }
+  },
+  "languageIds": {
+    "lucis": "_lucis_file"
+  },
+  "fileExtensions": {
+    "lc": "_lucis_file"
+  }
+}

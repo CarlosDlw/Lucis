@@ -7,8 +7,8 @@
 #include <inttypes.h>
 
 /* ── helper ──────────────────────────────────────────────────────────── */
-static lux_fmt_str_result make_result(const char* src, size_t len) {
-    lux_fmt_str_result res = {NULL, 0};
+static lucis_fmt_str_result make_result(const char* src, size_t len) {
+    lucis_fmt_str_result res = {NULL, 0};
     if (len == 0) { res.ptr = ""; return res; }
     char* buf = (char*)malloc(len);
     if (!buf) return res;
@@ -19,76 +19,76 @@ static lux_fmt_str_result make_result(const char* src, size_t len) {
 }
 
 /* ── lpad ─────────────────────────────────────────────────────────────── */
-lux_fmt_str_result lux_lpad(const char* s, size_t s_len,
+lucis_fmt_str_result lucis_lpad(const char* s, size_t s_len,
                                    size_t width, uint8_t fill) {
     if (s_len >= width) return make_result(s, s_len);
     size_t pad = width - s_len;
     char* buf = (char*)malloc(width);
-    if (!buf) { lux_fmt_str_result r = {NULL, 0}; return r; }
+    if (!buf) { lucis_fmt_str_result r = {NULL, 0}; return r; }
     memset(buf, fill, pad);
     memcpy(buf + pad, s, s_len);
-    lux_fmt_str_result res;
+    lucis_fmt_str_result res;
     res.ptr = buf;
     res.len = width;
     return res;
 }
 
 /* ── rpad ─────────────────────────────────────────────────────────────── */
-lux_fmt_str_result lux_rpad(const char* s, size_t s_len,
+lucis_fmt_str_result lucis_rpad(const char* s, size_t s_len,
                                    size_t width, uint8_t fill) {
     if (s_len >= width) return make_result(s, s_len);
     size_t pad = width - s_len;
     char* buf = (char*)malloc(width);
-    if (!buf) { lux_fmt_str_result r = {NULL, 0}; return r; }
+    if (!buf) { lucis_fmt_str_result r = {NULL, 0}; return r; }
     memcpy(buf, s, s_len);
     memset(buf + s_len, fill, pad);
-    lux_fmt_str_result res;
+    lucis_fmt_str_result res;
     res.ptr = buf;
     res.len = width;
     return res;
 }
 
 /* ── center ───────────────────────────────────────────────────────────── */
-lux_fmt_str_result lux_center(const char* s, size_t s_len,
+lucis_fmt_str_result lucis_center(const char* s, size_t s_len,
                                      size_t width, uint8_t fill) {
     if (s_len >= width) return make_result(s, s_len);
     size_t total_pad = width - s_len;
     size_t left_pad = total_pad / 2;
     size_t right_pad = total_pad - left_pad;
     char* buf = (char*)malloc(width);
-    if (!buf) { lux_fmt_str_result r = {NULL, 0}; return r; }
+    if (!buf) { lucis_fmt_str_result r = {NULL, 0}; return r; }
     memset(buf, fill, left_pad);
     memcpy(buf + left_pad, s, s_len);
     memset(buf + left_pad + s_len, fill, right_pad);
-    lux_fmt_str_result res;
+    lucis_fmt_str_result res;
     res.ptr = buf;
     res.len = width;
     return res;
 }
 
 /* ── hex ──────────────────────────────────────────────────────────────── */
-lux_fmt_str_result lux_fmtHex(uint64_t val) {
+lucis_fmt_str_result lucis_fmtHex(uint64_t val) {
     char tmp[32];
     int n = snprintf(tmp, sizeof(tmp), "0x%" PRIx64, val);
     return make_result(tmp, (size_t)n);
 }
 
 /* ── hexUpper ─────────────────────────────────────────────────────────── */
-lux_fmt_str_result lux_fmtHexUpper(uint64_t val) {
+lucis_fmt_str_result lucis_fmtHexUpper(uint64_t val) {
     char tmp[32];
     int n = snprintf(tmp, sizeof(tmp), "0x%" PRIX64, val);
     return make_result(tmp, (size_t)n);
 }
 
 /* ── oct ──────────────────────────────────────────────────────────────── */
-lux_fmt_str_result lux_fmtOct(uint64_t val) {
+lucis_fmt_str_result lucis_fmtOct(uint64_t val) {
     char tmp[32];
     int n = snprintf(tmp, sizeof(tmp), "0o%" PRIo64, val);
     return make_result(tmp, (size_t)n);
 }
 
 /* ── bin ──────────────────────────────────────────────────────────────── */
-lux_fmt_str_result lux_fmtBin(uint64_t val) {
+lucis_fmt_str_result lucis_fmtBin(uint64_t val) {
     if (val == 0) return make_result("0b0", 3);
 
     char tmp[67]; /* "0b" + 64 bits */
@@ -106,7 +106,7 @@ lux_fmt_str_result lux_fmtBin(uint64_t val) {
 }
 
 /* ── fixed ────────────────────────────────────────────────────────────── */
-lux_fmt_str_result lux_fixed(double val, uint32_t decimals) {
+lucis_fmt_str_result lucis_fixed(double val, uint32_t decimals) {
     char tmp[64];
     int n = snprintf(tmp, sizeof(tmp), "%.*f", (int)decimals, val);
     if (n < 0) n = 0;
@@ -114,7 +114,7 @@ lux_fmt_str_result lux_fixed(double val, uint32_t decimals) {
 }
 
 /* ── scientific ───────────────────────────────────────────────────────── */
-lux_fmt_str_result lux_scientific(double val) {
+lucis_fmt_str_result lucis_scientific(double val) {
     char tmp[64];
     int n = snprintf(tmp, sizeof(tmp), "%e", val);
     if (n < 0) n = 0;
@@ -122,7 +122,7 @@ lux_fmt_str_result lux_scientific(double val) {
 }
 
 /* ── humanBytes ───────────────────────────────────────────────────────── */
-lux_fmt_str_result lux_humanBytes(uint64_t bytes) {
+lucis_fmt_str_result lucis_humanBytes(uint64_t bytes) {
     static const char* units[] = {"B", "KB", "MB", "GB", "TB", "PB", "EB"};
     char tmp[64];
     int n;
@@ -148,7 +148,7 @@ lux_fmt_str_result lux_humanBytes(uint64_t bytes) {
 }
 
 /* ── commas ───────────────────────────────────────────────────────────── */
-lux_fmt_str_result lux_commas(int64_t val) {
+lucis_fmt_str_result lucis_commas(int64_t val) {
     char tmp[32];
     int n;
     int negative = 0;
@@ -186,7 +186,7 @@ lux_fmt_str_result lux_commas(int64_t val) {
 }
 
 /* ── percent ──────────────────────────────────────────────────────────── */
-lux_fmt_str_result lux_percent(double val) {
+lucis_fmt_str_result lucis_percent(double val) {
     double pct = val * 100.0;
     char tmp[64];
     int n;

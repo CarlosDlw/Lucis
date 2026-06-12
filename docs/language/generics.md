@@ -32,7 +32,7 @@ T provides four built-in generic types:
 
 ## Generic Type Inference
 
-Lux can infer type arguments for user-defined generic functions and generic static methods when every type parameter appears in at least one formal parameter.
+Lucis can infer type arguments for user-defined generic functions and generic static methods when every type parameter appears in at least one formal parameter.
 
 ```
 fn identity<T>(T value) T {
@@ -62,7 +62,7 @@ Inference is intentionally strict:
 - Type arguments are inferred only from formal parameters.
 - Every generic parameter must appear in at least one argument position.
 - If the same type parameter is inferred as different concrete types, compilation fails.
-- Lux does not guess from the return type alone.
+- Lucis does not guess from the return type alone.
 
 These calls are rejected:
 
@@ -279,7 +279,7 @@ int32 result = await t;
 
 ## User-Defined Generics
 
-Beyond the built-in collection types, Lux supports user-defined generic structs, unions, methods, and functions. Generics are resolved at compile time via **monomorphization** — each concrete instantiation (`Node<int32>`, `Node<string>`, `Result<int32, string>`) becomes a fully independent type with no runtime overhead.
+Beyond the built-in collection types, Lucis supports user-defined generic structs, unions, methods, and functions. Generics are resolved at compile time via **monomorphization** — each concrete instantiation (`Node<int32>`, `Node<string>`, `Result<int32, string>`) becomes a fully independent type with no runtime overhead.
 
 ---
 
@@ -287,7 +287,7 @@ Beyond the built-in collection types, Lux supports user-defined generic structs,
 
 Declare a struct with one or more type parameters in angle brackets:
 
-```lux
+```lucis
 struct Node<T> {
     T value;
 }
@@ -306,7 +306,7 @@ Type parameters can be any identifier. They act as placeholders for concrete typ
 
 Generic unions use the same type parameter syntax:
 
-```lux
+```lucis
 union Result<T, E> {
     T ok;
     E err;
@@ -315,7 +315,7 @@ union Result<T, E> {
 
 Concrete instantiations can be used anywhere a normal type can be used:
 
-```lux
+```lucis
 Result<int32, string> value = Result<int32, string> { ok: 42 };
 Result<int32, string> failure = Result<int32, string> { err: "boom" };
 ```
@@ -328,7 +328,7 @@ Union semantics do not change with generics: all fields still share the same mem
 
 Use `extend` with the same type parameter list to add methods to a generic struct:
 
-```lux
+```lucis
 extend Node<T> {
     // Static factory method
     fn create(T val) Node<T> {
@@ -351,7 +351,7 @@ extend Node<T> {
 
 A standalone function can be parameterized with `<T>` after the function name:
 
-```lux
+```lucis
 fn max<T>(T a, T b) T {
     ret a > b ? a : b;
 }
@@ -375,7 +375,7 @@ The return type and parameter types use `T` as a placeholder. The concrete type 
 | Generic function call | `max<int32>(3, 7)` |
 | Instance method call | `n.getValue()` *(type inferred from `n`)* |
 
-```lux
+```lucis
 use std::log::println;
 
 struct Node<T> {
@@ -414,7 +414,7 @@ fn main() int32 {
 
 Type parameters can be annotated with a constraint using the `:` syntax:
 
-```lux
+```lucis
 fn clamp<T: numeric>(T val, T lo, T hi) T {
     ret val < lo ? lo : val > hi ? hi : val;
 }

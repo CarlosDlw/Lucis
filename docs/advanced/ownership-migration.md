@@ -1,6 +1,6 @@
 # Ownership Migration Guide
 
-This guide covers breaking changes introduced by Lux ownership/autodrop improvements.
+This guide covers breaking changes introduced by Lucis ownership/autodrop improvements.
 
 ## What Changed
 
@@ -15,7 +15,7 @@ This guide covers breaking changes introduced by Lux ownership/autodrop improvem
 
 Before (accepted, but unsafe):
 
-```lux
+```lucis
 string a = fromCStrCopy(c"hello");
 string b = a;
 println(a);
@@ -23,7 +23,7 @@ println(a);
 
 After:
 
-```lux
+```lucis
 string a = fromCStrCopy(c"hello");
 string b = a;      // move
 println(b);        // use destination
@@ -33,7 +33,7 @@ println(b);        // use destination
 
 Before:
 
-```lux
+```lucis
 string s = fromCStrCopy(c"hello");
 freeStr(s);
 freeStr(s); // double free at runtime
@@ -41,7 +41,7 @@ freeStr(s); // double free at runtime
 
 After:
 
-```lux
+```lucis
 string s = fromCStrCopy(c"hello");
 freeStr(s); // consumed
 // freeStr(s); // compile-time ownership error
@@ -52,4 +52,4 @@ freeStr(s); // consumed
 1. Compile and fix `use-after-move` diagnostics first.
 2. Replace accidental copies with explicit clone-style APIs when you need duplication.
 3. Remove manual deep-free loops for `vec<string>`, `map<*, string>`, and `set<string>`.
-4. Keep `defer` for non-Lux resources (`fd`, raw pointers, mutexes).
+4. Keep `defer` for non-Lucis resources (`fd`, raw pointers, mutexes).

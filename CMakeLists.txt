@@ -1,15 +1,15 @@
 cmake_minimum_required(VERSION 3.20)
-project(lux VERSION 0.0.1 LANGUAGES C CXX)
+project(lucis VERSION 0.0.1 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-option(LUX_ENABLE_SANITIZERS
+option(LUCIS_ENABLE_SANITIZERS
     "Enable ASan/UBSan in debug-like builds"
     ON)
 
-option(LUX_PREFER_PKG_CONFIG
+option(LUCIS_PREFER_PKG_CONFIG
     "Prefer pkg-config for third-party dependency discovery when available"
     ON)
 
@@ -73,7 +73,7 @@ else()
 endif()
 
 # ─── ANTLR4 Runtime ───────────────────────────────────────────────────────────
-if(LUX_PREFER_PKG_CONFIG AND PkgConfig_FOUND)
+if(LUCIS_PREFER_PKG_CONFIG AND PkgConfig_FOUND)
     pkg_check_modules(ANTLR4_PC QUIET antlr4-runtime)
     if(ANTLR4_PC_FOUND)
         if(ANTLR4_PC_INCLUDE_DIRS)
@@ -124,7 +124,7 @@ endif()
 message(STATUS "Found ANTLR4: ${ANTLR4_LIB}")
 
 # ─── libclang (C API for parsing C headers) ───────────────────────────────────
-if(LUX_PREFER_PKG_CONFIG AND PkgConfig_FOUND)
+if(LUCIS_PREFER_PKG_CONFIG AND PkgConfig_FOUND)
     pkg_check_modules(LIBCLANG_PC QUIET libclang)
     if(LIBCLANG_PC_FOUND)
         if(LIBCLANG_PC_INCLUDE_DIRS)
@@ -179,7 +179,7 @@ endif()
 message(STATUS "Found libclang: ${LIBCLANG_LIB}")
 
 # ─── Builtins (C library linked into every compiled binary) ───────────────────
-add_library(lux_builtins STATIC
+add_library(lucis_builtins STATIC
     src/builtins/log/log.c
     src/builtins/collections/vec.c
     src/builtins/collections/map.c
@@ -209,25 +209,25 @@ add_library(lux_builtins STATIC
     src/builtins/thread/thread.c
     src/builtins/error/error.c
 )
-set_target_properties(lux_builtins PROPERTIES POSITION_INDEPENDENT_CODE ON)
-target_include_directories(lux_builtins PRIVATE
+set_target_properties(lucis_builtins PROPERTIES POSITION_INDEPENDENT_CODE ON)
+target_include_directories(lucis_builtins PRIVATE
     ${CMAKE_SOURCE_DIR}/src/builtins
 )
-target_link_libraries(lux_builtins PRIVATE z pthread)
+target_link_libraries(lucis_builtins PRIVATE z pthread)
 
 # ─── Sources ──────────────────────────────────────────────────────────────────
 set(GENERATED_SOURCES
-    src/generated/LuxLexer.cpp
-    src/generated/LuxParser.cpp
-    src/generated/LuxParserBaseVisitor.cpp
-    src/generated/LuxParserVisitor.cpp
+    src/generated/LucisLexer.cpp
+    src/generated/LucisParser.cpp
+    src/generated/LucisParserBaseVisitor.cpp
+    src/generated/LucisParserVisitor.cpp
 )
 
 set(SOURCES
     src/main.cpp
     src/cli/CLI.cpp
     src/cli/ArgParser.cpp
-    src/cli/LuxPipeline.cpp
+    src/cli/LucisPipeline.cpp
     src/cli/BuildCommand.cpp
     src/cli/RunCommand.cpp
     src/cli/CheckCommand.cpp
@@ -276,9 +276,9 @@ set(SOURCES
 )
 
 # ─── Target ───────────────────────────────────────────────────────────────────
-add_executable(lux ${SOURCES} ${GENERATED_SOURCES})
+add_executable(lucis ${SOURCES} ${GENERATED_SOURCES})
 
-target_include_directories(lux PRIVATE
+target_include_directories(lucis PRIVATE
     ${CMAKE_SOURCE_DIR}/src
     ${CMAKE_SOURCE_DIR}/src/generated
     ${CMAKE_SOURCE_DIR}/src/builtins
@@ -287,47 +287,47 @@ target_include_directories(lux PRIVATE
 )
 
 if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
-    target_compile_options(lux PRIVATE
+    target_compile_options(lucis PRIVATE
         -include ${CMAKE_SOURCE_DIR}/src/antlr/AntlrRuntimeCompat.h
     )
 endif()
 
 # Compatibility flags for LLVM API differences across versions
 if(LLVM_VERSION_MAJOR GREATER_EQUAL 15)
-    target_compile_definitions(lux PRIVATE LLVM_VERSION_15_OR_NEWER)
+    target_compile_definitions(lucis PRIVATE LLVM_VERSION_15_OR_NEWER)
 endif()
 if(LLVM_VERSION_MAJOR GREATER_EQUAL 18)
-    target_compile_definitions(lux PRIVATE LLVM_VERSION_18_OR_NEWER)
+    target_compile_definitions(lucis PRIVATE LLVM_VERSION_18_OR_NEWER)
 endif()
 
-target_link_libraries(lux PRIVATE
-    # --whole-archive forces ALL symbols from lux_builtins into the binary so that
-    # LLVM MCJIT can resolve them at JIT runtime via dlsym (lux run command).
-    -Wl,--whole-archive lux_builtins -Wl,--no-whole-archive
+target_link_libraries(lucis PRIVATE
+    # --whole-archive forces ALL symbols from lucis_builtins into the binary so that
+    # LLVM MCJIT can resolve them at JIT runtime via dlsym (lucis run command).
+    -Wl,--whole-archive lucis_builtins -Wl,--no-whole-archive
     ${ANTLR4_LIB}
     ${LLVM_LIBS}
     ${LIBCLANG_LIB}
 )
 
-# Export all symbols so LLVM MCJIT can resolve builtins via dlsym (lux run command).
-target_link_options(lux PRIVATE -rdynamic)
+# Export all symbols so LLVM MCJIT can resolve builtins via dlsym (lucis run command).
+target_link_options(lucis PRIVATE -rdynamic)
 
 # ─── Debug runtime diagnostics (Phase 4) ─────────────────────────────────────
-if(LUX_ENABLE_SANITIZERS
+if(LUCIS_ENABLE_SANITIZERS
    AND CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU"
    AND CMAKE_BUILD_TYPE MATCHES "Debug|RelWithDebInfo")
-    set(LUX_SANITIZER_FLAGS -fsanitize=address,undefined -fno-omit-frame-pointer)
+    set(LUCIS_SANITIZER_FLAGS -fsanitize=address,undefined -fno-omit-frame-pointer)
 
-    target_compile_options(lux PRIVATE ${LUX_SANITIZER_FLAGS})
-    target_link_options(lux PRIVATE ${LUX_SANITIZER_FLAGS})
+    target_compile_options(lucis PRIVATE ${LUCIS_SANITIZER_FLAGS})
+    target_link_options(lucis PRIVATE ${LUCIS_SANITIZER_FLAGS})
 
-    target_compile_options(lux_builtins PRIVATE ${LUX_SANITIZER_FLAGS})
+    target_compile_options(lucis_builtins PRIVATE ${LUCIS_SANITIZER_FLAGS})
 
-    target_compile_definitions(lux PRIVATE LUX_RUNTIME_DIAGNOSTICS=1)
-    message(STATUS "Lux debug runtime diagnostics enabled (ASan/UBSan)")
+    target_compile_definitions(lucis PRIVATE LUCIS_RUNTIME_DIAGNOSTICS=1)
+    message(STATUS "Lucis debug runtime diagnostics enabled (ASan/UBSan)")
 endif()
 
 # ─── Build instructions ───────────────────────────────────────────────────────
 # mkdir build && cd build && cmake .. && make -j$(nproc)
-# ./lux ../examples/main.lx
-# ./lux ../examples/main.lx ./out -o2
+# ./lucis ../examples/main.lc
+# ./lucis ../examples/main.lc ./out -o2

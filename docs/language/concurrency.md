@@ -1,6 +1,6 @@
 # Concurrency
 
-Lux provides thread-based concurrency with `spawn`, `await`, `Task<T>`, `Mutex`, and the `lock` statement. Threads are implemented using pthreads under the hood.
+Lucis provides thread-based concurrency with `spawn`, `await`, `Task<T>`, `Mutex`, and the `lock` statement. Threads are implemented using pthreads under the hood.
 
 ---
 

@@ -121,9 +121,9 @@ void HelpCParser::discoverSystemIncludes() {
     }
 }
 
-// ── Lux type name from C type spelling ────────────────────────────────────────
+// ── Lucis type name from C type spelling ────────────────────────────────────────
 
-static std::string cTypeToLuxType(CXType cxType) {
+static std::string cTypeToLucisType(CXType cxType) {
     CXTypeKind kind = cxType.kind;
 
     switch (kind) {
@@ -154,11 +154,11 @@ static std::string cTypeToLuxType(CXType cxType) {
             return "*char";
         }
         if (pointee.kind == CXType_Void) return "*void";
-        return "*" + cTypeToLuxType(pointee);
+        return "*" + cTypeToLucisType(pointee);
     }
     case CXType_Elaborated: {
         CXType named = clang_Type_getNamedType(cxType);
-        return cTypeToLuxType(named);
+        return cTypeToLucisType(named);
     }
     case CXType_Record: {
         CXString spelling = clang_getTypeSpelling(cxType);
@@ -185,7 +185,7 @@ static std::string cTypeToLuxType(CXType cxType) {
     case CXType_ConstantArray:
     case CXType_IncompleteArray: {
         CXType elemType = clang_getArrayElementType(cxType);
-        return "*" + cTypeToLuxType(elemType);
+        return "*" + cTypeToLucisType(elemType);
     }
     case CXType_FunctionProto:
     case CXType_FunctionNoProto:
@@ -388,7 +388,7 @@ static CXChildVisitResult visitor(CXCursor cursor, CXCursor /*parent*/,
         HelpCFunction fn;
         fn.name        = name;
         fn.returnCType = getCTypeSpelling(retType);
-        fn.returnLuxType = cTypeToLuxType(retType);
+        fn.returnLucisType = cTypeToLucisType(retType);
         fn.isVariadic  = clang_isFunctionTypeVariadic(funcType);
         fn.doc         = getCursorDoc(cursor);
 
@@ -407,7 +407,7 @@ static CXChildVisitResult visitor(CXCursor cursor, CXCursor /*parent*/,
             HelpCParam param;
             param.name  = argName;
             param.cType = getCTypeSpelling(argType);
-            param.luxType = cTypeToLuxType(argType);
+            param.lucisType = cTypeToLucisType(argType);
             fn.params.push_back(std::move(param));
         }
 
@@ -457,7 +457,7 @@ static CXChildVisitResult visitor(CXCursor cursor, CXCursor /*parent*/,
                 HelpCField field;
                 field.name   = fieldName;
                 field.cType  = getCTypeSpelling(fieldCXType);
-                field.luxType  = cTypeToLuxType(fieldCXType);
+                field.lucisType  = cTypeToLucisType(fieldCXType);
                 field.size   = clang_Type_getSizeOf(fieldCXType);
 
                 // Get field offset in bytes
@@ -514,7 +514,7 @@ static CXChildVisitResult visitor(CXCursor cursor, CXCursor /*parent*/,
         HelpCTypedef td;
         td.name            = name;
         td.underlyingCType = getCTypeSpelling(underType);
-        td.underlyingLuxType = cTypeToLuxType(underType);
+        td.underlyingLucisType = cTypeToLucisType(underType);
         td.doc             = getCursorDoc(cursor);
         data->info->typedefs.push_back(std::move(td));
         return CXChildVisit_Continue;
@@ -578,7 +578,7 @@ static CXChildVisitResult visitor(CXCursor cursor, CXCursor /*parent*/,
         HelpCGlobal g;
         g.name  = name;
         g.cType = getCTypeSpelling(varType);
-        g.luxType = cTypeToLuxType(varType);
+        g.lucisType = cTypeToLucisType(varType);
         g.doc   = getCursorDoc(cursor);
         data->info->globals.push_back(std::move(g));
         return CXChildVisit_Continue;
@@ -659,7 +659,7 @@ bool HelpCParser::parse(const std::string& headerName, HelpCHeaderInfo& out) {
         CXTranslationUnit_SkipFunctionBodies);
 
     if (!tu) {
-        std::cerr << "lux helpc: failed to parse header '" << resolved << "'\n";
+        std::cerr << "lucis helpc: failed to parse header '" << resolved << "'\n";
         clang_disposeIndex(index);
         return false;
     }
@@ -673,7 +673,7 @@ bool HelpCParser::parse(const std::string& headerName, HelpCHeaderInfo& out) {
         if (sev >= CXDiagnostic_Error) {
             hasError = true;
             CXString msg = clang_getDiagnosticSpelling(diag);
-            std::cerr << "lux helpc: " << clang_getCString(msg) << "\n";
+            std::cerr << "lucis helpc: " << clang_getCString(msg) << "\n";
             clang_disposeString(msg);
         }
         clang_disposeDiagnostic(diag);

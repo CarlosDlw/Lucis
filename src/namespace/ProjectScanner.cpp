@@ -16,10 +16,10 @@ std::vector<std::string> ProjectScanner::scan(const std::string& rootDir) {
              rootDir, fs::directory_options::skip_permission_denied);
          it != fs::recursive_directory_iterator(); ++it) {
 
-        // Skip only .lux directory
+        // Skip only .lucis directory
         if (it->is_directory()) {
             auto dirName = it->path().filename().string();
-            if (dirName == ".lux") {
+            if (dirName == ".lucis") {
                 it.disable_recursion_pending();
                 continue;
             }
@@ -27,7 +27,7 @@ std::vector<std::string> ProjectScanner::scan(const std::string& rootDir) {
 
         if (!it->is_regular_file()) continue;
 
-        if (it->path().extension() == ".lx") {
+        if (it->path().extension() == ".lc") {
             files.push_back(fs::canonical(it->path()).string());
         }
     }

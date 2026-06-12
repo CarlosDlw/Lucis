@@ -58,10 +58,10 @@ use std::log::{ println, print, dbg };
 
 ## Importing from User Modules
 
-User-defined functions can be imported from other `.lx` files using the namespace name:
+User-defined functions can be imported from other `.lc` files using the namespace name:
 
 ```
-// math.lx
+// math.lc
 namespace Math;
 
 fn add(int32 a, int32 b) int32 {
@@ -74,7 +74,7 @@ fn multiply(int32 a, int32 b) int32 {
 ```
 
 ```
-// main.lx
+// main.lc
 namespace Main;
 
 use Math::add;
@@ -102,11 +102,11 @@ C headers are included with the `#include` directive (not `use`):
 
 Functions, structs, enums, and constants from the header are automatically parsed via libclang and made available in scope.
 
-`use` and `#include` can appear in any order. When a C header and a `use` import declare a function with the same name, the **last declaration in file order wins**. The recommended pattern is to place `#include` before `use`, so Lux stdlib functions naturally override C equivalents:
+`use` and `#include` can appear in any order. When a C header and a `use` import declare a function with the same name, the **last declaration in file order wins**. The recommended pattern is to place `#include` before `use`, so Lucis stdlib functions naturally override C equivalents:
 
 ```
 #include <stdio.h>              // C sprintf (int32)
-use std::log::{ println, sprintf };  // Lux sprintf (string) ← wins
+use std::log::{ println, sprintf };  // Lucis sprintf (string) ← wins
 
 fn main() int32 {
     string msg = sprintf("val={}", 42);
@@ -115,7 +115,7 @@ fn main() int32 {
 }
 ```
 
-See [Calling C Functions](../ffi/calling-c.md#name-conflicts-between-c-and-lux) for details.
+See [Calling C Functions](../ffi/calling-c.md#name-conflicts-between-c-and-lucis) for details.
 
 ---
 

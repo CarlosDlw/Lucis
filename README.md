@@ -1,8 +1,8 @@
-# Lux
+# Lucis
 
-A compiled systems programming language that targets LLVM IR. Lux combines the performance and control of C with modern syntax, user-defined generics, a rich standard library, and native C interoperability — with zero runtime overhead.
+A compiled systems programming language that targets LLVM IR. Lucis combines the performance and control of C with modern syntax, user-defined generics, a rich standard library, and native C interoperability — with zero runtime overhead.
 
-```lux
+```lucis
 namespace Main;
 
 use std::log::println;
@@ -17,7 +17,7 @@ fn main() int32 {
 
 ## Table of Contents
 
-- [Lux](#lux)
+- [Lucis](#lucis)
 - [Features](#features)
 - [Building](#building)
 - [Install dependencies](#install-dependencies)
@@ -90,13 +90,13 @@ If you plan to use the `--static` flag, you must also install the static library
 Use the project Makefile (portable wrappers around CMake):
 
 ```bash
-git clone https://github.com/CarlosDlw/Lux.git
-cd Lux
+git clone https://github.com/CarlosDlw/Lucis.git
+cd Lucis
 make configure BUILD_TYPE=Debug SANITIZERS=ON
 make build
 ```
 
-The compiled binary is at `build/lux`.
+The compiled binary is at `build/lucis`.
 
 Useful configure variants:
 
@@ -114,7 +114,7 @@ make configure CMAKE_FLAGS="-DCMAKE_PREFIX_PATH=/opt/custom"
 ### Alternative: pure CMake
 
 ```bash
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug -DLUX_ENABLE_SANITIZERS=ON
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug -DLUCIS_ENABLE_SANITIZERS=ON
 cmake --build build --parallel
 ```
 
@@ -132,8 +132,8 @@ make grammar ANTLR_JAR=/path/to/antlr-4.13.2-complete.jar
 
 This regenerates C++ ANTLR sources into `src/generated/` from:
 
-- `grammar/LuxLexer.g4`
-- `grammar/LuxParser.g4`
+- `grammar/LucisLexer.g4`
+- `grammar/LucisParser.g4`
 
 Use this only when grammar files change or when you intentionally want to refresh generated sources.
 
@@ -162,39 +162,39 @@ If CMake reports missing ANTLR4 runtime or libclang:
 ## Usage
 
 ```
-lux build <file> [-o <out>] [-O <lvl>] [--lto] [--emit-...]  Compile to binary
-lux run   <file> [-O <lvl>] [--lto] [-- args...]             JIT execution
-lux check <file> [-I <dir>]                                   Type-check only
-lux test  [filter] [-q]                                       Run test suite
-lux help  [command]                                           Show help
-lux helpc <lib> [symbol]                                      C library reference
+lucis build <file> [-o <out>] [-O <lvl>] [--lto] [--emit-...]  Compile to binary
+lucis run   <file> [-O <lvl>] [--lto] [-- args...]             JIT execution
+lucis check <file> [-I <dir>]                                   Type-check only
+lucis test  [filter] [-q]                                       Run test suite
+lucis help  [command]                                           Show help
+lucis helpc <lib> [symbol]                                      C library reference
 ```
 
 ```bash
 # Compile to binary with LTO and size optimization
-lux build main.lx -o ./main -Oz --lto
+lucis build main.lc -o ./main -Oz --lto
 
 # Emit Assembly to file
-lux build main.lx --emit-asm -o main.s
+lucis build main.lc --emit-asm -o main.s
 
 # Show LLVM IR in terminal
-lux build main.lx --emit-llvm
+lucis build main.lc --emit-llvm
 
 # Run via JIT with O3 optimization
-lux run main.lx -O3
+lucis run main.lc -O3
 
 # Type-check only
-lux check main.lx
+lucis check main.lc
 
 # Run the test suite
-lux test -q
+lucis test -q
 ```
 
 ---
 
 ## Quick Example
 
-```lux
+```lucis
 namespace Main;
 
 use std::log::println;
@@ -236,7 +236,7 @@ fn main() int32 {
 | | |
 |---|---|
 | [Installation](docs/getting-started/installation.md) | Build the compiler from source |
-| [Hello World](docs/getting-started/hello-world.md) | Your first Lux program, step by step |
+| [Hello World](docs/getting-started/hello-world.md) | Your first Lucis program, step by step |
 | [CLI Usage](docs/getting-started/cli-usage.md) | Compiler flags, options, and output modes |
 | [Editor Setup](docs/getting-started/editor-setup.md) | Syntax highlighting and LSP tooling |
 
@@ -347,7 +347,7 @@ fn main() int32 {
 | [Compiler Internals](docs/advanced/compiler-internals.md) | Parser, checker, IR builder, optimizer pipeline |
 | [Memory Model](docs/advanced/memory-model.md) | Stack layout, heap, pointer semantics |
 | [Optimization](docs/advanced/optimization.md) | LLVM pass pipeline, `-o1`/`-o2`/`-o3` |
-| [Extending Lux](docs/advanced/extending.md) | Adding builtins and extending the compiler |
+| [Extending Lucis](docs/advanced/extending.md) | Adding builtins and extending the compiler |
 
 ### FFI
 
@@ -374,7 +374,7 @@ fn main() int32 {
 
 ## Final Notes
 
-Lux is actively evolving. If a build fails on your platform, open an issue with:
+Lucis is actively evolving. If a build fails on your platform, open an issue with:
 
 - distro and version
 - compiler and CMake versions

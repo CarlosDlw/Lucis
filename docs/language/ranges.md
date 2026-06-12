@@ -1,10 +1,10 @@
 # Ranges
 
-This page covers range expressions in Lux — the `..` and `..=` operators used in loops and list comprehensions.
+This page covers range expressions in Lucis — the `..` and `..=` operators used in loops and list comprehensions.
 
 ## Overview
 
-Ranges represent a sequence of integer values between a start and end. Lux has two range operators:
+Ranges represent a sequence of integer values between a start and end. Lucis has two range operators:
 
 | Operator | Name | Description |
 |---|---|---|

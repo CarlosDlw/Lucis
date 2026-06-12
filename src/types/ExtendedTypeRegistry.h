@@ -22,7 +22,7 @@ struct ExtendedTypeDescriptor {
     std::string                       baseName;       // "Vec", "Map", etc.
     unsigned                          genericArity;   // 1 for Vec<T>, 2 for Map<K,V>
     std::vector<ExtendedFieldLayout>  layout;         // LLVM struct fields
-    std::string                       cPrefix;        // C function prefix: "lux_vec"
+    std::string                       cPrefix;        // C function prefix: "lucis_vec"
     std::vector<MethodDescriptor>     methods;        // methods for this extended type
 };
 

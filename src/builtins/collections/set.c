@@ -43,7 +43,7 @@ static int eq_8(const void* a, const void* b) { return *(const uint64_t*)a == *(
 
 // String hash/eq — FNV-1a
 static uint64_t hash_str(const void* key) {
-    const lux_set_string* s = (const lux_set_string*)key;
+    const lucis_set_string* s = (const lucis_set_string*)key;
     uint64_t h = 14695981039346656037ULL;
     for (size_t i = 0; i < s->len; i++) {
         h ^= (uint8_t)s->ptr[i];
@@ -53,15 +53,15 @@ static uint64_t hash_str(const void* key) {
 }
 
 static int eq_str(const void* a, const void* b) {
-    const lux_set_string* sa = (const lux_set_string*)a;
-    const lux_set_string* sb = (const lux_set_string*)b;
+    const lucis_set_string* sa = (const lucis_set_string*)a;
+    const lucis_set_string* sb = (const lucis_set_string*)b;
     return sa->len == sb->len &&
            (sa->len == 0 || memcmp(sa->ptr, sb->ptr, sa->len) == 0);
 }
 
 // ── Core operations ──────────────────────────────────────────────────────
 
-static void set_core_init(lux_set_header* s, size_t key_size) {
+static void set_core_init(lucis_set_header* s, size_t key_size) {
     s->states   = (uint8_t*)calloc(SET_INITIAL_CAP, 1);
     s->keys     = calloc(SET_INITIAL_CAP, key_size);
     s->hashes   = (uint64_t*)calloc(SET_INITIAL_CAP, sizeof(uint64_t));
@@ -70,7 +70,7 @@ static void set_core_init(lux_set_header* s, size_t key_size) {
     s->key_size = key_size;
 }
 
-static void set_core_free(lux_set_header* s) {
+static void set_core_free(lucis_set_header* s) {
     free(s->states);
     free(s->keys);
     free(s->hashes);
@@ -81,17 +81,17 @@ static void set_core_free(lux_set_header* s) {
     s->cap    = 0;
 }
 
-static void set_core_clear(lux_set_header* s) {
+static void set_core_clear(lucis_set_header* s) {
     memset(s->states, 0, s->cap);
     s->len = 0;
 }
 
-static inline void* set_key_at(lux_set_header* s, size_t idx) {
+static inline void* set_key_at(lucis_set_header* s, size_t idx) {
     return (uint8_t*)s->keys + idx * s->key_size;
 }
 
 // Find slot for a key. Sets *found = 1 if key exists, else 0.
-static size_t set_core_find(lux_set_header* s, const void* key,
+static size_t set_core_find(lucis_set_header* s, const void* key,
                             uint64_t hash, set_eq_fn eq, int* found) {
     size_t mask = s->cap - 1;
     size_t idx  = (size_t)(hash & mask);
@@ -121,7 +121,7 @@ static size_t set_core_find(lux_set_header* s, const void* key,
     return (first_tombstone != SIZE_MAX) ? first_tombstone : 0;
 }
 
-static void set_core_grow(lux_set_header* s, set_hash_fn hash_fn, set_eq_fn eq) {
+static void set_core_grow(lucis_set_header* s, set_hash_fn hash_fn, set_eq_fn eq) {
     size_t old_cap = s->cap;
     uint8_t*  old_states = s->states;
     void*     old_keys   = s->keys;
@@ -154,7 +154,7 @@ static void set_core_grow(lux_set_header* s, set_hash_fn hash_fn, set_eq_fn eq) 
 }
 
 // Add element. Returns 1 if element was new, 0 if already existed.
-static int set_core_add(lux_set_header* s, const void* key,
+static int set_core_add(lucis_set_header* s, const void* key,
                         set_hash_fn hash_fn, set_eq_fn eq) {
     if ((s->len + 1) * SET_LOAD_FACTOR_DEN > s->cap * SET_LOAD_FACTOR_NUM)
         set_core_grow(s, hash_fn, eq);
@@ -173,7 +173,7 @@ static int set_core_add(lux_set_header* s, const void* key,
     return 1;  // new element
 }
 
-static int set_core_has(lux_set_header* s, const void* key,
+static int set_core_has(lucis_set_header* s, const void* key,
                         set_hash_fn hash_fn, set_eq_fn eq) {
     if (s->len == 0) return 0;
     uint64_t h = hash_fn(key);
@@ -183,7 +183,7 @@ static int set_core_has(lux_set_header* s, const void* key,
 }
 
 // Remove element. Returns 1 if existed, 0 if not found.
-static int set_core_remove(lux_set_header* s, const void* key,
+static int set_core_remove(lucis_set_header* s, const void* key,
                            set_hash_fn hash_fn, set_eq_fn eq) {
     if (s->len == 0) return 0;
     uint64_t h = hash_fn(key);
@@ -203,33 +203,33 @@ static int set_core_remove(lux_set_header* s, const void* key,
 
 // ── Integer element types ────────────────────────────────────────────────
 
-#define LUX_SET_IMPL_INT(ET, ES, HASH_FN, EQ_FN)                         \
-void lux_set_init_##ES(lux_set_header* s) {                            \
+#define LUCIS_SET_IMPL_INT(ET, ES, HASH_FN, EQ_FN)                         \
+void lucis_set_init_##ES(lucis_set_header* s) {                            \
     set_core_init(s, sizeof(ET));                                            \
 }                                                                            \
-void lux_set_free_##ES(lux_set_header* s) {                            \
+void lucis_set_free_##ES(lucis_set_header* s) {                            \
     set_core_free(s);                                                        \
 }                                                                            \
-size_t lux_set_len_##ES(const lux_set_header* s) {                     \
+size_t lucis_set_len_##ES(const lucis_set_header* s) {                     \
     return s->len;                                                           \
 }                                                                            \
-int lux_set_isEmpty_##ES(const lux_set_header* s) {                    \
+int lucis_set_isEmpty_##ES(const lucis_set_header* s) {                    \
     return s->len == 0;                                                      \
 }                                                                            \
-int lux_set_add_##ES(lux_set_header* s, ET elem) {                     \
+int lucis_set_add_##ES(lucis_set_header* s, ET elem) {                     \
     return set_core_add(s, &elem, HASH_FN, EQ_FN);                          \
 }                                                                            \
-int lux_set_has_##ES(lux_set_header* s, ET elem) {                     \
+int lucis_set_has_##ES(lucis_set_header* s, ET elem) {                     \
     return set_core_has(s, &elem, HASH_FN, EQ_FN);                          \
 }                                                                            \
-int lux_set_remove_##ES(lux_set_header* s, ET elem) {                  \
+int lucis_set_remove_##ES(lucis_set_header* s, ET elem) {                  \
     return set_core_remove(s, &elem, HASH_FN, EQ_FN);                       \
 }                                                                            \
-void lux_set_clear_##ES(lux_set_header* s) {                           \
+void lucis_set_clear_##ES(lucis_set_header* s) {                           \
     set_core_clear(s);                                                       \
 }                                                                            \
-void lux_set_values_##ES(lux_set_header* s,                            \
-                             lux_set_vec_out* out) {                     \
+void lucis_set_values_##ES(lucis_set_header* s,                            \
+                             lucis_set_vec_out* out) {                     \
     ET* arr = (ET*)malloc(s->len * sizeof(ET));                              \
     size_t n = 0;                                                            \
     for (size_t i = 0; i < s->cap; i++) {                                    \
@@ -240,78 +240,78 @@ void lux_set_values_##ES(lux_set_header* s,                            \
 }
 
 // Instantiate integer types
-LUX_SET_IMPL_INT(int8_t,   i8,  hash_1, eq_1)
-LUX_SET_IMPL_INT(uint8_t,  u8,  hash_1, eq_1)
-LUX_SET_IMPL_INT(int16_t,  i16, hash_2, eq_2)
-LUX_SET_IMPL_INT(uint16_t, u16, hash_2, eq_2)
-LUX_SET_IMPL_INT(int32_t,  i32, hash_4, eq_4)
-LUX_SET_IMPL_INT(uint32_t, u32, hash_4, eq_4)
-LUX_SET_IMPL_INT(int64_t,  i64, hash_8, eq_8)
-LUX_SET_IMPL_INT(uint64_t, u64, hash_8, eq_8)
+LUCIS_SET_IMPL_INT(int8_t,   i8,  hash_1, eq_1)
+LUCIS_SET_IMPL_INT(uint8_t,  u8,  hash_1, eq_1)
+LUCIS_SET_IMPL_INT(int16_t,  i16, hash_2, eq_2)
+LUCIS_SET_IMPL_INT(uint16_t, u16, hash_2, eq_2)
+LUCIS_SET_IMPL_INT(int32_t,  i32, hash_4, eq_4)
+LUCIS_SET_IMPL_INT(uint32_t, u32, hash_4, eq_4)
+LUCIS_SET_IMPL_INT(int64_t,  i64, hash_8, eq_8)
+LUCIS_SET_IMPL_INT(uint64_t, u64, hash_8, eq_8)
 
 // ── String element type ──────────────────────────────────────────────────
 
-void lux_set_init_str(lux_set_header* s) {
-    set_core_init(s, sizeof(lux_set_string));
+void lucis_set_init_str(lucis_set_header* s) {
+    set_core_init(s, sizeof(lucis_set_string));
 }
 
-void lux_set_free_str(lux_set_header* s) {
+void lucis_set_free_str(lucis_set_header* s) {
     for (size_t i = 0; i < s->cap; i++) {
         if (s->states[i] != SET_STATE_OCCUPIED) continue;
-        lux_set_string* elem =
-            (lux_set_string*)((uint8_t*)s->keys + i * s->key_size);
-        lux_freeStr(elem->ptr, elem->len);
+        lucis_set_string* elem =
+            (lucis_set_string*)((uint8_t*)s->keys + i * s->key_size);
+        lucis_freeStr(elem->ptr, elem->len);
     }
     set_core_free(s);
 }
 
-size_t lux_set_len_str(const lux_set_header* s) {
+size_t lucis_set_len_str(const lucis_set_header* s) {
     return s->len;
 }
 
-int lux_set_isEmpty_str(const lux_set_header* s) {
+int lucis_set_isEmpty_str(const lucis_set_header* s) {
     return s->len == 0;
 }
 
-int lux_set_add_str(lux_set_header* s, lux_set_string elem) {
+int lucis_set_add_str(lucis_set_header* s, lucis_set_string elem) {
     return set_core_add(s, &elem, hash_str, eq_str);
 }
 
-int lux_set_has_str(lux_set_header* s, lux_set_string elem) {
+int lucis_set_has_str(lucis_set_header* s, lucis_set_string elem) {
     return set_core_has(s, &elem, hash_str, eq_str);
 }
 
-int lux_set_remove_str(lux_set_header* s, lux_set_string elem) {
+int lucis_set_remove_str(lucis_set_header* s, lucis_set_string elem) {
     if (s->len == 0) return 0;
     uint64_t h = hash_str(&elem);
     int found;
     size_t slot = set_core_find(s, &elem, h, eq_str, &found);
     if (!found) return 0;
-    lux_set_string* stored =
-        (lux_set_string*)((uint8_t*)s->keys + slot * s->key_size);
-    lux_freeStr(stored->ptr, stored->len);
+    lucis_set_string* stored =
+        (lucis_set_string*)((uint8_t*)s->keys + slot * s->key_size);
+    lucis_freeStr(stored->ptr, stored->len);
     s->states[slot] = SET_STATE_TOMBSTONE;
     s->len--;
     return 1;
 }
 
-void lux_set_clear_str(lux_set_header* s) {
+void lucis_set_clear_str(lucis_set_header* s) {
     for (size_t i = 0; i < s->cap; i++) {
         if (s->states[i] != SET_STATE_OCCUPIED) continue;
-        lux_set_string* elem =
-            (lux_set_string*)((uint8_t*)s->keys + i * s->key_size);
-        lux_freeStr(elem->ptr, elem->len);
+        lucis_set_string* elem =
+            (lucis_set_string*)((uint8_t*)s->keys + i * s->key_size);
+        lucis_freeStr(elem->ptr, elem->len);
     }
     set_core_clear(s);
 }
 
-void lux_set_values_str(lux_set_header* s, lux_set_vec_out* out) {
-    lux_set_string* arr =
-        (lux_set_string*)malloc(s->len * sizeof(lux_set_string));
+void lucis_set_values_str(lucis_set_header* s, lucis_set_vec_out* out) {
+    lucis_set_string* arr =
+        (lucis_set_string*)malloc(s->len * sizeof(lucis_set_string));
     size_t n = 0;
     for (size_t i = 0; i < s->cap; i++) {
         if (s->states[i] == SET_STATE_OCCUPIED)
-            arr[n++] = *(lux_set_string*)
+            arr[n++] = *(lucis_set_string*)
                 ((uint8_t*)s->keys + i * s->key_size);
     }
     out->ptr = arr; out->len = n; out->cap = n;
@@ -321,7 +321,7 @@ void lux_set_values_str(lux_set_header* s, lux_set_vec_out* out) {
 // Raw (opaque struct) element — byte-level FNV-1a hash + memcmp equality
 // ═══════════════════════════════════════════════════════════════════════════
 
-static size_t raw_key_size_ctx;  // thread-unsafe but Lux is single-threaded for now
+static size_t raw_key_size_ctx;  // thread-unsafe but Lucis is single-threaded for now
 
 static uint64_t hash_raw(const void* key) {
     const uint8_t* b = (const uint8_t*)key;
@@ -337,34 +337,34 @@ static int eq_raw(const void* a, const void* b) {
     return memcmp(a, b, raw_key_size_ctx) == 0;
 }
 
-void lux_set_init_raw(lux_set_header* s, size_t elem_size) {
+void lucis_set_init_raw(lucis_set_header* s, size_t elem_size) {
     set_core_init(s, elem_size);
 }
 
-void lux_set_free_raw(lux_set_header* s) {
+void lucis_set_free_raw(lucis_set_header* s) {
     set_core_free(s);
 }
 
-size_t lux_set_len_raw(const lux_set_header* s) {
+size_t lucis_set_len_raw(const lucis_set_header* s) {
     return s->len;
 }
 
-int lux_set_add_raw(lux_set_header* s, const void* elem) {
+int lucis_set_add_raw(lucis_set_header* s, const void* elem) {
     raw_key_size_ctx = s->key_size;
     return set_core_add(s, elem, hash_raw, eq_raw);
 }
 
-int lux_set_has_raw(lux_set_header* s, const void* elem) {
+int lucis_set_has_raw(lucis_set_header* s, const void* elem) {
     raw_key_size_ctx = s->key_size;
     return set_core_has(s, elem, hash_raw, eq_raw);
 }
 
-int lux_set_remove_raw(lux_set_header* s, const void* elem) {
+int lucis_set_remove_raw(lucis_set_header* s, const void* elem) {
     raw_key_size_ctx = s->key_size;
     return set_core_remove(s, elem, hash_raw, eq_raw);
 }
 
-void lux_set_values_raw(lux_set_header* s, lux_set_vec_out* out) {
+void lucis_set_values_raw(lucis_set_header* s, lucis_set_vec_out* out) {
     char* arr = (char*)malloc(s->len * s->key_size);
     size_t n = 0;
     for (size_t i = 0; i < s->cap; i++) {
@@ -378,10 +378,10 @@ void lux_set_values_raw(lux_set_header* s, lux_set_vec_out* out) {
     out->ptr = arr; out->len = n; out->cap = n;
 }
 
-int lux_set_isEmpty_raw(const lux_set_header* s) {
+int lucis_set_isEmpty_raw(const lucis_set_header* s) {
     return s->len == 0;
 }
 
-void lux_set_clear_raw(lux_set_header* s) {
+void lucis_set_clear_raw(lucis_set_header* s) {
     set_core_clear(s);
 }

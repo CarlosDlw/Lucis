@@ -6,14 +6,14 @@
 #include "types/TypeRegistry.h"
 #include "ffi/CBindings.h"
 
-// Maps libclang CXType values to Lux TypeInfo pointers.
+// Maps libclang CXType values to Lucis TypeInfo pointers.
 // Uses TypeRegistry for primitive types and CBindings for ownership
 // of dynamically created pointer/function types.
 class CTypeMapper {
 public:
     CTypeMapper(TypeRegistry& registry, CBindings& bindings);
 
-    // Map a libclang type to a Lux TypeInfo.
+    // Map a libclang type to a Lucis TypeInfo.
     // Returns nullptr for unsupported types.
     const TypeInfo* map(CXType cxType);
 

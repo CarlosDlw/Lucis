@@ -248,6 +248,6 @@ void ArgParser::printHelp() const {
 }
 
 void ArgParser::printError(const std::string& msg) const {
-    std::cerr << "\033[1;31mlux:\033[0m " << msg << "\n";
-    std::cerr << "Run 'lux help' for usage.\n";
+    std::cerr << "\033[1;31mlucis:\033[0m " << msg << "\n";
+    std::cerr << "Run 'lucis help' for usage.\n";
 }

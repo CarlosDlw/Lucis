@@ -1,10 +1,10 @@
 # Hello World
 
-This page walks you through writing, compiling, and running your first Lux program.
+This page walks you through writing, compiling, and running your first Lucis program.
 
 ## Your First Program
 
-Create a file called `hello.lx`:
+Create a file called `hello.lc`:
 
 ```
 namespace Hello;
@@ -22,7 +22,7 @@ fn main() int32 {
 Compile the program to a native binary and execute it:
 
 ```bash
-./build/lux hello.lx ./hello
+./build/lucis hello.lc ./hello
 ./hello
 ```
 
@@ -35,12 +35,12 @@ Hello, world!
 You can also view the generated LLVM IR by omitting the output argument:
 
 ```bash
-./build/lux hello.lx
+./build/lucis hello.lc
 ```
 
 ## Understanding the Code
 
-Every Lux program has three essential parts:
+Every Lucis program has three essential parts:
 
 ### 1. Namespace Declaration
 
@@ -48,7 +48,7 @@ Every Lux program has three essential parts:
 namespace Hello;
 ```
 
-Every `.lx` file **must** begin with a namespace declaration. This names the module and is used for imports across files.
+Every `.lc` file **must** begin with a namespace declaration. This names the module and is used for imports across files.
 
 ### 2. Imports
 

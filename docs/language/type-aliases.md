@@ -58,7 +58,7 @@ Type aliases make function pointer signatures readable when used as parameters, 
 
 ## Built-in Type Alias: `cstring`
 
-Lux provides a built-in type alias:
+Lucis provides a built-in type alias:
 
 ```
 cstring = *char
@@ -70,7 +70,7 @@ This is used for C string interop:
 cstring greeting = c"Hello!";
 puts(greeting);
 
-cstring converted = cstr("from Lux string");
+cstring converted = cstr("from Lucis string");
 puts(converted);
 free(converted as *void);
 ```

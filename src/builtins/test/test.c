@@ -19,7 +19,7 @@ static void fail_abort(const char* type, const char* detail,
 
 /* ── assertEqual ────────────────────────────────────────────────── */
 
-void lux_assertEqualI64(int64_t a, int64_t b,
+void lucis_assertEqualI64(int64_t a, int64_t b,
                         const char* file, size_t fileLen, int32_t line) {
     if (a != b) {
         char buf[128];
@@ -29,7 +29,7 @@ void lux_assertEqualI64(int64_t a, int64_t b,
     }
 }
 
-void lux_assertEqualF64(double a, double b,
+void lucis_assertEqualF64(double a, double b,
                         const char* file, size_t fileLen, int32_t line) {
     if (a != b) {
         char buf[128];
@@ -38,7 +38,7 @@ void lux_assertEqualF64(double a, double b,
     }
 }
 
-void lux_assertEqualStr(const char* a, size_t alen,
+void lucis_assertEqualStr(const char* a, size_t alen,
                         const char* b, size_t blen,
                         const char* file, size_t fileLen, int32_t line) {
     if (alen != blen || memcmp(a, b, alen) != 0) {
@@ -50,7 +50,7 @@ void lux_assertEqualStr(const char* a, size_t alen,
     }
 }
 
-void lux_assertEqualBool(int32_t a, int32_t b,
+void lucis_assertEqualBool(int32_t a, int32_t b,
                          const char* file, size_t fileLen, int32_t line) {
     if ((!a) != (!b)) {
         char buf[64];
@@ -60,7 +60,7 @@ void lux_assertEqualBool(int32_t a, int32_t b,
     }
 }
 
-void lux_assertEqualChar(int8_t a, int8_t b,
+void lucis_assertEqualChar(int8_t a, int8_t b,
                          const char* file, size_t fileLen, int32_t line) {
     if (a != b) {
         char buf[64];
@@ -72,7 +72,7 @@ void lux_assertEqualChar(int8_t a, int8_t b,
 
 /* ── assertNotEqual ─────────────────────────────────────────────── */
 
-void lux_assertNotEqualI64(int64_t a, int64_t b,
+void lucis_assertNotEqualI64(int64_t a, int64_t b,
                            const char* file, size_t fileLen, int32_t line) {
     if (a == b) {
         char buf[128];
@@ -82,7 +82,7 @@ void lux_assertNotEqualI64(int64_t a, int64_t b,
     }
 }
 
-void lux_assertNotEqualF64(double a, double b,
+void lucis_assertNotEqualF64(double a, double b,
                            const char* file, size_t fileLen, int32_t line) {
     if (a == b) {
         char buf[128];
@@ -91,7 +91,7 @@ void lux_assertNotEqualF64(double a, double b,
     }
 }
 
-void lux_assertNotEqualStr(const char* a, size_t alen,
+void lucis_assertNotEqualStr(const char* a, size_t alen,
                            const char* b, size_t blen,
                            const char* file, size_t fileLen, int32_t line) {
     if (alen == blen && memcmp(a, b, alen) == 0) {
@@ -102,7 +102,7 @@ void lux_assertNotEqualStr(const char* a, size_t alen,
     }
 }
 
-void lux_assertNotEqualBool(int32_t a, int32_t b,
+void lucis_assertNotEqualBool(int32_t a, int32_t b,
                             const char* file, size_t fileLen, int32_t line) {
     if ((!a) == (!b)) {
         char buf[64];
@@ -112,7 +112,7 @@ void lux_assertNotEqualBool(int32_t a, int32_t b,
     }
 }
 
-void lux_assertNotEqualChar(int8_t a, int8_t b,
+void lucis_assertNotEqualChar(int8_t a, int8_t b,
                             const char* file, size_t fileLen, int32_t line) {
     if (a == b) {
         char buf[64];
@@ -125,13 +125,13 @@ void lux_assertNotEqualChar(int8_t a, int8_t b,
 
 /* ── assertTrue / assertFalse ───────────────────────────────────── */
 
-void lux_assertTrue(int32_t cond,
+void lucis_assertTrue(int32_t cond,
                     const char* file, size_t fileLen, int32_t line) {
     if (!cond)
         fail_abort("assertTrue", "expected true, got false", file, fileLen, line);
 }
 
-void lux_assertFalse(int32_t cond,
+void lucis_assertFalse(int32_t cond,
                      const char* file, size_t fileLen, int32_t line) {
     if (cond)
         fail_abort("assertFalse", "expected false, got true", file, fileLen, line);
@@ -139,7 +139,7 @@ void lux_assertFalse(int32_t cond,
 
 /* ── assertGreater ──────────────────────────────────────────────── */
 
-void lux_assertGreaterI64(int64_t a, int64_t b,
+void lucis_assertGreaterI64(int64_t a, int64_t b,
                           const char* file, size_t fileLen, int32_t line) {
     if (!(a > b)) {
         char buf[128];
@@ -149,7 +149,7 @@ void lux_assertGreaterI64(int64_t a, int64_t b,
     }
 }
 
-void lux_assertGreaterF64(double a, double b,
+void lucis_assertGreaterF64(double a, double b,
                           const char* file, size_t fileLen, int32_t line) {
     if (!(a > b)) {
         char buf[128];
@@ -160,7 +160,7 @@ void lux_assertGreaterF64(double a, double b,
 
 /* ── assertLess ─────────────────────────────────────────────────── */
 
-void lux_assertLessI64(int64_t a, int64_t b,
+void lucis_assertLessI64(int64_t a, int64_t b,
                        const char* file, size_t fileLen, int32_t line) {
     if (!(a < b)) {
         char buf[128];
@@ -170,7 +170,7 @@ void lux_assertLessI64(int64_t a, int64_t b,
     }
 }
 
-void lux_assertLessF64(double a, double b,
+void lucis_assertLessF64(double a, double b,
                        const char* file, size_t fileLen, int32_t line) {
     if (!(a < b)) {
         char buf[128];
@@ -181,7 +181,7 @@ void lux_assertLessF64(double a, double b,
 
 /* ── assertGreaterEq ────────────────────────────────────────────── */
 
-void lux_assertGreaterEqI64(int64_t a, int64_t b,
+void lucis_assertGreaterEqI64(int64_t a, int64_t b,
                             const char* file, size_t fileLen, int32_t line) {
     if (!(a >= b)) {
         char buf[128];
@@ -191,7 +191,7 @@ void lux_assertGreaterEqI64(int64_t a, int64_t b,
     }
 }
 
-void lux_assertGreaterEqF64(double a, double b,
+void lucis_assertGreaterEqF64(double a, double b,
                             const char* file, size_t fileLen, int32_t line) {
     if (!(a >= b)) {
         char buf[128];
@@ -202,7 +202,7 @@ void lux_assertGreaterEqF64(double a, double b,
 
 /* ── assertLessEq ───────────────────────────────────────────────── */
 
-void lux_assertLessEqI64(int64_t a, int64_t b,
+void lucis_assertLessEqI64(int64_t a, int64_t b,
                          const char* file, size_t fileLen, int32_t line) {
     if (!(a <= b)) {
         char buf[128];
@@ -212,7 +212,7 @@ void lux_assertLessEqI64(int64_t a, int64_t b,
     }
 }
 
-void lux_assertLessEqF64(double a, double b,
+void lucis_assertLessEqF64(double a, double b,
                          const char* file, size_t fileLen, int32_t line) {
     if (!(a <= b)) {
         char buf[128];
@@ -223,7 +223,7 @@ void lux_assertLessEqF64(double a, double b,
 
 /* ── assertStringContains ───────────────────────────────────────── */
 
-void lux_assertStringContains(const char* s, size_t slen,
+void lucis_assertStringContains(const char* s, size_t slen,
                               const char* sub, size_t sublen,
                               const char* file, size_t fileLen, int32_t line) {
     if (sublen == 0) return; /* empty substring always contained */
@@ -248,7 +248,7 @@ void lux_assertStringContains(const char* s, size_t slen,
 
 /* ── assertNear ─────────────────────────────────────────────────── */
 
-void lux_assertNear(double a, double b, double epsilon,
+void lucis_assertNear(double a, double b, double epsilon,
                     const char* file, size_t fileLen, int32_t line) {
     if (fabs(a - b) > epsilon) {
         char buf[128];
@@ -261,14 +261,14 @@ void lux_assertNear(double a, double b, double epsilon,
 
 /* ── Utilities ──────────────────────────────────────────────────── */
 
-void lux_testFail(const char* msg, size_t msglen,
+void lucis_testFail(const char* msg, size_t msglen,
                   const char* file, size_t fileLen, int32_t line) {
     char buf[512];
     snprintf(buf, sizeof(buf), "%.*s", (int)(msglen > 500 ? 500 : msglen), msg);
     fail_abort("fail", buf, file, fileLen, line);
 }
 
-void lux_testSkip(const char* msg, size_t msglen,
+void lucis_testSkip(const char* msg, size_t msglen,
                   const char* file, size_t fileLen, int32_t line) {
     fprintf(stderr, "\033[33mSKIP\033[0m");
     if (file && fileLen > 0)
@@ -277,7 +277,7 @@ void lux_testSkip(const char* msg, size_t msglen,
     exit(0);
 }
 
-void lux_testLog(const char* msg, size_t msglen,
+void lucis_testLog(const char* msg, size_t msglen,
                  const char* file, size_t fileLen, int32_t line) {
     fprintf(stderr, "\033[36mLOG\033[0m");
     if (file && fileLen > 0)

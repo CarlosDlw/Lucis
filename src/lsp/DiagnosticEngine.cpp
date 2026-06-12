@@ -61,7 +61,7 @@ std::vector<Diagnostic> DiagnosticEngine::run(const std::string& source,
         // Resolve C header includes so FFI functions are known
         CBindings cBindings;
         TypeRegistry cTypeReg;
-        std::vector<LuxParser::IncludeDeclContext*> includes;
+        std::vector<LucisParser::IncludeDeclContext*> includes;
         for (auto* pre : parsed.tree->preambleDecl())
             if (auto* inc = pre->includeDecl()) includes.push_back(inc);
         if (!includes.empty()) {
@@ -128,7 +128,7 @@ std::vector<Diagnostic> DiagnosticEngine::run(const std::string& source,
         CBindings localBindings;
         TypeRegistry localTypeReg;
         if (project->cBindings().functions().empty()) {
-            std::vector<LuxParser::IncludeDeclContext*> includes;
+            std::vector<LucisParser::IncludeDeclContext*> includes;
             for (auto* pre : parsed.tree->preambleDecl())
                 if (auto* inc = pre->includeDecl()) includes.push_back(inc);
             if (!includes.empty()) {

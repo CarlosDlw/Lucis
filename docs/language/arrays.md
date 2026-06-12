@@ -1,6 +1,6 @@
 # Arrays
 
-Arrays in Lux are fixed-size, stack-allocated sequences of elements of the same type. They support both explicit and inferred sizing, multi-dimensional layouts, indexing, built-in methods, and list comprehensions.
+Arrays in Lucis are fixed-size, stack-allocated sequences of elements of the same type. They support both explicit and inferred sizing, multi-dimensional layouts, indexing, built-in methods, and list comprehensions.
 
 ---
 
