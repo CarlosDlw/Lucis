@@ -26,7 +26,7 @@ void registerUnsafeNamespace(IntrinsicRegistry& reg, TypeRegistry& typeReg) {
             "Reads the next " + returnType +
             " value from the variadic argument list and advances the handle.\n\n"
             "```lucis\n" + returnType +
-            " val = lucis::unsafe::" + name + "(args);\n"
+            "va_list val = lucis::unsafe::" + name + "(args);\n"
             "```";
 
         f.lowering.kind = IntrinsicFunction::Lowering::InlineIR;

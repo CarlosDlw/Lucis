@@ -4227,7 +4227,7 @@ void CompletionProvider::addIntrinsics(std::vector<CompletionItem> &items,
 
   // Extract namespace from "lucis::core" → "core"
   if (scopeName.rfind("lucis::", 0) == 0)
-    intrinsicNs = scopeName.substr(5); // 5 = len("lucis::")
+    intrinsicNs = scopeName.substr(7); // 7 = len("lucis::")
 
   if (!intrinsicNs.empty() && intrinsicRegistry_.hasNamespace(intrinsicNs)) {
     // List intrinsic functions in the namespace
