@@ -515,15 +515,16 @@ public:
   public:
     FunctionDeclContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
-    TypeSpecContext *typeSpec();
+    antlr4::tree::TerminalNode *FN();
     std::vector<antlr4::tree::TerminalNode *> IDENTIFIER();
     antlr4::tree::TerminalNode* IDENTIFIER(size_t i);
     antlr4::tree::TerminalNode *LPAREN();
     antlr4::tree::TerminalNode *RPAREN();
+    TypeSpecContext *typeSpec();
     BlockContext *block();
-    antlr4::tree::TerminalNode *SCOPE();
     TypeParamListContext *typeParamList();
     ParamListContext *paramList();
+    antlr4::tree::TerminalNode *SCOPE();
 
 
     virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
@@ -588,12 +589,13 @@ public:
   public:
     ExtendMethodContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
-    TypeSpecContext *typeSpec();
+    antlr4::tree::TerminalNode *FN();
     std::vector<antlr4::tree::TerminalNode *> IDENTIFIER();
     antlr4::tree::TerminalNode* IDENTIFIER(size_t i);
     antlr4::tree::TerminalNode *LPAREN();
     antlr4::tree::TerminalNode *AMPERSAND();
     antlr4::tree::TerminalNode *RPAREN();
+    TypeSpecContext *typeSpec();
     BlockContext *block();
     std::vector<antlr4::tree::TerminalNode *> COMMA();
     antlr4::tree::TerminalNode* COMMA(size_t i);

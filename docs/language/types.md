@@ -21,12 +21,12 @@ Lux has a rich set of primitive types with explicit sizes. There is no implicit 
 | `intinf` | arbitrary | Arbitrary precision (no overflow) |
 | `isize` | pointer-sized | 32 or 64 bits, matching the target architecture |
 
-```t
+```
 namespace IntDemo;
 
 use std::log::println;
 
-int32 main() {
+fn main() int32 {
     int8 small = 127;
     int32 normal = 1000;
     int64 big = 10000000000;
@@ -55,12 +55,12 @@ int32 main() {
 | `uint128` | 16 bytes | 0 to 3.4 × 10³⁸ |
 | `usize` | pointer-sized | 0 to max pointer value |
 
-```t
+```
 namespace UintDemo;
 
 use std::log::println;
 
-int32 main() {
+fn main() int32 {
     uint8 byte_val = 200;
     uint32 counter = 3000000;
     uint64 address = 10000000000;
@@ -79,7 +79,7 @@ int32 main() {
 
 Lux supports decimal, hexadecimal, octal, and binary integer literals:
 
-```t
+```
 int32 dec = 255;          // decimal
 int32 hex = 0xFF;         // hexadecimal (0x or 0X prefix)
 int32 oct = 0o377;        // octal (0o or 0O prefix)
@@ -97,7 +97,7 @@ int32 bin = 0b11111111;   // binary (0b or 0B prefix)
 
 Integer literals are untyped until assigned — the compiler coerces them to the target type automatically:
 
-```t
+```
 uint8 mask = 0xFF;        // coerced to uint8
 int64 flags = 0b1010;     // coerced to int64
 int32 perms = 0o755;      // coerced to int32
@@ -136,12 +136,12 @@ All integer types (`int*` and `uint*`) support these methods via dot notation:
 | `toFloat()` | `-> float64` | Convert to float |
 | `toChar()` | `-> char` | Convert to character |
 
-```t
+```
 namespace IntMethodsDemo;
 
 use std::log::println;
 
-int32 main() {
+fn main() int32 {
     int32 x = -42;
     println(x.abs());           // 42
     println(x.sign());          // -1
@@ -173,12 +173,12 @@ int32 main() {
 | `float128` | 16 bytes | ~33 decimal digits (IEEE 754 quad) |
 | `double` | 8 bytes | Alias for `float64` |
 
-```t
+```
 namespace FloatDemo;
 
 use std::log::println;
 
-int32 main() {
+fn main() int32 {
     float32 pi = 3.14;
     float64 precise_pi = 3.141592653589793;
     double e = 2.718281828459045;
@@ -195,7 +195,7 @@ int32 main() {
 
 ### Float Literal Formats
 
-```t
+```
 float64 a = 3.14;       // standard decimal
 float64 b = .5;          // leading dot
 float64 c = 1e10;        // scientific notation
@@ -245,12 +245,12 @@ All float types support these methods via dot notation:
 | `toInt()` | `-> int64` | Truncate to integer |
 | `toBits()` | `-> uint64` | Bit representation |
 
-```t
+```
 namespace FloatMethodsDemo;
 
 use std::log::println;
 
-int32 main() {
+fn main() int32 {
     float64 x = -3.7;
     println(x.abs());       // 3.700000
     println(x.ceil());      // -3.000000
@@ -278,12 +278,12 @@ int32 main() {
 |---|---|---|
 | `bool` | 1 bit (`i1` in LLVM) | `true` or `false` |
 
-```t
+```
 namespace BoolDemo;
 
 use std::log::println;
 
-int32 main() {
+fn main() int32 {
     bool is_active = true;
     bool is_done = false;
 
@@ -308,12 +308,12 @@ int32 main() {
 |---|---|---|
 | `char` | 1 byte | ASCII character (0–255) |
 
-```t
+```
 namespace CharDemo;
 
 use std::log::println;
 
-int32 main() {
+fn main() int32 {
     char letter = 'A';
     char digit = '9';
     char newline = '\n';
@@ -350,12 +350,12 @@ int32 main() {
 | `repeat(n)` | `-> string` | Repeat n times |
 | `digitToInt()` | `-> int32` | Digit character to integer value |
 
-```t
+```
 namespace CharMethodsDemo;
 
 use std::log::println;
 
-int32 main() {
+fn main() int32 {
     char c = 'a';
     println(c.isAlpha());    // 1 (true)
     println(c.isDigit());    // 0 (false)
@@ -377,12 +377,12 @@ int32 main() {
 
 Strings in Lux are **not** null-terminated. They carry their length and are backed by a `uint8` array. For null-terminated C strings, use [`cstring`](#c-string-type) or `c"..."` literals.
 
-```t
+```
 namespace StringDemo;
 
 use std::log::println;
 
-int32 main() {
+fn main() int32 {
     string greeting = "Hello, world!";
     string empty = "";
 
@@ -448,12 +448,12 @@ int32 main() {
 | `toBool()` | `-> bool` | `"true"` -> true, else false |
 | `hash()` | `-> uint64` | Hash value |
 
-```t
+```
 namespace StringMethodsDemo;
 
 use std::log::println;
 
-int32 main() {
+fn main() int32 {
     string text = "Hello, World!";
 
     println(text.len());              // 13
@@ -479,8 +479,8 @@ int32 main() {
 |---|---|---|
 | `void` | 0 bytes | No value — used as function return type |
 
-```t
-void greet(string name) {
+```
+fn greet(string name) void {
     println(name);
 }
 ```
@@ -493,14 +493,14 @@ void greet(string name) {
 |---|---|---|
 | `cstring` | pointer-sized | Alias for `*char` — null-terminated C string |
 
-T provides two ways to create C strings:
+Lux provides two ways to create C strings:
 
-```t
+```
 namespace CStringDemo;
 
 use std::log::println;
 
-int32 main() {
+fn main() int32 {
     // C string literal — produces *char directly
     cstring greeting = c"Hello from C";
 
@@ -526,7 +526,7 @@ int32 main() {
 
 See [Pointers](pointers.md) for full documentation.
 
-```t
+```
 int32 x = 42;
 *int32 ptr = &x;
 int32 val = *ptr;    // dereference: 42
@@ -542,7 +542,7 @@ int32 val = *ptr;    // dereference: 42
 
 See [Arrays](arrays.md) for full documentation.
 
-```t
+```
 [5]int32 fixed = [1, 2, 3, 4, 5];
 []int32 inferred = [10, 20, 30];
 [][]int32 matrix = [[1, 2], [3, 4]];
@@ -552,12 +552,12 @@ See [Arrays](arrays.md) for full documentation.
 
 Function pointer types use the `fn` keyword:
 
-```t
+```
 type BinOp = fn(int32, int32) -> int32;
 
-int32 add(int32 a, int32 b) { ret a + b; }
+fn add(int32 a, int32 b) int32 { ret a + b; }
 
-int32 main() {
+fn main() int32 {
     fn(int32, int32) -> int32 op = &add;
     int32 result = op(3, 4);    // 7
     ret 0;
@@ -568,7 +568,7 @@ int32 main() {
 
 `null` is a literal representing a null pointer. It is compatible with any pointer type:
 
-```t
+```
 *int32 ptr = null;
 *void generic = null;
 ```
@@ -577,7 +577,7 @@ int32 main() {
 
 Use the `as` keyword to convert between types:
 
-```t
+```
 int32 x = 42;
 float64 f = x as float64;
 int64 big = x as int64;
@@ -590,13 +590,13 @@ The compiler validates cast compatibility — not all casts are allowed.
 
 Use `is` to check a value's type at runtime:
 
-```t
+```
 bool check = x is int32;    // true
 ```
 
 ## Type Queries
 
-```t
+```
 int64 size = sizeof(int32);     // 4 (bytes)
 string name = typeof(42);       // "int32"
 ```

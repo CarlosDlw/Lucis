@@ -16,7 +16,7 @@ enum Direction {
     West,
 }
 
-int32 testEnumUnitAndSwitch() {
+fn testEnumUnitAndSwitch() int32 {
     println("[Testing enums: unit variants and switch...]");
 
     Color c = Color::Green;

@@ -4,7 +4,7 @@ use std::log::println;
 use std::test::{ assertEqual };
 use std::thread::{ cpuCount, threadId, yield };
 
-int32 testConcurrencyThreadUtils() {
+fn testConcurrencyThreadUtils() int32 {
     println("[Testing concurrency: thread utilities...]");
 
     uint32 cores = cpuCount();

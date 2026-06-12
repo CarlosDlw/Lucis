@@ -3,19 +3,19 @@ namespace Main;
 use std::log::println;
 use std::test::{ assertEqual };
 
-void fillVec<T>(T value, int32 size, *vec<T> v) {
+fn fillVec<T>(T value, int32 size, *vec<T> v) void {
   for int32 i in size {
     v.push(value);
   }
 }
 
-void assignVec<T>(T value, int32 size, *vec<T> v) {
+fn assignVec<T>(T value, int32 size, *vec<T> v) void {
   for int32 i in size {
     v[i] = value;
   }
 }
 
-int32 testVecPointers() {
+fn testVecPointers() int32 {
     println("[Testing vec pointers...]");
 
     vec<int32> a;

@@ -4,7 +4,7 @@ Mathematical functions and constants.
 
 ## Import
 
-```tm
+```
 use std::math::{ PI, E, sqrt, sin, cos, pow, clamp };
 ```
 
@@ -102,7 +102,7 @@ use std::math::{ PI, E, sqrt, sin, cos, pow, clamp };
 
 ## Example
 
-```tm
+```
 use std::math::{ PI, sqrt, sin, cos, clamp, toRadians, isNaN, NAN };
 use std::log::println;
 

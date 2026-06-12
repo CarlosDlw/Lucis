@@ -2,10 +2,10 @@
 
 Lux is a compiled systems programming language that targets LLVM IR. It combines the performance and control of C with modern syntax, a rich standard library, and native C interoperability.
 
-```t
+```
 use std::log::println;
 
-int32 main() {
+fn main() int32 {
     println("Hello, world!");
     ret 0;
 }

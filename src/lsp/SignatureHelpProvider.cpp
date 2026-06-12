@@ -238,7 +238,7 @@ SignatureInfo SignatureHelpProvider::buildFromFunction(
     std::string name = safeIdAt(func, 0);
 
     std::ostringstream label;
-    label << retType << " " << name << "(";
+    label << "fn " << name << "(";
 
     if (auto* pl = func->paramList()) {
         auto params = pl->param();
@@ -259,7 +259,7 @@ SignatureInfo SignatureHelpProvider::buildFromFunction(
         }
     }
 
-    label << ")";
+    label << ") " << retType;
     sig.label = label.str();
 
     // Attach doc-comment if available.
@@ -430,7 +430,7 @@ SignatureInfo SignatureHelpProvider::buildFromExtendMethod(
     bool hasReceiver = method->AMPERSAND() != nullptr;
 
     std::ostringstream label;
-    label << "(" << structName << ") " << retType << " " << name << "(";
+    label << "(" << structName << ") fn " << name << "(";
 
     // Collect params — skip the &self receiver parameter.
     std::vector<LuxParser::ParamContext*> params;
@@ -457,7 +457,7 @@ SignatureInfo SignatureHelpProvider::buildFromExtendMethod(
         sig.parameters.push_back({paramLabel});
     }
 
-    label << ")";
+    label << ") " << retType;
     sig.label = label.str();
 
     size_t declLine = method->getStart()->getLine() - 1;
@@ -497,7 +497,7 @@ SignatureInfo SignatureHelpProvider::buildFromExtMethod(
     std::string retType = resolveTypePlaceholder(md.returnType, receiverType, elemType, keyType, valType);
 
     std::ostringstream label;
-    label << "(" << receiverType << ") " << retType << " " << md.name << "(";
+    label << "(" << receiverType << ") fn " << md.name << "(";
 
     for (size_t i = 0; i < md.paramTypes.size(); i++) {
         if (i > 0) label << ", ";
@@ -509,7 +509,7 @@ SignatureInfo SignatureHelpProvider::buildFromExtMethod(
         sig.parameters.push_back({paramLabel});
     }
 
-    label << ")";
+    label << ") " << retType;
     sig.label = label.str();
 
     return sig;

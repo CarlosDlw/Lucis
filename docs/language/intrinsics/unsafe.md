@@ -11,7 +11,7 @@ Lux provides a set of intrinsics to handle C-style variadic arguments (`...`). T
 Primarily used inside **untyped variadic functions** — functions whose last parameter is a bare `...` without a type or name:
 
 ```lux
-void log_values(int32 count, ...) {
+fn log_values(int32 count, ...) void {
     va_list va = lux::unsafe::va_list();
     lux::unsafe::va_start(va);
 
@@ -103,7 +103,7 @@ Cleans up the variadic argument list state. Every `va_start` must have a matchin
 ### Mixed-Type Example
 
 ```lux
-void print_mixed(int32 count, ...) {
+fn print_mixed(int32 count, ...) void {
     va_list va = lux::unsafe::va_list();
     lux::unsafe::va_start(va);
 
@@ -120,7 +120,7 @@ void print_mixed(int32 count, ...) {
     lux::unsafe::va_end(va);
 }
 
-int32 main() {
+fn main() int32 {
     print_mixed(4, 42, 3.14, true, c"hello");
     ret 0;
 }

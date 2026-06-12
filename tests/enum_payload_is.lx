@@ -15,7 +15,7 @@ enum Shape {
     Rect { w: float64, h: float64 },
 }
 
-int32 testEnumPayloadAndIs() {
+fn testEnumPayloadAndIs() int32 {
     println("[Testing enums: payload variants and is...]");
 
     Token t1 = Token::Eof;

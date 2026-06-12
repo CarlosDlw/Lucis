@@ -6,12 +6,12 @@ This page walks you through writing, compiling, and running your first Lux progr
 
 Create a file called `hello.lx`:
 
-```t
+```
 namespace Hello;
 
 use std::log::println;
 
-int32 main() {
+fn main() int32 {
     println("Hello, world!");
     ret 0;
 }
@@ -44,7 +44,7 @@ Every Lux program has three essential parts:
 
 ### 1. Namespace Declaration
 
-```t
+```
 namespace Hello;
 ```
 
@@ -52,7 +52,7 @@ Every `.lx` file **must** begin with a namespace declaration. This names the mod
 
 ### 2. Imports
 
-```t
+```
 use std::log::println;
 ```
 
@@ -60,22 +60,22 @@ The `use` keyword imports functions from the standard library or other modules. 
 
 You can import individual functions or entire modules:
 
-```t
+```
 use std::log::println;       // import a single function
 use std::math;               // import the whole module (access via math::sqrt, etc.)
 ```
 
 ### 3. The `main` Function
 
-```t
-int32 main() {
+```
+fn main() int32 {
     println("Hello, world!");
     ret 0;
 }
 ```
 
-- The entry point is `int32 main()`, or `int32 main(vec<string> args)` to receive command-line arguments.
-- Functions use type-first syntax: the return type comes before the function name.
+- The entry point is `fn main() int32`, or `fn main(vec<string> args) int32` to receive command-line arguments.
+- Functions use `fn` keyword syntax: the return type comes after the parameter list.
 - `ret 0;` returns an exit code. A zero value signals success.
 - `ret` is required — the compiler does not auto-insert a return.
 
@@ -83,12 +83,12 @@ int32 main() {
 
 ### Variables and Arithmetic
 
-```t
+```
 namespace Arithmetic;
 
 use std::log::println;
 
-int32 main() {
+fn main() int32 {
     int32 width = 10;
     int32 height = 5;
     int32 area = width * height;
@@ -109,12 +109,12 @@ Area:
 
 ### Multiple Types
 
-```t
+```
 namespace Types;
 
 use std::log::println;
 
-int32 main() {
+fn main() int32 {
     int32 age = 25;
     float64 temperature = 36.6;
     bool is_active = true;
@@ -143,20 +143,20 @@ A
 
 ### Functions
 
-```t
+```
 namespace Functions;
 
 use std::log::println;
 
-int32 add(int32 a, int32 b) {
+fn add(int32 a, int32 b) int32 {
     ret a + b;
 }
 
-float64 circle_area(float64 radius) {
+fn circle_area(float64 radius) float64 {
     ret 3.14159 * radius * radius;
 }
 
-int32 main() {
+fn main() int32 {
     int32 sum = add(3, 7);
     println(sum);
 
@@ -176,12 +176,12 @@ Output:
 
 ### Control Flow
 
-```t
+```
 namespace Flow;
 
 use std::log::println;
 
-int32 main() {
+fn main() int32 {
     int32 score = 85;
 
     if score >= 90 {
@@ -213,14 +213,14 @@ Good
 
 ## File Structure Summary
 
-```t
+```
 namespace Name;          // required — first line of every file
 
 use std::module::func;   // imports — at the top, after namespace
 
 // function definitions
 
-int32 main() {           // entry point
+fn main() int32 {           // entry point
     // your code
     ret 0;               // required return
 }

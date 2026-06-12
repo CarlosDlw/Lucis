@@ -4,7 +4,7 @@ Threading utilities and concurrency primitives.
 
 ## Import
 
-```tm
+```
 use std::thread::{ cpuCount, threadId, yield };
 ```
 
@@ -20,7 +20,7 @@ use std::thread::{ cpuCount, threadId, yield };
 
 The primary concurrency model uses `spawn`, `await`, `Task<T>`, and `Mutex` — these are language builtins, not part of `std::thread`.
 
-```tm
+```
 // spawn a task
 Task<int32> t = spawn computeResult();
 int32 result = await t;
@@ -36,7 +36,7 @@ See the [Concurrency guide](../language/concurrency.md) for full details on `spa
 
 ## Example
 
-```tm
+```
 use std::thread::{ cpuCount, threadId, yield };
 use std::log::println;
 

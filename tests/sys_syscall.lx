@@ -2,7 +2,7 @@ namespace Main;
 
 use std::log::println;
 
-int32 testSysSyscall() {
+fn testSysSyscall() int32 {
     println("[Testing lux::sys syscall intrinsics...]");
 
     int64 SYS_getpid = 39;

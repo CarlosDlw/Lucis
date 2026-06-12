@@ -1,6 +1,6 @@
 # Error Handling
 
-T provides structured error handling with `try`/`catch`/`finally`, `throw`, custom enum-based error types, the `?` propagate operator, and the built-in `Error` struct. For immediate program termination, global builtins `panic`, `assert`, `assertMsg`, and `unreachable` are also available.
+Lux provides structured error handling with `try`/`catch`/`finally`, `throw`, custom enum-based error types, the `?` propagate operator, and the built-in `Error` struct. For immediate program termination, global builtins `panic`, `assert`, `assertMsg`, and `unreachable` are also available.
 
 ---
 
@@ -23,7 +23,7 @@ The `file`, `line`, and `column` fields are automatically filled by the compiler
 
 The `throw` statement raises an error. Only the `message` field needs to be provided:
 
-```tm
+```
 throw Error { message: "something went wrong" };
 ```
 
@@ -35,7 +35,7 @@ The remaining fields (`file`, `line`, `column`) are injected automatically.
 
 The `try` block wraps code that may throw. The `catch` block handles the error. The `finally` block runs regardless of whether an error occurred.
 
-```tm
+```
 try {
     println("before throw");
     throw Error { message: "something went wrong" };
@@ -93,7 +93,7 @@ Use it when a function returns an enum shaped like success-or-error, and you wan
 
 ### Basic form
 
-```tm
+```
 auto value = divide(10, 0) catch {
     println(it.message);
     ret 1;
@@ -121,7 +121,7 @@ auto value = divide(10, 0) catch {
 
 The unwrap expression type is the success payload type.
 
-```tm
+```
 auto value = divide(10, 2) catch {
     ret 1;
 };
@@ -137,7 +137,7 @@ auto value = divide(10, 2) catch {
 
 Instead of qualifying every variant with the enum name (e.g. `Response::Ok(value)`), use `use` to bring all variant names into scope:
 
-```tm
+```
 fn example() {
     use Response::*;
     ret Ok(42);        // instead of Response::Ok(42)
@@ -146,7 +146,7 @@ fn example() {
 
 The `use` declaration works both at the top level and inside function bodies. Variants are scoped like local variables — visible only after the `use` statement and limited to the enclosing block.
 
-```tm
+```
 fn scope_demo() {
     // Response::Ok not available here
     use Response::*;
@@ -162,7 +162,7 @@ fn scope_demo() {
 
 Valid (built-in `Error` payload):
 
-```tm
+```
 enum Response {
     Ok(int32),
     Err(Error)
@@ -171,7 +171,7 @@ enum Response {
 
 Valid (custom string payload):
 
-```tm
+```
 enum HttpResult {
     Success(string),
     Err(string)
@@ -181,7 +181,7 @@ enum HttpResult {
 
 Valid (custom struct payload):
 
-```tm
+```
 struct HttpError {
     status int32;
     message string;
@@ -196,7 +196,7 @@ enum HttpResponse {
 
 Also valid (different names, same shape):
 
-```tm
+```
 enum OperationResult {
     Success(string),
     Failure(Error)
@@ -205,7 +205,7 @@ enum OperationResult {
 
 Invalid (more than 2 variants):
 
-```tm
+```
 enum Bad {
     Ok(int32),
     Err(Error),
@@ -215,7 +215,7 @@ enum Bad {
 
 Invalid (error variant name does not follow convention):
 
-```tm
+```
 enum Bad {
     Ok(int32),
     /// 'Abc' is not recognized as an error variant
@@ -225,7 +225,7 @@ enum Bad {
 
 ### Complete example — built-in Error
 
-```tm
+```
 namespace Main;
 
 #include <stdlib.h>
@@ -236,7 +236,7 @@ enum Response {
     Err(Error)
 }
 
-Response divide(int32 a, int32 b) {
+fn divide(int32 a, int32 b) Response {
     use Response::*;
 
     try {
@@ -250,7 +250,7 @@ Response divide(int32 a, int32 b) {
     }
 }
 
-int32 main() {
+fn main() int32 {
     auto value = divide(10, 0) catch {
         printf(c"Error: %s\\n", it.message);
         ret 1;
@@ -263,7 +263,7 @@ int32 main() {
 
 ### Complete example — custom error payload with `?`
 
-```tm
+```
 namespace Main;
 
 struct HttpError {
@@ -277,7 +277,7 @@ enum HttpResponse {
 }
 
 /// Simulates an HTTP GET that may fail.
-HttpResponse httpGet(string url) {
+fn httpGet(string url) HttpResponse {
     use HttpResponse::*;
 
     if url == "" {
@@ -289,13 +289,13 @@ HttpResponse httpGet(string url) {
 
 /// Fetches a URL and returns the body length.
 /// Propagates any HttpError to the caller.
-int32 fetchAndMeasure(string url) ? {
+fn fetchAndMeasure(string url) int32 {
     use HttpResponse::*;
     string body = httpGet(url) ?;
     ret body.len();
 }
 
-int32 main() {
+fn main() int32 {
     int32 len = fetchAndMeasure("https://example.com") catch {
         println("HTTP error: " + it.status + " " + it.message);
         ret 0;
@@ -315,13 +315,13 @@ The `?` (propagate) operator is a shorthand for "unwrap the success payload or r
 
 Place `?` after a call expression that returns a compatible enum:
 
-```tm
+```
 auto value = fallibleFunction() ?;
 ```
 
 This is equivalent to:
 
-```tm
+```
 auto tmp = fallibleFunction();
 auto value = tmp catch { ret tmp; };
 ```
@@ -337,13 +337,13 @@ auto value = tmp catch { ret tmp; };
 
 The `?` operator works with any error payload type, just like `expr catch`:
 
-```tm
+```
 enum HttpResult {
     Success(string),
     Err(int32)
 }
 
-string fetchData(bool fail) {
+fn fetchData(bool fail) string {
     // htttpGet returns HttpResult;
     // if Err, the int32 code propagates up
     // if Success, body gets the string
@@ -354,18 +354,18 @@ string fetchData(bool fail) {
 
 ### Simple propagation example
 
-```tm
+```
 enum Result {
     Ok(int32),
     Err(Error)
 }
 
-Result inner() {
+fn inner() Result {
     // Returns Ok(42) or Err(Error{...})
     ret ...
 }
 
-int32 outer() {
+fn outer() int32 {
     int32 val = inner() ?;
     // If inner() returned Err, outer() returns that Err immediately.
     // If inner() returned Ok(42), val = 42.
@@ -377,7 +377,7 @@ int32 outer() {
 
 Multiple `?` operators can chain across functions. At each level the error variant propagates up immediately, while the success payload continues as the normal value:
 
-```tm
+```
 enum FileResult {
     Ok(string),        // file contents
     Err(Error)
@@ -390,7 +390,7 @@ enum ProcessResult {
     Err(Error)
 }
 
-ProcessResult process() {
+fn process() ProcessResult {
     use ProcessResult::*;
     string contents = readFile("input.txt") ?;
     // If readFile failed, process() returns the Err variant immediately.
@@ -399,7 +399,7 @@ ProcessResult process() {
     ret Ok(lines);
 }
 
-int32 main() {
+fn main() int32 {
     use ProcessResult::*;
     int32 result = process() ?;
     // If process() failed, main() returns the Err variant.
@@ -428,7 +428,7 @@ These functions are available without any `use` import and immediately terminate
 
 Aborts with an error message:
 
-```tm
+```
 panic("something went wrong!");
 ```
 
@@ -438,7 +438,7 @@ Prints the message to stderr and exits with a non-zero code.
 
 Aborts if the condition is `false`:
 
-```tm
+```
 assert(x > 0);
 ```
 
@@ -446,7 +446,7 @@ assert(x > 0);
 
 Aborts if the condition is `false`, with a custom message:
 
-```tm
+```
 assertMsg(x > 0, "expected positive value");
 ```
 
@@ -454,7 +454,7 @@ assertMsg(x > 0, "expected positive value");
 
 Marks code that should never be reached. If executed, the program aborts:
 
-```tm
+```
 unreachable();
 ```
 

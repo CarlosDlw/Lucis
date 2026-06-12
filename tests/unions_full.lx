@@ -13,7 +13,7 @@ union UResult<T, E> {
     E err;
 }
 
-int32 testUnionsFull() {
+fn testUnionsFull() int32 {
     println("[Testing unions: literals/mutation/shared-memory/generic unions...]");
 
     UIntOrFloat u = UIntOrFloat { i: 42 };

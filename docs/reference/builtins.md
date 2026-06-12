@@ -6,7 +6,7 @@ Complete list of all builtin functions available through `use std::*` imports. F
 
 ## std::log
 
-```tm
+```
 use std::log::{println, print, eprintln, eprint, dbg, sprintf};
 ```
 
@@ -25,7 +25,7 @@ use std::log::{println, print, eprintln, eprint, dbg, sprintf};
 
 ## std::io
 
-```tm
+```
 use std::io::{readLine, readInt, prompt, flush};
 ```
 
@@ -57,7 +57,7 @@ use std::io::{readLine, readInt, prompt, flush};
 
 ## std::math
 
-```tm
+```
 use std::math::{sqrt, sin, cos, PI, abs, min, max};
 ```
 
@@ -145,7 +145,7 @@ use std::math::{sqrt, sin, cos, PI, abs, min, max};
 
 ## std::str
 
-```tm
+```
 use std::str::{contains, split, replace, trim, parseInt};
 ```
 
@@ -228,7 +228,7 @@ Store the result and release it with `freeStr(...)` when you are done using it.
 
 ## std::conv
 
-```tm
+```
 use std::conv::{itoa, atoi, toHex, toBinary};
 ```
 
@@ -252,7 +252,7 @@ use std::conv::{itoa, atoi, toHex, toBinary};
 
 ## std::fmt
 
-```tm
+```
 use std::fmt::{hex, fixed, commas, humanBytes};
 ```
 
@@ -275,7 +275,7 @@ use std::fmt::{hex, fixed, commas, humanBytes};
 
 ## std::fs
 
-```tm
+```
 use std::fs::{readFile, writeFile, exists, mkdir, listDir};
 ```
 
@@ -304,7 +304,7 @@ use std::fs::{readFile, writeFile, exists, mkdir, listDir};
 
 ## std::path
 
-```tm
+```
 use std::path::{join, parent, extension, isAbsolute};
 ```
 
@@ -328,7 +328,7 @@ use std::path::{join, parent, extension, isAbsolute};
 
 ## std::process
 
-```tm
+```
 use std::process::{exit, env, exec, platform};
 ```
 
@@ -351,7 +351,7 @@ use std::process::{exit, env, exec, platform};
 
 ## std::os
 
-```tm
+```
 use std::os::{getpid, hostname, errno, strerror};
 ```
 
@@ -374,7 +374,7 @@ use std::os::{getpid, hostname, errno, strerror};
 
 ## std::time
 
-```tm
+```
 use std::time::{now, sleep, timestamp, elapsed};
 ```
 
@@ -402,7 +402,7 @@ use std::time::{now, sleep, timestamp, elapsed};
 
 ## std::random
 
-```tm
+```
 use std::random::{seed, seedTime, randInt, randIntRange, randFloat};
 ```
 
@@ -423,7 +423,7 @@ use std::random::{seed, seedTime, randInt, randIntRange, randFloat};
 
 ## std::mem
 
-```tm
+```
 use std::mem::{alloc, free, copy, zero};
 ```
 
@@ -443,7 +443,7 @@ use std::mem::{alloc, free, copy, zero};
 
 ## std::hash
 
-```tm
+```
 use std::hash::{hashString, hashInt, crc32};
 ```
 
@@ -459,7 +459,7 @@ use std::hash::{hashString, hashInt, crc32};
 
 ## std::bits
 
-```tm
+```
 use std::bits::{popcount, ctz, clz, isPow2, setBit, testBit};
 ```
 
@@ -484,7 +484,7 @@ use std::bits::{popcount, ctz, clz, isPow2, setBit, testBit};
 
 ## std::ascii
 
-```tm
+```
 use std::ascii::{isAlpha, isDigit, isUpper, isLower};
 ```
 
@@ -507,7 +507,7 @@ use std::ascii::{isAlpha, isDigit, isUpper, isLower};
 
 ## std::regex
 
-```tm
+```
 use std::regex::{match, find, findAll, regexReplace};
 ```
 
@@ -526,7 +526,7 @@ use std::regex::{match, find, findAll, regexReplace};
 
 ## std::encoding
 
-```tm
+```
 use std::encoding::{base64EncodeStr, base64DecodeStr, urlEncode, urlDecode};
 ```
 
@@ -543,7 +543,7 @@ use std::encoding::{base64EncodeStr, base64DecodeStr, urlEncode, urlDecode};
 
 ## std::crypto
 
-```tm
+```
 use std::crypto::{sha256String, md5String, randomBytes};
 ```
 
@@ -564,7 +564,7 @@ use std::crypto::{sha256String, md5String, randomBytes};
 
 ## std::compress
 
-```tm
+```
 use std::compress::{gzipCompress, gzipDecompress, deflate, inflate};
 ```
 
@@ -580,7 +580,7 @@ use std::compress::{gzipCompress, gzipDecompress, deflate, inflate};
 
 ## std::net
 
-```tm
+```
 use std::net::{tcpConnect, tcpSend, tcpRecv, close};
 ```
 
@@ -602,7 +602,7 @@ use std::net::{tcpConnect, tcpSend, tcpRecv, close};
 
 ## std::thread
 
-```tm
+```
 use std::thread::{cpuCount, threadId, yield};
 ```
 
@@ -616,7 +616,7 @@ use std::thread::{cpuCount, threadId, yield};
 
 ## std::test
 
-```tm
+```
 use std::test::{assertEqual, assertTrue, assertNear, fail, skip};
 ```
 

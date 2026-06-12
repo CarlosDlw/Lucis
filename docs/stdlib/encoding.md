@@ -4,7 +4,7 @@ Encoding and decoding utilities for Base64 and URL formats.
 
 ## Import
 
-```tm
+```
 use std::encoding::{ base64EncodeStr, base64DecodeStr, urlEncode, urlDecode };
 ```
 
@@ -21,7 +21,7 @@ use std::encoding::{ base64EncodeStr, base64DecodeStr, urlEncode, urlDecode };
 
 ## Example
 
-```tm
+```
 use std::encoding::{ base64EncodeStr, base64DecodeStr, urlEncode, urlDecode };
 use std::log::println;
 

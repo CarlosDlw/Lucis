@@ -4,7 +4,7 @@ Path manipulation functions for constructing and analyzing file paths.
 
 ## Import
 
-```tm
+```
 use std::path::{ join, parent, fileName, extension, normalize };
 ```
 
@@ -28,7 +28,7 @@ use std::path::{ join, parent, fileName, extension, normalize };
 
 ## Example
 
-```tm
+```
 use std::path::{ join, parent, fileName, stem, extension, normalize };
 use std::log::println;
 

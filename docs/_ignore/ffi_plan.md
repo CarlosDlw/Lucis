@@ -45,7 +45,7 @@ declare i32 @puts(ptr)
 ```
 namespace Main;
 extern int32 puts(*char s);
-int32 main() { ret 0; }
+fn main() int32 { ret 0; }
 ```
 Should compile and link without error (puts is in libc, always linked).
 
@@ -82,7 +82,7 @@ printf(c"Value: %d\n", 42);
 ```
 namespace Main;
 extern int32 puts(*char s);
-int32 main() {
+fn main() int32 {
     puts(c"Hello from LuxM via C FFI!");
     ret 0;
 }
@@ -125,7 +125,7 @@ the `i8` value must be promoted to `i32` before the call. The IRGen inserts
 ```
 namespace Main;
 extern int32 printf(*char fmt, ...);
-int32 main() {
+fn main() int32 {
     printf(c"Sum: %d + %d = %d\n", 3, 4, 7);
     printf(c"Pi: %.6f\n", 3.141592);
     ret 0;
@@ -172,7 +172,7 @@ namespace Main;
 extern int32 printf(*char fmt, ...);
 use std::log::println;
 
-int32 main() {
+fn main() int32 {
     string name = "World";
     *char cname = cstr(name);
     printf(c"Hello, %s!\n", cname);
@@ -243,7 +243,7 @@ to a pointer — same behavior as C.
 namespace Main;
 extern int32 puts(*char s);
 
-int32 main() {
+fn main() int32 {
     [6]char msg = ['H', 'e', 'l', 'l', 'o', '\0'];
     puts(&msg as *char);
     ret 0;
@@ -294,7 +294,7 @@ union IntOrFloat {
     float32 f;
 }
 
-int32 main() {
+fn main() int32 {
     IntOrFloat v = IntOrFloat { i: 42 };
     printf(c"i = %d\n", v.i);
     v.f = 3.14;
@@ -325,7 +325,7 @@ Needed for full C type compatibility.
 namespace Main;
 extern int32 printf(*char fmt, ...);
 
-int32 main() {
+fn main() int32 {
     float80 x = 3.14159265358979323846;
     printf(c"x = %Lf\n", x);
     ret 0;
@@ -418,7 +418,7 @@ namespace Main;
 #include <stdio.h>
 #include <math.h>
 
-int32 main() {
+fn main() int32 {
     printf(c"sqrt(2) = %f\n", sqrt(2.0));
     printf(c"sin(PI/2) = %f\n", sin(1.5707963));
     

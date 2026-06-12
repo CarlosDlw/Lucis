@@ -4,7 +4,7 @@ Type conversion functions between strings, integers, and floats.
 
 ## Import
 
-```tm
+```
 use std::conv::{ itoa, atoi, toHex, toBinary, fromHex };
 ```
 
@@ -50,7 +50,7 @@ use std::conv::{ itoa, atoi, toHex, toBinary, fromHex };
 
 ## Example
 
-```tm
+```
 use std::conv::{ itoa, atoi, toHex, toBinary, fromHex, ftoaPrecision };
 use std::log::println;
 

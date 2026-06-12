@@ -6,12 +6,12 @@ This page covers all control flow constructs in T: conditionals, loops, switch, 
 
 The `if` statement executes a block when a condition is true. Parentheses around the condition are optional:
 
-```t
+```
 namespace IfDemo;
 
 use std::log::println;
 
-int32 main() {
+fn main() int32 {
     int32 x = 10;
 
     // without parentheses
@@ -30,12 +30,12 @@ int32 main() {
 
 ### Else and Else If
 
-```t
+```
 namespace ElseDemo;
 
 use std::log::println;
 
-int32 main() {
+fn main() int32 {
     int32 score = 85;
 
     if score >= 90 {
@@ -56,7 +56,7 @@ int32 main() {
 
 You can mix parenthesized and non-parenthesized conditions in the same chain:
 
-```t
+```
 if x == 1 {
     println(1);
 } else if (x == 5) {
@@ -74,12 +74,12 @@ Lux has two forms of `for` loops: C-style and for-in.
 
 ### C-Style For Loop
 
-```t
+```
 namespace ForClassicDemo;
 
 use std::log::println;
 
-int32 main() {
+fn main() int32 {
     for int32 i = 0; i < 5; i++ {
         println(i);
     }
@@ -98,12 +98,12 @@ int32 main() {
 
 Use `..` for exclusive ranges and `..=` for inclusive ranges:
 
-```t
+```
 namespace ForRangeDemo;
 
 use std::log::println;
 
-int32 main() {
+fn main() int32 {
     // exclusive: 0, 1, 2, 3, 4
     for int32 i in 0..5 {
         println(i);
@@ -120,12 +120,12 @@ int32 main() {
 
 ### For-In with Arrays
 
-```t
+```
 namespace ForArrayDemo;
 
 use std::log::println;
 
-int32 main() {
+fn main() int32 {
     []int32 numbers = [10, 20, 30, 40, 50];
 
     for int32 x in numbers {
@@ -146,12 +146,12 @@ int32 main() {
 
 The `while` loop repeats as long as a condition is true. Parentheses are optional:
 
-```t
+```
 namespace WhileDemo;
 
 use std::log::println;
 
-int32 main() {
+fn main() int32 {
     int32 count = 0;
 
     while count < 5 {
@@ -171,7 +171,7 @@ int32 main() {
 
 With parentheses:
 
-```t
+```
 int32 j = 10;
 while (j > 7) {
     println(j);
@@ -183,12 +183,12 @@ while (j > 7) {
 
 The `do-while` loop executes the body at least once, then checks the condition:
 
-```t
+```
 namespace DoWhileDemo;
 
 use std::log::println;
 
-int32 main() {
+fn main() int32 {
     int32 count = 100;
 
     do {
@@ -208,12 +208,12 @@ int32 main() {
 
 The `loop` keyword creates an infinite loop. Use `break` to exit:
 
-```t
+```
 namespace LoopDemo;
 
 use std::log::println;
 
-int32 main() {
+fn main() int32 {
     int32 count = 0;
 
     loop {
@@ -238,12 +238,12 @@ int32 main() {
 
 `break` exits the innermost loop. `continue` skips to the next iteration:
 
-```t
+```
 namespace BreakContinueDemo;
 
 use std::log::println;
 
-int32 main() {
+fn main() int32 {
     // break: stop at 3
     for int32 i in 0..100 {
         if i == 3 {
@@ -275,12 +275,12 @@ int32 main() {
 
 The `switch` statement matches a value against multiple cases. Parentheses around the value are optional. Each case uses a block with braces — there is no fallthrough:
 
-```t
+```
 namespace SwitchDemo;
 
 use std::log::println;
 
-int32 main() {
+fn main() int32 {
     int32 day = 3;
 
     switch day {
@@ -308,12 +308,12 @@ int32 main() {
 
 A single case can match multiple values separated by commas:
 
-```t
+```
 namespace SwitchMultiDemo;
 
 use std::log::println;
 
-int32 main() {
+fn main() int32 {
     int32 category = 5;
 
     switch category {
@@ -341,7 +341,7 @@ int32 main() {
 
 The `default` clause is optional. If no case matches and there is no default, execution continues after the switch:
 
-```t
+```
 int32 v = 3;
 switch v {
     case 1 {
@@ -358,12 +358,12 @@ switch v {
 
 T uses `try`/`catch`/`finally` for error handling with a built-in `Error` type:
 
-```t
+```
 namespace TryCatchDemo;
 
 use std::log::println;
 
-int32 main() {
+fn main() int32 {
     try {
         println("before throw");
         throw Error { message: "something went wrong" };
@@ -408,7 +408,7 @@ The built-in `Error` struct has these fields:
 
 Use `throw` to raise an error from anywhere:
 
-```t
+```
 throw Error { message: "invalid argument" };
 ```
 
@@ -416,7 +416,7 @@ throw Error { message: "invalid argument" };
 
 The `finally` block always executes, whether or not an exception was thrown. It is useful for cleanup:
 
-```t
+```
 try {
     // work that might fail
 } catch (Error e) {

@@ -4,7 +4,7 @@ Input functions for reading from stdin.
 
 ## Import
 
-```tm
+```
 use std::io::readLine;
 use std::io::{ prompt, promptInt, promptFloat, promptBool };
 ```
@@ -54,7 +54,7 @@ use std::io::{ prompt, promptInt, promptFloat, promptBool };
 
 ## Example
 
-```tm
+```
 use std::io::{ prompt, promptInt, isTTY, flush };
 use std::log::println;
 

@@ -2,7 +2,7 @@ namespace Main;
 
 use std::log::println;
 
-int32 testSysCPU() {
+fn testSysCPU() int32 {
     println("[Testing lux::sys CPU intrinsics...]");
 
     // cpu_relax — spin-loop hint

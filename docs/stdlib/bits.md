@@ -4,7 +4,7 @@ Bitwise utility functions for integer manipulation.
 
 ## Import
 
-```tm
+```
 use std::bits::{ popcount, ctz, clz, rotl, rotr, isPow2, nextPow2 };
 ```
 
@@ -29,7 +29,7 @@ use std::bits::{ popcount, ctz, clz, rotl, rotr, isPow2, nextPow2 };
 
 ## Example
 
-```tm
+```
 use std::bits::{ popcount, ctz, clz, isPow2, nextPow2, setBit, testBit };
 use std::log::println;
 

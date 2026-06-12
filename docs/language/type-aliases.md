@@ -16,7 +16,7 @@ type Name = existingType;
 
 The most common use case is naming function pointer types:
 
-```tm
+```
 type BinOp = fn(int32, int32) -> int32;
 ```
 
@@ -24,22 +24,22 @@ This creates `BinOp` as a shorthand for a function that takes two `int32` parame
 
 ### Using Function Type Aliases
 
-```tm
+```
 type BinOp = fn(int32, int32) -> int32;
 
-int32 add(int32 a, int32 b) {
+fn add(int32 a, int32 b) int32 {
     ret a + b;
 }
 
-int32 mul(int32 a, int32 b) {
+fn mul(int32 a, int32 b) int32 {
     ret a * b;
 }
 
-int32 apply(BinOp op, int32 x, int32 y) {
+fn apply(BinOp op, int32 x, int32 y) int32 {
     ret op(x, y);
 }
 
-int32 main() {
+fn main() int32 {
     BinOp op = add;
     println(op(3, 4));          // 7
 
@@ -58,7 +58,7 @@ Type aliases make function pointer signatures readable when used as parameters, 
 
 ## Built-in Type Alias: `cstring`
 
-T provides a built-in type alias:
+Lux provides a built-in type alias:
 
 ```
 cstring = *char
@@ -66,7 +66,7 @@ cstring = *char
 
 This is used for C string interop:
 
-```tm
+```
 cstring greeting = c"Hello!";
 puts(greeting);
 

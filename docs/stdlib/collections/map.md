@@ -6,7 +6,7 @@ An open-addressing hash map with linear probing.
 
 `vec`, `map`, and `set` are native keywords — no import required.
 
-```tm
+```
 map<string, int32> ages;
 ```
 
@@ -50,7 +50,7 @@ map<string, int32> ages;
 
 ## Example
 
-```tm
+```
 map<string, int32> scores;
 
 scores.insert("alice", 95);

@@ -76,10 +76,10 @@ if (funcName == "gcd") {
 
 #### Step 4: Use in Lux Code
 
-```tm
+```
 use std::math::gcd;
 
-int32 main() {
+fn main() int32 {
     int32 result = gcd(48, 18);
     println(result);               // 6
     ret 0;
@@ -137,7 +137,7 @@ if (funcName == "abs") {
 
 ### Usage
 
-```tm
+```
 int32 a = abs(-42);             // calls lux_abs_i32
 int64 b = abs(-1000000i64);     // calls lux_abs_i64
 float64 c = abs(-3.14);         // calls lux_abs_f64
@@ -244,10 +244,10 @@ The import resolver automatically picks up all functions registered in the `Buil
 
 #### Step 3: Use in Lux Code
 
-```tm
+```
 use std::random::{seed, randIntRange};
 
-int32 main() {
+fm main() int32 {
     seed(12345);
     int64 num = randIntRange(1, 100);
     println(num);
@@ -340,8 +340,8 @@ The `ExtendedTypeRegistry` framework already handles method dispatch for any reg
 
 #### Step 4: Usage
 
-```tm
-int32 main() {
+```
+fn main() int32 {
     Deque<int32> d = [];
     d.pushBack(10);
     d.pushFront(5);
@@ -455,7 +455,7 @@ std::any IRGen::visitWhileElseStmt(LuxParser::WhileElseStmtContext* ctx) {
 
 #### Step 5: Usage
 
-```tm
+```
 int32 count = 0;
 
 while (count < 0) {
@@ -528,8 +528,8 @@ if (methodName == "sum") {
 
 #### Step 4: Usage
 
-```tm
-int32 main() {
+```
+fn main() int32 {
     vec<int32> v = [1, 2, 3, 4, 5];
     int32 total = v.sum();
     println(total);                // 15

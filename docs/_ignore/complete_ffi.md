@@ -293,7 +293,7 @@ type safety.
 ```
 extern int32 printf(cstring fmt, ...);
 
-int32 main() {
+fn main() int32 {
     printf(c"Hello %s, you are %d years old\n", c"World", 42);
     ret 0;
 }
@@ -602,7 +602,7 @@ These are fundamentally incompatible. The compiler MUST:
 #include <stdio.h>
 use std::log::println;
 
-int32 main() {
+fn main() int32 {
     string name = "World";
     
     // This would be a compile ERROR:
@@ -657,13 +657,13 @@ Both are opaque pointers in LLVM's opaque pointer mode. Direct interop, no conve
 // qsort expects: void qsort(void* base, size_t n, size_t size, int (*compar)(const void*, const void*))
 extern void qsort(*void base, usize n, usize size, fn(*void, *void) -> int32 compar);
 
-int32 compare(*void a, *void b) {
+fn compare(*void a, *void b) int32 {
     int32 va = *(a as *int32);
     int32 vb = *(b as *int32);
     ret va - vb;
 }
 
-int32 main() {
+fn main() int32 {
     [5]int32 arr = [5, 3, 1, 4, 2];
     qsort(&arr as *void, 5, 4, compare);
     // arr is now [1, 2, 3, 4, 5]
@@ -679,8 +679,8 @@ TM functions with namespace mangling produce C-compatible symbols:
 
 | TM Declaration | Emitted Symbol | Callable from C? |
 |----------------|----------------|-------------------|
-| `int32 main()` | `main` | Yes (entry point) |
-| `int32 add(int32 a, int32 b)` in namespace `Math` | `Math__add` | Yes (via `Math__add`) |
+| `fn main() int32` | `main` | Yes (entry point) |
+| `fn add(int32 a, int32 b) int32` in namespace `Math` | `Math__add` | Yes (via `Math__add`) |
 
 For C code to call TM functions, the user creates a C header manually:
 
@@ -752,13 +752,13 @@ struct Point {
     float64 y;
 }
 
-float64 distance(Point a, Point b) {
+fn distance(Point a, Point b) float64 {
     float64 dx = a.x - b.x;
     float64 dy = a.y - b.y;
     ret sqrt(dx * dx + dy * dy);  // sqrt from <math.h>
 }
 
-int32 main() {
+fn main() int32 {
     Point a = Point { x: 0.0, y: 0.0 };
     Point b = Point { x: 3.0, y: 4.0 };
 

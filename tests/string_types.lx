@@ -3,7 +3,7 @@ namespace Main;
 use std::log::println;
 use std::test::{ assertEqual };
 
-int32 testStringTypes() {
+fn testStringTypes() int32 {
     println("[Testing string type...]");
 
     string base = "Hello, World!";

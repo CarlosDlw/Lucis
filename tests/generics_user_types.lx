@@ -18,7 +18,7 @@ enum GOption<T> {
     Some(T),
 }
 
-int32 testGenericsUserTypes() {
+fn testGenericsUserTypes() int32 {
     println("[Testing generics: user-defined types...]");
 
     GPair<int32, string> p1 = GPair<int32, string> { first: 10, second: "ten" };

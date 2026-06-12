@@ -4,7 +4,7 @@ Output functions for printing to stdout and stderr.
 
 ## Import
 
-```tm
+```
 use std::log::println;
 use std::log::{ println, print, eprint, eprintln, dbg, sprintf };
 ```
@@ -24,7 +24,7 @@ All print functions accept any primitive type (`int32`, `float64`, `bool`, `char
 
 ## Examples
 
-```tm
+```
 use std::log::{ println, print, dbg, sprintf };
 
 *char name = c"Carlos";

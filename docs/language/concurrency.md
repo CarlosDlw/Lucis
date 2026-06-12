@@ -1,6 +1,6 @@
 # Concurrency
 
-T provides thread-based concurrency with `spawn`, `await`, `Task<T>`, `Mutex`, and the `lock` statement. Threads are implemented using pthreads under the hood.
+Lux provides thread-based concurrency with `spawn`, `await`, `Task<T>`, `Mutex`, and the `lock` statement. Threads are implemented using pthreads under the hood.
 
 ---
 
@@ -8,10 +8,10 @@ T provides thread-based concurrency with `spawn`, `await`, `Task<T>`, `Mutex`, a
 
 The `spawn` keyword launches a function call on a new thread and returns a `Task<T>`:
 
-```tm
+```
 use std::thread::Task;
 
-int32 compute(int32 a, int32 b) {
+fn compute(int32 a, int32 b) int32 {
     ret a + b;
 }
 
@@ -26,7 +26,7 @@ The spawned function runs concurrently. `T` in `Task<T>` matches the return type
 
 The `await` keyword blocks until the task completes and returns its result:
 
-```tm
+```
 Task<int32> t = spawn compute(10, 20);
 int32 result = await t;
 println(result);   // 30
@@ -38,8 +38,8 @@ println(result);   // 30
 
 Multiple tasks can run in parallel:
 
-```tm
-int32 heavyWork() {
+```
+fn heavyWork() int32 {
     int32 sum = 0;
     for int32 i = 0; i < 1000; i++ {
         sum += i;
@@ -64,7 +64,7 @@ Both calls to `heavyWork()` execute concurrently on separate threads.
 
 A `Mutex` protects shared state from concurrent access:
 
-```tm
+```
 use std::thread::Mutex;
 
 Mutex mtx = Mutex();
@@ -76,7 +76,7 @@ Mutex mtx = Mutex();
 
 The `lock` statement acquires the mutex for the duration of a block:
 
-```tm
+```
 Mutex mtx = Mutex();
 int32 counter = 0;
 
@@ -95,7 +95,7 @@ The mutex is automatically released when the block exits.
 
 The `std::thread` module provides additional utilities:
 
-```tm
+```
 use std::thread::cpuCount;
 use std::thread::threadId;
 use std::thread::yield;
@@ -107,7 +107,7 @@ use std::thread::yield;
 | `threadId` | `() -> uint64` | Current thread's ID |
 | `yield` | `()` | Yield the current thread's time slice |
 
-```tm
+```
 uint32 cores = cpuCount();
 println(cores);   // e.g., 8
 
@@ -121,17 +121,17 @@ yield();          // let other threads run
 
 ## Complete Example
 
-```tm
+```
 namespace ConcurrencyDemo;
 
 use std::log::println;
 use std::thread::{ Task, Mutex, cpuCount };
 
-int32 compute(int32 a, int32 b) {
+fn compute(int32 a, int32 b) int32 {
     ret a + b;
 }
 
-int32 main() {
+fn main() int32 {
     println(cpuCount());
 
     // Spawn parallel tasks

@@ -6,7 +6,7 @@ This page covers the general syntax rules of T: how statements are structured, h
 
 Every statement in Lux ends with a semicolon:
 
-```t
+```
 int32 x = 10;
 println(x);
 ret 0;
@@ -14,7 +14,7 @@ ret 0;
 
 Block statements (`if`, `for`, `while`, `switch`, `lock`, `try`) do **not** end with a semicolon — the closing brace ends the statement:
 
-```t
+```
 if x > 0 {
     println(x);
 }
@@ -24,7 +24,7 @@ if x > 0 {
 
 Blocks use curly braces `{}`. Braces are always required — there are no single-statement shortcuts:
 
-```t
+```
 // correct
 if x > 0 {
     println(x);
@@ -38,7 +38,7 @@ if x > 0 {
 
 T supports two comment styles:
 
-```t
+```
 // Line comment — everything after // to end of line
 
 /* Block comment — can span
@@ -53,7 +53,7 @@ Lux also supports **doc-comments** (`/** ... */`) for documenting functions, str
 
 Identifiers follow standard rules: they start with a letter or underscore, followed by letters, digits, or underscores:
 
-```t
+```
 int32 count = 0;
 string user_name = "Alice";
 float64 _temp = 98.6;
@@ -66,7 +66,7 @@ Lux is case-sensitive: `count`, `Count`, and `COUNT` are three different identif
 
 Every `.lx` file must begin with a namespace declaration:
 
-```t
+```
 namespace MyModule;
 ```
 
@@ -76,7 +76,7 @@ The namespace name is used for module resolution when importing symbols across f
 
 After the namespace, you can import symbols from the standard library or other modules:
 
-```t
+```
 use std::log::println;                    // import a single function
 use std::log::{ println, print, dbg };    // import multiple functions
 use std::math;                            // import an entire module
@@ -88,7 +88,7 @@ Imports must appear after the namespace declaration and before any other declara
 
 C headers can be included for FFI:
 
-```t
+```
 #include <stdio.h>        // system header
 #include "mylib.h"        // local header
 ```
@@ -97,26 +97,26 @@ Include directives are processed before compilation and make C functions, struct
 
 ## Type-First Declarations
 
-All declarations in Lux place the type before the name:
+All declarations in Lux place the type before the name (except functions, which use `fn`):
 
-```t
+```
 int32 age = 25;                               // variable
-float64 calculate_area(float64 radius) { }    // function
+fn calculate_area(float64 radius) float64 { }    // function
 struct Point { int32 x; int32 y; }            // struct fields
 ```
 
-This applies consistently to variables, function parameters, function return types, and struct fields.
+This applies consistently to variables, function parameters, and struct fields.
 
 ## Function Syntax
 
-Functions are declared with the return type, name, parameters, and body:
+Functions are declared with `fn`, followed by the name, parameters, and return type:
 
-```t
-int32 add(int32 a, int32 b) {
+```
+fn add(int32 a, int32 b) int32 {
     ret a + b;
 }
 
-void greet(string name) {
+fn greet(string name) void {
     println(name);
 }
 ```
@@ -127,7 +127,7 @@ The `ret` keyword is used to return values. There is no implicit return.
 
 Control flow statements (`if`, `while`, `switch`) accept conditions with or without parentheses:
 
-```t
+```
 // both are valid
 if x > 0 { println(x); }
 if (x > 0) { println(x); }
@@ -143,8 +143,8 @@ switch (x) { case 1 { } }
 
 The program entry point is the `main` function, which must return `int32`:
 
-```t
-int32 main() {
+```
+fn main() int32 {
     // program starts here
     ret 0;
 }

@@ -3,7 +3,7 @@ namespace Main;
 use std::log::println;
 use std::test::{ assertEqual };
 
-int32 testCharTypes() {
+fn testCharTypes() int32 {
     println("[Testing character type...]");
 
     char upper = 'A';

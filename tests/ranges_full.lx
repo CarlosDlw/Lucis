@@ -3,7 +3,7 @@ namespace Main;
 use std::log::println;
 use std::test::{ assertEqual };
 
-int32 testRangesFull() {
+fn testRangesFull() int32 {
     println("[Testing ranges full coverage...]");
 
     // Exclusive range: 0..5 => 0,1,2,3,4

@@ -5158,7 +5158,7 @@ std::string HoverProvider::typeSpecToString(LuxParser::TypeSpecContext* ctx) {
 std::string HoverProvider::formatFunctionDecl(LuxParser::FunctionDeclContext* func) {
     std::ostringstream ss;
     ss << "```lux\n";
-    ss << typeSpecToString(func->typeSpec()) << " " << safeIdAt(func, 0) << "(";
+    ss << "fn " << safeIdAt(func, 0) << "(";
     if (auto* params = func->paramList()) {
         bool first = true;
         for (auto* p : params->param()) {
@@ -5170,7 +5170,7 @@ std::string HoverProvider::formatFunctionDecl(LuxParser::FunctionDeclContext* fu
             ss << safeText(p->IDENTIFIER());
         }
     }
-    ss << ")\n```";
+    ss << ") " << typeSpecToString(func->typeSpec()) << "\n```";
     return ss.str();
 }
 
@@ -5379,14 +5379,10 @@ std::string HoverProvider::formatExtendMethods(LuxParser::ExtendDeclContext* ext
     std::ostringstream ss;
     ss << "```lux\nextend " << safeText(ext->IDENTIFIER()) << " {\n";
     for (auto* m : ext->extendMethod()) {
-        ss << "    " << typeSpecToString(m->typeSpec()) << " "
-           << safeIdAt(m, 0) << "(";
+        ss << "    fn " << safeIdAt(m, 0) << "(";
 
         // Check if first param is &self
         if (m->AMPERSAND()) {
-            // Format: typeSpec name(&self, params...)
-            auto ids = m->IDENTIFIER();
-            // ids[0] is method name, the &self param name is separate
             ss << "&self";
             if (auto* params = m->paramList()) {
                 for (auto* p : params->param()) {
@@ -5406,7 +5402,7 @@ std::string HoverProvider::formatExtendMethods(LuxParser::ExtendDeclContext* ext
                 }
             }
         }
-        ss << ")\n";
+        ss << ") " << typeSpecToString(m->typeSpec()) << "\n";
     }
     ss << "}\n```";
     return ss.str();

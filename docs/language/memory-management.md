@@ -10,10 +10,10 @@ The `defer` statement schedules code to execute when the current function exits.
 
 ### Basic Usage
 
-```tm
+```
 #include <stdlib.h>
 
-void example() {
+fn example() void {
     *int32 ptr = malloc(4) as *int32;
     defer free(ptr as *void);
 
@@ -25,8 +25,8 @@ void example() {
 
 ### LIFO Execution Order
 
-```tm
-void example() {
+```
+fn example() void {
     defer println(1);
     defer println(2);
     defer println(3);
@@ -39,7 +39,7 @@ void example() {
 
 `defer` works with any statement or expression:
 
-```tm
+```
 defer close(fd);
 defer v.free();
 defer println("cleanup done");
@@ -58,7 +58,7 @@ Structural blocks are special block constructs for scope isolation, code injecti
 A pair of braces creates a new lexical scope. Variables declared inside are not visible outside.
 
 ```lux
-int32 main() {
+fn main() int32 {
     int32 x = 1;
     {
         int32 y = 2;    // y is local to this block
@@ -79,7 +79,7 @@ Use naked blocks to limit variable lifetime or to avoid name collisions.
 `#inline {}` injects the block's body into the enclosing scope. Variables declared inside become visible in the surrounding scope, as if written inline. This is useful for grouping logically related setup code without introducing a new scope.
 
 ```lux
-int32 main() {
+fn main() int32 {
     #inline {
         int32 result = compute();
         bool valid = result > 0;
@@ -101,7 +101,7 @@ int32 main() {
 ```lux
 #include <raylib.h>
 
-int32 main() {
+fn main() int32 {
     InitWindow(800, 600, c"Demo");
     SetTargetFPS(60);
 
@@ -151,7 +151,7 @@ In most cases, if you store the result in a local variable, Lux will auto-drop i
 ```lux
 use std::log::{ println };
 
-int32 main() {
+fn main() int32 {
     string msg = "an error occurred".capitalize();
     println(msg);
     ret 0;
@@ -163,7 +163,7 @@ Use `freeStr` only when you need an early/manual release (before scope exit):
 ```lux
 use std::log::{ println };
 
-int32 main() {
+fn main() int32 {
     string msg = "an error occurred".capitalize();
     freeStr(msg); // explicit early release
     println(msg);
@@ -183,8 +183,8 @@ Cleanup happens both on function exit and lexical/control-flow exits where scope
 
 ### Vec Auto-Cleanup
 
-```tm
-void example() {
+```
+fn example() void {
     vec<int32> v;
     v.push(10);
     v.push(20);
@@ -196,8 +196,8 @@ void example() {
 
 ### Map Auto-Cleanup
 
-```tm
-void example() {
+```
+fn example() void {
     map<int32, int32> m;
     m.insert(1, 100);
     m.insert(2, 200);
@@ -208,8 +208,8 @@ void example() {
 
 ### Set Auto-Cleanup
 
-```tm
-void example() {
+```
+fn example() void {
     set<int32> s;
     s.add(1);
     s.add(2);
@@ -223,8 +223,8 @@ void example() {
 
 Both mechanisms can coexist in the same function. Explicit `defer` statements run first (LIFO), then auto-cleanup runs:
 
-```tm
-void example() {
+```
+fn example() void {
     vec<int32> v;
     v.push(1);
     defer println(99);
@@ -242,7 +242,7 @@ void example() {
 
 You can also call `.free()` manually or use `defer` for explicit control:
 
-```tm
+```
 vec<int32> v = [1, 2, 3];
 defer v.free();
 // ... use v ...
@@ -254,7 +254,7 @@ defer v.free();
 
 For direct heap allocation and manipulation, import from `std::mem`:
 
-```tm
+```
 use std::mem::alloc;
 use std::mem::allocZeroed;
 use std::mem::realloc;
@@ -282,7 +282,7 @@ use std::mem::compare;
 
 ### Example
 
-```tm
+```
 use std::mem::{ alloc, allocZeroed, copy, compare, free };
 
 *int32 p = alloc(4);
@@ -308,7 +308,7 @@ free(q);
 
 You can also use C's `malloc` and `free` directly via `#include` or `extern`:
 
-```tm
+```
 #include <stdlib.h>
 
 *int32 ptr = malloc(4) as *int32;
@@ -318,7 +318,7 @@ free(ptr as *void);
 
 Or with extern declarations:
 
-```tm
+```
 extern *void malloc(usize size);
 extern void free(*void ptr);
 ```

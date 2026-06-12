@@ -113,13 +113,13 @@ brew install sqlite
 
 2. Write your Lux code with `extern` declarations or `#include`:
 
-```tm
+```
 namespace SQLiteDemo;
 
 extern int32 sqlite3_libversion_number();
 extern *char sqlite3_libversion();
 
-int32 main() {
+fn main() int32 {
     *char version = sqlite3_libversion();
     printf(c"SQLite version: %s\n", version);
     printf(c"Version number: %d\n", sqlite3_libversion_number());
@@ -161,13 +161,13 @@ int multiply(int a, int b) { return a * b; }
 
 2. Use it from Lux with `#include "..."`:
 
-```tm
+```
 namespace LocalLib;
 
 #include <stdio.h>
 #include "mymath.h"
 
-int32 main() {
+fn main() int32 {
     int32 sum = add(10, 20);
     int32 prod = multiply(6, 7);
     printf(c"add = %d, multiply = %d\n", sum, prod);  // 30, 42

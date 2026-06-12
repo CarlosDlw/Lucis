@@ -4,7 +4,7 @@ TCP and UDP networking primitives.
 
 ## Import
 
-```tm
+```
 use std::net::{ tcpConnect, tcpSend, tcpRecv, close, resolve };
 ```
 
@@ -40,7 +40,7 @@ use std::net::{ tcpConnect, tcpSend, tcpRecv, close, resolve };
 
 ### TCP Client
 
-```tm
+```
 use std::net::{ tcpConnect, tcpSend, tcpRecv, close };
 use std::log::println;
 
@@ -53,7 +53,7 @@ close(sock);
 
 ### TCP Server
 
-```tm
+```
 use std::net::{ tcpListen, tcpAccept, tcpSend, tcpRecv, close };
 use std::log::println;
 

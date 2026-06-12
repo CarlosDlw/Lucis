@@ -10,7 +10,7 @@ An enum is defined with the `enum` keyword, a name, optional type parameters, an
 
 ### Unit variants
 
-```tm
+```
 enum Color {
     Red,
     Green,
@@ -18,7 +18,7 @@ enum Color {
 }
 ```
 
-```tm
+```
 enum Direction {
     North,
     South,
@@ -29,7 +29,7 @@ enum Direction {
 
 ### Tuple payload variants
 
-```tm
+```
 enum Token {
     Eof,
     Number(float64),
@@ -39,7 +39,7 @@ enum Token {
 
 ### Named payload variants
 
-```tm
+```
 enum Shape {
     Unit,
     Circle { r: float64 },
@@ -49,7 +49,7 @@ enum Shape {
 
 ### Generic enums
 
-```tm
+```
 enum Result<V, E> {
     Ok(V),
     Err(E),
@@ -62,7 +62,7 @@ enum Result<V, E> {
 
 Enum variants are accessed with the `::` (scope resolution) operator:
 
-```tm
+```
 Color c = Color::Red;
 println(c);   // 0
 
@@ -75,7 +75,7 @@ println(b);   // 2
 
 For payload variants, construct values by passing payload data:
 
-```tm
+```
 Token t1 = Token::Eof;
 Token t2 = Token::Number(42.0);
 Token t3 = Token::Ident("lux");
@@ -89,25 +89,25 @@ Result<int32, string> err = Result<int32, string>::Err("division by zero");
 
 The generic enum access form is:
 
-```tm
+```
 EnumName<T1, T2>::Variant
 ```
 
 And with payload constructor:
 
-```tm
+```
 EnumName<T1, T2>::Variant(...)
 ```
 
 Named payload variants use braces:
 
-```tm
+```
 EnumName::Variant { field: value }
 ```
 
 or
 
-```tm
+```
 EnumName<T>::Variant { field: value }
 ```
 
@@ -117,7 +117,7 @@ EnumName<T>::Variant { field: value }
 
 Enums work naturally with `switch` statements:
 
-```tm
+```
 Color c = Color::Green;
 
 switch c {
@@ -141,7 +141,7 @@ You can also switch on payload variants by matching against concrete constructor
 
 `is` supports both type checks and enum variant identity checks.
 
-```tm
+```
 Result<int32, string> res = Result<int32, string>::Err("boom");
 
 if res is Result<int32, string>::Err {
@@ -151,7 +151,7 @@ if res is Result<int32, string>::Err {
 
 You can optionally bind payload in the condition:
 
-```tm
+```
 if res is Result<int32, string>::Err(message) {
     println(message);
 }
@@ -165,7 +165,7 @@ Binder variables are scoped to the branch block where the condition is true.
 
 Enums can be used as struct fields:
 
-```tm
+```
 enum Color {
     Red,
     Green,
@@ -190,7 +190,7 @@ Enums do not support `extend` blocks.
 
 `extend` is reserved for structs and unions, while enums are constructed and checked through their variants:
 
-```tm
+```
 Result<int32, string> value = Result<int32, string>::Ok(42);
 
 if value is Result<int32, string>::Ok(number) {
@@ -216,7 +216,7 @@ const char* color_name(Color c);
 Color next_color(Color c);
 ```
 
-```tm
+```
 #include "colors.h"
 
 int32 r = COLOR_RED;     // 0

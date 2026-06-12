@@ -4,7 +4,7 @@ Low-level operating system primitives and POSIX-like functions.
 
 ## Import
 
-```tm
+```
 use std::os::{ getpid, hostname, errno, strerror, kill };
 ```
 
@@ -27,7 +27,7 @@ use std::os::{ getpid, hostname, errno, strerror, kill };
 
 ## Example
 
-```tm
+```
 use std::os::{ getpid, getppid, getuid, hostname, pageSize, errno, strerror };
 use std::log::println;
 

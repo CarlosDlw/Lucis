@@ -7,7 +7,7 @@ namespace Main;
 
 use std::log::println;
 
-int32 main() {
+fn main() int32 {
     println("Hello, world!");
     ret 0;
 }
@@ -44,7 +44,7 @@ int32 main() {
 
 - **Native compilation** — LLVM backend targeting x86-64, ARM, and more; full optimization pipeline (`-O1` through `-O3`, `-Os`, `-Oz`, `-Ofast`) and Link Time Optimization (`--lto`)
 - **C FFI** — call any C function with `extern`, include headers with `#include`, pass structs by value; zero glue code
-- **User-defined generics** — monomorphized `struct Node<T>`, `extend Node<T>` methods, generic functions `T max<T>(T a, T b)`, and type inference from call arguments when possible
+- **User-defined generics** — monomorphized `struct Node<T>`, `extend Node<T>` methods, generic functions `fn max<T>(T a, T b) T`, and type inference from call arguments when possible
 - **Built-in collections** — `vec<T>`, `map<K, V>`, `set<T>` with full method suites
 - **Concurrency** — `spawn`/`await`, `Task<T>`, `Mutex`, `lock` statement
 - **Error handling** — `try`/`catch`/`finally`, `throw`, built-in `Error` type
@@ -204,20 +204,20 @@ struct Node<T> {
 }
 
 extend Node<T> {
-    Node<T> create(T val) {
+    fn create(T val) Node<T> {
         ret Node<T> { value: val };
     }
 
-    T getValue(&self) {
+    fn getValue(&self) T {
         ret self.value;
     }
 }
 
-T max<T>(T a, T b) {
+fn max<T>(T a, T b) T {
     ret a > b ? a : b;
 }
 
-int32 main() {
+fn main() int32 {
     Node<int32> n = Node::create(42);
     int32 val = n.getValue();
     int32 m = max(3, 7);

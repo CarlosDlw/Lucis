@@ -3,7 +3,7 @@ namespace Main;
 use std::log::println;
 use std::test::{ assertEqual };
 
-int32 testControlFlowConditionalsAndLoops() {
+fn testControlFlowConditionalsAndLoops() int32 {
     println("[Testing control flow: conditionals/loops...]");
 
     int32 x = 10;

@@ -6,7 +6,7 @@ This page covers variable declaration, initialization, scope, and reassignment i
 
 Variables are declared with type-first syntax — the type comes before the variable name:
 
-```t
+```
 int32 age = 25;
 float64 temperature = 36.6;
 string name = "Alice";
@@ -17,14 +17,14 @@ bool is_active = true;
 
 Instead of writing the type explicitly, you can use `auto` to let the compiler infer the type from the initializer expression:
 
-```t
+```
 namespace AutoDemo;
 
 use std::log::println;
 
 #include <stdio.h>
 
-int32 main() {
+fn main() int32 {
     auto x = 42;              // inferred as int32
     auto pi = 3.14;           // inferred as float64
     auto name = "Alice";      // inferred as string
@@ -62,12 +62,12 @@ The inferred type follows the same rules as explicit types:
 
 You can declare a variable without assigning a value. The compiler zero-initializes it:
 
-```t
+```
 namespace UninitDemo;
 
 use std::log::println;
 
-int32 main() {
+fn main() int32 {
     int32 count;        // initialized to 0
     float64 total;      // initialized to 0.0
     bool flag;          // initialized to false
@@ -101,12 +101,12 @@ Zero-initialization values by type:
 
 Variables can be reassigned after declaration. There is no `const` or `let` — all variables are mutable:
 
-```t
+```
 namespace ReassignDemo;
 
 use std::log::println;
 
-int32 main() {
+fn main() int32 {
     int32 x = 10;
     println(x);      // 10
 
@@ -124,7 +124,7 @@ int32 main() {
 
 For heap-backed values (`string`, `vec`, `map`, `set`), reassignment and initialization may move ownership.
 
-```t
+```
 string a = fromCStrCopy(c"hello");
 string b = a;      // move
 // println(a);     // compile-time error: use-after-move
@@ -137,12 +137,12 @@ Use clone/copy-style APIs when you need to keep both values alive.
 
 T supports compound assignment operators that combine an operation with assignment:
 
-```t
+```
 namespace CompoundDemo;
 
 use std::log::println;
 
-int32 main() {
+fn main() int32 {
     int32 x = 10;
 
     x += 5;       // x = x + 5    → 15
@@ -170,12 +170,12 @@ The full list of compound assignment operators: `+=`, `-=`, `*=`, `/=`, `%=`, `&
 
 T supports both prefix and postfix `++` and `--`:
 
-```t
+```
 namespace IncrDemo;
 
 use std::log::println;
 
-int32 main() {
+fn main() int32 {
     int32 a = 5;
 
     // prefix: increments, then returns new value
@@ -206,12 +206,12 @@ int32 main() {
 
 Variables are scoped to the block `{}` in which they are declared. A variable declared inside a block is not accessible outside that block:
 
-```t
+```
 namespace ScopeDemo;
 
 use std::log::println;
 
-int32 main() {
+fn main() int32 {
     int32 x = 10;
 
     if x > 5 {
@@ -235,12 +235,12 @@ int32 main() {
 
 A variable in an inner scope can have the same name as a variable in an outer scope. The inner variable shadows the outer one for the duration of the block:
 
-```t
+```
 namespace ShadowDemo;
 
 use std::log::println;
 
-int32 main() {
+fn main() int32 {
     int32 x = 10;
     println(x);        // 10
 
@@ -259,7 +259,7 @@ int32 main() {
 
 Each variable declaration is a separate statement. Lux does not support declaring multiple variables on one line:
 
-```t
+```
 // each on its own line
 int32 width = 10;
 int32 height = 5;
@@ -270,18 +270,18 @@ int32 area = width * height;
 
 Variables declared outside of any function are global and accessible throughout the file:
 
-```t
+```
 namespace GlobalDemo;
 
 use std::log::println;
 
 int32 counter = 0;
 
-void increment() {
+fn increment() void {
     counter += 1;
 }
 
-int32 main() {
+fn main() int32 {
     increment();
     increment();
     increment();

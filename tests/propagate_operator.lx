@@ -8,24 +8,24 @@ enum PResult<V, E> {
     Err(E),
 }
 
-PResult<int32, string> pdiv(int32 a, int32 b) {
+fn pdiv(int32 a, int32 b) PResult<int32, string> {
     if b == 0 {
         ret PResult<int32, string>::Err("division by zero");
     }
     ret PResult<int32, string>::Ok(a / b);
 }
 
-PResult<int32, string> pprocess(int32 a, int32 b) {
+fn pprocess(int32 a, int32 b) PResult<int32, string> {
     auto val = pdiv(a, b)?;
     ret PResult<int32, string>::Ok(val);
 }
 
-PResult<int32, string> deepProcess(int32 a, int32 b) {
+fn deepProcess(int32 a, int32 b) PResult<int32, string> {
     auto val = pprocess(a, b)?;
     ret PResult<int32, string>::Ok(val);
 }
 
-int32 testPropagateOperator() {
+fn testPropagateOperator() int32 {
     println("[Testing error handling: ? propagate operator...]");
 
     // ── Test 1: ? operator success path (single level) ──

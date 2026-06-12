@@ -18,21 +18,21 @@ enum Response {
     Err(HttpError),
 }
 
-CResult<int32, string> cdiv(int32 a, int32 b) {
+fn cdiv(int32 a, int32 b) CResult<int32, string> {
     if b == 0 {
         ret CResult<int32, string>::Err("division by zero");
     }
     ret CResult<int32, string>::Ok(a / b);
 }
 
-Response cfetch(string url) {
+fn cfetch(string url) Response {
     if url == "" {
         ret Response::Err(HttpError { message: "empty url", code: 400 });
     }
     ret Response::Ok("data received");
 }
 
-int32 testErrorHandlingCustomTypes() {
+fn testErrorHandlingCustomTypes() int32 {
     println("[Testing error handling: custom error types in expr catch...]");
 
     // ── Test 1: Custom error payload type (string instead of Error) ──

@@ -108,10 +108,11 @@ externParam
     : typeSpec IDENTIFIER?
     ;
 
-// int32 main() { ... }
-// T max<T>(T a, T b) { ... }
+// fn main() int32 { ... }
+// fn max<T>(T a, T b) T { ... }
+// fn makePoint() LIB::Point { ... }
 functionDecl
-    : (IDENTIFIER SCOPE)? typeSpec IDENTIFIER typeParamList? LPAREN paramList? RPAREN block
+    : FN IDENTIFIER typeParamList? LPAREN paramList? RPAREN (IDENTIFIER SCOPE)? typeSpec block
     ;
 
 // extend Point { ... }
@@ -130,8 +131,8 @@ typeParam
     ;
 
 extendMethod
-    : typeSpec IDENTIFIER LPAREN AMPERSAND IDENTIFIER (COMMA param)* RPAREN block
-    | typeSpec IDENTIFIER LPAREN paramList? RPAREN block
+    : FN IDENTIFIER LPAREN AMPERSAND IDENTIFIER (COMMA param)* RPAREN typeSpec block
+    | FN IDENTIFIER LPAREN paramList? RPAREN typeSpec block
     ;
 
 paramList

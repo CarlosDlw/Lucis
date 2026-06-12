@@ -4,11 +4,11 @@ use std::log::println;
 use std::test::{ assertEqual };
 use std::thread::Task;
 
-int32 concurrencyAdd(int32 a, int32 b) {
+fn concurrencyAdd(int32 a, int32 b) int32 {
     ret a + b;
 }
 
-int32 concurrencyHeavyWork() {
+fn concurrencyHeavyWork() int32 {
     int32 sum = 0;
     for int32 i = 0; i < 1000; i++ {
         sum += i;
@@ -16,7 +16,7 @@ int32 concurrencyHeavyWork() {
     ret sum;
 }
 
-int32 testConcurrencySpawnAwait() {
+fn testConcurrencySpawnAwait() int32 {
     println("[Testing concurrency: spawn/await...]");
 
     Task<int32> one = spawn concurrencyAdd(10, 20);

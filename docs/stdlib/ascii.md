@@ -4,7 +4,7 @@ ASCII character classification and conversion functions.
 
 ## Import
 
-```tm
+```
 use std::ascii::{ isAlpha, isDigit, isUpper, toLower, toUpper };
 ```
 
@@ -36,7 +36,7 @@ use std::ascii::{ isAlpha, isDigit, isUpper, toLower, toUpper };
 
 ## Example
 
-```tm
+```
 use std::ascii::{ isAlpha, isDigit, isUpper, toLower, toUpper, toDigit };
 use std::log::println;
 

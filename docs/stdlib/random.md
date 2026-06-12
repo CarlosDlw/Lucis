@@ -4,7 +4,7 @@ Pseudorandom number generation functions.
 
 ## Import
 
-```tm
+```
 use std::random::{ seed, seedTime, randInt, randFloat, randBool, uuid_v4 };
 ```
 
@@ -25,7 +25,7 @@ use std::random::{ seed, seedTime, randInt, randFloat, randBool, uuid_v4 };
 
 ## Example
 
-```tm
+```
 use std::random::{ seedTime, randInt, randIntRange, randFloat, randBool, uuid_v4 };
 use std::log::println;
 

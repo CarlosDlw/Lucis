@@ -10,8 +10,8 @@ This page explains how each part works and what the compiler does behind the sce
 
 All local variables are stack-allocated using LLVM `alloca` instructions. This includes scalars, fixed-size arrays, struct values, and pointers to heap data.
 
-```tm
-int32 main() {
+```
+fn main() int32 {
     int32 x = 42;                   // 4 bytes on stack
     float64 pi = 3.14159;           // 8 bytes on stack
     bool flag = true;               // 1 byte on stack
@@ -52,13 +52,13 @@ store i1 true, i1* %flag
 
 Custom structs are also stack-allocated by default:
 
-```tm
+```
 struct Point {
     float64 x;
     float64 y;
 }
 
-int32 main() {
+fn main() int32 {
     Point p = Point { x: 10.0, y: 20.0 };  // 16 bytes on stack
     ret 0;
 }
@@ -102,7 +102,7 @@ A `vec<T>` is a 3-field struct:
 
 **Growth strategy:** Initial capacity is 8. When full, capacity doubles (growth factor 2x). Reallocation uses `realloc`, which may copy data to a new location.
 
-```tm
+```
 vec<int32> v = [1, 2, 3];    // cap=8, len=3
 v.push(4);                    // cap=8, len=4
 v.push(5);                    // cap=8, len=5
@@ -189,8 +189,8 @@ The `defer` statement schedules cleanup code to run at function exit, in LIFO (l
 
 When the compiler encounters a `defer` statement, it does **not** emit any code immediately. Instead, it pushes the statement onto an internal defer stack. At every return point in the function, the compiler emits all deferred statements in reverse order.
 
-```tm
-void processData() {
+```
+fn processData() void {
     vec<int32> v = [1, 2, 3];
     defer v.free();              // pushed first
 
@@ -223,8 +223,8 @@ At every `ret` statement, the compiler iterates this list in reverse (`rbegin` �
 
 Defer works correctly even with early returns:
 
-```tm
-int32 readFile(string path) {
+```
+fn readFile(string path) int32 {
     int32 fd = open(path);
     defer close(fd);             // guaranteed to run
 
@@ -265,8 +265,8 @@ The full cleanup sequence at every return point is:
 1. **Explicit defers** — emitted in reverse order (LIFO)
 2. **Auto cleanup** — compiler-generated free calls for all collections
 
-```tm
-void example() {
+```
+fn example() void {
     vec<int32> a = [1, 2, 3];
     map<string, int32> m;
     defer println("goodbye");
@@ -282,8 +282,8 @@ void example() {
 
 When a function returns a collection value, the compiler skips auto-cleanup for that specific variable to avoid freeing memory that's being returned to the caller:
 
-```tm
-fn createVec() -> vec<int32> {
+```
+fn createVec() vec<int32> {
     vec<int32> result = [1, 2, 3];
     ret result;   // result is NOT auto-freed — ownership transfers to caller
 }
@@ -337,7 +337,7 @@ Thread-local eh_stack:
 3. **`panic()` called** — fills the top frame's error fields, calls `longjmp()` to jump back to the saved state
 4. **`catch` block** — receives the error, frame is popped
 
-```tm
+```
 try {
     // setjmp() saved here
     panic("something went wrong");
@@ -353,7 +353,7 @@ try {
 
 Deferred statements execute even when an exception occurs. Before `longjmp` unwinds to the catch handler, the compiler ensures all defers in the current scope run:
 
-```tm
+```
 try {
     vec<int32> data = [1, 2, 3];
     defer data.free();
@@ -392,15 +392,15 @@ try {
 ## Best Practices
 
 **Use `defer` for non-collection resources:**
-```tm
+```
 int32 fd = open("file.txt");
 defer close(fd);
 // use fd...
 ```
 
 **Let auto-cleanup handle collections when possible:**
-```tm
-void compute() {
+```
+fn compute() void {
     vec<int32> v = [1, 2, 3];
     // no need for defer v.free() — auto-cleanup handles it
     println(v.len());
@@ -408,8 +408,8 @@ void compute() {
 ```
 
 **Use `defer` when you need guaranteed ordering:**
-```tm
-void transaction() {
+```
+fn transaction() void {
     lock(mutex);
     defer unlock(mutex);       // always unlocked, even on panic
 
@@ -421,7 +421,7 @@ void transaction() {
 ```
 
 **Avoid returning pointers to stack-allocated data:**
-```tm
+```
 // BAD — pointer to stack memory is invalid after return
 fn bad() -> int32* {
     int32 x = 42;

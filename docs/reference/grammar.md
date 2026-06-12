@@ -47,7 +47,7 @@ topLevelDecl → typeAliasDecl
 typeAliasDecl → 'type' IDENTIFIER '=' typeSpec ';'
 ```
 
-```tm
+```
 type BinOp = fn(int32, int32) -> int32;
 type Byte = uint8;
 ```
@@ -59,7 +59,7 @@ structDecl → 'struct' IDENTIFIER '{' structField* '}'
 structField → typeSpec IDENTIFIER ';'
 ```
 
-```tm
+```
 struct Point {
     float64 x;
     float64 y;
@@ -73,7 +73,7 @@ unionDecl → 'union' IDENTIFIER '{' unionField* '}'
 unionField → typeSpec IDENTIFIER ';'
 ```
 
-```tm
+```
 union Value {
     int32 i;
     float32 f;
@@ -91,7 +91,7 @@ enumVariant → IDENTIFIER
 enumPayloadField → IDENTIFIER ':' typeSpec
 ```
 
-```tm
+```
 enum Color { Red, Green, Blue }
 
 enum Result<V, E> {
@@ -113,7 +113,7 @@ externParamList → externParam (',' externParam)*
 externParam → typeSpec IDENTIFIER?
 ```
 
-```tm
+```
 extern int32 printf(*char fmt, ...);
 extern void exit(int32 code);
 ```
@@ -121,18 +121,18 @@ extern void exit(int32 code);
 ### Function
 
 ```
-functionDecl → typeSpec IDENTIFIER '(' paramList? ')' block
+functionDecl → 'fn' IDENTIFIER typeParamList? '(' paramList? ')' typeSpec block
 paramList → param (',' param)*
 param → typeSpec '...' IDENTIFIER    // variadic
       | typeSpec IDENTIFIER          // normal
 ```
 
-```tm
-int32 main() {
+```
+fn main() int32 {
     ret 0;
 }
 
-int32 add(int32 a, int32 b) {
+fn add(int32 a, int32 b) int32 {
     ret a + b;
 }
 ```
@@ -141,13 +141,13 @@ int32 add(int32 a, int32 b) {
 
 ```
 extendDecl → 'extend' IDENTIFIER '{' extendMethod* '}'
-extendMethod → typeSpec IDENTIFIER '(' '&' IDENTIFIER (',' param)* ')' block
-             | typeSpec IDENTIFIER '(' paramList? ')' block
+extendMethod → 'fn' IDENTIFIER '(' '&' IDENTIFIER (',' param)* ')' typeSpec block
+             | 'fn' IDENTIFIER '(' paramList? ')' typeSpec block
 ```
 
-```tm
+```
 extend Point {
-    float64 distance(&self) {
+    fn distance(&self) float64 {
         ret sqrt(self.x * self.x + self.y * self.y);
     }
 }
@@ -174,7 +174,7 @@ varDeclStmt → typeSpec IDENTIFIER '=' expression ';'
             | typeSpec IDENTIFIER ';'
 ```
 
-```tm
+```
 int32 x = 42;
 string name;
 ```
@@ -193,7 +193,7 @@ arrowCompoundAssignStmt → IDENTIFIER '->' IDENTIFIER op expression ';'
 
 Compound operators: `+=` `-=` `*=` `/=` `%=` `&=` `|=` `^=` `<<=` `>>=`
 
-```tm
+```
 x = 10;
 arr[0] = 5;
 x += 1;
@@ -219,7 +219,7 @@ ifBody → block | statement
 
 Parentheses around the condition are optional.
 
-```tm
+```
 if x > 0 {
     println("positive");
 } else if (x == 0) {
@@ -236,7 +236,7 @@ forStmt → 'for' typeSpec IDENTIFIER 'in' expression block
         | 'for' typeSpec IDENTIFIER '=' expression ';' expression ';' expression block
 ```
 
-```tm
+```
 for int32 x in arr { println(x); }
 for int32 i in 0..10 { println(i); }
 for int32 i = 0; i < 10; i++ { println(i); }
@@ -250,7 +250,7 @@ doWhileStmt → 'do' block 'while' ('(' expression ')' | expression) ';'
 loopStmt → 'loop' block
 ```
 
-```tm
+```
 while x > 0 { x -= 1; }
 do { x += 1; } while x < 10;
 loop { if done { break; } }
@@ -264,7 +264,7 @@ caseClause → 'case' expression (',' expression)* block
 defaultClause → 'default' block
 ```
 
-```tm
+```
 switch x {
     case 1 { println("one"); }
     case 2, 3 { println("two or three"); }
@@ -281,7 +281,7 @@ catchClause → 'catch' '(' typeSpec IDENTIFIER ')' block
 finallyClause → 'finally' block
 ```
 
-```tm
+```
 try {
     riskyOperation();
 } catch (Error e) {
@@ -377,7 +377,7 @@ expression 'catch' block     // enum unwrap with inline catch
 
 Example:
 
-```tm
+```
 auto value = divide(10, 0) catch {
     println(it.message);
     ret 1;
@@ -448,7 +448,7 @@ fnTypeSpec → 'fn' '(' (typeSpec (',' typeSpec)*)? ')' '->' typeSpec
 
 ### Comments
 
-```tm
+```
 // Line comment
 
 /* Block

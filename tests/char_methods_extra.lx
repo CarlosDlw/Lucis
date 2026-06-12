@@ -3,7 +3,7 @@ namespace Main;
 use std::log::println;
 use std::test::{ assertEqual };
 
-int32 testCharMethodsExtra() {
+fn testCharMethodsExtra() int32 {
     println("[Testing extra char methods...]");
 
     char hx = 'F';

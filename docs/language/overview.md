@@ -38,12 +38,12 @@ T sits in the same space as C, Zig, Odin, and V — compiled languages with manu
 
 ## Hello World
 
-```t
+```
 namespace Hello;
 
 use std::log::println;
 
-int32 main() {
+fn main() int32 {
     println("Hello, world!");
     ret 0;
 }

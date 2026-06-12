@@ -3,7 +3,7 @@ namespace Main;
 use std::log::println;
 use std::test::{ assertEqual };
 
-int32 testIntMethodsExtra() {
+fn testIntMethodsExtra() int32 {
     println("[Testing extra integer methods...]");
 
     int32 a = -42;

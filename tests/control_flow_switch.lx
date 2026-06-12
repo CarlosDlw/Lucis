@@ -3,7 +3,7 @@ namespace Main;
 use std::log::println;
 use std::test::{ assertEqual };
 
-int32 testControlFlowSwitch() {
+fn testControlFlowSwitch() int32 {
     println("[Testing control flow: switch...]");
 
     int32 day = 3;

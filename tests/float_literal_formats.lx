@@ -3,7 +3,7 @@ namespace Main;
 use std::log::println;
 use std::test::{ assertEqual };
 
-int32 testFloatLiteralFormats() {
+fn testFloatLiteralFormats() int32 {
     println("[Testing float literal formats...]");
 
     float64 a = 3.14;

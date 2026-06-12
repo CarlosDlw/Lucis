@@ -4,7 +4,7 @@ Cryptographic hashing and utility functions.
 
 ## Import
 
-```tm
+```
 use std::crypto::{ sha256String, md5String, hmacSha256, randomBytes };
 ```
 
@@ -37,7 +37,7 @@ use std::crypto::{ sha256String, md5String, hmacSha256, randomBytes };
 
 ## Example
 
-```tm
+```
 use std::crypto::{ md5String, sha256String, hmacSha256, randomBytes };
 use std::log::println;
 

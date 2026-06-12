@@ -6,7 +6,7 @@ Lux's standard library provides 23 modules covering I/O, math, strings, file sys
 
 ## Importing
 
-```tm
+```
 use std::log::println;
 use std::math::{ sqrt, PI };
 ```

@@ -8,14 +8,14 @@ Structs are user-defined composite types that group named fields together. Lux s
 
 A struct is defined with the `struct` keyword followed by a name and a block of typed fields:
 
-```tm
+```
 struct Point {
     int32 x;
     int32 y;
 }
 ```
 
-```tm
+```
 struct Particle {
     Vec2 pos;
     int32 speed;
@@ -32,7 +32,7 @@ Fields follow the standard type-first declaration syntax.
 
 Structs are instantiated using a literal syntax with named fields:
 
-```tm
+```
 Point p = Point { x: 10, y: 20 };
 println(p.x);   // 10
 println(p.y);   // 20
@@ -46,7 +46,7 @@ All fields must be specified in the literal.
 
 Fields are accessed with dot notation and can be reassigned:
 
-```tm
+```
 Point p = Point { x: 10, y: 20 };
 println(p.x);   // 10
 
@@ -60,7 +60,7 @@ println(p.x);   // 99
 
 Structs can contain other structs as fields:
 
-```tm
+```
 struct Vec2 {
     int32 x;
     int32 y;
@@ -85,7 +85,7 @@ println(r.size.x);   // 100
 
 Structs can contain pointer fields, including pointers to their own type (useful for linked data structures):
 
-```tm
+```
 struct Node {
     int32 value;
     *Node next;
@@ -102,7 +102,7 @@ println(a.next->next->value);  // 30
 
 ### Cross-Struct Pointers
 
-```tm
+```
 struct Inner {
     int32 x;
     int32 y;
@@ -132,19 +132,19 @@ The `extend` block adds methods to a struct without modifying its declaration. M
 
 Static methods are called with `Struct::method()` syntax. They don't have access to an instance:
 
-```tm
+```
 struct Vec2 {
     int32 x;
     int32 y;
 }
 
 extend Vec2 {
-    Vec2 create(int32 x, int32 y) {
+    fn create(int32 x, int32 y) Vec2 {
         Vec2 v = Vec2 { x: x, y: y };
         ret v;
     }
 
-    Vec2 zero() {
+    fn zero() Vec2 {
         Vec2 v = Vec2 { x: 0, y: 0 };
         ret v;
     }
@@ -158,9 +158,9 @@ Vec2 z = Vec2::zero();
 
 Instance methods receive `&self` — a pointer to the struct instance. They are called with dot notation:
 
-```tm
+```
 extend Vec2 {
-    int32 manhattanLength(&self) {
+    fn manhattanLength(&self) int32 {
         int32 ax = self->x;
         int32 ay = self->y;
         if (ax < 0) { ax = 0 - ax; }
@@ -168,16 +168,16 @@ extend Vec2 {
         ret ax + ay;
     }
 
-    bool isZero(&self) {
+    fn isZero(&self) bool {
         ret self->x == 0 && self->y == 0;
     }
 
-    Vec2 add(&self, Vec2 other) {
+    fn add(&self, Vec2 other) Vec2 {
         Vec2 result = Vec2 { x: self->x + other.x, y: self->y + other.y };
         ret result;
     }
 
-    void translate(&self, int32 dx, int32 dy) {
+    fn translate(&self, int32 dx, int32 dy) void {
         self->x += dx;
         self->y += dy;
     }
@@ -203,7 +203,7 @@ Inside instance methods, `self` is a pointer (`*StructType`), so fields are acce
 
 Methods can return any type, including enums and other structs:
 
-```tm
+```
 struct Particle {
     Vec2 pos;
     int32 speed;
@@ -212,21 +212,21 @@ struct Particle {
 }
 
 extend Particle {
-    Particle create(int32 x, int32 y) {
+    fn create(int32 x, int32 y) Particle {
         Vec2 p = Vec2 { x: x, y: y };
         Particle part = Particle { pos: p, speed: 1, color: Color::Red, active: true };
         ret part;
     }
 
-    Color getColor(&self) {
+    fn getColor(&self) Color {
         ret self->color;
     }
 
-    Vec2 getPosition(&self) {
+    fn getPosition(&self) Vec2 {
         ret self->pos;
     }
 
-    void deactivate(&self) {
+    fn deactivate(&self) void {
         self->active = false;
     }
 }
@@ -251,7 +251,7 @@ Structs from C headers are automatically imported when using `#include`. They fo
 | 9-16 bytes | Two registers |
 | > 16 bytes | Indirect (sret/byval) |
 
-```tm
+```
 #include "structs.h"
 
 Point p = make_point(10, 20);

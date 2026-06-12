@@ -3,7 +3,7 @@ namespace Main;
 use std::log::println;
 use std::test::{ assertEqual };
 
-int32 testTypeCastingAndChecking() {
+fn testTypeCastingAndChecking() int32 {
     println("[Testing type casting and type checking...]");
 
     int32 base = 42;

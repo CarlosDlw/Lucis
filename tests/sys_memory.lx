@@ -3,7 +3,7 @@ namespace Main;
 use std::log::println;
 use std::test::{ assertEqual };
 
-int32 testSysMemory() {
+fn testSysMemory() int32 {
     println("[Testing lux::sys memory intrinsics...]");
 
     // ── memcpy ─────────────────────────────────────────────────────

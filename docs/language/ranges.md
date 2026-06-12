@@ -15,12 +15,12 @@ Ranges represent a sequence of integer values between a start and end. Lux has t
 
 `start..end` produces values from `start` up to but **not** including `end`:
 
-```t
+```
 namespace ExclusiveDemo;
 
 use std::log::println;
 
-int32 main() {
+fn main() int32 {
     // 0..5 produces: 0, 1, 2, 3, 4
     for int32 i in 0..5 {
         println(i);
@@ -40,12 +40,12 @@ int32 main() {
 
 `start..=end` produces values from `start` up to **and** including `end`:
 
-```t
+```
 namespace InclusiveDemo;
 
 use std::log::println;
 
-int32 main() {
+fn main() int32 {
     // 1..=5 produces: 1, 2, 3, 4, 5
     for int32 i in 1..=5 {
         println(i);
@@ -65,12 +65,12 @@ int32 main() {
 
 Ranges are most commonly used with `for..in` loops to iterate over a sequence of integers:
 
-```t
+```
 namespace RangeLoopDemo;
 
 use std::log::println;
 
-int32 main() {
+fn main() int32 {
     // count from 0 to 9
     for int32 i in 0..10 {
         println(i);
@@ -96,12 +96,12 @@ int32 main() {
 
 Ranges are the primary source for list comprehensions:
 
-```t
+```
 namespace RangeCompDemo;
 
 extern void printf(cstring fmt, ...);
 
-int32 main() {
+fn main() int32 {
     // basic: collect range into array
     [4]int32 nums = [x | for int32 x in 0..4];
     printf(c"%d %d %d %d\n", nums[0], nums[1], nums[2], nums[3]);
@@ -132,7 +132,7 @@ See [Arrays — List Comprehensions](arrays.md) for more examples.
 
 Range operators have very low precedence (level 14 out of 16). They bind looser than arithmetic, comparison, and logical operators. In practice this means you rarely need parentheses:
 
-```t
+```
 for int32 i in 0..count * 2 {
     // 0..(count * 2), not (0..count) * 2
 }

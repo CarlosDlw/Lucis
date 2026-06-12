@@ -8,7 +8,7 @@ T uses a `use` declaration system to import symbols from the standard library an
 
 The standard library is organized into modules under `std::`. Individual symbols are imported with `use`:
 
-```tm
+```
 use std::log::println;
 use std::math::sqrt;
 use std::mem::alloc;
@@ -18,7 +18,7 @@ use std::mem::alloc;
 
 Multiple symbols from the same module can be imported in a single `use` declaration with braces:
 
-```tm
+```
 use std::log::{ println, print, dbg };
 ```
 
@@ -60,27 +60,27 @@ use std::log::{ println, print, dbg };
 
 User-defined functions can be imported from other `.lx` files using the namespace name:
 
-```tm
+```
 // math.lx
 namespace Math;
 
-int32 add(int32 a, int32 b) {
+fn add(int32 a, int32 b) int32 {
     ret a + b;
 }
 
-int32 multiply(int32 a, int32 b) {
+fn multiply(int32 a, int32 b) int32 {
     ret a * b;
 }
 ```
 
-```tm
+```
 // main.lx
 namespace Main;
 
 use Math::add;
 use Math::multiply;
 
-int32 main() {
+fn main() int32 {
     println(add(3, 4));       // 7
     println(multiply(5, 6));  // 30
     ret 0;
@@ -95,7 +95,7 @@ Both files are passed to the compiler together. The `use` declaration resolves s
 
 C headers are included with the `#include` directive (not `use`):
 
-```tm
+```
 #include <stdio.h>       // System header
 #include "mylib.h"       // Local header
 ```
@@ -104,11 +104,11 @@ Functions, structs, enums, and constants from the header are automatically parse
 
 `use` and `#include` can appear in any order. When a C header and a `use` import declare a function with the same name, the **last declaration in file order wins**. The recommended pattern is to place `#include` before `use`, so Lux stdlib functions naturally override C equivalents:
 
-```tm
+```
 #include <stdio.h>              // C sprintf (int32)
 use std::log::{ println, sprintf };  // Lux sprintf (string) ← wins
 
-int32 main() {
+fn main() int32 {
     string msg = sprintf("val={}", 42);
     println(msg);
     ret 0;

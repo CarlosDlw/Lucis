@@ -13,12 +13,12 @@ This page documents all operators in Lux, organized by category, with examples a
 | `%` | Modulo (remainder) | `17 % 5` → `2` |
 | `-` (unary) | Negation | `-42` |
 
-```t
+```
 namespace ArithmeticDemo;
 
 use std::log::println;
 
-int32 main() {
+fn main() int32 {
     int32 a = 10;
     int32 b = 3;
 
@@ -53,12 +53,12 @@ All comparison operators return `bool`:
 | `<=` | Less than or equal | `5 <= 5` → `true` |
 | `>=` | Greater than or equal | `10 >= 10` → `true` |
 
-```t
+```
 namespace ComparisonDemo;
 
 use std::log::println;
 
-int32 main() {
+fn main() int32 {
     int32 a = 10;
     int32 b = 20;
 
@@ -84,12 +84,12 @@ int32 main() {
 | `\|\|` | Logical OR | `true \|\| false` → `true` |
 | `!` | Logical NOT | `!true` → `false` |
 
-```t
+```
 namespace LogicalDemo;
 
 use std::log::println;
 
-int32 main() {
+fn main() int32 {
     bool a = true;
     bool b = false;
 
@@ -119,12 +119,12 @@ int32 main() {
 | `<<` | Left shift | `1 << 4` → `16` |
 | `>>` | Right shift | `64 >> 2` → `16` |
 
-```t
+```
 namespace BitwiseDemo;
 
 use std::log::println;
 
-int32 main() {
+fn main() int32 {
     int32 a = 0b1100;    // 12 in binary
     int32 b = 0b1010;    // 10 in binary
 
@@ -166,12 +166,12 @@ int32 main() {
 | `<<=` | Left shift and assign |
 | `>>=` | Right shift and assign |
 
-```t
+```
 namespace AssignDemo;
 
 use std::log::println;
 
-int32 main() {
+fn main() int32 {
     int32 x = 10;
     x += 5;      println(x);  // 15
     x -= 3;      println(x);  // 12
@@ -202,16 +202,16 @@ See [Variables — Increment and Decrement](variables.md#increment-and-decrement
 
 The ternary operator provides inline conditional expressions:
 
-```t
+```
 int32 max = a > b ? a : b;
 ```
 
-```t
+```
 namespace TernaryDemo;
 
 use std::log::println;
 
-int32 main() {
+fn main() int32 {
     int32 a = 10;
     int32 b = 20;
 
@@ -234,16 +234,16 @@ int32 main() {
 
 The `??` operator provides a fallback value when a pointer is null:
 
-```t
+```
 int32 result = ptr ?? 0;    // 0 if ptr is null
 ```
 
-```t
+```
 namespace NullCoalDemo;
 
 use std::log::println;
 
-int32 main() {
+fn main() int32 {
     *int32 valid = null;
     int32 fallback = valid ?? 42;
     println(fallback);   // 42
@@ -261,12 +261,12 @@ int32 main() {
 | `sizeof(T)` | Size of type in bytes | `sizeof(int32)` → `4` |
 | `typeof(expr)` | Type name as string | `typeof(42)` → `"int32"` |
 
-```t
+```
 namespace TypeOpDemo;
 
 use std::log::println;
 
-int32 main() {
+fn main() int32 {
     int32 x = 42;
 
     float64 f = x as float64;
@@ -304,7 +304,7 @@ See [Ranges](ranges.md) for full documentation.
 
 `::` is used for namespace access, enum variants, and static method calls:
 
-```t
+```
 use std::log::println;        // module access
 Color c = Color::Red;          // enum variant
 int32 r = Math::compute(x);    // static method
@@ -314,7 +314,7 @@ int32 r = Math::compute(x);    // static method
 
 `...` is used in variadic function declarations:
 
-```t
+```
 extern int32 printf(*char fmt, ...);
 ```
 

@@ -10,11 +10,11 @@ This page explains how struct passing works, why it matters, and how to use it.
 
 You don't need to think about any of this for normal usage. Just include a C header, call functions that take or return structs, and it works:
 
-```tm
+```
 #include <stdio.h>
 #include "structs.h"
 
-int32 main() {
+fn main() int32 {
     Point p = make_point(10, 20);
     int32 sum = point_sum(p);
     printf(c"sum = %d\n", sum);    // 30
@@ -45,7 +45,7 @@ Point make_point(int x, int y);
 int point_sum(Point p);
 ```
 
-```tm
+```
 // Lux code
 #include "structs.h"
 
@@ -70,7 +70,7 @@ Pair64 make_pair64(long a, long b);
 long pair64_sum(Pair64 p);
 ```
 
-```tm
+```
 // Lux code
 #include "structs.h"
 
@@ -97,7 +97,7 @@ Vec4 make_vec4(long w, long x, long y, long z);
 long vec4_sum(Vec4 v);
 ```
 
-```tm
+```
 // Lux code
 #include "structs.h"
 
@@ -136,7 +136,7 @@ typedef struct {
 } Rect;         // 16 bytes → two registers
 ```
 
-```tm
+```
 // Lux code
 #include "structs.h"
 
@@ -205,14 +205,14 @@ long vec4_sum(Vec4 v) { return v.w + v.x + v.y + v.z; }
 int rect_area(Rect r) { return r.size.x * r.size.y; }
 ```
 
-```tm
+```
 // main.lx
 namespace StructAbiTest;
 
 #include <stdio.h>
 #include "structs.h"
 
-int32 main() {
+fn main() int32 {
     // Small struct (8 bytes — 1 register)
     Point p = make_point(10, 20);
     int32 ps = point_sum(p);
@@ -255,7 +255,7 @@ rect_area = 600
 
 Once you have a C struct in Lux, you access fields with dot notation, just like Lux structs:
 
-```tm
+```
 Point p = make_point(10, 20);
 printf(c"x=%d, y=%d\n", p.x, p.y);
 
@@ -266,7 +266,7 @@ printf(c"x=%d\n", p.x);    // 99
 
 Pointers to C structs use arrow notation:
 
-```tm
+```
 *Point pp = &p;
 printf(c"x=%d\n", pp->x);    // 99
 ```

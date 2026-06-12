@@ -3,7 +3,7 @@ namespace Main;
 use std::log::println;
 use std::test::{ assertEqual };
 
-int32 testIntTypes() {
+fn testIntTypes() int32 {
     println("[Testing integer types...]");
 
     int1 x = 1;

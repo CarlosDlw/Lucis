@@ -3,7 +3,7 @@ namespace Main;
 use std::log::println;
 use std::test::{ assertEqual };
 
-int32 arrayParamLenAndFirst([]string names) {
+fn arrayParamLenAndFirst([]string names) int32 {
     // Methods currently supported directly on []T parameters (slice lowering path)
     assertEqual(names.len(), 3);
     assertEqual(names.isEmpty(), false);
@@ -70,7 +70,7 @@ int32 arrayParamLenAndFirst([]string names) {
     ret names.len();
 }
 
-int32 testArrayFeaturesFull() {
+fn testArrayFeaturesFull() int32 {
     println("[Testing full array feature/method coverage...]");
 
     // Declaration forms

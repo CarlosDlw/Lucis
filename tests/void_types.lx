@@ -3,15 +3,15 @@ namespace Main;
 use std::log::println;
 use std::test::{ assertEqual };
 
-void writeAnswer(*int32 out) {
+fn writeAnswer(*int32 out) void {
     *out = 42;
 }
 
-void clearValue(*int32 out) {
+fn clearValue(*int32 out) void {
     *out = 0;
 }
 
-int32 testVoidTypes() {
+fn testVoidTypes() int32 {
     println("[Testing void type...]");
 
     int32 value = -1;

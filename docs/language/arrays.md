@@ -12,7 +12,7 @@ There are two forms of array declaration:
 
 The size is specified explicitly in the type:
 
-```tm
+```
 [5]int32 nums = [10, 20, 30, 40, 50];
 [3]float64 coords = [1.0, 2.5, 3.7];
 [6]char hello = ['H', 'e', 'l', 'l', 'o', '\0'];
@@ -22,7 +22,7 @@ The size is specified explicitly in the type:
 
 The size is determined from the initializer:
 
-```tm
+```
 []int32 nums = [10, 20, 30, 40, 50];
 []string names = ["alice", "bob", "carol"];
 ```
@@ -35,7 +35,7 @@ Both forms produce the same result — a contiguous block of `N` elements on the
 
 Elements are accessed with zero-based indexing using `[i]`:
 
-```tm
+```
 []int32 nums = [10, 20, 30, 40, 50];
 println(nums[0]);   // 10
 println(nums[2]);   // 30
@@ -46,7 +46,7 @@ println(nums[4]);   // 50
 
 Individual elements can be reassigned:
 
-```tm
+```
 []int32 nums = [10, 20, 30];
 nums[1] = 99;
 println(nums[1]);   // 99
@@ -58,7 +58,7 @@ println(nums[1]);   // 99
 
 Arrays can be nested to create matrices and higher-dimensional structures:
 
-```tm
+```
 [][]int32 matrix = [[1, 2, 3], [4, 5, 6]];
 println(matrix[0][0]);   // 1
 println(matrix[0][2]);   // 3
@@ -105,7 +105,7 @@ All arrays support the following built-in methods:
 | `join` | `(string) -> string` | Join elements with separator |
 | `rotate` | `(int64)` | Rotate elements (positive = right, negative = left) |
 
-```tm
+```
 []int32 nums = [30, 10, 20, 10, 40];
 
 println(nums.len());        // 5
@@ -131,35 +131,35 @@ Arrays can be created using list comprehension syntax, which combines generation
 
 ### Basic Generation
 
-```tm
+```
 [4]int32 seq = [x | for int32 x in 0..4];
 // [0, 1, 2, 3]
 ```
 
 ### With Transformation
 
-```tm
+```
 [4]int32 squares = [x * x | for int32 x in 0..4];
 // [0, 1, 4, 9]
 ```
 
 ### Inclusive Range
 
-```tm
+```
 [5]int32 incl = [x | for int32 x in 1..=5];
 // [1, 2, 3, 4, 5]
 ```
 
 ### With Filter
 
-```tm
+```
 [8]int32 evens = [x | for int32 x in 0..8 if x % 2 == 0];
 // [0, 2, 4, 6]
 ```
 
 ### Transformation + Filter
 
-```tm
+```
 [6]int32 oddSquares = [x * x | for int32 x in 0..6 if x % 2 != 0];
 // [1, 9, 25]
 ```
@@ -172,7 +172,7 @@ Arrays can be created using list comprehension syntax, which combines generation
 
 Fixed-size arrays can decay to pointers when passed to C functions, similar to C:
 
-```tm
+```
 [6]char hello = ['H', 'e', 'l', 'l', 'o', '\0'];
 puts(&hello as *char);
 ```

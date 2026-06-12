@@ -18,7 +18,7 @@ struct SCoreRect {
     SCoreVec2 size;
 }
 
-int32 testStructsCore() {
+fn testStructsCore() int32 {
     println("[Testing structs: core/nested/mutation...]");
 
     SCorePoint p = SCorePoint { x: 10, y: 20 };

@@ -3,7 +3,7 @@ namespace Main;
 use std::log::println;
 use std::test::{ assertEqual };
 
-int32 testArrayTypes() {
+fn testArrayTypes() int32 {
     println("[Testing array types...]");
 
     [5]int32 fixed = [1, 2, 3, 4, 5];

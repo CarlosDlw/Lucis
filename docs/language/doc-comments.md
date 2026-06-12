@@ -31,7 +31,7 @@ A doc-comment must appear **immediately before** the declaration it documents, w
 
 ```lux
 /** Computes the absolute value of n. */
-int32 abs(int32 n) {
+fn abs(int32 n) int32 {
     ret n < 0 ? -n : n;
 }
 ```
@@ -39,7 +39,7 @@ int32 abs(int32 n) {
 ```lux
 /** Computes the absolute value of n. */
 
-int32 abs(int32 n) {   // one blank line — still valid
+fn abs(int32 n) int32 {   // one blank line — still valid
     ret n < 0 ? -n : n;
 }
 ```
@@ -55,7 +55,7 @@ The text before the first `@tag` is the **summary** — a free-form description 
  * Computes the greatest common divisor of two integers
  * using the Euclidean algorithm.
  */
-int32 gcd(int32 a, int32 b) { ... }
+fn gcd(int32 a, int32 b) int32 { ... }
 ```
 
 The summary is displayed first in hover information and can span multiple lines.
@@ -81,7 +81,7 @@ Document function parameters, struct fields, or properties. Syntax: `@tag name d
  * @param y The vertical position
  * @return A new Point with the given coordinates
  */
-Point create(int32 x, int32 y) { ... }
+fn create(int32 x, int32 y) Point { ... }
 ```
 
 ```lux
@@ -119,9 +119,9 @@ Provide a single-line or short description. Syntax: `@tag description`
  * @param path The file path to read
  * @return The file contents as a string
  * @throws If the file does not exist or cannot be read
- * @since 0.1.0
+ * @since 0.0.1 beta
  */
-string readFile(string path) { ... }
+fn readFile(string path) string { ... }
 ```
 
 ```lux
@@ -130,7 +130,7 @@ string readFile(string path) { ... }
  * @deprecated This function will be removed in v2.0
  * @see newFunction
  */
-void oldFunction() { ... }
+fn oldFunction() void { ... }
 ```
 
 ### Block Tags
@@ -165,7 +165,7 @@ Capture multi-line content until the next `@tag` or end of comment. Syntax: `@ta
  * auto result = factorial(5);
  * // result == 120
  */
-int64 factorial(int32 n) { ... }
+fn factorial(int32 n) int64 { ... }
 ```
 
 ### Flag Tags
@@ -186,7 +186,7 @@ Markers with no arguments. Syntax: just `@tag` alone.
  * Internal helper — do not call directly.
  * @internal
  */
-bool validateInput(int32 x) { ... }
+fn validateInput(int32 x) bool { ... }
 ```
 
 ## How Doc-Comments Appear in the Editor
@@ -239,7 +239,7 @@ When typing inside a `/** */` block and pressing `@`, the editor suggests all av
  *
  * Used for movement and orientation in tile-based systems.
  *
- * @since 0.3.0
+ * @since 0.0.1 beta
  * @see Point
  */
 enum Direction {
@@ -271,7 +271,7 @@ extend Point {
      * @example
      * auto p = Point::create(10, 20);
      */
-    Point create(int32 x, int32 y) {
+    fn create(int32 x, int32 y) Point {
         ret Point{ x: x, y: y };
     }
 }
@@ -291,7 +291,7 @@ extend Point {
      * auto d = p.manhattan();
      * // d == 7
      */
-    int32 manhattan(&self) {
+    fn manhattan(&self) int32 {
         auto ax = self.x < 0 ? -self.x : self.x;
         auto ay = self.y < 0 ? -self.y : self.y;
         ret ax + ay;

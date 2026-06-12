@@ -3,7 +3,7 @@ namespace Main;
 use std::log::println;
 use std::test::{ assertEqual };
 
-int32 testIntegerLiteralFormats() {
+fn testIntegerLiteralFormats() int32 {
     println("[Testing integer literal formats...]");
 
     int32 dec = 255;

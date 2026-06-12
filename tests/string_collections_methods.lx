@@ -3,7 +3,7 @@ namespace Main;
 use std::log::println;
 use std::test::{ assertEqual };
 
-int32 testStringCollectionsMethods() {
+fn testStringCollectionsMethods() int32 {
     println("[Testing string collection methods...]");
 
     string base = "a,b,c";

@@ -10,7 +10,7 @@ This page covers expression forms beyond individual operators (see [Operators](o
 
 The ternary operator `? :` evaluates one of two expressions based on a condition:
 
-```tm
+```
 int32 a = 10;
 int32 b = 20;
 
@@ -23,7 +23,7 @@ println(min);   // 10
 
 Ternary expressions can be nested:
 
-```tm
+```
 int32 x = 5;
 int32 result = x > 10 ? 1 : (x > 3 ? 2 : 3);
 println(result);   // 2
@@ -31,7 +31,7 @@ println(result);   // 2
 
 And used inside larger expressions:
 
-```tm
+```
 int32 doubled = (a > 5 ? a : b) * 2;
 println(doubled);   // 20
 ```
@@ -42,7 +42,7 @@ println(doubled);   // 20
 
 The `??` operator provides a fallback value when a pointer is `null`:
 
-```tm
+```
 int32 val = 42;
 *int32 ptr = &val;
 
@@ -62,7 +62,7 @@ Only works with pointer types. If the pointer is non-null, its dereferenced valu
 
 The `as` keyword casts a value from one type to another:
 
-```tm
+```
 int32 x = 42;
 int64 wide = x as int64;
 float64 f = x as float64;
@@ -79,7 +79,7 @@ Casts are type-checked by the compiler. See [Types](types.md) for the full conve
 
 The `is` keyword checks whether an expression matches a given type:
 
-```tm
+```
 bool check = x is int32;   // true
 ```
 
@@ -89,7 +89,7 @@ bool check = x is int32;   // true
 
 `sizeof` returns the byte size of a type at compile time:
 
-```tm
+```
 println(sizeof(int8));     // 1
 println(sizeof(int32));    // 4
 println(sizeof(int64));    // 8
@@ -100,7 +100,7 @@ println(sizeof(char));     // 1
 
 `typeof` returns the type name as a string at runtime:
 
-```tm
+```
 string name = typeof(42);   // "int32"
 ```
 
@@ -110,7 +110,7 @@ string name = typeof(42);   // "int32"
 
 Both prefix and postfix forms are supported:
 
-```tm
+```
 int32 a = 5;
 
 // Prefix: increments, then returns new value
@@ -123,7 +123,7 @@ int32 y = x++;   // x = 11, y = 10
 
 Can be used as standalone statements:
 
-```tm
+```
 int32 n = 0;
 n++;
 n++;
@@ -137,7 +137,7 @@ println(n);   // 3
 
 Structs are created with named field syntax:
 
-```tm
+```
 Point p = Point { x: 10, y: 20 };
 ```
 
@@ -149,7 +149,7 @@ See [Structs](structs.md) for details.
 
 Enum variants are accessed with `::` scope resolution:
 
-```tm
+```
 Color c = Color::Red;
 
 Result<int32, string> ok = Result<int32, string>::Ok(10);
@@ -158,7 +158,7 @@ Shape s = Shape::Circle { r: 4.0 };
 
 Variant checks also work inside expressions via `is`:
 
-```tm
+```
 if ok is Result<int32, string>::Ok(value) {
 	println(value);
 }
@@ -172,7 +172,7 @@ See [Enums](enums.md) for details.
 
 Methods are called with dot notation on values or arrow notation on pointers:
 
-```tm
+```
 int32 x = -42;
 int32 a = x.abs();        // 42
 
@@ -191,7 +191,7 @@ See [Types](types.md) for all built-in type methods and [Structs](structs.md) fo
 
 Array literals create arrays, and indexing accesses elements:
 
-```tm
+```
 []int32 nums = [10, 20, 30];
 println(nums[0]);   // 10
 
@@ -202,7 +202,7 @@ println(matrix[1][0]);   // 3
 
 Subscript also works on `vec<T>` and `map<K, V>`:
 
-```tm
+```
 vec<int32> v = [1, 2, 3];
 println(v[0]);   // 1
 
@@ -217,7 +217,7 @@ println(m["key"]);   // 42
 
 List comprehensions generate arrays inline:
 
-```tm
+```
 [4]int32 squares = [x * x | for int32 x in 0..4];
 // [0, 1, 4, 9]
 
@@ -233,7 +233,7 @@ See [Arrays](arrays.md) for full details.
 
 Address-of (`&`) and dereference (`*`) operate on pointers:
 
-```tm
+```
 int32 x = 42;
 *int32 p = &x;
 println(*p);   // 42
@@ -241,7 +241,7 @@ println(*p);   // 42
 
 Arrow (`->`) accesses struct fields through pointers:
 
-```tm
+```
 *Point ptr = &p;
 println(ptr->x);
 ```
@@ -254,7 +254,7 @@ See [Pointers](pointers.md) for details.
 
 Concurrency expressions create and resolve tasks:
 
-```tm
+```
 Task<int32> t = spawn compute(10, 20);
 int32 result = await t;
 ```

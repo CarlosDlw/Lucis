@@ -6,15 +6,15 @@ use std::thread::{ Task, Mutex };
 
 extern void lux_mutexFree(*void mtx);
 
-int32 concurrencyComputeA() {
+fn concurrencyComputeA() int32 {
     ret 30;
 }
 
-int32 concurrencyComputeB() {
+fn concurrencyComputeB() int32 {
     ret 70;
 }
 
-int32 testConcurrencyMutexLock() {
+fn testConcurrencyMutexLock() int32 {
     println("[Testing concurrency: mutex/lock...]");
 
     Task<int32> t1 = spawn concurrencyComputeA();

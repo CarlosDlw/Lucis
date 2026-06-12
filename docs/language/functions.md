@@ -4,35 +4,35 @@ This page covers function declaration, parameters, return values, variadic funct
 
 ## Declaration
 
-Functions are declared with type-first syntax: return type, name, parameters, and body:
+Functions are declared with the `fn` keyword, followed by name, parameters, and return type:
 
-```t
-int32 add(int32 a, int32 b) {
+```
+fn add(int32 a, int32 b) int32 {
     ret a + b;
 }
 
-void greet(string name) {
+fn greet(string name) void {
     println(name);
 }
 ```
 
-- The return type comes before the function name.
+- The return type comes after the parameter list.
 - Parameters are declared with `type name` syntax.
 - Use `ret` to return a value. There is no implicit return.
 - Use `void` as the return type when the function returns nothing.
 
 ## Calling Functions
 
-```t
+```
 namespace CallDemo;
 
 use std::log::println;
 
-int32 square(int32 x) {
+fn square(int32 x) int32 {
     ret x * x;
 }
 
-int32 main() {
+fn main() int32 {
     int32 result = square(5);
     println(result);    // 25
 
@@ -44,8 +44,8 @@ int32 main() {
 
 Every non-void function must return a value with `ret`:
 
-```t
-int32 factorial(int32 n) {
+```
+fn factorial(int32 n) int32 {
     if n <= 1 {
         ret 1;
     }
@@ -55,8 +55,8 @@ int32 factorial(int32 n) {
 
 `void` functions can use `ret;` without a value, or simply let execution reach the end of the function:
 
-```t
-void log_if_positive(int32 x) {
+```
+fn log_if_positive(int32 x) void {
     if x <= 0 {
         ret;    // early return, no value
     }
@@ -66,8 +66,8 @@ void log_if_positive(int32 x) {
 
 Returning a heap-backed local transfers ownership to the caller:
 
-```t
-string buildMsg() {
+```
+fn buildMsg() string {
     string msg = fromCStrCopy(c"ok");
     ret msg; // move to caller
 }
@@ -77,12 +77,12 @@ string buildMsg() {
 
 Parameters use the same type-first syntax as variable declarations:
 
-```t
-float64 circle_area(float64 radius) {
+```
+fn circle_area(float64 radius) float64 {
     ret 3.14159 * radius * radius;
 }
 
-int32 clamp_value(int32 value, int32 min_val, int32 max_val) {
+fn clamp_value(int32 value, int32 min_val, int32 max_val) int32 {
     if value < min_val { ret min_val; }
     if value > max_val { ret max_val; }
     ret value;
@@ -103,12 +103,12 @@ Ownership diagnostics exposed through LSP include stable codes (for example `OWN
 
 T supports variadic functions — functions that accept a variable number of arguments. The variadic parameter uses `...` before the parameter name:
 
-```t
+```
 namespace VariadicDemo;
 
 use std::log::println;
 
-int32 sum(int32 ...values) {
+fn sum(int32 ...values) int32 {
     int32 total = 0;
     for int32 x in values {
         total = total + x;
@@ -116,13 +116,13 @@ int32 sum(int32 ...values) {
     ret total;
 }
 
-void print_all(int32 ...values) {
+fn print_all(int32 ...values) void {
     for int32 x in values {
         println(x);
     }
 }
 
-int32 main() {
+fn main() int32 {
     println(sum(1, 2, 3, 4, 5));    // 15
     println(sum(10, 20));            // 30
     println(sum());                   // 0
@@ -139,8 +139,8 @@ int32 main() {
 - The variadic parameter must be the last parameter (or the only one).
 - You can have regular parameters before the variadic one:
 
-```t
-int32 sum_with_base(int32 base, int32 ...values) {
+```
+fn sum_with_base(int32 base, int32 ...values) int32 {
     int32 total = base;
     for int32 x in values {
         total = total + x;
@@ -153,12 +153,12 @@ int32 sum_with_base(int32 base, int32 ...values) {
 
 - Inside the function, the variadic parameter behaves like an array. You can iterate it with `for..in`, access elements by index, and check its length:
 
-```t
-int32 first_value(int32 ...values) {
+```
+fn first_value(int32 ...values) int32 {
     ret values[0];
 }
 
-int32 count_values(int32 ...values) {
+fn count_values(int32 ...values) int32 {
     int64 n = values.len;
     ret n;
 }
@@ -168,10 +168,10 @@ int32 count_values(int32 ...values) {
 
 C-style variadic functions (like `printf`) use `...` without a parameter name in `extern` declarations:
 
-```t
+```
 extern int32 printf(*char fmt, ...);
 
-int32 main() {
+fn main() int32 {
     printf(c"Hello %s, you are %d years old\n", c"Alice", 30);
     ret 0;
 }
@@ -183,12 +183,12 @@ This is different from Lux variadic functions — C variadic arguments are not t
 
 Lux also supports untyped variadic functions — functions declared with a bare `...` as the last parameter, without a type or parameter name:
 
-```t
+```
 namespace UntypedVariadicDemo;
 
 use std::log::println;
 
-void sum(int32 count, ...) {
+fn sum(int32 count, ...) void {
     int32 total = 0;
 
     va_list va = lux::unsafe::va_list();
@@ -203,7 +203,7 @@ void sum(int32 count, ...) {
     println(total);
 }
 
-int32 main() {
+fn main() int32 {
     sum(3, 10, 20, 30);   // 60
     sum(2, 42, 100);       // 142
     ret 0;
@@ -212,8 +212,8 @@ int32 main() {
 
 When arguments of different types are needed, use the corresponding typed helper for each:
 
-```t
-void print_mixed(int32 count, ...) {
+```
+fn print_mixed(int32 count, ...) void {
     va_list va = lux::unsafe::va_list();
     lux::unsafe::va_start(va);
 
@@ -230,7 +230,7 @@ void print_mixed(int32 count, ...) {
     lux::unsafe::va_end(va);
 }
 
-int32 main() {
+fn main() int32 {
     print_mixed(4, 42, 3.14, true, c"hello");
     ret 0;
 }
@@ -261,20 +261,20 @@ int32 main() {
 
 Functions can be referenced by their address and stored in variables:
 
-```t
+```
 namespace FnPointerDemo;
 
 use std::log::println;
 
-int32 add(int32 a, int32 b) {
+fn add(int32 a, int32 b) int32 {
     ret a + b;
 }
 
-int32 multiply(int32 a, int32 b) {
+fn multiply(int32 a, int32 b) int32 {
     ret a * b;
 }
 
-int32 main() {
+fn main() int32 {
     fn(int32, int32) -> int32 op = add;
     println(op(3, 4));      // 7
 
@@ -289,13 +289,13 @@ int32 main() {
 
 The type of a function pointer uses the `fn` keyword:
 
-```t
+```
 fn(ParamType1, ParamType2) -> ReturnType
 ```
 
 Examples:
 
-```t
+```
 fn(int32, int32) -> int32       // takes two int32, returns int32
 fn(string) -> void              // takes string, returns nothing
 fn() -> bool                    // takes nothing, returns bool
@@ -305,7 +305,7 @@ fn() -> bool                    // takes nothing, returns bool
 
 Use `type` to create named aliases for function types:
 
-```t
+```
 type BinOp = fn(int32, int32) -> int32;
 type Predicate = fn(int32) -> bool;
 type Action = fn() -> void;
@@ -315,21 +315,21 @@ type Action = fn() -> void;
 
 Functions can accept function pointers as parameters and return them:
 
-```t
+```
 namespace HigherOrderDemo;
 
 use std::log::println;
 
 type BinOp = fn(int32, int32) -> int32;
 
-int32 add(int32 a, int32 b) { ret a + b; }
-int32 mul(int32 a, int32 b) { ret a * b; }
+fn add(int32 a, int32 b) int32 { ret a + b; }
+fn mul(int32 a, int32 b) int32 { ret a * b; }
 
-int32 apply(BinOp op, int32 x, int32 y) {
+fn apply(BinOp op, int32 x, int32 y) int32 {
     ret op(x, y);
 }
 
-int32 main() {
+fn main() int32 {
     println(apply(add, 3, 4));    // 7
     println(apply(mul, 5, 6));    // 30
 
@@ -341,17 +341,17 @@ int32 main() {
 
 Functions can be called before they are defined in the same file. The compiler resolves all function declarations before generating code:
 
-```t
+```
 namespace ForwardDemo;
 
 use std::log::println;
 
-int32 main() {
+fn main() int32 {
     println(double_value(21));    // 42 — works even though defined below
     ret 0;
 }
 
-int32 double_value(int32 x) {
+fn double_value(int32 x) int32 {
     ret x * 2;
 }
 ```
@@ -364,8 +364,8 @@ Every Lux program must have a `main` function that:
 - Takes no parameters, or a single `vec<string>` parameter for command-line arguments
 - Ends with `ret 0;` (or another integer exit code)
 
-```t
-int32 main() {
+```
+fn main() int32 {
     // program logic
     ret 0;
 }
@@ -375,10 +375,10 @@ int32 main() {
 
 To receive command-line arguments, declare `main` with a `vec<string>` parameter:
 
-```t
+```
 use std::log::println;
 
-int32 main(vec<string> args) {
+fn main(vec<string> args) int32 {
     for string arg in args {
         println(arg);
     }

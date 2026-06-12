@@ -26,10 +26,10 @@ This means you **cannot** pass a T `string` directly to a C function that expect
 
 The `c"..."` syntax creates a null-terminated string constant at compile time. Its type is `*char` — exactly what C functions expect:
 
-```tm
+```
 extern int32 puts(*char s);
 
-int32 main() {
+fn main() int32 {
     puts(c"Hello, World!");
     ret 0;
 }
@@ -51,10 +51,10 @@ C string literals support the same escape sequences as regular strings:
 | `\0` | Null byte |
 | `\xHH` | Hex byte (e.g., `\x41` = 'A') |
 
-```tm
+```
 extern int32 printf(*char fmt, ...);
 
-int32 main() {
+fn main() int32 {
     printf(c"Line 1\nLine 2\n");
     printf(c"Tab\there\n");
     printf(c"Quote: \"\n");
@@ -76,7 +76,7 @@ Use C string literals when:
 - You're passing it directly to a C function
 - You don't need to manipulate it as a Lux string first
 
-```tm
+```
 puts(c"This is a constant");                 // direct use
 printf(c"Name: %s, Age: %d\n", c"Alice", 30);  // format string + string arg
 ```
@@ -87,7 +87,7 @@ printf(c"Name: %s, Age: %d\n", c"Alice", 30);  // format string + string arg
 
 `cstring` is a built-in type alias for `*char`. It makes C string declarations more readable:
 
-```tm
+```
 cstring greeting = c"Hello!";
 puts(greeting);
 
@@ -97,7 +97,7 @@ printf(c"Name: %s\n", name);
 
 `cstring` and `*char` are fully interchangeable — they are the exact same type:
 
-```tm
+```
 *char a = c"hello";
 cstring b = a;        // same type, no conversion
 ```
@@ -108,11 +108,11 @@ cstring b = a;        // same type, no conversion
 
 When you have a T `string` and need to pass it to a C function, use the `cstr()` builtin. It allocates a new null-terminated copy:
 
-```tm
+```
 extern int32 puts(*char s);
 extern void free(*void ptr);
 
-int32 main() {
+fn main() int32 {
     string name = "Lux";
     *char c_name = cstr(name);   // allocates: "Lux\0"
     puts(c_name);                // passes to C
@@ -130,7 +130,7 @@ int32 main() {
 
 **Important:** The returned pointer is heap-allocated. You are responsible for freeing it when done. Use `defer` for automatic cleanup:
 
-```tm
+```
 string message = "Hello from Lux";
 *char c_msg = cstr(message);
 defer free(c_msg as *void);    // cleaned up at function exit
@@ -157,10 +157,10 @@ cstr(string) -> *char
 
 When you receive a `*char` from C and want to use it as a T `string`, use `fromCStr()`:
 
-```tm
+```
 extern *char getenv(*char name);
 
-int32 main() {
+fn main() int32 {
     *char home = getenv(c"HOME");
     string home_str = fromCStr(home);
     println(home_str);    // /home/user
@@ -191,7 +191,7 @@ fromCStr(*char) -> string
 
 If you pass `null`, `fromCStr()` returns an empty string `""`:
 
-```tm
+```
 *char ptr = null;
 string s = fromCStr(ptr);
 println(s);    // (empty string)
@@ -203,7 +203,7 @@ println(s);    // (empty string)
 
 If you already know the length of the C string, use `fromCStrLen()` to skip the `strlen()` call:
 
-```tm
+```
 *char data = c"Hello World!!!!!";
 string greeting = fromCStrLen(data, 5);    // takes first 5 bytes: "Hello"
 println(greeting);    // Hello
@@ -232,11 +232,11 @@ This is useful when:
 
 You can safely convert back and forth between Lux strings and C strings:
 
-```tm
+```
 extern int32 strcmp(*char s1, *char s2);
 extern void free(*void ptr);
 
-int32 main() {
+fn main() int32 {
     // Start with a Lux string
     string original = "Round Trip Test";
 
@@ -276,14 +276,14 @@ int32 main() {
 
 ### Forgetting to Free `cstr()` Results
 
-```tm
+```
 // BAD — memory leak!
-void log_name(string name) {
+fn log_name(string name) void {
     puts(cstr(name));    // allocated but never freed
 }
 
 // GOOD — free after use
-void log_name(string name) {
+fn log_name(string name) void {
     *char c = cstr(name);
     defer free(c as *void);
     puts(c);
@@ -292,7 +292,7 @@ void log_name(string name) {
 
 ### Using a T String Where C Expects `*char`
 
-```tm
+```
 extern int32 puts(*char s);
 
 string msg = "Hello";
@@ -302,9 +302,9 @@ puts(cstr(msg));       // CORRECT: convert first
 
 ### Using `fromCStr()` After the Source is Freed
 
-```tm
+```
 // BAD — dangling pointer!
-string get_message() {
+fn get_message() string {
     *char buf = malloc(100 as usize) as *char;
     // ... fill buf ...
     string s = fromCStr(buf);
@@ -313,7 +313,7 @@ string get_message() {
 }
 
 // GOOD — copy before freeing
-string get_message() {
+fn get_message() string {
     *char buf = malloc(100 as usize) as *char;
     // ... fill buf ...
     *char copy = cstr(fromCStr(buf));    // make an owned copy

@@ -4,7 +4,7 @@ Hashing utility functions for general-purpose and data structure use.
 
 ## Import
 
-```tm
+```
 use std::hash::{ hashString, hashInt, hashCombine, hashBytes, crc32 };
 ```
 
@@ -20,7 +20,7 @@ use std::hash::{ hashString, hashInt, hashCombine, hashBytes, crc32 };
 
 ## Example
 
-```tm
+```
 use std::hash::{ hashString, hashInt, hashCombine, crc32 };
 use std::log::println;
 

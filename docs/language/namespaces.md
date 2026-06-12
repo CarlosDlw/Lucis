@@ -8,10 +8,10 @@ Every Lux source file begins with a `namespace` declaration. Namespaces identify
 
 The `namespace` keyword must be the first declaration in every `.lx` file:
 
-```tm
+```
 namespace MyApp;
 
-int32 main() {
+fn main() int32 {
     ret 0;
 }
 ```
@@ -26,28 +26,28 @@ Namespaces enable multi-file compilation. Functions defined in one file can be i
 
 ### File: `math.lx`
 
-```tm
+```
 namespace Math;
 
-int32 add(int32 a, int32 b) {
+fn add(int32 a, int32 b) int32 {
     ret a + b;
 }
 
-int32 multiply(int32 a, int32 b) {
+fn multiply(int32 a, int32 b) int32 {
     ret a * b;
 }
 ```
 
 ### File: `main.lx`
 
-```tm
+```
 namespace Main;
 
 use std::log::println;
 use Math::add;
 use Math::multiply;
 
-int32 main() {
+fn main() int32 {
     int32 sum = add(3, 4);
     int32 prod = multiply(5, 6);
     println(sum);    // 7

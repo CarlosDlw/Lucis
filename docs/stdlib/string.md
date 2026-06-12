@@ -15,7 +15,7 @@ If you keep the result, release it with `freeStr(...)` when you're done:
 use std::str::{ toUpper };
 use std::log::{ println };
 
-int32 main() {
+fn main() int32 {
     string upper = toUpper("hello");
     defer freeStr(upper);
 
@@ -35,7 +35,7 @@ defer freeStr(msg);
 
 ## Import
 
-```tm
+```
 use std::str::{ contains, split, parseInt, toUpper };
 ```
 
@@ -110,7 +110,7 @@ use std::str::{ contains, split, parseInt, toUpper };
 
 ## Example
 
-```tm
+```
 use std::str::{ contains, toUpper, split, parseInt, slice };
 use std::log::println;
 

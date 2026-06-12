@@ -5,7 +5,7 @@ use std::test::{ assertEqual };
 
 extern void free(*void ptr);
 
-int32 testCStringTypes() {
+fn testCStringTypes() int32 {
     println("[Testing cstring type...] ");
 
     string luxStr = "Hello from Lux";

@@ -4,7 +4,7 @@ Functions for time measurement, sleeping, and date/time access.
 
 ## Import
 
-```tm
+```
 use std::time::{ now, sleep, clock, year, month, day, formatTime };
 ```
 
@@ -44,7 +44,7 @@ use std::time::{ now, sleep, clock, year, month, day, formatTime };
 
 ## Example
 
-```tm
+```
 use std::time::{ now, clock, sleep, year, month, day, formatTime, elapsed };
 use std::log::println;
 

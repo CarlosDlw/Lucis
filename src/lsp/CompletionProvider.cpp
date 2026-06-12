@@ -4840,8 +4840,7 @@ std::string CompletionProvider::inferVarType(const std::string &varName,
 
 std::string
 CompletionProvider::formatFuncSignature(LuxParser::FunctionDeclContext *func) {
-  std::string sig = typeSpecToString(func->typeSpec()) + " " +
-                    safeIdAt(func, 0) + "(";
+  std::string sig = "fn " + safeIdAt(func, 0) + "(";
   if (auto *params = func->paramList()) {
     bool first = true;
     for (auto *p : params->param()) {
@@ -4856,14 +4855,13 @@ CompletionProvider::formatFuncSignature(LuxParser::FunctionDeclContext *func) {
       sig += safeText(p->IDENTIFIER());
     }
   }
-  sig += ")";
+  sig += ") " + typeSpecToString(func->typeSpec());
   return sig;
 }
 
 std::string CompletionProvider::formatMethodSignature(
     LuxParser::ExtendMethodContext *method) {
-  std::string sig = typeSpecToString(method->typeSpec()) + " " +
-                    safeIdAt(method, 0) + "(";
+  std::string sig = "fn " + safeIdAt(method, 0) + "(";
   bool isInstance = (method->AMPERSAND() != nullptr);
   if (isInstance) {
     sig += "&" + safeIdAt(method, 1);
@@ -4884,7 +4882,7 @@ std::string CompletionProvider::formatMethodSignature(
       }
     }
   }
-  sig += ")";
+  sig += ") " + typeSpecToString(method->typeSpec());
   return sig;
 }
 

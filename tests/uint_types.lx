@@ -3,7 +3,7 @@ namespace Main;
 use std::log::println;
 use std::test::{ assertEqual };
 
-int32 testUintTypes() {
+fn testUintTypes() int32 {
     println("[Testing unsigned integer types...]");
 
     uint1 u1 = 1;

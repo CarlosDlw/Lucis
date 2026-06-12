@@ -6,7 +6,7 @@ A dynamically-growable array backed by contiguous heap memory.
 
 `vec`, `map`, and `set` are native keywords — no import required.
 
-```tm
+```
 vec<int32> numbers = [];                  // empty
 vec<string> names = ["alice", "bob"];     // with initial values
 ```
@@ -94,7 +94,7 @@ Elements can also be accessed via indexing: `v[0]`, `v[1]`.
 
 ## Example
 
-```tm
+```
 vec<int32> nums = [];
 
 nums.push(3);
@@ -121,7 +121,7 @@ println(nums.join(", "));         // 5, 4, 3, 1, 1
 
 Arrays can be built with list comprehensions and assigned to Vecs:
 
-```tm
+```
 [10]int32 squares = [x * x | for int32 x in 0..10];
 [8]int32 evens = [x | for int32 x in 0..8 if x % 2 == 0];
 ```

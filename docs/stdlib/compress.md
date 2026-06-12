@@ -4,7 +4,7 @@ Data compression and decompression using gzip/deflate.
 
 ## Import
 
-```tm
+```
 use std::compress::{ gzipCompress, gzipDecompress, deflate, inflate };
 ```
 
@@ -20,7 +20,7 @@ use std::compress::{ gzipCompress, gzipDecompress, deflate, inflate };
 
 ## Example
 
-```tm
+```
 use std::compress::{ gzipCompress, gzipDecompress };
 use std::log::println;
 

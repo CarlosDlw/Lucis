@@ -18,7 +18,7 @@ struct SPtrOuter {
     *SPtrInner data;
 }
 
-int32 testStructsPointers() {
+fn testStructsPointers() int32 {
     println("[Testing structs: pointer fields/self-reference...]");
 
     SPtrNode c = SPtrNode { value: 30, next: null };

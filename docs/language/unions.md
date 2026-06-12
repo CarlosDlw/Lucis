@@ -8,7 +8,7 @@ Unions are composite types where all fields share the same memory location. Writ
 
 A union is defined with the `union` keyword followed by a name and a block of typed fields. Unions can also declare type parameters:
 
-```tm
+```
 union IntOrFloat {
     int32 i;
     float32 f;
@@ -28,7 +28,7 @@ The size of the union is the size of its largest field. In this example, both `i
 
 Unions are instantiated with the same literal syntax as structs, specifying the initial field:
 
-```tm
+```
 IntOrFloat u = IntOrFloat { i: 42 };
 printf(c"i = %d\n", u.i);   // i = 42
 
@@ -44,7 +44,7 @@ Union literals must initialize exactly one field, including for generic unions.
 
 Fields are accessed with dot notation. Since all fields share memory, writing to one field changes the raw bits seen by all others:
 
-```tm
+```
 IntOrFloat u = IntOrFloat { i: 42 };
 println(u.i);   // 42
 

@@ -3,7 +3,7 @@ namespace Main;
 use std::log::println;
 use std::test::{ assertEqual };
 
-int32 testSysVolatile() {
+fn testSysVolatile() int32 {
     println("[Testing lux::sys volatile intrinsics...]");
 
     // ── volatile_load / volatile_store int32 ────────────────────

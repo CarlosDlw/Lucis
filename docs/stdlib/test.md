@@ -4,7 +4,7 @@ Built-in test framework with assertion functions.
 
 ## Import
 
-```tm
+```
 use std::test::{ assertEqual, assertTrue, assertFalse, assertNear, log };
 ```
 
@@ -35,7 +35,7 @@ use std::test::{ assertEqual, assertTrue, assertFalse, assertNear, log };
 
 ## Example
 
-```tm
+```
 use std::test::{ assertEqual, assertTrue, assertNear, log };
 use std::math::{ sqrt, PI };
 

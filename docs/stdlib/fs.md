@@ -4,7 +4,7 @@ File system operations for reading, writing, and manipulating files and director
 
 ## Import
 
-```tm
+```
 use std::fs::{ readFile, writeFile, exists, mkdir, listDir };
 ```
 
@@ -55,7 +55,7 @@ use std::fs::{ readFile, writeFile, exists, mkdir, listDir };
 
 ## Example
 
-```tm
+```
 use std::fs::{ writeFile, readFile, exists, mkdir, remove, removeDir };
 use std::log::println;
 

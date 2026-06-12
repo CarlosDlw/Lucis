@@ -1,6 +1,6 @@
 namespace Main;
 
-int32 main() {
+fn main() int32 {
     testIntTypes();
     testIntMethodsExtra();
     testUintTypes();

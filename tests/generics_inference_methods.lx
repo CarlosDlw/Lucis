@@ -3,11 +3,11 @@ namespace Main;
 use std::log::println;
 use std::test::{ assertEqual };
 
-T gIdentity<T>(T value) {
+fn gIdentity<T>(T value) T {
     ret value;
 }
 
-T gPickFirst<T>(T a, T b) {
+fn gPickFirst<T>(T a, T b) T {
     ret a;
 }
 
@@ -16,16 +16,16 @@ struct GBox<T> {
 }
 
 extend GBox<T> {
-    GBox<T> make(T value) {
+    fn make(T value) GBox<T> {
         ret GBox<T> { value: value };
     }
 
-    T getValue(&self) {
+    fn getValue(&self) T {
         ret self.value;
     }
 }
 
-int32 testGenericsInferenceAndMethods() {
+fn testGenericsInferenceAndMethods() int32 {
     println("[Testing generics: inference and methods...]");
 
     int32 a = gIdentity(10);

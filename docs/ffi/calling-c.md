@@ -1,6 +1,6 @@
 # Calling C Functions
 
-T provides two ways to call C functions: manual `extern` declarations and automatic `#include` directives. Both produce identical machine code — there is no performance difference.
+Lux provides two ways to call C functions: manual `extern` declarations and automatic `#include` directives. Both produce identical machine code — there is no performance difference.
 
 ---
 
@@ -8,10 +8,10 @@ T provides two ways to call C functions: manual `extern` declarations and automa
 
 The `extern` keyword declares a C function that exists in an external library. You provide the function signature, and the compiler generates a direct call without any wrapper:
 
-```tm
+```
 extern int32 puts(*char s);
 
-int32 main() {
+fn main() int32 {
     puts(c"Hello from C!");
     ret 0;
 }
@@ -32,7 +32,7 @@ extern ReturnType functionName(ParamType1 paramName1, ParamType2 paramName2, ...
 
 You can declare as many extern functions as you need:
 
-```tm
+```
 extern int32 puts(*char s);
 extern int32 printf(*char fmt, ...);
 extern float64 sqrt(float64 x);
@@ -48,10 +48,10 @@ extern usize strlen(*char s);
 
 C functions that accept a variable number of arguments (like `printf`) use `...` after the last named parameter:
 
-```tm
+```
 extern int32 printf(*char fmt, ...);
 
-int32 main() {
+fn main() tm {
     printf(c"Integer: %d\n", 42);
     printf(c"Float: %.4f\n", 3.1415);
     printf(c"String: %s\n", c"hello");
@@ -72,13 +72,13 @@ The `#include` directive tells the compiler to parse a C header file and automat
 
 System headers are included with angle brackets:
 
-```tm
+```
 #include <stdio.h>
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
 
-int32 main() {
+fn main() int32 {
     printf(c"sqrt(144) = %.0f\n", sqrt(144.0));
 
     *void buf = malloc(64 as usize);
@@ -99,10 +99,10 @@ The compiler automatically discovers system include paths by querying the system
 
 Local headers are included with double quotes and a relative path from the source file:
 
-```tm
+```
 #include "mymath.h"
 
-int32 main() {
+fn main() int32 {
     int32 sum = add(10, 20);
     ret 0;
 }
@@ -163,11 +163,11 @@ lux main.lx ./main   # compiles mymath.c automatically
 
 You can use both in the same file:
 
-```tm
+```
 #include <stdio.h>
 #include "mymath.h"
 
-int32 main() {
+fn main() int32 {
     int32 result = add(10, 20);
     printf(c"add(10, 20) = %d\n", result);
     ret 0;
@@ -191,7 +191,7 @@ double sqrt(double x);
 void* malloc(size_t size);
 ```
 
-```tm
+```
 // In Lux code (no extern needed):
 int32 sum = add(10, 20);       // int → int32
 float64 s = sqrt(144.0);       // double → float64
@@ -213,7 +213,7 @@ Point make_point(int x, int y);
 int point_sum(Point p);
 ```
 
-```tm
+```
 // In Lux code:
 Point p = make_point(10, 20);
 printf(c"x=%d y=%d\n", p.x, p.y);
@@ -236,7 +236,7 @@ typedef enum {
 const char* color_name(Color c);
 ```
 
-```tm
+```
 // In Lux code:
 int32 r = COLOR_RED;     // 0
 int32 g = COLOR_GREEN;   // 1
@@ -257,7 +257,7 @@ Numeric `#define` constants become integer constants:
 #define FLAGS     (1 << 3)    // expression macros are evaluated
 ```
 
-```tm
+```
 // In Lux code:
 int32 pi = PI_APPROX;     // 314159
 int32 max = MAX_ITEMS;     // 100
@@ -271,13 +271,13 @@ The compiler evaluates constant expressions in macros (arithmetic, bit shifts, b
 
 You can use both approaches in the same file. This is useful when a system header declares most functions but you need to add a specific declaration:
 
-```tm
+```
 #include <stdio.h>
 
 // Additional function not in stdio.h
 extern float64 custom_sqrt(float64 x);
 
-int32 main() {
+fn main() int32 {
     printf(c"result = %.2f\n", custom_sqrt(2.0));
     ret 0;
 }
@@ -293,11 +293,11 @@ When a C header and a Lux `use` import declare a function with the same name (e.
 
 If `use` appears **after** `#include`, the Lux stdlib version takes precedence:
 
-```tm
+```
 #include <stdio.h>          // declares C sprintf (returns int32)
 use std::log::sprintf;      // ← overrides: Lux sprintf (returns string)
 
-int32 main() {
+fn main() int32 {
     // Uses Lux sprintf — returns a formatted string
     string msg = sprintf("x={}, y={}", 10, 20);
     println(msg);   // x=10, y=20
@@ -309,11 +309,11 @@ int32 main() {
 
 If `#include` appears **after** `use`, the C version takes precedence:
 
-```tm
+```
 use std::log::sprintf;      // declares Lux sprintf (returns string)
 #include <stdio.h>          // ← overrides: C sprintf (returns int32)
 
-int32 main() {
+fn main() int32 {
     // Uses C sprintf — writes to a char buffer
     // string msg = sprintf(...);  ← compile error: C sprintf returns int32
     ret 0;
@@ -324,7 +324,7 @@ int32 main() {
 
 Place `#include` directives **before** `use` declarations. This way, Lux stdlib functions naturally override any C functions with the same name:
 
-```tm
+```
 #include <stdio.h>
 #include <math.h>
 #include <string.h>
@@ -332,7 +332,7 @@ Place `#include` directives **before** `use` declarations. This way, Lux stdlib 
 use std::log::{ println, sprintf };
 use Utils::{ doubleVal, square };
 
-int32 main() {
+fn main() int32 {
     // printf → C version (no Lux override)
     printf(c"hello %s\n", c"world");
 
@@ -352,10 +352,10 @@ int32 main() {
 
 ### Calling `printf` with Format Specifiers
 
-```tm
+```
 extern int32 printf(*char fmt, ...);
 
-int32 main() {
+fn main() int32 {
     int32 age = 25;
     float64 pi = 3.14159;
     *char name = c"Alice";
@@ -378,12 +378,12 @@ int32 main() {
 
 ### Memory Allocation with `malloc`/`free`
 
-```tm
+```
 extern *void malloc(usize size);
 extern void free(*void ptr);
 extern *void memset(*void s, int32 c, usize n);
 
-int32 main() {
+fn main() int32 {
     // Allocate 10 integers
     *int32 nums = malloc(10 * 4 as usize) as *int32;
     defer free(nums as *void);
@@ -400,13 +400,13 @@ int32 main() {
 
 ### Using Math Functions
 
-```tm
+```
 extern float64 sqrt(float64 x);
 extern float64 sin(float64 x);
 extern float64 cos(float64 x);
 extern float64 pow(float64 base, float64 exp);
 
-int32 main() {
+fn main() int32 {
     float64 pi = 3.14159265358979323846;
 
     float64 s = sqrt(144.0);          // 12.0

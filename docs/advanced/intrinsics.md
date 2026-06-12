@@ -428,7 +428,7 @@ Test it with a simple Lux file:
 namespace Main;
 use std::log::println;
 
-int32 main() {
+fn main() int32 {
     lux::myns::hello();
     int32 x = lux::myns::double_it(21);
     println(x);

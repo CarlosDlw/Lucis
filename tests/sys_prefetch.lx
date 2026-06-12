@@ -2,7 +2,7 @@ namespace Main;
 
 use std::log::println;
 
-int32 testSysPrefetch() {
+fn testSysPrefetch() int32 {
     println("[Testing lux::sys prefetch intrinsics...]");
 
     int32 data = 42;

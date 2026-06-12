@@ -126,7 +126,7 @@ Everything from O2, plus maximum performance transforms:
 
 Computes constant expressions at compile time:
 
-```tm
+```
 int32 x = 10 * 20 + 5;
 ```
 
@@ -143,7 +143,7 @@ int32 x = 10 * 20 + 5;
 
 Removes code that has no effect on the result:
 
-```tm
+```
 int32 unused = 42;      // removed — never read
 int32 result = 5 * 10;
 ret result;
@@ -153,12 +153,12 @@ ret result;
 
 Replaces function calls with the function body:
 
-```tm
-fn add(int32 a, int32 b) -> int32 {
+```
+fn add(int32 a, int32 b) int32 {
     ret a + b;
 }
 
-int32 main() {
+fn main() int32 {
     int32 sum = add(10, 20);   // replaced with: sum = 10 + 20
     ret 0;
 }
@@ -173,7 +173,7 @@ Inlining thresholds:
 
 Replicates loop body to reduce branch overhead (O3 only):
 
-```tm
+```
 // Before:
 for i = 0; i < 4; i += 1 {
     result += arr[i];
@@ -190,7 +190,7 @@ result += arr[3];
 
 Converts scalar operations to SIMD vector operations (O2+):
 
-```tm
+```
 // Scalar loop:
 for i = 0; i < 100; i += 1 {
     c[i] = a[i] + b[i];
@@ -277,7 +277,7 @@ To see the LLVM IR that the compiler produces (before and after optimization), c
 
 ```bash
 # Prints IR to stdout (unoptimized)
-lux main.lx
+lux build main.lx --emit-llvm
 
 # To see optimized IR, you'd need to add optimization flags
 # Currently, IR stdout mode always shows unoptimized IR

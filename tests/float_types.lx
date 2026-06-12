@@ -3,7 +3,7 @@ namespace Main;
 use std::log::println;
 use std::test::{ assertEqual };
 
-int32 testFloatTypes() {
+fn testFloatTypes() int32 {
     println("[Testing floating-point types...]");
 
     float32 f32 = 1.5;

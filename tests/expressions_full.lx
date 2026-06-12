@@ -20,11 +20,11 @@ enum ExprResult<V, E> {
     Err(E),
 }
 
-int32 exprCompute(int32 a, int32 b) {
+fn exprCompute(int32 a, int32 b) int32 {
     ret a + b;
 }
 
-int32 testExpressionsFull() {
+fn testExpressionsFull() int32 {
     println("[Testing expressions full coverage...]");
 
     int32 a = 10;

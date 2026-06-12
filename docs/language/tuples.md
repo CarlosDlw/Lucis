@@ -8,7 +8,7 @@ Tuples are fixed-size, heterogeneous collections of values. Unlike structs, tupl
 
 A tuple type is written as `tuple<T1, T2, ...>` with at least two type parameters:
 
-```tm
+```
 tuple<int32, string> pair = (42, "hello");
 tuple<int32, float64, bool> triple = (10, 3.14, true);
 ```
@@ -17,7 +17,7 @@ tuple<int32, float64, bool> triple = (10, 3.14, true);
 
 The `auto` keyword infers the tuple type from the literal:
 
-```tm
+```
 auto pair = (42, "hello");
 auto triple = (10, 3.14, true);
 ```
@@ -28,7 +28,7 @@ auto triple = (10, 3.14, true);
 
 Tuple values are created with parenthesized, comma-separated expressions:
 
-```tm
+```
 auto coords = (3, 7);
 auto record = ("alice", 25, true);
 auto nested = (1, (2, 3));
@@ -42,7 +42,7 @@ A tuple literal must have at least two elements. Single-element parenthesized ex
 
 Elements are accessed with zero-based numeric indices using dot notation:
 
-```tm
+```
 auto t = (42, "hello", true);
 println(t.0);   // 42
 println(t.1);   // hello
@@ -53,7 +53,7 @@ println(t.2);   // true
 
 For nested tuples, indices can be chained:
 
-```tm
+```
 tuple<int32, tuple<string, bool>> nested = (99, ("inner", true));
 println(nested.0);     // 99
 println(nested.1.0);   // inner
@@ -66,7 +66,7 @@ println(nested.1.1);   // true
 
 Tuples can be destructured into individual variables using `auto`:
 
-```tm
+```
 auto (x, y) = (100, 200);
 println(x);   // 100
 println(y);   // 200
@@ -74,8 +74,8 @@ println(y);   // 200
 
 Destructuring also works with function return values:
 
-```tm
-tuple<string, int32, bool> makeRecord(string name, int32 age) {
+```
+fn makeRecord(string name, int32 age) tuple<string, int32, bool> {
     ret (name, age, age >= 18);
 }
 
@@ -91,8 +91,8 @@ println(adult);   // true
 
 Tuples work as both parameters and return values:
 
-```tm
-tuple<int32, int32> swap(tuple<int32, int32> t) {
+```
+fn swap(tuple<int32, int32> t) tuple<int32, int32> {
     ret (t.1, t.0);
 }
 
@@ -109,7 +109,7 @@ Integer and float literals in tuple arguments are automatically coerced to match
 
 When working with pointers to tuples, use the arrow operator `->` with numeric indices:
 
-```tm
+```
 auto t = (10, 20);
 *tuple<int32, int32> ptr = &t;
 println(ptr->0);   // 10
@@ -118,7 +118,7 @@ println(ptr->1);   // 20
 
 Arrow access also supports chained indices for nested tuples:
 
-```tm
+```
 auto nested = (1, (2, 3));
 *tuple<int32, tuple<int32, int32>> ptr = &nested;
 println(ptr->0);     // 1
@@ -132,7 +132,7 @@ println(ptr->1.1);   // 3
 
 Tuples can contain other tuples (and any other type) as elements:
 
-```tm
+```
 tuple<int32, tuple<string, bool>> tagged = (1, ("active", true));
 println(tagged.0);     // 1
 println(tagged.1.0);   // active
@@ -141,7 +141,7 @@ println(tagged.1.1);   // true
 
 Nested generic types with `>>` are handled correctly — no space required between closing angle brackets:
 
-```tm
+```
 tuple<int32, tuple<string, bool>> works = (1, ("ok", true));
 tuple<int32, vec<int32>> also_works = (1, my_vec);
 ```
@@ -152,7 +152,7 @@ tuple<int32, vec<int32>> also_works = (1, my_vec);
 
 Tuple elements can be arbitrary expressions:
 
-```tm
+```
 int32 a = 5;
 int32 b = 10;
 auto computed = (a + b, a * b);
@@ -166,7 +166,7 @@ println(computed.1);   // 50
 
 Tuple elements can be used directly in format strings:
 
-```tm
+```
 auto coords = (3, 7);
 string msg = sprintf("x={} y={}", coords.0, coords.1);
 println(msg);   // x=3 y=7
@@ -178,7 +178,7 @@ println(msg);   // x=3 y=7
 
 There is no hard limit on the number of elements:
 
-```tm
+```
 auto big = (1, 2, 3, 4, 5);
 println(big.0);   // 1
 println(big.4);   // 5

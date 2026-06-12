@@ -12,7 +12,7 @@ public:
         parser.addFlag("version", 'v', "Show version");
     }
     int run(const ArgParser& parser) override {
-        std::cout << "lux v0.1.0\n";
+        std::cout << "lux v0.0.1 beta\n";
         return 0;
     }
 };

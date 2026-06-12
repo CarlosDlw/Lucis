@@ -4,7 +4,7 @@ Functions for interacting with the current process and executing external comman
 
 ## Import
 
-```tm
+```
 use std::process::{ exit, exec, execOutput, env, pid, platform };
 ```
 
@@ -27,7 +27,7 @@ use std::process::{ exit, exec, execOutput, env, pid, platform };
 
 ## Example
 
-```tm
+```
 use std::process::{ exit, exec, execOutput, env, pid, platform };
 use std::log::println;
 

@@ -3,7 +3,7 @@ namespace Main;
 use std::log::println;
 use std::test::{ assertEqual };
 
-int32 testFloatMethodsExtra() {
+fn testFloatMethodsExtra() int32 {
     println("[Testing extra float methods...]");
 
     float64 x = -3.7;

@@ -35,7 +35,7 @@ Use `extern` to declare C functions without a body. The compiler generates
 a direct `declare` in LLVM IR, and the linker resolves it from libc or
 any linked library.
 
-```tm
+```
 extern int32 puts(*char s);
 extern float64 sqrt(float64 x);
 extern *void malloc(usize size);
@@ -52,7 +52,7 @@ extern void free(*void ptr);
 
 ### Generated LLVM IR
 
-```tm
+```
 extern int32 puts(*char s);
 ```
 
@@ -71,7 +71,7 @@ Identical to what `clang` generates for the same declaration.
 Use `c"..."` to create null-terminated C string constants. These produce
 a `*char` (pointer to char) — not a TM `string`.
 
-```tm
+```
 puts(c"Hello, World!");
 printf(c"Value: %d\n", 42);
 
@@ -107,7 +107,7 @@ C string literals support the same escape sequences as regular strings:
 
 C-style variadic functions are declared with `...` after the fixed parameters:
 
-```tm
+```
 extern int32 printf(*char fmt, ...);
 extern int32 sprintf(*char buf, *char fmt, ...);
 extern int32 scanf(*char fmt, ...);
@@ -118,7 +118,7 @@ extern int32 scanf(*char fmt, ...);
 When passing arguments to the variadic portion of a C function, the compiler
 automatically applies **C default argument promotions**:
 
-| TM type | Promoted to | Reason |
+| Lux type | Promoted to | Reason |
 |---------|------------|--------|
 | `float32` | `float64` | C promotes `float` → `double` in varargs |
 | `int8`, `int16` | `int32` | C promotes small ints → `int` in varargs |
@@ -129,10 +129,10 @@ with exact type matching.
 
 ### Example
 
-```tm
+```
 extern int32 printf(*char fmt, ...);
 
-int32 main() {
+fn main() int32 {
     printf(c"Integer: %d\n", 42);
     printf(c"Float: %f\n", 3.14);
     printf(c"Multiple: %s is %d years old\n", c"Alice", 30);
@@ -153,7 +153,7 @@ They are always available — no `use` import needed.
 Allocates a new null-terminated C string from a TM string. The caller
 must `free()` the returned pointer when done.
 
-```tm
+```
 string name = "Lux";
 *char cname = cstr(name);
 puts(cname);
@@ -165,38 +165,38 @@ free(cname as *void);
 
 ### `fromCStr(p)` — *char → string
 
-Creates a TM string from a null-terminated C string. Computes the length
+Creates a Lux string from a null-terminated C string. Computes the length
 via `strlen()`.
 
-```tm
+```
 *char raw = c"Hello from C";
 string s = fromCStr(raw);
 // s.len == 12
 ```
 
 - **Cost**: One `strlen()` call. O(n).
-- **Ownership**: The TM string wraps the original pointer (zero-copy).
+- **Ownership**: The Lux string wraps the original pointer (zero-copy).
 
 ### `fromCStrCopy(p)` — *char → string (owned copy)
 
-Creates a TM string by copying a null-terminated C string into newly
+Creates a Lux string by copying a null-terminated C string into newly
 allocated memory owned by Lux.
 
-```tm
+```
 *char raw = c"Hello from C";
 string s = fromCStrCopy(raw);
 // s remains valid even if raw is later freed
 ```
 
 - **Cost**: `strlen()` + `malloc(len + 1)` + `memcpy`. O(n).
-- **Ownership**: The returned TM string owns its copied buffer.
+- **Ownership**: The returned Lux string owns its copied buffer.
 
 ### `fromCStrLen(p, len)` — *char + length → string
 
-Creates a TM string from a pointer and explicit length. Zero-cost — no
+Creates a Lux string from a pointer and explicit length. Zero-cost — no
 memory allocation or scanning.
 
-```tm
+```
 string s = fromCStrLen(c"Hello World!!!!", 5);
 // s contains "Hello" (length 5)
 ```
@@ -208,7 +208,7 @@ string s = fromCStrLen(c"Hello World!!!!", 5);
 Frees the backing memory of a Lux string previously created by
 `fromCStrCopy()`.
 
-```tm
+```
 *char raw = c"Hello from C";
 string s = fromCStrCopy(raw);
 freeStr(s);
@@ -224,7 +224,7 @@ freeStr(s);
 `cstring` is a built-in type alias for `*char`. It makes FFI code more
 readable when working with C strings.
 
-```tm
+```
 cstring greeting = c"Hello!";
 puts(greeting);
 
@@ -243,7 +243,7 @@ at the LLVM level.
 `[N]T` declares a fixed-size array of N elements of type T. These map
 directly to LLVM's `[N x T]` array type.
 
-```tm
+```
 [5]int32 nums = [10, 20, 30, 40, 50];
 [3]float64 coords = [1.0, 2.5, 3.7];
 [6]char hello = ['H', 'e', 'l', 'l', 'o', '\0'];
@@ -255,7 +255,7 @@ When passing a `[N]T` array to a function expecting a pointer (`*T`),
 the array automatically decays to a pointer to its first element — just
 like in C.
 
-```tm
+```
 extern int32 puts(*char s);
 
 [6]char msg = ['H', 'e', 'l', 'l', 'o', '\0'];
@@ -264,7 +264,7 @@ puts(&msg as *char);  // array decays to *char
 
 ### LLVM representation
 
-```tm
+```
 [5]int32 nums = [10, 20, 30, 40, 50];
 ```
 
@@ -281,13 +281,13 @@ Produces:
 A `union` declares a type where all fields share the same memory region.
 The union occupies the size of its largest field — identical to C unions.
 
-```tm
+```
 union IntOrFloat {
     int32 i;
     float32 f;
 }
 
-int32 main() {
+fn main() int32 {
     IntOrFloat u = IntOrFloat { i: 42 };
     printf(c"i = %d\n", u.i);
 
@@ -333,14 +333,14 @@ opaque pointers in LLVM make this straightforward.
 `float80` and `float128` provide extended precision floating-point types
 for C interoperability.
 
-| TM type | C equivalent | LLVM type | Precision |
+| Lux type | C equivalent | LLVM type | Precision |
 |---------|-------------|-----------|-----------|
 | `float80` | `long double` (x86) | `x86_fp80` | ~18-19 decimal digits |
 | `float128` | `_Float128` / `__float128` | `fp128` | ~33-36 decimal digits |
 
 ### Usage
 
-```tm
+```
 float80 x = 3.14159265358979323846 as float80;
 float128 y = 2.71828182845904523536 as float128;
 
@@ -353,7 +353,7 @@ printf(c"y = %.15f\n", y as float64);
 
 All float types can be cast between each other using `as`:
 
-```tm
+```
 float32 a = 1.5 as float32;
 float80 b = a as float80;    // fpext: no precision loss
 float64 c = b as float64;    // fptrunc: may lose precision
@@ -371,18 +371,18 @@ float128 d = c as float128;  // fpext: no precision loss
 
 ## #include directives
 
-Use `#include` to import C header files directly into TM code. The compiler
+Use `#include` to import C header files directly into Lux code. The compiler
 parses the header with libclang at compile time and extracts all functions,
 structs, enums, and typedefs — making them available as if they were
-native TM declarations.
+native Lux declarations.
 
-```tm
+```
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
 #include <string.h>
 
-int32 main() {
+fn main() int32 {
     printf(c"sqrt(144) = %f\n", sqrt(144.0));
     *void buf = malloc(64);
     memset(buf, 65, 3);
@@ -422,14 +422,14 @@ keeps the generated IR clean even when including large headers like
 
 ### Struct extraction
 
-C structs are fully mapped to TM struct types with all their fields.
+C structs are fully mapped to Lux struct types with all their fields.
 Field types are recursively resolved, including nested structs and
 pointer-to-struct types.
 
-```tm
+```
 #include <time.h>
 
-int32 main() {
+fn main() int32 {
     timespec ts;
     ts.tv_sec = 0;
     ts.tv_nsec = 0;
@@ -445,10 +445,10 @@ are handled correctly via a skeleton-first registration pattern.
 C enum constants are extracted as global `int32` values. They can be
 used directly in expressions without any prefix or qualification.
 
-```tm
+```
 #include <stdio.h>
 
-int32 main() {
+fn main() int32 {
     // SEEK_SET, SEEK_CUR, SEEK_END from <stdio.h>
     int32 origin = SEEK_SET;
     printf(c"SEEK_SET = %d\n", origin);
@@ -486,11 +486,11 @@ directory. If found, it compiles the C source into an object file
 inside `.lux/build/` and links it into the final binary — no manual
 compilation step required.
 
-```tm
+```
 #include <stdio.h>
 #include "mymath.h"
 
-int32 main() {
+fn main() int32 {
     int32 sum = add(10, 20);
     printf(c"sum = %d\n", sum);
     ret 0;
@@ -583,12 +583,12 @@ two pointers yields the number of elements between them.
 
 ### Example
 
-```tm
+```
 extern *void malloc(usize size);
 extern void free(*void ptr);
 extern int32 printf(*char fmt, ...);
 
-int32 main() {
+fn main() int32 {
     // Allocate space for 5 int32 values
     *int32 buf = malloc(20) as *int32;
 
@@ -623,14 +623,14 @@ byte-level arithmetic (stride of 1).
 ## #define macro constants
 
 Integer `#define` constants from C headers are automatically extracted
-and available as `int32` values in TM code. This covers the vast majority
+and available as `int32` values in Lux code. This covers the vast majority
 of C API constants: error codes, flags, sizes, and sentinel values.
 
-```tm
+```
 #include <stdio.h>
 #include <stdlib.h>
 
-int32 main() {
+fn main() int32 {
     int32 eof = EOF;             // -1
     int32 bs  = BUFSIZ;          // 8192
     int32 ss  = SEEK_SET;        // 0
@@ -677,10 +677,10 @@ Extern global variables from C headers are automatically extracted and
 accessible as regular variables in TM code. The compiler declares them
 as LLVM `external global` symbols, resolved by the linker.
 
-```tm
+```
 #include <stdio.h>
 
-int32 main() {
+fn main() int32 {
     // stdout, stderr are extern FILE* globals
     fprintf(stdout, c"Hello to stdout\n");
     fprintf(stderr, c"Hello to stderr\n");
@@ -721,21 +721,21 @@ it through C helper functions if needed.
 
 ## Callbacks
 
-TM functions can be passed directly as C function pointer arguments.
+Lux functions can be passed directly as C function pointer arguments.
 This enables use of C APIs that accept callbacks: `qsort`, `bsearch`,
 `atexit`, `signal`, `pthread_create`, etc.
 
-```tm
+```
 #include <stdlib.h>
 #include <stdio.h>
 
-int32 compareInts(*void a, *void b) {
+fn compareInts(*void a, *void b) int32 {
     *int32 ia = a as *int32;
     *int32 ib = b as *int32;
     ret *ia - *ib;
 }
 
-int32 main() {
+fn main() int32 {
     *void buf = malloc(20 as usize);
     *int32 arr = buf as *int32;
     *arr = 5;
@@ -791,11 +791,11 @@ C structs can be passed to and returned from C functions **by value**.
 The compiler implements x86-64 System V ABI classification to ensure
 correct register/stack usage when calling C code.
 
-```tm
+```
 #include <stdio.h>
 #include "structs.h"
 
-int32 main() {
+fn main() int32 {
     Point p = make_point(10, 20);
     int32 s = point_sum(p);
     printf(c"sum = %d\n", s);  // 30
@@ -856,11 +856,11 @@ When a C function uses an enum type (e.g. `Color`), Lux maps it to
 the underlying integer type (typically `uint32` on most platforms) and
 allows implicit conversion between enum constants and integer variables.
 
-```tm
+```
 #include <stdio.h>
 #include "colors.h"
 
-int32 main() {
+fn main() int32 {
     // Enum constants are usable directly
     int32 r = COLOR_RED;     // 0
     int32 g = COLOR_GREEN;   // 1
@@ -911,13 +911,13 @@ the `lux` command line:
 
 ```bash
 # Link against SDL2 installed in a custom location
-lux main.lx ./game -lSDL2 -L/opt/sdl2/lib
+lux build main.lx -o ./game -lSDL2 -L/opt/sdl2/lib
 
 # Link against multiple libraries
-lux main.lx ./app -lcurl -lssl -lcrypto
+lux build main.lx -o ./app -lcurl -lssl -lcrypto
 
 # Default libraries (-lm, -lz, -lpthread) are always linked automatically
-lux main.lx ./main
+lux build main.lx -o ./main
 ```
 
 ### Notes
@@ -961,7 +961,7 @@ All pointer types in TM map to LLVM's opaque `ptr` type. The type after
 `*` tells the TM checker what the pointer points to, but at the LLVM
 level all pointers are interchangeable (opaque pointer semantics).
 
-```tm
+```
 *int32 p;     // int32_t*
 *void  raw;   // void*
 *char  str;   // char*
@@ -995,10 +995,10 @@ All extern function calls are **zero-cost**. The generated code is
 identical to what a C compiler would produce:
 
 ```
-TM source:    puts(c"Hello");
-LLVM IR:      call i32 @puts(ptr @.cstr.0)
-x86-64 asm:   callq puts@PLT
+Lux source:     puts(c"Hello");
+LLVM IR:        call i32 @puts(ptr @.cstr.0)
+x86-64 asm:     callq puts@PLT
 ```
 
-No wrappers. No thunks. No indirection. Calling a C function from LuxM
+No wrappers. No thunks. No indirection. Calling a C function from Lux
 is exactly as fast as calling it from C.

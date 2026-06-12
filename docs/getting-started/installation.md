@@ -83,7 +83,7 @@ After a successful build, the compiler binary is located at `build/lux`:
 Expected output:
 
 ```
-lux v0.1.0
+lux v0.0.1 beta
 ```
 
 ## Makefile Targets

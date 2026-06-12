@@ -8,7 +8,7 @@ Pointers in Lux hold the memory address of a value. They support address-of, der
 
 A pointer type is written as `*T`, where `T` is the pointed-to type:
 
-```tm
+```
 *int32       // pointer to int32
 *float64     // pointer to float64
 *Point       // pointer to a struct
@@ -22,7 +22,7 @@ A pointer type is written as `*T`, where `T` is the pointed-to type:
 
 The `&` operator takes the address of a variable:
 
-```tm
+```
 int32 x = 42;
 *int32 p = &x;
 ```
@@ -35,7 +35,7 @@ The unary `*` operator reads or writes the value at the pointed-to address:
 
 ### Read
 
-```tm
+```
 int32 x = 42;
 *int32 p = &x;
 println(*p);   // 42
@@ -43,7 +43,7 @@ println(*p);   // 42
 
 ### Write
 
-```tm
+```
 *p = 99;
 println(x);   // 99
 ```
@@ -56,13 +56,13 @@ Writing through a dereferenced pointer modifies the original variable.
 
 Pointers can be initialized to `null`:
 
-```tm
+```
 *int32 p = null;
 ```
 
 Use the `??` (null coalescing) operator to provide a fallback:
 
-```tm
+```
 *int32 p = null;
 int32 val = p ?? 0;    // 0 (p is null)
 ```
@@ -73,7 +73,7 @@ int32 val = p ?? 0;    // 0 (p is null)
 
 The `->` operator accesses struct fields through a pointer, combining dereference and field access:
 
-```tm
+```
 struct Point {
     int32 x;
     int32 y;
@@ -88,7 +88,7 @@ println(ptr->y);   // 20
 
 Arrow also works for assignment:
 
-```tm
+```
 ptr->x = 99;
 println(p.x);   // 99
 ```
@@ -97,7 +97,7 @@ println(p.x);   // 99
 
 For nested pointer structures like linked lists:
 
-```tm
+```
 struct Node {
     int32 value;
     *Node next;
@@ -117,7 +117,7 @@ println(a.next->next->value);  // 30
 
 Pointers can be cast between types using `as`:
 
-```tm
+```
 *int32 p = &x;
 *void generic = p as *void;
 *int32 back = generic as *int32;
@@ -125,7 +125,7 @@ Pointers can be cast between types using `as`:
 
 This is commonly used for FFI with `malloc`/`free`:
 
-```tm
+```
 *void buf = malloc(64);
 *char cbuf = buf as *char;
 free(buf);
@@ -137,7 +137,7 @@ free(buf);
 
 Structs can hold pointers to other struct types:
 
-```tm
+```
 struct Inner {
     int32 x;
     int32 y;
@@ -161,7 +161,7 @@ println(wrapper.data->y);   // 200
 
 Structs can have pointer fields to their own type, enabling linked data structures:
 
-```tm
+```
 struct Node {
     int32 value;
     *Node next;

@@ -8,12 +8,12 @@ struct OpPoint {
     int32 y;
 }
 
-bool opMarkTrue(*int32 counter) {
+fn opMarkTrue(*int32 counter) bool {
     *counter += 1;
     ret true;
 }
 
-int32 testOperatorsFull() {
+fn testOperatorsFull() int32 {
     println("[Testing operators full coverage...]");
 
     // Arithmetic + precedence

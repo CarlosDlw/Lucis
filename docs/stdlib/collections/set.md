@@ -6,7 +6,7 @@ An open-addressing hash set for storing unique values.
 
 `vec`, `map`, and `set` are native keywords — no import required.
 
-```tm
+```
 set<int32> ids = [];
 set<string> tags = [\"alpha\", \"beta\"];
 ```
@@ -43,7 +43,7 @@ set<string> tags = [\"alpha\", \"beta\"];
 
 ## Example
 
-```tm
+```
 set<string> tags = [];
 
 tags.add("rust");

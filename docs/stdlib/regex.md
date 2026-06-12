@@ -4,7 +4,7 @@ Regular expression matching and replacement functions.
 
 ## Import
 
-```tm
+```
 use std::regex::{ match, find, findAll, regexReplace, regexSplit };
 ```
 
@@ -23,7 +23,7 @@ use std::regex::{ match, find, findAll, regexReplace, regexSplit };
 
 ## Example
 
-```tm
+```
 use std::regex::{ match, find, findAll, regexReplace, regexSplit };
 use std::log::println;
 

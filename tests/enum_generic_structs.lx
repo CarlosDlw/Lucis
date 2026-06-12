@@ -19,7 +19,7 @@ struct Particle {
     bool active;
 }
 
-int32 testEnumGenericAndStructField() {
+fn testEnumGenericAndStructField() int32 {
     println("[Testing enums: generic enums and struct fields...]");
 
     Result<int32, string> ok = Result<int32, string>::Ok(123);

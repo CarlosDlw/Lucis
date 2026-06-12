@@ -8,7 +8,7 @@ T supports generic type parameters for its built-in collection types and concurr
 
 Generic types are parameterized with angle brackets `<T>`:
 
-```tm
+```
 vec<int32> numbers = [1, 2, 3];
 map<string, int64> ages;
 set<uint64> ids = [];
@@ -34,8 +34,8 @@ T provides four built-in generic types:
 
 Lux can infer type arguments for user-defined generic functions and generic static methods when every type parameter appears in at least one formal parameter.
 
-```tm
-T identity<T>(T value) {
+```
+fn identity<T>(T value) T {
     ret value;
 }
 
@@ -44,12 +44,12 @@ struct Box<T> {
 }
 
 extend Box<T> {
-    Box<T> make(T value) {
+    fn make(T value) Box<T> {
         ret Box<T>{ value: value };
     }
 }
 
-int32 main() {
+fn main() int32 {
     int32 a = identity(10);        // T => int32
     float64 b = identity(3.2);     // T => float64
     Box<int32> box = Box::make(42); // T => int32
@@ -66,16 +66,16 @@ Inference is intentionally strict:
 
 These calls are rejected:
 
-```tm
-T pick<T>(T a, T b) {
+```
+fn pick<T>(T a, T b) T {
     ret a;
 }
 
-T make<T>() {
+fn make<T>() T {
     ret 0 as T;
 }
 
-int32 main() {
+fn main() int32 {
     auto x = pick(10, 10.0); // error: T inferred as int32 and float64
     auto y = make();         // error: T does not appear in parameters
     ret 0;
@@ -88,7 +88,7 @@ int32 main() {
 
 A growable, heap-allocated array. Initialized from an array literal or empty `[]`:
 
-```tm
+```
 vec<int32> v = [10, 20, 30];
 println(v.len());      // 3
 println(v.first());    // 10
@@ -103,7 +103,7 @@ println(popped);       // 40
 
 ### Index Access
 
-```tm
+```
 vec<int32> v = [100, 200, 300];
 println(v[0]);    // 100
 println(v[2]);    // 300
@@ -126,7 +126,7 @@ println(v[1]);    // 999
 | **Query** | `equals(vec<T>)`, `isSorted()` |
 | **Conversion** | `toString()`, `join(string)`, `clone()` |
 
-```tm
+```
 vec<int32> v = [30, 10, 20, 10, 40];
 
 println(v.contains(10));    // true
@@ -147,7 +147,7 @@ v.free();
 
 `vec<T>` works with any type:
 
-```tm
+```
 vec<float64> fv = [1.5, 2.5, 3.5];
 fv.push(4.5);
 println(fv.last());   // 4.5
@@ -166,7 +166,7 @@ names.free();
 
 A key-value store using open-addressing hashing:
 
-```tm
+```
 map<string, int64> ages;
 
 ages.insert("alice", 30);
@@ -180,7 +180,7 @@ println(ages.has("bob"));     // true
 
 ### Subscript Access
 
-```tm
+```
 map<string, int64> ages;
 ages["dave"] = 40;
 println(ages["dave"]);   // 40
@@ -202,7 +202,7 @@ println(ages["dave"]);   // 40
 | `values` | `() -> vec<V>` | All values as a Vec |
 | `free` | `()` | Release memory |
 
-```tm
+```
 map<int32, int64> scores;
 scores.insert(1, 100);
 scores.insert(2, 200);
@@ -220,7 +220,7 @@ scores.free();
 
 A collection of unique elements using open-addressing hashing:
 
-```tm
+```
 set<int32> s = [];
 
 s.add(10);
@@ -246,7 +246,7 @@ println(s.len());       // 3 (unchanged)
 | `values` | `() -> set<T>` | Copy of the set |
 | `free` | `()` | Release memory |
 
-```tm
+```
 set<string> ss = [];
 ss.add("hello");
 ss.add("world");
@@ -268,7 +268,7 @@ ss.free();
 
 Created by the `spawn` operator and resolved with `await`. See [Concurrency](concurrency.md) for full details.
 
-```tm
+```
 use std::thread::Task;
 
 Task<int32> t = spawn compute(10, 20);
@@ -331,12 +331,12 @@ Use `extend` with the same type parameter list to add methods to a generic struc
 ```lux
 extend Node<T> {
     // Static factory method
-    Node<T> create(T val) {
+    fn create(T val) Node<T> {
         ret Node<T> { value: val };
     }
 
     // Instance method (&self receiver)
-    T getValue(&self) {
+    fn getValue(&self) T {
         ret self.value;
     }
 }
@@ -352,11 +352,11 @@ extend Node<T> {
 A standalone function can be parameterized with `<T>` after the function name:
 
 ```lux
-T max<T>(T a, T b) {
+fn max<T>(T a, T b) T {
     ret a > b ? a : b;
 }
 
-T identity<T>(T x) {
+fn identity<T>(T x) T {
     ret x;
 }
 ```
@@ -383,20 +383,20 @@ struct Node<T> {
 }
 
 extend Node<T> {
-    Node<T> create(T val) {
+    fn create(T val) Node<T> {
         ret Node<T> { value: val };
     }
 
-    T getValue(&self) {
+    fn getValue(&self) T {
         ret self.value;
     }
 }
 
-T max<T>(T a, T b) {
+fn max<T>(T a, T b) T {
     ret a > b ? a : b;
 }
 
-int32 main() {
+fn main() int32 {
     Node<int32> n = Node<int32>::create(42);
     int32 val = n.getValue();   // 42
 
@@ -415,7 +415,7 @@ int32 main() {
 Type parameters can be annotated with a constraint using the `:` syntax:
 
 ```lux
-T clamp<T: numeric>(T val, T lo, T hi) {
+fn clamp<T: numeric>(T val, T lo, T hi) T {
     ret val < lo ? lo : val > hi ? hi : val;
 }
 ```
@@ -442,7 +442,7 @@ Every concrete instantiation generates a distinct type and function set. `Node<i
 
 `vec<T>`, `map<K, V>`, and `set<T>` are heap-allocated. They must be freed when no longer needed:
 
-```tm
+```
 vec<int32> v = [1, 2, 3];
 defer v.free();
 

@@ -4,19 +4,19 @@ use std::log::println;
 use std::test::{ assertEqual };
 use std::thread::Task;
 
-T gClamp<T: numeric>(T val, T lo, T hi) {
+fn gClamp<T: numeric>(T val, T lo, T hi) T {
     ret val < lo ? lo : val > hi ? hi : val;
 }
 
-int32 gComputeI32(int32 a, int32 b) {
+fn gComputeI32(int32 a, int32 b) int32 {
     ret a + b;
 }
 
-float64 gComputeF64(float64 x, float64 y) {
+fn gComputeF64(float64 x, float64 y) float64 {
     ret x + y;
 }
 
-int32 testGenericsTaskAndConstraints() {
+fn testGenericsTaskAndConstraints() int32 {
     println("[Testing generics: Task<T> and constraints...]");
 
     int32 ci1 = gClamp<int32>(5, 1, 10);

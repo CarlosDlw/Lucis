@@ -128,7 +128,7 @@ void LspServer::handleInitialize(const json& msg) {
             {"capabilities", capabilities},
             {"serverInfo", {
                 {"name", "lux-lsp"},
-                {"version", "0.1.0"}
+                {"version", "0.0.1 beta"}
             }}
         };
 

@@ -3,15 +3,15 @@ namespace Main;
 use std::log::println;
 use std::test::{ assertEqual };
 
-tuple<int32, int32> tupleSwap(tuple<int32, int32> t) {
+fn tupleSwap(tuple<int32, int32> t) tuple<int32, int32> {
     ret (t.1, t.0);
 }
 
-tuple<string, int32, bool> tupleMakeRecord(string name, int32 age) {
+fn tupleMakeRecord(string name, int32 age) tuple<string, int32, bool> {
     ret (name, age, age >= 18);
 }
 
-int32 testTuplesFull() {
+fn testTuplesFull() int32 {
     println("[Testing tuples: declarations/literals/access/destructuring...]");
 
     tuple<int32, string> pair = (42, "hello");

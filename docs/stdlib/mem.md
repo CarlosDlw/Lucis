@@ -4,7 +4,7 @@ Low-level memory management functions.
 
 ## Import
 
-```tm
+```
 use std::mem::{ alloc, free, copy, zero, set };
 ```
 
@@ -24,7 +24,7 @@ use std::mem::{ alloc, free, copy, zero, set };
 
 ## Example
 
-```tm
+```
 use std::mem::{ alloc, free, copy, zero, set };
 use std::log::println;
 

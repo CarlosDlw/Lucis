@@ -12,11 +12,11 @@ T offers two mechanisms for accessing C functions, and you can mix them in the s
 
 You write the function signature yourself. This is useful for one-off functions or when you don't have a header file:
 
-```tm
+```
 extern int32 puts(*char s);
 extern float64 sqrt(float64 x);
 
-int32 main() {
+fn main() int32 {
     puts(c"Hello from C!");
     float64 val = sqrt(144.0);
     ret 0;
@@ -27,11 +27,11 @@ int32 main() {
 
 You include a C header file, and the compiler **automatically parses it** using libclang, extracting all functions, structs, enums, and macro constants:
 
-```tm
+```
 #include <stdio.h>
 #include <math.h>
 
-int32 main() {
+fn main() int32 {
     printf(c"sqrt(144) = %.0f\n", sqrt(144.0));
     ret 0;
 }
@@ -61,7 +61,7 @@ Function-like macros (`#define FOO(x) ...`) and non-numeric macros are ignored.
 
 C functions expect null-terminated strings. Lux provides the `c"..."` literal syntax for this:
 
-```tm
+```
 extern int32 puts(*char s);
 
 puts(c"Hello, World!");    // null-terminated, type is *char
@@ -101,7 +101,7 @@ Lux types map directly to C types with no conversion:
 
 This example demonstrates all core FFI features in a single file:
 
-```tm
+```
 namespace FFIDemo;
 
 #include <stdio.h>
@@ -109,7 +109,7 @@ namespace FFIDemo;
 #include <stdlib.h>
 #include <string.h>
 
-int32 main() {
+fn main() int32 {
     // Call C functions directly from headers
     printf(c"sqrt(144) = %.0f\n", sqrt(144.0));
     printf(c"sin(pi/2) = %.6f\n", sin(1.5707963267948966));

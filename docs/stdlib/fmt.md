@@ -4,7 +4,7 @@ String formatting utilities for padding, number formatting, and display.
 
 ## Import
 
-```tm
+```
 use std::fmt::{ lpad, rpad, hex, bin, fixed, humanBytes, commas };
 ```
 
@@ -44,7 +44,7 @@ use std::fmt::{ lpad, rpad, hex, bin, fixed, humanBytes, commas };
 
 ## Example
 
-```tm
+```
 use std::fmt::{ lpad, hex, hexUpper, bin, fixed, humanBytes };
 use std::log::println;
 

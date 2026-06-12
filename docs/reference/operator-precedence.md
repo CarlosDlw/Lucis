@@ -38,7 +38,7 @@ Complete table of operator precedence from **highest** (tightest binding) to **l
 | `*` | `*ptr` | Pointer dereference |
 | `&` | `&value` | Address-of |
 
-```tm
+```
 int32 x = -5
 bool positive = !false
 uint8 mask = ~0u8        // 0xFF
@@ -57,7 +57,7 @@ int32 val = *ptr
 | `()` | `func(args)` | Function call |
 | `[]` | `arr[i]` | Index |
 
-```tm
+```
 string name = person.name
 int32 val = ptr->value
 int32 result = add(2, 3)
@@ -68,7 +68,7 @@ int32 first = numbers[0]
 
 ## Type Cast (Level 15)
 
-```tm
+```
 int32 x = 42
 float64 f = x as float64       // 42.0
 uint8 byte = 256 as uint8      // truncation: 0
@@ -84,7 +84,7 @@ uint8 byte = 256 as uint8      // truncation: 0
 | 13 | `* / %` | `10 / 3` → 3, `10 % 3` → 1 |
 | 12 | `+ -` | `a + b - c` |
 
-```tm
+```
 int32 result = 2 + 3 * 4      // 14, not 20
 int32 exp = 2 ** 3 ** 2        // 512 (right-assoc: 2^(3^2))
 ```
@@ -100,7 +100,7 @@ int32 exp = 2 ** 3 ** 2        // 512 (right-assoc: 2^(3^2))
 | 9 | `^` | XOR |
 | 8 | `\|` | OR |
 
-```tm
+```
 uint8 flags = 0b1010
 uint8 masked = flags & 0x0F
 uint8 shifted = 1u8 << 4       // 0b10000
@@ -111,7 +111,7 @@ uint8 combined = 0x0F | 0xF0   // 0xFF
 
 ## Range (Level 7)
 
-```tm
+```
 for i in 0..10 {       // 0 to 9
     // ...
 }
@@ -125,7 +125,7 @@ for i in 1..=100 {     // 1 to 100 inclusive
 
 ## Comparison (Levels 6–5)
 
-```tm
+```
 bool less = a < b
 bool equal = x == y
 bool inRange = x >= 0 && x < 100
@@ -137,7 +137,7 @@ bool inRange = x >= 0 && x < 100
 
 Both `&&` and `||` use **short-circuit evaluation**: the right operand is only evaluated if needed.
 
-```tm
+```
 bool valid = x > 0 && y > 0     // y > 0 skipped if x <= 0
 bool fallback = a || b           // b skipped if a is true
 ```
@@ -146,7 +146,7 @@ bool fallback = a || b           // b skipped if a is true
 
 ## Null Coalescing (Level 2)
 
-```tm
+```
 int32 port = config.port ?? 8080
 ```
 
@@ -156,7 +156,7 @@ int32 port = config.port ?? 8080
 
 Right-associative. Lowest precedence among operators.
 
-```tm
+```
 string label = count == 1 ? "item" : "items"
 int32 clamped = x < 0 ? 0 : x > 100 ? 100 : x
 ```
@@ -180,7 +180,7 @@ Compound assignments are **statements**, not expressions. They combine an operat
 | `<<=` | `x = x << rhs` |
 | `>>=` | `x = x >> rhs` |
 
-```tm
+```
 var count: int32 = 0
 count += 1
 count *= 2

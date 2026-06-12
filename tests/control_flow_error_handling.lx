@@ -3,14 +3,14 @@ namespace Main;
 use std::log::println;
 use std::test::{ assertEqual };
 
-int32 controlFlowMayFail(bool fail) {
+fn controlFlowMayFail(bool fail) int32 {
     if fail {
         throw Error { message: "control flow test error" };
     }
     ret 77;
 }
 
-int32 testControlFlowErrorHandling() {
+fn testControlFlowErrorHandling() int32 {
     println("[Testing control flow: try/catch/finally...]");
 
     bool caught = false;

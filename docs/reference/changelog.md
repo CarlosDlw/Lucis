@@ -4,7 +4,7 @@ All notable changes to the Lux language and its compiler.
 
 ---
 
-## v0.1.0 — Initial Release
+## v0.0.1 beta — Initial Release
 
 First public release of the Lux language compiler.
 
