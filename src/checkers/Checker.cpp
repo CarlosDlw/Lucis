@@ -896,6 +896,10 @@ bool Checker::check(LuxParser::ProgramContext* tree) {
                     !typeRegistry_.lookup(baseName) &&
                     !genericEnumTemplates_.count(baseName)) {
                     auto* ed = static_cast<LuxParser::EnumDeclContext*>(depSym->decl);
+                    // Pre-resolve payload types before checking the enum
+                    for (auto* variant : ed->enumVariant())
+                        for (auto* ts : variant->typeSpec())
+                            self(self, ts, ns);
                     checkEnumDecl(ed);
                     return;
                 }
@@ -903,6 +907,9 @@ bool Checker::check(LuxParser::ProgramContext* tree) {
                     !typeRegistry_.lookup(baseName) &&
                     !genericStructTemplates_.count(baseName)) {
                     auto* sd = static_cast<LuxParser::StructDeclContext*>(depSym->decl);
+                    // Pre-resolve field types before checking the struct
+                    for (auto* field : sd->structField())
+                        self(self, field->typeSpec(), ns);
                     checkStructDecl(sd);
                     return;
                 }
@@ -910,6 +917,9 @@ bool Checker::check(LuxParser::ProgramContext* tree) {
                     !typeRegistry_.lookup(baseName) &&
                     !genericUnionTemplates_.count(baseName)) {
                     auto* ud = static_cast<LuxParser::UnionDeclContext*>(depSym->decl);
+                    // Pre-resolve field types before checking the union
+                    for (auto* field : ud->unionField())
+                        self(self, field->typeSpec(), ns);
                     checkUnionDecl(ud);
                 }
             };

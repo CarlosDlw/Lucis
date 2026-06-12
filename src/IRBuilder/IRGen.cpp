@@ -1434,6 +1434,52 @@ std::any IRGen::visitUseEnumWildcard(LuxParser::UseEnumWildcardContext* ctx) {
 void IRGen::registerCrossFileSymbols(LuxParser::ProgramContext* ctx) {
     if (!nsRegistry_) return;
 
+    // Populate userImports_ from preamble use declarations before any
+    // cross-file symbol processing (visitUseItem/visitUseGroup run later
+    // during the main AST traversal, but we need the import map now).
+    if (ctx) {
+        for (auto* pd : ctx->preambleDecl()) {
+            auto* ud = pd->useDecl();
+            if (!ud) continue;
+            // use ModuleName; (useRoot)
+            if (auto* root = dynamic_cast<LuxParser::UseRootContext*>(ud)) {
+                userImports_[root->IDENTIFIER()->getText()] = root->IDENTIFIER()->getText();
+            }
+            // use Module::symbol; (useItem)
+            else if (auto* item = dynamic_cast<LuxParser::UseItemContext*>(ud)) {
+                std::string path;
+                for (auto* id : item->modulePath()->IDENTIFIER()) {
+                    if (!path.empty()) path += "::";
+                    path += id->getText();
+                }
+                auto symbolName = item->IDENTIFIER()->getText();
+                auto qualifiedPath = path + "::" + symbolName;
+                if (NamespaceRegistry::isStdModule(path)) {
+                    imports_.addImport(path, symbolName);
+                } else if (NamespaceRegistry::isStdModule(qualifiedPath)) {
+                    userImports_[symbolName] = qualifiedPath;
+                } else {
+                    userImports_[symbolName] = path;
+                }
+            }
+            // use Module::{A, B}; (useGroup)
+            else if (auto* group = dynamic_cast<LuxParser::UseGroupContext*>(ud)) {
+                std::string path;
+                for (auto* id : group->modulePath()->IDENTIFIER()) {
+                    if (!path.empty()) path += "::";
+                    path += id->getText();
+                }
+                if (NamespaceRegistry::isStdModule(path)) {
+                    for (auto* id : group->IDENTIFIER())
+                        imports_.addImport(path, id->getText());
+                } else {
+                    for (auto* id : group->IDENTIFIER())
+                        userImports_[id->getText()] = path;
+                }
+            }
+        }
+    }
+
     // Pre-register local enums/aliases and struct/union skeletons first so
     // external same-namespace declarations can resolve current-file type names.
     if (ctx) {
@@ -1511,11 +1557,39 @@ void IRGen::registerCrossFileSymbols(LuxParser::ProgramContext* ctx) {
             }
             if (depSym->kind == ExportedSymbol::Struct && !typeRegistry_.lookup(baseName)) {
                 auto* sd = static_cast<LuxParser::StructDeclContext*>(depSym->decl);
+                // Register a skeleton first to break self-referential cycles
+                {
+                    TypeInfo skeleton;
+                    skeleton.name = baseName;
+                    skeleton.kind = TypeKind::Struct;
+                    skeleton.bitWidth = 0;
+                    skeleton.isSigned = false;
+                    typeRegistry_.registerType(std::move(skeleton));
+                    if (!llvm::StructType::getTypeByName(*context_, baseName))
+                        llvm::StructType::create(*context_, baseName);
+                }
+                for (auto* field : sd->structField())
+                    self(self, field->typeSpec(), ns);
+                // Upgrade skeleton to full type via visitStructDecl
                 visitStructDecl(sd);
                 return;
             }
             if (depSym->kind == ExportedSymbol::Union && !typeRegistry_.lookup(baseName)) {
                 auto* ud = static_cast<LuxParser::UnionDeclContext*>(depSym->decl);
+                // Register a skeleton first to break self-referential cycles
+                {
+                    TypeInfo skeleton;
+                    skeleton.name = baseName;
+                    skeleton.kind = TypeKind::Union;
+                    skeleton.bitWidth = 0;
+                    skeleton.isSigned = false;
+                    typeRegistry_.registerType(std::move(skeleton));
+                    if (!llvm::StructType::getTypeByName(*context_, baseName))
+                        llvm::StructType::create(*context_, baseName);
+                }
+                for (auto* field : ud->unionField())
+                    self(self, field->typeSpec(), ns);
+                // Upgrade skeleton to full type via visitUnionDecl
                 visitUnionDecl(ud);
             }
         };
@@ -13459,6 +13533,19 @@ const TypeInfo* IRGen::resolveTypeInfo(LuxParser::TypeSpecContext* ctx) {
                 if (auto* imported = nsRegistry_->findSymbol(importIt->second, name)) {
                     loadSymbolType(imported);
                     if (auto* loaded = typeRegistry_.lookup(name)) return loaded;
+                }
+            }
+
+            // Fallback: scan all unique imported namespaces for the type.
+            if (!userImports_.empty()) {
+                std::unordered_set<std::string> scannedNs;
+                for (const auto& [_, ns] : userImports_) {
+                    if (scannedNs.insert(ns).second) {
+                        if (auto* found = nsRegistry_->findSymbol(ns, name)) {
+                            loadSymbolType(found);
+                            if (auto* loaded = typeRegistry_.lookup(name)) return loaded;
+                        }
+                    }
                 }
             }
         }
