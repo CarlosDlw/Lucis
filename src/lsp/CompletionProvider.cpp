@@ -10,6 +10,7 @@
 #include <functional>
 #include <sstream>
 #include <unordered_set>
+#include <regex>
 
 CompletionProvider::CompletionProvider() : intrinsicRegistry_(typeRegistry_) {}
 
@@ -1745,23 +1746,18 @@ CompletionProvider::analyzeContext(const std::string &source, size_t line,
 
   // Check for #include directive completion
   {
-    std::string trimmed = before;
-    size_t ws = trimmed.find_first_not_of(" \t");
-    if (ws != std::string::npos)
-      trimmed = trimmed.substr(ws);
-
-    // Match: #include <prefix
-    if (trimmed.size() >= 10 && trimmed.substr(0, 10) == "#include <") {
+    static const std::regex includeRegex(R"(^\s*#include\s*([<"]))", std::regex::optimize);
+    std::smatch match;
+    if (std::regex_search(before, match, includeRegex)) {
+      char delimiter = match[1].str()[0];
       req.context = CompletionContext::IncludeHeader;
-      req.prefix = trimmed.substr(10); // everything after '<'
-      req.closingCharPresent = (col < lineText.size() && lineText[col] == '>');
-      return req;
-    }
-    // Match: #include "prefix (local headers — same logic)
-    if (trimmed.size() >= 10 && trimmed.substr(0, 10) == "#include \"") {
-      req.context = CompletionContext::IncludeHeader;
-      req.prefix = trimmed.substr(10);
-      req.closingCharPresent = (col < lineText.size() && lineText[col] == '"');
+      
+      // prefix is everything after the delimiter in 'before'
+      size_t delimPos = match.position(1);
+      req.prefix = before.substr(delimPos + 1);
+      
+      char closing = (delimiter == '<') ? '>' : '"';
+      req.closingCharPresent = (col < lineText.size() && lineText[col] == closing);
       return req;
     }
   }
@@ -4289,17 +4285,16 @@ void CompletionProvider::addHeaderSuggestions(
   if (!cached) {
     cachedHeaders = CHeaderResolver::listSystemHeaders();
     cachedHeadersLower.reserve(cachedHeaders.size());
-    for (auto &h : cachedHeaders) {
+    for (const auto &h : cachedHeaders) {
       std::string lower;
       lower.reserve(h.size());
-      for (auto c : h) lower += std::tolower(c);
+      for (auto c : h) lower += (char)std::tolower((unsigned char)c);
       cachedHeadersLower.push_back(std::move(lower));
     }
     cached = true;
   }
 
   if (prefix.empty()) {
-    // No prefix — show all headers
     for (auto &h : cachedHeaders) {
       CompletionItem ci;
       ci.label = h;
@@ -4311,22 +4306,65 @@ void CompletionProvider::addHeaderSuggestions(
     return;
   }
 
-  // Binary search on lowercased index
+  // Fuzzy match algorithm: check if all characters of prefix exist in label in order
   std::string prefixLower;
   prefixLower.reserve(prefix.size());
-  for (auto c : prefix) prefixLower += std::tolower(c);
+  for (auto c : prefix) prefixLower += (char)std::tolower((unsigned char)c);
 
-  auto first = std::lower_bound(cachedHeadersLower.begin(), cachedHeadersLower.end(), prefixLower);
-  // Iterate while elements still match the prefix
-  for (auto it = first; it != cachedHeadersLower.end(); ++it) {
-    if (it->size() < prefixLower.size()) break;
-    bool match = true;
-    for (size_t i = 0; i < prefixLower.size(); i++) {
-      if ((*it)[i] != prefixLower[i]) { match = false; break; }
+  struct ScoredMatch {
+    size_t index;
+    int score;
+  };
+  std::vector<ScoredMatch> matches;
+
+  for (size_t i = 0; i < cachedHeadersLower.size(); ++i) {
+    const std::string &labelLower = cachedHeadersLower[i];
+    
+    size_t prefixIdx = 0;
+    size_t labelIdx = 0;
+    int score = 0;
+    bool matched = true;
+
+    // Simple fuzzy: must find characters in order
+    while (prefixIdx < prefixLower.size()) {
+      if (labelIdx >= labelLower.size()) {
+        matched = false;
+        break;
+      }
+      if (labelLower[labelIdx] == prefixLower[prefixIdx]) {
+        // Bonus for matching at start of path component or after special chars
+        if (labelIdx == 0 || labelLower[labelIdx-1] == '/' || labelLower[labelIdx-1] == '_' || labelLower[labelIdx-1] == '-') {
+           score += 10;
+        } else {
+           score += 1;
+        }
+        prefixIdx++;
+      }
+      labelIdx++;
     }
-    if (!match) break;
-    size_t idx = it - cachedHeadersLower.begin();
-    auto &h = cachedHeaders[idx];
+
+    if (matched) {
+      const std::string &h = cachedHeaders[i];
+      // Bonus for exact prefix match
+      if (labelLower.compare(0, prefixLower.size(), prefixLower) == 0) {
+        score += 50;
+      }
+      // Penalty for longer labels to prefer shorter matches
+      score -= (int)(h.size() / 2);
+      matches.push_back({i, score});
+    }
+  }
+
+  // Sort matches by score descending
+  std::sort(matches.begin(), matches.end(), [&](const ScoredMatch &a, const ScoredMatch &b) {
+    if (a.score != b.score) return a.score > b.score;
+    return cachedHeaders[a.index] < cachedHeaders[b.index];
+  });
+
+  // Limit results to avoid overwhelming the client
+  size_t limit = std::min(matches.size(), (size_t)500);
+  for (size_t i = 0; i < limit; ++i) {
+    const auto &h = cachedHeaders[matches[i].index];
     CompletionItem ci;
     ci.label = h;
     ci.kind = CompletionKind::File;

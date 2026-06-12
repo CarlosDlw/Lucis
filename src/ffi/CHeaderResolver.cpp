@@ -10,6 +10,9 @@
 #include <unordered_set>
 #include <unordered_map>
 #include <filesystem>
+#include <fstream>
+
+namespace fs = std::filesystem;
 
 // Discover system include paths by querying clang.
 static std::vector<std::string> discoverSystemIncludes() {
@@ -104,7 +107,6 @@ static const std::unordered_map<std::string, std::string>& knownHeaderLibs() {
 static std::string tryPkgConfig(const std::string& headerName) {
     // Derive candidate pkg names from the header.
     // e.g. "raylib.h" → "raylib", "SDL2/SDL.h" → "sdl2"
-    namespace fs = std::filesystem;
     std::string base = fs::path(headerName).stem().string();
 
     // Lowercase for pkg-config lookup
@@ -168,8 +170,79 @@ std::string CHeaderResolver::extractLocalHeader(const std::string& tokenText) {
     return tokenText.substr(first + 1, second - first - 1);
 }
 
+static std::string getHeaderCachePath() {
+    // Try to find .lux directory by walking up from current directory
+    try {
+        fs::path p = fs::current_path();
+        while (true) {
+            if (fs::exists(p / ".lux")) {
+                std::string cachePath = (p / ".lux" / "headers.cache").string();
+                std::cerr << "[lux-lsp] found project cache path: " << cachePath << "\n";
+                return cachePath;
+            }
+            if (!p.has_parent_path()) break;
+            p = p.parent_path();
+        }
+    } catch (...) {}
+
+    // Fallback to a home-based location
+    const char* home = getenv("HOME");
+    if (home) {
+        std::string cachePath = (fs::path(home) / ".lux_headers.cache").string();
+        std::cerr << "[lux-lsp] falling back to home cache: " << cachePath << "\n";
+        return cachePath;
+    }
+    return "/tmp/lux_headers.cache";
+}
+
+static void saveHeaderCache(const std::vector<std::string>& headers) {
+    std::string path = getHeaderCachePath();
+    try {
+        fs::path p(path);
+        fs::create_directories(p.parent_path());
+        std::ofstream ofs(path);
+        if (!ofs) {
+            std::cerr << "[lux-lsp] failed to open cache for writing: " << path << "\n";
+            return;
+        }
+        for (const auto& h : headers) {
+            ofs << h << "\n";
+        }
+        std::cerr << "[lux-lsp] saved " << headers.size() << " headers to cache\n";
+    } catch (const std::exception& e) {
+        std::cerr << "[lux-lsp] cache save error: " << e.what() << "\n";
+    }
+}
+
+static std::vector<std::string> loadHeaderCache() {
+    std::string path = getHeaderCachePath();
+    if (!fs::exists(path)) {
+        std::cerr << "[lux-lsp] cache file not found: " << path << "\n";
+        return {};
+    }
+    try {
+        std::ifstream ifs(path);
+        std::vector<std::string> headers;
+        std::string line;
+        while (std::getline(ifs, line)) {
+            if (!line.empty()) headers.push_back(line);
+        }
+        std::cerr << "[lux-lsp] loaded " << headers.size() << " headers from cache\n";
+        return headers;
+    } catch (const std::exception& e) {
+        std::cerr << "[lux-lsp] cache load error: " << e.what() << "\n";
+        return {};
+    }
+}
+
 std::vector<std::string> CHeaderResolver::listSystemHeaders() {
-    namespace fs = std::filesystem;
+    // 1. Try persistent cache first
+    auto cached = loadHeaderCache();
+    if (!cached.empty()) return cached;
+
+    std::cerr << "[lux-lsp] scanning system headers (this may take a while)...\n";
+
+    // 2. Scan disk if cache missing
     std::vector<std::string> result;
     std::unordered_set<std::string> seen;
 
@@ -181,15 +254,23 @@ std::vector<std::string> CHeaderResolver::listSystemHeaders() {
         std::error_code ec;
         if (!fs::is_directory(dir, ec)) continue;
 
-        for (auto& entry : fs::recursive_directory_iterator(dir, fs::directory_options::skip_permission_denied, ec)) {
+        // Use follow_directory_symlink to ensure we enter symlinked directories
+        auto options = fs::directory_options::skip_permission_denied | 
+                       fs::directory_options::follow_directory_symlink;
+        
+        for (auto& entry : fs::recursive_directory_iterator(dir, options, ec)) {
             if (ec) break;
-            if (!entry.is_regular_file(ec)) continue;
+            
+            // Following symlinks for files as well
+            std::error_code status_ec;
+            auto status = entry.status(status_ec);
+            if (status_ec || !fs::is_regular_file(status)) continue;
 
-            auto ext = entry.path().extension().string();
+            auto path = entry.path();
+            auto ext = path.extension().string();
             if (ext != ".h" && ext != ".H") continue;
 
-            // Get relative path from the include directory
-            auto rel = fs::relative(entry.path(), dir, ec);
+            auto rel = fs::relative(path, dir, ec);
             if (ec) continue;
 
             std::string headerName = rel.string();
@@ -199,6 +280,12 @@ std::vector<std::string> CHeaderResolver::listSystemHeaders() {
     }
 
     std::sort(result.begin(), result.end());
+
+    // 3. Save to cache for next time
+    if (!result.empty()) {
+        saveHeaderCache(result);
+    }
+
     return result;
 }
 
@@ -222,7 +309,6 @@ bool CHeaderResolver::resolveSystemHeader(const std::string& headerName) {
     parsedHeaders_.insert(headerName);
 
     // Resolve and store the absolute path of the header for goto-definition.
-    namespace fs = std::filesystem;
     for (auto& si : systemIncludes_) {
         // Strip leading "-isystem" and any space
         std::string dir = si.substr(8);
@@ -265,7 +351,6 @@ bool CHeaderResolver::resolveLocalHeader(const std::string& headerName,
     parsedHeaders_.insert(key);
 
     // Resolve and store the absolute path of the header for goto-definition.
-    namespace fs = std::filesystem;
     {
         std::error_code ec;
         auto candidate = fs::path(basePath) / headerName;
@@ -726,15 +811,6 @@ static CXChildVisitResult cursorVisitor(CXCursor cursor, CXCursor /*parent*/,
                                          CXClientData clientData) {
     auto* data = static_cast<VisitorData*>(clientData);
 
-    // Only process top-level declarations from the included headers
-    CXSourceLocation loc = clang_getCursorLocation(cursor);
-    if (clang_Location_isInSystemHeader(loc) == 0) {
-        // For system includes, we want system header declarations
-        // For local includes, both are fine
-        // libclang marks everything from #include <x.h> as system header
-        // so we actually want to process system headers too
-    }
-
     CXCursorKind kind = clang_getCursorKind(cursor);
 
     if (kind == CXCursor_FunctionDecl) {
@@ -1070,18 +1146,11 @@ bool CHeaderResolver::parseHeader(const std::string& headerContent,
     clang_visitChildren(rootCursor, cursorVisitor, &vdata);
 
     // ── Batch-evaluate unresolved macros via preprocessor expansion ──
-    // Macros whose body references other macros (including function-like
-    // macro calls) can't be evaluated from raw tokens alone.  We create a
-    // synthetic TU that assigns each macro to a variable and let the C
-    // preprocessor + clang constant evaluator resolve the values.
-    //
-    // Pass 1: try as long long (integer constants)
-    // Pass 2: try remaining as double (float constants)
     if (!vdata.unresolvedMacros.empty()) {
         struct EvalData {
             std::vector<VisitorData::UnresolvedMacro>* macros;
             CBindings* bindings;
-            std::vector<bool> resolved;  // track which indices were resolved
+            std::vector<bool> resolved;
             bool isFloatPass;
         };
 
@@ -1173,11 +1242,8 @@ bool CHeaderResolver::parseHeader(const std::string& headerContent,
         };
 
         std::vector<bool> resolved(vdata.unresolvedMacros.size(), false);
-
-        // Pass 1: integer constants (long long)
         runBatchEval("long long", false, vdata.unresolvedMacros, resolved);
-
-        // Pass 2: float constants (double) — only for remaining unresolved
+        
         bool hasUnresolved = false;
         for (bool r : resolved) if (!r) { hasUnresolved = true; break; }
         if (hasUnresolved)
@@ -1190,8 +1256,6 @@ bool CHeaderResolver::parseHeader(const std::string& headerContent,
 }
 
 void CHeaderResolver::detectRequiredLib(const std::string& headerName) {
-    // Skip standard C library headers — they don't need -l flags
-    // (libc is linked by default)
     static const std::unordered_set<std::string> stdCHeaders = {
         "stdio.h", "stdlib.h", "string.h", "math.h", "ctype.h",
         "errno.h", "signal.h", "setjmp.h", "stdarg.h", "stddef.h",
@@ -1207,7 +1271,6 @@ void CHeaderResolver::detectRequiredLib(const std::string& headerName) {
     };
     if (stdCHeaders.count(headerName)) return;
 
-    // 1) Check the well-known header table
     auto& table = knownHeaderLibs();
     auto it = table.find(headerName);
     if (it != table.end()) {
@@ -1215,11 +1278,8 @@ void CHeaderResolver::detectRequiredLib(const std::string& headerName) {
         return;
     }
 
-    // 2) Fallback: try pkg-config
     std::string flags = tryPkgConfig(headerName);
     if (!flags.empty()) {
-        // pkg-config may return multiple flags like "-lfoo -lbar -L/path"
-        // Split and add each -l flag individually
         std::istringstream stream(flags);
         std::string token;
         while (stream >> token) {
