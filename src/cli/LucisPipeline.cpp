@@ -165,9 +165,8 @@ std::unique_ptr<PipelineResult> LucisPipeline::run(const Options& opts) {
                 } else if (incl->INCLUDE_LOCAL()) {
                     auto header = CHeaderResolver::extractLocalHeader(incl->getText());
                     if (!header.empty()) {
-                        auto base = fs::path(unit.filePath).parent_path().string();
-                        resolver.resolveLocalHeader(header, base);
-                        auto hPath = fs::path(base) / header;
+                        resolver.resolveLocalHeader(header, result->projectRoot);
+                        auto hPath = fs::path(result->projectRoot) / header;
                         auto cPath = fs::path(hPath).replace_extension(".c");
                         if (fs::exists(cPath)) {
                             auto canonical = fs::canonical(cPath).string();

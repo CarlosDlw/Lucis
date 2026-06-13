@@ -4305,13 +4305,7 @@ void CompletionProvider::addHeaderSuggestions(
     }
   };
 
-  // 1) Source file's own directory
-  if (!filePath.empty()) {
-    auto srcDir = fs::path(filePath).parent_path();
-    scanDir(srcDir, srcDir);
-  }
-
-  // 2) Project root (skip hidden dirs and build dirs)
+  // 1) Project root (skip hidden dirs and build dirs) — first priority
   if (project && !project->projectRoot().empty()) {
     auto root = fs::path(project->projectRoot());
     std::error_code ec;
@@ -4322,6 +4316,12 @@ void CompletionProvider::addHeaderSuggestions(
       if (!fs::is_directory(entry.path())) continue;
       scanDir(entry.path(), root);
     }
+  }
+
+  // 2) Source file's own directory (fallback)
+  if (!filePath.empty()) {
+    auto srcDir = fs::path(filePath).parent_path();
+    scanDir(srcDir, srcDir);
   }
 
   // 3) System headers (cached)

@@ -147,7 +147,7 @@ std::vector<Diagnostic> DiagnosticEngine::run(const std::string& source,
                     } else if (incl->INCLUDE_LOCAL()) {
                         auto header = CHeaderResolver::extractLocalHeader(text);
                         if (!header.empty())
-                            resolver.resolveLocalHeader(header, fs::path(filePath).parent_path().string());
+                            resolver.resolveLocalHeader(header, project->projectRoot());
                     }
                 }
             }
