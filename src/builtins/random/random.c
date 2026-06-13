@@ -1,4 +1,5 @@
 #include "random/random.h"
+#include "../string/string.h"
 #include <stdlib.h>
 #include <time.h>
 #include <string.h>
@@ -98,7 +99,7 @@ lucis_random_str_result lucis_uuid_v4(void) {
     bytes[6] = (uint8_t)((bytes[6] & 0x0F) | 0x40);
     bytes[8] = (uint8_t)((bytes[8] & 0x3F) | 0x80);
 
-    char* out = (char*)malloc(37);
+    char* out = (char*)lucis_allocString(37);
     if (!out) {
         lucis_random_str_result r = {"", 0};
         return r;

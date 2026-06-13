@@ -1,4 +1,5 @@
 #include "compress.h"
+#include "../string/string.h"
 #include <stdlib.h>
 #include <string.h>
 #include <zlib.h>
@@ -10,7 +11,8 @@ static lucis_compress_str_result make_result(const char* p, size_t n) {
 }
 
 static lucis_compress_str_result empty_result(void) {
-    char* p = (char*)malloc(1);
+    char* p = (char*)lucis_allocString(1);
+    if (!p) return make_result("", 0);
     p[0] = '\0';
     return make_result(p, 0);
 }
@@ -29,7 +31,7 @@ lucis_compress_str_result lucis_gzipCompress(const char* s, size_t slen) {
         return empty_result();
 
     size_t cap = deflateBound(&zs, (uLong)slen);
-    char* out  = (char*)malloc(cap);
+    char* out  = (char*)lucis_allocString(cap);
 
     zs.next_in   = (Bytef*)s;
     zs.avail_in  = (uInt)slen;
@@ -62,11 +64,11 @@ lucis_compress_str_result lucis_gzipDecompress(const char* s, size_t slen) {
 
     size_t cap = slen * 4;
     if (cap < 256) cap = 256;
-    char* out = (char*)malloc(cap);
+    char* raw = (char*)malloc(cap);
 
     zs.next_in   = (Bytef*)s;
     zs.avail_in  = (uInt)slen;
-    zs.next_out  = (Bytef*)out;
+    zs.next_out  = (Bytef*)raw;
     zs.avail_out = (uInt)cap;
 
     int rc;
@@ -74,8 +76,8 @@ lucis_compress_str_result lucis_gzipDecompress(const char* s, size_t slen) {
         if (zs.avail_out == 0) {
             size_t old = cap;
             cap *= 2;
-            out = (char*)realloc(out, cap);
-            zs.next_out  = (Bytef*)(out + old);
+            raw = (char*)realloc(raw, cap);
+            zs.next_out  = (Bytef*)(raw + old);
             zs.avail_out = (uInt)(cap - old);
         }
     }
@@ -84,10 +86,15 @@ lucis_compress_str_result lucis_gzipDecompress(const char* s, size_t slen) {
     inflateEnd(&zs);
 
     if (rc != Z_STREAM_END) {
-        free(out);
+        free(raw);
         return empty_result();
     }
 
+    // Copy into tracked memory
+    char* out = (char*)lucis_allocString(written);
+    if (!out) { free(raw); return empty_result(); }
+    memcpy(out, raw, written);
+    free(raw);
     return make_result(out, written);
 }
 
@@ -105,7 +112,7 @@ lucis_compress_str_result lucis_deflate(const char* s, size_t slen) {
         return empty_result();
 
     size_t cap = deflateBound(&zs, (uLong)slen);
-    char* out  = (char*)malloc(cap);
+    char* out  = (char*)lucis_allocString(cap);
 
     zs.next_in   = (Bytef*)s;
     zs.avail_in  = (uInt)slen;
@@ -138,11 +145,11 @@ lucis_compress_str_result lucis_inflate(const char* s, size_t slen) {
 
     size_t cap = slen * 4;
     if (cap < 256) cap = 256;
-    char* out = (char*)malloc(cap);
+    char* raw = (char*)malloc(cap);
 
     zs.next_in   = (Bytef*)s;
     zs.avail_in  = (uInt)slen;
-    zs.next_out  = (Bytef*)out;
+    zs.next_out  = (Bytef*)raw;
     zs.avail_out = (uInt)cap;
 
     int rc;
@@ -150,8 +157,8 @@ lucis_compress_str_result lucis_inflate(const char* s, size_t slen) {
         if (zs.avail_out == 0) {
             size_t old = cap;
             cap *= 2;
-            out = (char*)realloc(out, cap);
-            zs.next_out  = (Bytef*)(out + old);
+            raw = (char*)realloc(raw, cap);
+            zs.next_out  = (Bytef*)(raw + old);
             zs.avail_out = (uInt)(cap - old);
         }
     }
@@ -160,10 +167,15 @@ lucis_compress_str_result lucis_inflate(const char* s, size_t slen) {
     inflateEnd(&zs);
 
     if (rc != Z_STREAM_END) {
-        free(out);
+        free(raw);
         return empty_result();
     }
 
+    // Copy into tracked memory
+    char* out = (char*)lucis_allocString(written);
+    if (!out) { free(raw); return empty_result(); }
+    memcpy(out, raw, written);
+    free(raw);
     return make_result(out, written);
 }
 
@@ -184,7 +196,7 @@ lucis_compress_str_result lucis_compressLevel(const char* s, size_t slen, int32_
         return empty_result();
 
     size_t cap = deflateBound(&zs, (uLong)slen);
-    char* out  = (char*)malloc(cap);
+    char* out  = (char*)lucis_allocString(cap);
 
     zs.next_in   = (Bytef*)s;
     zs.avail_in  = (uInt)slen;

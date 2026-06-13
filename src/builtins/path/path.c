@@ -1,6 +1,7 @@
 #define _POSIX_C_SOURCE 200809L
 
 #include "path.h"
+#include "../string/string.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -20,7 +21,7 @@ static char* make_cstr(const char* s, size_t len) {
 static lucis_path_str_result make_result(const char* src, size_t len) {
     lucis_path_str_result res = {NULL, 0};
     if (len == 0) return res;
-    char* buf = (char*)malloc(len);
+    char* buf = (char*)lucis_allocString(len);
     if (!buf) return res;
     memcpy(buf, src, len);
     res.ptr = buf;
@@ -59,7 +60,7 @@ lucis_path_str_result lucis_pathJoin(const char* a, size_t a_len,
     while (boff < b_len && b[boff] == '/') ++boff;
 
     size_t total = alen + 1 + (b_len - boff);
-    char* buf = (char*)malloc(total);
+    char* buf = (char*)lucis_allocString(total);
     if (!buf) return res;
 
     memcpy(buf, a, alen);
@@ -235,7 +236,7 @@ lucis_path_str_result lucis_normalize(const char* p, size_t len) {
         total += seg_len[j];
     }
 
-    char* buf = (char*)malloc(total);
+    char* buf = (char*)lucis_allocString(total);
     if (!buf) {
         free(seg_off);
         free(seg_len);
@@ -328,7 +329,7 @@ lucis_path_str_result lucis_withExtension(const char* p, size_t p_len,
     int has_dot = (ext_len > 0 && ext[0] == '.');
 
     size_t total = base_len + (has_dot ? 0 : 1) + ext_len;
-    char* buf = (char*)malloc(total);
+    char* buf = (char*)lucis_allocString(total);
     if (!buf) {
         lucis_path_str_result res = {NULL, 0};
         return res;
@@ -361,7 +362,7 @@ lucis_path_str_result lucis_withFileName(const char* p, size_t p_len,
     /* parent + '/' + name */
     size_t parent_len = sep + 1; /* include the separator */
     size_t total = parent_len + name_len;
-    char* buf = (char*)malloc(total);
+    char* buf = (char*)lucis_allocString(total);
     if (!buf) {
         lucis_path_str_result res = {NULL, 0};
         return res;
@@ -384,13 +385,14 @@ lucis_path_str_result lucis_joinAllVec(const lucis_path_vec_header* parts) {
     size_t count = parts->len;
 
     if (count == 0) {
-        char* r = (char*)malloc(1);
+        char* r = (char*)lucis_allocString(1);
+        if (!r) return (lucis_path_str_result){ "", 0 };
         r[0] = '\0';
         return (lucis_path_str_result){ r, 0 };
     }
 
     // Join sequentially using existing pathJoin
-    char* cur = (char*)malloc(arr[0].len + 1);
+    char* cur = (char*)lucis_allocString(arr[0].len + 1);
     memcpy(cur, arr[0].ptr, arr[0].len);
     cur[arr[0].len] = '\0';
     size_t curLen = arr[0].len;

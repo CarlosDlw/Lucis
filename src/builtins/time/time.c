@@ -1,5 +1,6 @@
 #define _POSIX_C_SOURCE 199309L
 #include "time/time.h"
+#include "../string/string.h"
 #include <time.h>
 #include <stdlib.h>
 #include <string.h>
@@ -88,7 +89,7 @@ int32_t lucis_weekday(void) {
 lucis_time_str_result lucis_timestamp(void) {
     // ISO 8601: "2026-03-23T14:30:45"
     struct tm tm = get_local_tm();
-    char* buf = (char*)malloc(32);
+    char* buf = (char*)lucis_allocString(32);
     if (!buf) {
         lucis_time_str_result r = {"", 0};
         return r;
@@ -118,7 +119,7 @@ lucis_time_str_result lucis_formatTime(uint64_t ms,
     memcpy(fmt, fmt_ptr, fmt_len);
     fmt[fmt_len] = '\0';
 
-    char* buf = (char*)malloc(256);
+    char* buf = (char*)lucis_allocString(256);
     if (!buf) {
         free(fmt);
         lucis_time_str_result r = {"", 0};

@@ -1,4 +1,5 @@
 #include "crypto.h"
+#include "../string/string.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -8,7 +9,8 @@
 static const char hex_lut[] = "0123456789abcdef";
 
 static char* bytes_to_hex(const uint8_t* data, size_t n) {
-    char* out = (char*)malloc(n * 2 + 1);
+    char* out = (char*)lucis_allocString(n * 2 + 1);
+    if (!out) return NULL;
     for (size_t i = 0; i < n; i++) {
         out[i * 2]     = hex_lut[data[i] >> 4];
         out[i * 2 + 1] = hex_lut[data[i] & 0x0f];

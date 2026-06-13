@@ -1,4 +1,5 @@
 #include "io.h"
+#include "../string/string.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -9,29 +10,39 @@
 // ── Internal helpers ────────────────────────────────────────────────────────
 
 // Read a line from stdin, stripping trailing newline.
-// Returns a heap-allocated string and its length.
+// Returns a tracked heap-allocated string (freed via lucis_freeStr).
 static lucis_io_string read_line_internal(void) {
-    char*  buf  = NULL;
+    char*  raw  = NULL;
     size_t cap  = 0;
-    ssize_t len = getline(&buf, &cap, stdin);
+    ssize_t len = getline(&raw, &cap, stdin);
 
     if (len < 0) {
-        // EOF or error — return empty string
-        free(buf);
-        char* empty = (char*)malloc(1);
+        free(raw);
+        char* empty = (char*)lucis_allocString(1);
+        if (!empty) empty = (char*)malloc(1);
         empty[0] = '\0';
         return (lucis_io_string){ empty, 0 };
     }
 
     // Strip trailing newline
-    if (len > 0 && buf[len - 1] == '\n') {
-        buf[--len] = '\0';
-        // Also strip \r on Windows-style line endings
-        if (len > 0 && buf[len - 1] == '\r')
-            buf[--len] = '\0';
+    if (len > 0 && raw[len - 1] == '\n') {
+        raw[--len] = '\0';
+        if (len > 0 && raw[len - 1] == '\r')
+            raw[--len] = '\0';
     }
 
-    return (lucis_io_string){ buf, (size_t)len };
+    // Copy into tracked memory so lucis_freeStr can free it
+    size_t n = (size_t)len;
+    char* tracked = (char*)lucis_allocString(n + 1);
+    if (tracked) {
+        memcpy(tracked, raw, n);
+        tracked[n] = '\0';
+    } else {
+        tracked = raw; // fallback — may leak but better than crash
+        raw = NULL;
+    }
+    free(raw);
+    return (lucis_io_string){ tracked ? tracked : "", n };
 }
 
 // ── Stdin — Text ────────────────────────────────────────────────────────────
@@ -88,21 +99,32 @@ int lucis_readBool(void) {
 lucis_io_string lucis_readAll(void) {
     size_t cap = 4096;
     size_t len = 0;
-    char*  buf = (char*)malloc(cap);
+    char*  raw = (char*)malloc(cap);
+    if (!raw) return (lucis_io_string){ "", 0 };
 
     while (1) {
-        size_t n = fread(buf + len, 1, cap - len, stdin);
+        size_t n = fread(raw + len, 1, cap - len, stdin);
         len += n;
-        if (n == 0) break;  // EOF or error
+        if (n == 0) break;
 
         if (len == cap) {
             cap *= 2;
-            buf = (char*)realloc(buf, cap);
+            char* nr = (char*)realloc(raw, cap);
+            if (!nr) break;
+            raw = nr;
         }
     }
 
-    buf[len] = '\0';  // null-terminate (cap always > len after last realloc)
-    return (lucis_io_string){ buf, len };
+    raw[len] = '\0';
+
+    // Copy into tracked memory
+    char* tracked = (char*)lucis_allocString(len + 1);
+    if (tracked) {
+        memcpy(tracked, raw, len);
+        tracked[len] = '\0';
+    }
+    free(raw);
+    return (lucis_io_string){ tracked ? tracked : "", len };
 }
 
 // ── Prompt variants ─────────────────────────────────────────────────────────
@@ -245,29 +267,33 @@ void lucis_readLines(lucis_io_vec_header* out) {
 
     size_t cap = 8;
     str_elem* arr = (str_elem*)malloc(cap * sizeof(str_elem));
+    if (!arr) return;
     size_t count = 0;
 
-    char* line = NULL;
-    size_t lineCap = 0;
+    char* rawLine = NULL;
+    size_t rawCap = 0;
     ssize_t n;
-    while ((n = getline(&line, &lineCap, stdin)) != -1) {
-        // Strip trailing newline
-        if (n > 0 && line[n - 1] == '\n') n--;
-        if (n > 0 && line[n - 1] == '\r') n--;
+    while ((n = getline(&rawLine, &rawCap, stdin)) != -1) {
+        if (n > 0 && rawLine[n - 1] == '\n') n--;
+        if (n > 0 && rawLine[n - 1] == '\r') n--;
 
-        char* copy = (char*)malloc((size_t)n + 1);
-        memcpy(copy, line, (size_t)n);
-        copy[n] = '\0';
+        size_t nlen = (size_t)n;
+        char* tracked = (char*)lucis_allocString(nlen + 1);
+        if (!tracked) continue;
+        memcpy(tracked, rawLine, nlen);
+        tracked[nlen] = '\0';
 
         if (count == cap) {
             cap *= 2;
-            arr = (str_elem*)realloc(arr, cap * sizeof(str_elem));
+            str_elem* nr = (str_elem*)realloc(arr, cap * sizeof(str_elem));
+            if (!nr) { free(tracked); break; }
+            arr = nr;
         }
-        arr[count].ptr = copy;
-        arr[count].len = (size_t)n;
+        arr[count].ptr = tracked;
+        arr[count].len = nlen;
         count++;
     }
-    free(line);
+    free(rawLine);
 
     out->ptr = arr;
     out->len = count;

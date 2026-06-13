@@ -1,4 +1,5 @@
 #include "os.h"
+#include "../string/string.h"
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
@@ -28,13 +29,15 @@ uint32_t lucis_osGetgid(void) {
 lucis_os_str_result lucis_osHostname(void) {
     char buf[256];
     if (gethostname(buf, sizeof(buf)) != 0) {
-        char* empty = (char*)malloc(1);
+        char* empty = (char*)lucis_allocString(1);
+        if (!empty) return (lucis_os_str_result){ "", 0 };
         empty[0] = '\0';
         return (lucis_os_str_result){ empty, 0 };
     }
     buf[sizeof(buf) - 1] = '\0';
     size_t len = strlen(buf);
-    char* out = (char*)malloc(len + 1);
+    char* out = (char*)lucis_allocString(len + 1);
+    if (!out) return (lucis_os_str_result){ "", 0 };
     memcpy(out, buf, len + 1);
     return (lucis_os_str_result){ out, len };
 }
@@ -52,7 +55,8 @@ int32_t lucis_osErrno(void) {
 lucis_os_str_result lucis_osStrerror(int32_t code) {
     const char* msg = strerror(code);
     size_t len = strlen(msg);
-    char* out = (char*)malloc(len + 1);
+    char* out = (char*)lucis_allocString(len + 1);
+    if (!out) return (lucis_os_str_result){ "", 0 };
     memcpy(out, msg, len + 1);
     return (lucis_os_str_result){ out, len };
 }

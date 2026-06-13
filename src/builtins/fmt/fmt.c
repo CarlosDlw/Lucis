@@ -1,4 +1,5 @@
 #include "fmt.h"
+#include "../string/string.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -10,7 +11,7 @@
 static lucis_fmt_str_result make_result(const char* src, size_t len) {
     lucis_fmt_str_result res = {NULL, 0};
     if (len == 0) { res.ptr = ""; return res; }
-    char* buf = (char*)malloc(len);
+    char* buf = (char*)lucis_allocString(len);
     if (!buf) return res;
     memcpy(buf, src, len);
     res.ptr = buf;
@@ -23,7 +24,7 @@ lucis_fmt_str_result lucis_lpad(const char* s, size_t s_len,
                                    size_t width, uint8_t fill) {
     if (s_len >= width) return make_result(s, s_len);
     size_t pad = width - s_len;
-    char* buf = (char*)malloc(width);
+    char* buf = (char*)lucis_allocString(width);
     if (!buf) { lucis_fmt_str_result r = {NULL, 0}; return r; }
     memset(buf, fill, pad);
     memcpy(buf + pad, s, s_len);
@@ -38,7 +39,7 @@ lucis_fmt_str_result lucis_rpad(const char* s, size_t s_len,
                                    size_t width, uint8_t fill) {
     if (s_len >= width) return make_result(s, s_len);
     size_t pad = width - s_len;
-    char* buf = (char*)malloc(width);
+    char* buf = (char*)lucis_allocString(width);
     if (!buf) { lucis_fmt_str_result r = {NULL, 0}; return r; }
     memcpy(buf, s, s_len);
     memset(buf + s_len, fill, pad);
@@ -55,7 +56,7 @@ lucis_fmt_str_result lucis_center(const char* s, size_t s_len,
     size_t total_pad = width - s_len;
     size_t left_pad = total_pad / 2;
     size_t right_pad = total_pad - left_pad;
-    char* buf = (char*)malloc(width);
+    char* buf = (char*)lucis_allocString(width);
     if (!buf) { lucis_fmt_str_result r = {NULL, 0}; return r; }
     memset(buf, fill, left_pad);
     memcpy(buf + left_pad, s, s_len);

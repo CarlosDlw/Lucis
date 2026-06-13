@@ -1,6 +1,7 @@
 #define _POSIX_C_SOURCE 200809L
 
 #include "regex.h"
+#include "../string/string.h"
 
 #include <regex.h>
 #include <stdlib.h>
@@ -19,7 +20,7 @@ static char* make_cstr(const char* s, size_t len) {
 static lucis_regex_str_result make_result(const char* src, size_t len) {
     lucis_regex_str_result res = {NULL, 0};
     if (len == 0) { res.ptr = ""; return res; }
-    char* buf = (char*)malloc(len);
+    char* buf = (char*)lucis_allocString(len);
     if (!buf) return res;
     memcpy(buf, src, len);
     res.ptr = buf;
@@ -180,6 +181,14 @@ static lucis_regex_str_result regex_replace_impl(
     regfree(&re);
     free(ctext);
 
+    // Copy into tracked memory
+    char* tracked = (char*)lucis_allocString(pos);
+    if (tracked) {
+        memcpy(tracked, buf, pos);
+        free(buf);
+        buf = tracked;
+    }
+
     lucis_regex_str_result res;
     res.ptr = buf;
     res.len = pos;
@@ -250,7 +259,8 @@ void lucis_regexFindAll(lucis_regex_vec_header* out,
     regmatch_t match;
     while (regexec(&re, cursor, 1, &match, 0) == 0) {
         size_t mLen = (size_t)(match.rm_eo - match.rm_so);
-        char* copy = (char*)malloc(mLen + 1);
+        char* copy = (char*)lucis_allocString(mLen + 1);
+        if (!copy) { cursor += match.rm_eo > 0 ? match.rm_eo : 1; continue; }
         memcpy(copy, cursor + match.rm_so, mLen);
         copy[mLen] = '\0';
 
@@ -260,7 +270,7 @@ void lucis_regexFindAll(lucis_regex_vec_header* out,
         count++;
 
         cursor += match.rm_eo;
-        if (match.rm_eo == 0) cursor++; // avoid infinite loop on zero-length match
+        if (match.rm_eo == 0) cursor++;
         if (*cursor == '\0') break;
     }
     regfree(&re);
@@ -291,9 +301,10 @@ void lucis_regexSplit(lucis_regex_vec_header* out,
     regex_t re;
     if (regcomp(&re, ptmp, REG_EXTENDED) != 0) {
         free(ptmp); free(ttmp);
-        // Return single element with full string
         str_elem* arr = (str_elem*)malloc(sizeof(str_elem));
-        char* copy = (char*)malloc(text_len + 1);
+        if (!arr) return;
+        char* copy = (char*)lucis_allocString(text_len + 1);
+        if (!copy) { free(arr); return; }
         memcpy(copy, text, text_len);
         copy[text_len] = '\0';
         arr[0].ptr = copy;
@@ -313,7 +324,8 @@ void lucis_regexSplit(lucis_regex_vec_header* out,
     regmatch_t match;
     while (regexec(&re, cursor, 1, &match, 0) == 0) {
         size_t partLen = (size_t)match.rm_so;
-        char* part = (char*)malloc(partLen + 1);
+        char* part = (char*)lucis_allocString(partLen + 1);
+        if (!part) { cursor += match.rm_eo > 0 ? match.rm_eo : 1; continue; }
         memcpy(part, cursor, partLen);
         part[partLen] = '\0';
 
@@ -325,11 +337,10 @@ void lucis_regexSplit(lucis_regex_vec_header* out,
         cursor += match.rm_eo;
         if (match.rm_eo == 0) { cursor++; }
         if (*cursor == '\0') {
-            // Add trailing empty string
-            char* empty = (char*)malloc(1);
-            empty[0] = '\0';
+            char* empty = (char*)lucis_allocString(1);
+            if (empty) empty[0] = '\0';
             if (count == cap) { cap *= 2; arr = (str_elem*)realloc(arr, cap * sizeof(str_elem)); }
-            arr[count].ptr = empty;
+            arr[count].ptr = empty ? empty : "";
             arr[count].len = 0;
             count++;
             break;
@@ -339,11 +350,14 @@ void lucis_regexSplit(lucis_regex_vec_header* out,
     // Add remaining
     if (*cursor != '\0' || count == 0) {
         size_t remLen = strlen(cursor);
-        char* rem = (char*)malloc(remLen + 1);
-        memcpy(rem, cursor, remLen);
-        rem[remLen] = '\0';
+        char* rem = (char*)lucis_allocString(remLen + 1);
+        if (!rem) rem = (char*)malloc(remLen + 1);
+        if (rem) {
+            memcpy(rem, cursor, remLen);
+            rem[remLen] = '\0';
+        }
         if (count == cap) { cap *= 2; arr = (str_elem*)realloc(arr, cap * sizeof(str_elem)); }
-        arr[count].ptr = rem;
+        arr[count].ptr = rem ? rem : "";
         arr[count].len = remLen;
         count++;
     }

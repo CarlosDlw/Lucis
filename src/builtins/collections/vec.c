@@ -375,11 +375,13 @@ lucis_string lucis_vec_toString_##SUFFIX(const lucis_vec_header* v) {         \
     if (pos + 1 >= cap) { cap = pos + 2; buf = (char*)realloc(buf, cap); }     \
     buf[pos++] = ']';                                                           \
     buf[pos] = '\0';                                                            \
+    char* _t = (char*)lucis_allocString(pos);                                  \
+    if (_t) { memcpy(_t, buf, pos); _t[pos] = '\0'; free(buf); buf = _t; }    \
     lucis_string r = { buf, pos }; return r;                                   \
 }                                                                               \
                                                                                 \
 lucis_string lucis_vec_join_##SUFFIX(const lucis_vec_header* v,              \
-                                       lucis_string sep) {                     \
+                                        lucis_string sep) {                     \
     if (v->len == 0) { lucis_string r = { "", 0 }; return r; }                \
     size_t cap = 64;                                                            \
     char* buf = (char*)malloc(cap);                                             \
@@ -394,6 +396,8 @@ lucis_string lucis_vec_join_##SUFFIX(const lucis_vec_header* v,              \
         pos += (size_t)snprintf(buf + pos, cap - pos, FMT, d[i]);              \
     }                                                                           \
     buf[pos] = '\0';                                                            \
+    char* _t = (char*)lucis_allocString(pos);                                  \
+    if (_t) { memcpy(_t, buf, pos); _t[pos] = '\0'; free(buf); buf = _t; }    \
     lucis_string r = { buf, pos }; return r;                                   \
 }
 
@@ -433,7 +437,7 @@ static int str_equal(lucis_string a, lucis_string b) {
 }
 
 static lucis_string clone_string_value(lucis_string s) {
-    char* buf = (char*)malloc(s.len + 1);
+    char* buf = (char*)lucis_allocString(s.len + 1);
     if (!buf) return (lucis_string){ "", 0 };
     if (s.len > 0 && s.ptr) memcpy(buf, s.ptr, s.len);
     buf[s.len] = '\0';

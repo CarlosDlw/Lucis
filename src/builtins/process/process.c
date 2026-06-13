@@ -1,6 +1,7 @@
 #define _POSIX_C_SOURCE 200809L
 
 #include "process.h"
+#include "../string/string.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -22,7 +23,7 @@ static lucis_proc_str_result make_result(const char* s) {
     lucis_proc_str_result res;
     if (s) {
         size_t len = strlen(s);
-        char* out = (char*)malloc(len);
+        char* out = (char*)lucis_allocString(len);
         if (out) {
             memcpy(out, s, len);
             res.ptr = out;
@@ -113,7 +114,15 @@ lucis_proc_str_result lucis_execOutput(const char* cmd, size_t cmd_len) {
     }
     pclose(fp);
 
-    res.ptr = buf;
+    // Copy into tracked memory
+    char* tracked = (char*)lucis_allocString(len);
+    if (tracked) {
+        memcpy(tracked, buf, len);
+        free(buf);
+        res.ptr = tracked;
+    } else {
+        res.ptr = buf;
+    }
     res.len = len;
     return res;
 }
@@ -165,7 +174,7 @@ lucis_proc_str_result lucis_executablePath(void) {
     char buf[PATH_MAX];
     ssize_t len = readlink("/proc/self/exe", buf, sizeof(buf) - 1);
     if (len > 0) {
-        char* out = (char*)malloc((size_t)len);
+        char* out = (char*)lucis_allocString((size_t)len);
         if (out) {
             memcpy(out, buf, (size_t)len);
             res.ptr = out;

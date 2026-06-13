@@ -1,4 +1,5 @@
 #include "net.h"
+#include "../string/string.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -17,7 +18,8 @@ static lucis_net_str_result make_str(const char* p, size_t n) {
 }
 
 static lucis_net_str_result empty_str(void) {
-    char* p = (char*)malloc(1);
+    char* p = (char*)lucis_allocString(1);
+    if (!p) return make_str("", 0);
     p[0] = '\0';
     return make_str(p, 0);
 }
@@ -110,7 +112,7 @@ int64_t lucis_tcpSend(int32_t fd, const char* data, size_t dataLen) {
 }
 
 lucis_net_str_result lucis_tcpRecv(int32_t fd, size_t maxLen) {
-    char* buf = (char*)malloc(maxLen);
+    char* buf = (char*)lucis_allocString(maxLen);
     if (!buf) return empty_str();
 
     ssize_t n = recv(fd, buf, maxLen, 0);
@@ -175,7 +177,7 @@ int64_t lucis_udpSendTo(int32_t fd, const char* data, size_t dataLen,
 }
 
 lucis_net_str_result lucis_udpRecvFrom(int32_t fd, size_t maxLen) {
-    char* buf = (char*)malloc(maxLen);
+    char* buf = (char*)lucis_allocString(maxLen);
     if (!buf) return empty_str();
 
     struct sockaddr_storage addr;
@@ -232,7 +234,8 @@ lucis_net_str_result lucis_netResolve(const char* host, size_t hostLen) {
     if (!ip) return empty_str();
 
     size_t len = strlen(ip);
-    char* out = (char*)malloc(len);
+    char* out = (char*)lucis_allocString(len);
+    if (!out) return empty_str();
     memcpy(out, ip, len);
     return make_str(out, len);
 }

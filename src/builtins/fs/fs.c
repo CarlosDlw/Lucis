@@ -251,7 +251,8 @@ void lucis_listDir(lucis_fs_vec_header* out, const char* path, size_t path_len) 
             continue;
 
         size_t nLen = strlen(entry->d_name);
-        char* copy = (char*)malloc(nLen + 1);
+        char* copy = (char*)lucis_allocString(nLen + 1);
+        if (!copy) continue;
         memcpy(copy, entry->d_name, nLen);
         copy[nLen] = '\0';
 

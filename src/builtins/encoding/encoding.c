@@ -1,4 +1,5 @@
 #include "encoding.h"
+#include "../string/string.h"
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
@@ -28,7 +29,7 @@ static const unsigned char b64_dec_table[256] = {
 
 lucis_encoding_str_result lucis_base64EncodeStr(const char* s, size_t s_len) {
     size_t out_len = 4 * ((s_len + 2) / 3);
-    char* out = (char*)malloc(out_len + 1);
+    char* out = (char*)lucis_allocString(out_len + 1);
     if (!out) { return (lucis_encoding_str_result){ "", 0 }; }
 
     size_t i = 0, j = 0;
@@ -66,7 +67,7 @@ lucis_encoding_str_result lucis_base64DecodeStr(const char* s, size_t s_len) {
     if (s_len >= 2 && s[s_len - 2] == '=') pad++;
 
     size_t out_len = (s_len / 4) * 3 - pad;
-    char* out = (char*)malloc(out_len + 1);
+    char* out = (char*)lucis_allocString(out_len + 1);
     if (!out) { return (lucis_encoding_str_result){ "", 0 }; }
 
     size_t i = 0, j = 0;
@@ -96,26 +97,26 @@ static int is_unreserved(unsigned char c) {
 static const char hex_upper[] = "0123456789ABCDEF";
 
 lucis_encoding_str_result lucis_urlEncode(const char* s, size_t s_len) {
-    /* Worst case: every char becomes %XX → 3× */
-    char* out = (char*)malloc(s_len * 3 + 1);
-    if (!out) { return (lucis_encoding_str_result){ "", 0 }; }
+    char* raw = (char*)malloc(s_len * 3 + 1);
+    if (!raw) { return (lucis_encoding_str_result){ "", 0 }; }
 
     size_t j = 0;
     for (size_t i = 0; i < s_len; i++) {
         unsigned char c = (unsigned char)s[i];
         if (is_unreserved(c)) {
-            out[j++] = (char)c;
+            raw[j++] = (char)c;
         } else {
-            out[j++] = '%';
-            out[j++] = hex_upper[c >> 4];
-            out[j++] = hex_upper[c & 0x0F];
+            raw[j++] = '%';
+            raw[j++] = hex_upper[c >> 4];
+            raw[j++] = hex_upper[c & 0x0F];
         }
     }
+    raw[j] = '\0';
 
-    out[j] = '\0';
-    /* Shrink allocation */
-    char* shrunk = (char*)realloc(out, j + 1);
-    if (shrunk) out = shrunk;
+    char* out = (char*)lucis_allocString(j + 1);
+    if (!out) { free(raw); return (lucis_encoding_str_result){ "", 0 }; }
+    memcpy(out, raw, j + 1);
+    free(raw);
     return (lucis_encoding_str_result){ out, j };
 }
 
@@ -129,7 +130,7 @@ static int hex_val(unsigned char c) {
 }
 
 lucis_encoding_str_result lucis_urlDecode(const char* s, size_t s_len) {
-    char* out = (char*)malloc(s_len + 1);
+    char* out = (char*)lucis_allocString(s_len + 1);
     if (!out) { return (lucis_encoding_str_result){ "", 0 }; }
 
     size_t j = 0;

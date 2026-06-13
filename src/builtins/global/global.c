@@ -1,4 +1,5 @@
 #include "global.h"
+#include "../string/string.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -77,7 +78,8 @@ int lucis_toBool(const char* data, size_t len) {
 // ── toString (T → string) ──────────────────────────────────────────────────
 
 static lucis_string_ret make_string(const char* buf, int len) {
-    char* heap = (char*)malloc(len);
+    char* heap = (char*)lucis_allocString(len);
+    if (!heap) return (lucis_string_ret){ "", 0 };
     memcpy(heap, buf, len);
     return (lucis_string_ret){ heap, (size_t)len };
 }
@@ -148,7 +150,8 @@ lucis_string_ret lucis_toString_bool(int val) {
 }
 
 lucis_string_ret lucis_toString_char(char val) {
-    char* heap = (char*)malloc(1);
+    char* heap = (char*)lucis_allocString(1);
+    if (!heap) return (lucis_string_ret){ "", 0 };
     heap[0] = val;
     return (lucis_string_ret){ heap, 1 };
 }

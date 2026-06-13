@@ -57,9 +57,11 @@ std::string LucisPipeline::getProjectRoot(const std::string& inputFile) {
     if (dir.empty()) dir = ".";
     dir = fs::canonical(dir);
 
-    for (auto ancestor = dir; ancestor >= fs::path("/"); ancestor = ancestor.parent_path()) {
+    for (auto ancestor = dir; ; ancestor = ancestor.parent_path()) {
         if (fs::exists(ancestor / "lucis.yaml"))
             return ancestor.string();
+        // Stop at the filesystem root (parent_path of "/" is "/").
+        if (ancestor == ancestor.parent_path()) break;
     }
 
     // Fallback: the input file's parent directory.
