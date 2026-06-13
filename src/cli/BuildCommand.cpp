@@ -1,10 +1,12 @@
 #include "cli/BuildCommand.h"
 #include "cli/ArgParser.h"
 #include "cli/LucisPipeline.h"
+#include "config/LucisConfig.h"
 #include "IRBuilder/IRGen.h"
 #include "LLVM_IR/IRModule.h"
 #include "LLVM_Optimizer/Optimizer.h"
 #include "machine_code/CodeGen.h"
+#include "namespace/ProjectScanner.h"
 
 #include <iostream>
 #include <iomanip>
@@ -19,8 +21,7 @@
 namespace fs = std::filesystem;
 
 void BuildCommand::buildArgs(ArgParser& parser) const {
-    parser.addPositional("file", "Path to the .lc entrypoint file");
-    parser.addOption("output", 'o', "FILE", "Output binary path (default: <input>.out)");
+    parser.addPositional("file", "Path to the .lc entrypoint file (auto-resolved from lucis.yaml if omitted)", false);
     parser.addFlag("emit-llvm", '\0', "Emit LLVM IR (.ll)");
     parser.addFlag("emit-asm",  '\0', "Emit assembly (.s)");
     parser.addFlag("emit-bc",   '\0', "Emit LLVM bitcode (.bc)");
@@ -38,14 +39,70 @@ void BuildCommand::buildArgs(ArgParser& parser) const {
     parser.addOption("include", 'I', "DIR", "Add include search path (repeatable)", true);
 }
 
+std::string BuildCommand::resolveInputFile(const ArgParser& parser,
+                                            LucisConfig* outConfig) const {
+    auto file = parser.get("file");
+    if (!file.empty()) return file;
+
+    // No explicit file — try lucis.yaml from CWD upward.
+    auto config = LucisConfig::findInDir(fs::current_path().string());
+    if (!config) return {};
+
+    if (outConfig) *outConfig = *config;
+
+    // Scan source dirs for the main entrypoint.
+    auto files = config->sourcePaths.empty()
+        ? ProjectScanner::scan(fs::current_path().string())
+        : ProjectScanner::scan(fs::current_path().string(), config->sourcePaths);
+
+    // Look for a file with namespace Main and a main() function.
+    for (const auto& f : files) {
+        std::ifstream ifs(f);
+        if (!ifs) continue;
+        std::string content((std::istreambuf_iterator<char>(ifs)),
+                             std::istreambuf_iterator<char>());
+        if (content.find("namespace Main") == std::string::npos) continue;
+        if (content.find("main(") == std::string::npos) continue;
+        return f;
+    }
+
+    // Fallback: return the first .lc file found.
+    if (!files.empty()) return files[0];
+    return {};
+}
+
 int BuildCommand::run(const ArgParser& parser) {
+    LucisConfig config;
+    std::string inputFile = resolveInputFile(parser, &config);
+    if (inputFile.empty()) {
+        std::cerr << "lucis: no input file specified and no lucis.yaml found\n";
+        std::cerr << "usage: lucis build <file>   or   lucis build  (from a project with lucis.yaml)\n";
+        return 1;
+    }
+
     LucisPipeline::Options pipeOpts;
-    pipeOpts.inputFile        = parser.get("file");
-    pipeOpts.quiet            = parser.has("quiet");
-    pipeOpts.includePaths     = parser.getAll("include");
-    pipeOpts.userLinkerFlags  = parser.getAll("link");
+    pipeOpts.inputFile        = inputFile;
+    pipeOpts.quiet            = parser.has("quiet") ? true : config.build.quiet;
+    pipeOpts.includePaths     = parser.has("include") ? parser.getAll("include") : config.includes;
+    pipeOpts.userLinkerFlags  = parser.has("link") ? parser.getAll("link") : config.linker.libs;
 
     OptimizationLevel lucisOptLevel = OptimizationLevel::O0;
+
+    // Apply config opt_level as default, then CLI override
+    {
+        auto parseOpt = [](const std::string& s) -> OptimizationLevel {
+            if (s == "0")      return OptimizationLevel::O0;
+            if (s == "1")      return OptimizationLevel::O1;
+            if (s == "2")      return OptimizationLevel::O2;
+            if (s == "3")      return OptimizationLevel::O3;
+            if (s == "s")      return OptimizationLevel::Os;
+            if (s == "z")      return OptimizationLevel::Oz;
+            if (s == "fast")   return OptimizationLevel::Ofast;
+            return OptimizationLevel::O0;
+        };
+        lucisOptLevel = parseOpt(config.build.optLevel);
+    }
+
     if (parser.has("opt")) {
         std::string optStr = parser.get("opt");
         if (optStr == "0")      lucisOptLevel = OptimizationLevel::O0;
@@ -67,13 +124,13 @@ int BuildCommand::run(const ArgParser& parser) {
     }
 
     std::string outputFile = parser.get("output");
-    bool emitLLVM     = parser.has("emit-llvm");
-    bool emitAsm      = parser.has("emit-asm");
-    bool emitBc       = parser.has("emit-bc");
-    bool emitObj      = parser.has("emit-obj");
-    bool useLTO       = parser.has("lto");
-    bool useStatic    = parser.has("static");
-    bool useShared    = parser.has("shared");
+    bool emitLLVM     = parser.has("emit-llvm") ? true : config.build.emitLlvm;
+    bool emitAsm      = parser.has("emit-asm") ? true : config.build.emitAsm;
+    bool emitBc       = parser.has("emit-bc") ? true : config.build.emitBc;
+    bool emitObj      = parser.has("emit-obj") ? true : config.build.emitObj;
+    bool useLTO       = parser.has("lto") ? true : config.build.lto;
+    bool useStatic    = parser.has("static") ? true : config.build.staticLink;
+    bool useShared    = parser.has("shared") ? true : config.build.shared;
     bool isEmitMode   = emitLLVM || emitAsm || emitBc || emitObj;
     
     // Intelligent PIC inference:
@@ -89,7 +146,7 @@ int BuildCommand::run(const ArgParser& parser) {
     } else if (useStatic) {
         usePIC = false;
     } else {
-        usePIC = true; // Default for standard executables
+        usePIC = config.build.fpic;
     }
 
     auto pipeline = LucisPipeline::run(pipeOpts);
@@ -251,17 +308,25 @@ int BuildCommand::run(const ArgParser& parser) {
         finalLinkerFlags.push_back("-shared");
     }
     
+    // Apply config linker flags, then CLI overrides
+    for (const auto& f : config.linker.flags)
+        finalLinkerFlags.push_back(f);
     for (auto& arg : parser.getAll("link-arg")) {
         finalLinkerFlags.push_back(arg);
     }
+
     if (parser.has("rpath")) {
         finalLinkerFlags.push_back("-Wl,-rpath," + parser.get("rpath"));
+    } else if (!config.linker.rpath.empty()) {
+        finalLinkerFlags.push_back("-Wl,-rpath," + config.linker.rpath);
     }
 
+    auto libPaths = parser.has("lib-path") ? parser.getAll("lib-path") : config.linker.libPaths;
+
     if (!CodeGen::linkObjectFiles(objectFiles, outputFile,
-                                   finalLinkerFlags,
-                                   parser.getAll("lib-path"),
-                                   !useStatic, pipeOpts.quiet)) {
+                                    finalLinkerFlags,
+                                    libPaths,
+                                    !useStatic, pipeOpts.quiet)) {
         std::cerr << "lucis: failed to link binary '" << outputFile << "'\n";
         return 1;
     }

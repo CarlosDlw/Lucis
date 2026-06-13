@@ -1,10 +1,12 @@
 #include "cli/RunCommand.h"
 #include "cli/ArgParser.h"
 #include "cli/LucisPipeline.h"
+#include "config/LucisConfig.h"
 #include "IRBuilder/IRGen.h"
 #include "LLVM_IR/IRModule.h"
 #include "LLVM_Optimizer/Optimizer.h"
 #include "machine_code/CodeGen.h"
+#include "namespace/ProjectScanner.h"
 
 #include <iostream>
 #include <iomanip>
@@ -28,7 +30,7 @@
 namespace fs = std::filesystem;
 
 void RunCommand::buildArgs(ArgParser& parser) const {
-    parser.addPositional("file", "Path to the .lc entrypoint file");
+    parser.addPositional("file", "Path to the .lc entrypoint file (auto-resolved from lucis.yaml if omitted)", false);
     parser.addOption("opt", 'O', "LEVEL", "Optimization level: 0, 1, 2, 3, s, z, or fast (default: 0)");
     parser.addFlag("lto", '\0', "Enable Link Time Optimization");
     parser.addFlag("quiet", 'q', "Suppress pipeline logs");
@@ -39,14 +41,65 @@ void RunCommand::buildArgs(ArgParser& parser) const {
     // Remaining args after -- are forwarded to the program
 }
 
+std::string RunCommand::resolveInputFile(const ArgParser& parser,
+                                          LucisConfig* outConfig) const {
+    auto file = parser.get("file");
+    if (!file.empty()) return file;
+
+    auto config = LucisConfig::findInDir(fs::current_path().string());
+    if (!config) return {};
+
+    if (outConfig) *outConfig = *config;
+
+    auto files = config->sourcePaths.empty()
+        ? ProjectScanner::scan(fs::current_path().string())
+        : ProjectScanner::scan(fs::current_path().string(), config->sourcePaths);
+
+    for (const auto& f : files) {
+        std::ifstream ifs(f);
+        if (!ifs) continue;
+        std::string content((std::istreambuf_iterator<char>(ifs)),
+                             std::istreambuf_iterator<char>());
+        if (content.find("namespace Main") == std::string::npos) continue;
+        if (content.find("main(") == std::string::npos) continue;
+        return f;
+    }
+
+    if (!files.empty()) return files[0];
+    return {};
+}
+
 int RunCommand::run(const ArgParser& parser) {
+    LucisConfig config;
+    std::string inputFile = resolveInputFile(parser, &config);
+    if (inputFile.empty()) {
+        std::cerr << "lucis: no input file specified and no lucis.yaml found\n";
+        std::cerr << "usage: lucis run <file>   or   lucis run  (from a project with lucis.yaml)\n";
+        return 1;
+    }
+
     LucisPipeline::Options pipeOpts;
-    pipeOpts.inputFile        = parser.get("file");
-    pipeOpts.quiet            = parser.has("quiet");
-    pipeOpts.includePaths     = parser.getAll("include");
-    pipeOpts.userLinkerFlags  = parser.getAll("link");
+    pipeOpts.inputFile        = inputFile;
+    pipeOpts.quiet            = parser.has("quiet") ? true : config.run.quiet;
+    pipeOpts.includePaths     = parser.has("include") ? parser.getAll("include") : config.includes;
+    pipeOpts.userLinkerFlags  = parser.has("link") ? parser.getAll("link") : config.linker.libs;
 
     OptimizationLevel lucisOptLevel = OptimizationLevel::O0;
+
+    {
+        auto parseOpt = [](const std::string& s) -> OptimizationLevel {
+            if (s == "0")      return OptimizationLevel::O0;
+            if (s == "1")      return OptimizationLevel::O1;
+            if (s == "2")      return OptimizationLevel::O2;
+            if (s == "3")      return OptimizationLevel::O3;
+            if (s == "s")      return OptimizationLevel::Os;
+            if (s == "z")      return OptimizationLevel::Oz;
+            if (s == "fast")   return OptimizationLevel::Ofast;
+            return OptimizationLevel::O0;
+        };
+        lucisOptLevel = parseOpt(config.run.optLevel);
+    }
+
     if (parser.has("opt")) {
         std::string optStr = parser.get("opt");
         if (optStr == "0")      lucisOptLevel = OptimizationLevel::O0;
@@ -64,7 +117,8 @@ int RunCommand::run(const ArgParser& parser) {
             } catch (...) {}
         }
     }
-    bool useLTO = parser.has("lto");
+    bool useLTO = parser.has("lto") ? true : config.run.lto;
+    bool useClean = parser.has("clean") ? true : config.run.clean;
 
     auto pipeline = LucisPipeline::run(pipeOpts);
     if (!pipeline || pipeline->hasErrors) return 1;
@@ -136,7 +190,7 @@ int RunCommand::run(const ArgParser& parser) {
 
     // ── Cache and produce temp binary ──────────────────────────────────────
     const std::string cacheDir = pipeline->projectRoot + "/.lucis/cache";
-    if (parser.has("clean")) {
+    if (useClean) {
         if (!pipeOpts.quiet)
             std::cerr << "lucis: [run] clearing cache...";
         std::error_code ec;

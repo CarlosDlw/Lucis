@@ -55,14 +55,16 @@ lucis init ../projects/hello
 ## build — Compile to Binary
 
 ```
-lucis build <file> [-o <output>] [-O <level>] [--lto]
+lucis build [<file>] [-o <output>] [-O <level>] [--lto]
                [--emit-llvm] [--emit-asm] [--emit-bc] [--emit-obj]
                [--static] [--shared] [--fPIC]
                [-l <lib>] [-L <dir>] [-I <dir>] [-q]
 ```
 
-Compiles the project to a native binary. Without `-o`, the output defaults to
-`<input-stem>.out`.
+Compiles the project to a native binary. If `<file>` is omitted, the compiler
+looks for a `lucis.yaml` in the current directory and auto-resolves the
+entrypoint from the configured source paths. Without `-o`, the output defaults
+to `<input-stem>.out`.
 
 | Flag | Description |
 |------|-------------|
@@ -132,11 +134,12 @@ lucis build main.lc -Oz --lto
 ## run — JIT Execution
 
 ```
-lucis run <file> [-O <level>] [--lto] [-l <lib>] [-L <dir>] [-I <dir>] [-q] [-- args...]
+lucis run [<file>] [-O <level>] [--lto] [-l <lib>] [-L <dir>] [-I <dir>] [-q] [-- args...]
 ```
 
 Compiles and immediately executes the program via LLVM JIT — no binary is
-written to disk.
+written to disk. If `<file>` is omitted, the entrypoint is auto-resolved from
+`lucis.yaml`.
 
 | Flag | Description |
 |------|-------------|
