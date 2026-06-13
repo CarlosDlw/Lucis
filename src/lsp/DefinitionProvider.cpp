@@ -4,6 +4,10 @@
 #include "ffi/CHeaderResolver.h"
 #include "namespace/NamespaceRegistry.h"
 
+#include <filesystem>
+
+namespace fs = std::filesystem;
+
 // ═══════════════════════════════════════════════════════════════════════
 //  Static helpers
 // ═══════════════════════════════════════════════════════════════════════
@@ -224,7 +228,7 @@ std::optional<DefinitionResult> DefinitionProvider::definition(
                 } else if (incl->INCLUDE_LOCAL()) {
                     auto header = CHeaderResolver::extractLocalHeader(text);
                     if (!header.empty())
-                        resolver.resolveLocalHeader(header, ".");
+                        resolver.resolveLocalHeader(header, fs::path(filePath).parent_path().string());
                 }
             }
         }

@@ -7,6 +7,9 @@
 
 #include <sstream>
 #include <fstream>
+#include <filesystem>
+
+namespace fs = std::filesystem;
 
 SignatureHelpProvider::SignatureHelpProvider() : intrinsicRegistry_(typeRegistry_) {}
 
@@ -558,7 +561,7 @@ SignatureHelpProvider::signatureHelp(
                 } else if (incl->INCLUDE_LOCAL()) {
                     auto header = CHeaderResolver::extractLocalHeader(text);
                     if (!header.empty())
-                        resolver.resolveLocalHeader(header, ".");
+                        resolver.resolveLocalHeader(header, fs::path(filePath).parent_path().string());
                 }
             }
         }

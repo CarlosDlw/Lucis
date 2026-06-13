@@ -227,10 +227,12 @@ private:
     void addIntrinsicRoot(std::vector<CompletionItem>& items,
                           const std::string& prefix);
 
-    // Add C header file suggestions for #include <|.
+    // Add C header file suggestions for #include <| or #include "|".
     void addHeaderSuggestions(std::vector<CompletionItem>& items,
                               const std::string& prefix,
-                              bool omitClosingChar = false);
+                              bool omitClosingChar,
+                              const std::string& filePath,
+                              const ProjectContext* project);
 
     // Add doc-tag completions inside /** ... */ blocks.
     void addDocTagCompletions(std::vector<CompletionItem>& items,

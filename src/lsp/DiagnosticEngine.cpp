@@ -5,6 +5,10 @@
 #include "ffi/CBindings.h"
 #include "ffi/CHeaderResolver.h"
 
+#include <filesystem>
+
+namespace fs = std::filesystem;
+
 // Parse checker error string "line:col: message" into a Diagnostic.
 static Diagnostic parseCheckerError(const std::string& err) {
     Diagnostic d;
@@ -42,6 +46,7 @@ static Diagnostic parseCheckerError(const std::string& err) {
 }
 
 std::vector<Diagnostic> DiagnosticEngine::run(const std::string& source,
+                                               const std::string& filePath,
                                                ParseResult* preParsed) {
     std::vector<Diagnostic> result;
 
@@ -75,7 +80,7 @@ std::vector<Diagnostic> DiagnosticEngine::run(const std::string& source,
                 } else if (incl->INCLUDE_LOCAL()) {
                     auto header = CHeaderResolver::extractLocalHeader(text);
                     if (!header.empty())
-                        resolver.resolveLocalHeader(header, ".");
+                        resolver.resolveLocalHeader(header, fs::path(filePath).parent_path().string());
                 }
             }
             checker.setCBindings(&cBindings);
@@ -99,7 +104,7 @@ std::vector<Diagnostic> DiagnosticEngine::run(const std::string& source,
                                                const ProjectContext* project,
                                                ParseResult* preParsed) {
     if (!project || !project->isValid())
-        return run(source, preParsed);
+        return run(source, filePath, preParsed);
 
     std::vector<Diagnostic> result;
 
@@ -142,7 +147,7 @@ std::vector<Diagnostic> DiagnosticEngine::run(const std::string& source,
                     } else if (incl->INCLUDE_LOCAL()) {
                         auto header = CHeaderResolver::extractLocalHeader(text);
                         if (!header.empty())
-                            resolver.resolveLocalHeader(header, ".");
+                            resolver.resolveLocalHeader(header, fs::path(filePath).parent_path().string());
                     }
                 }
             }

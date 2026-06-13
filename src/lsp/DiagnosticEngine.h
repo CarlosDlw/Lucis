@@ -19,5 +19,6 @@ public:
 
     // Run diagnostics in single-file mode (no project context).
     std::vector<Diagnostic> run(const std::string& source,
+                                const std::string& filePath,
                                 ParseResult* preParsed = nullptr);
 };

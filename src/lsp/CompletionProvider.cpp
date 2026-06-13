@@ -11,6 +11,9 @@
 #include <sstream>
 #include <unordered_set>
 #include <regex>
+#include <filesystem>
+
+namespace fs = std::filesystem;
 
 CompletionProvider::CompletionProvider() : intrinsicRegistry_(typeRegistry_) {}
 
@@ -1502,7 +1505,8 @@ CompletionProvider::complete(const std::string &source, size_t line, size_t col,
   // Short-circuit for #include header completion — no parsing needed
   if (req.context == CompletionContext::IncludeHeader) {
     std::vector<CompletionItem> items;
-    addHeaderSuggestions(items, req.prefix, req.closingCharPresent);
+    addHeaderSuggestions(items, req.prefix, req.closingCharPresent,
+                         filePath, project);
     return items;
   }
 
@@ -1577,7 +1581,7 @@ CompletionProvider::complete(const std::string &source, size_t line, size_t col,
           } else if (incl->INCLUDE_LOCAL()) {
             auto header = CHeaderResolver::extractLocalHeader(text);
             if (!header.empty())
-              resolver.resolveLocalHeader(header, ".");
+              resolver.resolveLocalHeader(header, fs::path(filePath).parent_path().string());
           }
         }
       }
@@ -4269,16 +4273,58 @@ void CompletionProvider::addIntrinsics(std::vector<CompletionItem> &items,
 
 void CompletionProvider::warmHeaderCache() {
   std::vector<CompletionItem> dummy;
-  // The cache is a function-local static inside addHeaderSuggestions.
-  // Create a temporary to trigger the one-time build.
   CompletionProvider temp;
-  temp.addHeaderSuggestions(dummy, "", false);
+  temp.addHeaderSuggestions(dummy, "", false, "", nullptr);
 }
 
 void CompletionProvider::addHeaderSuggestions(
     std::vector<CompletionItem> &items, const std::string &prefix,
-    bool omitClosingChar) {
-  // Cache the header list to avoid re-scanning on every keystroke
+    bool omitClosingChar, const std::string &filePath,
+    const ProjectContext *project) {
+
+  namespace fs = std::filesystem;
+
+  // ── Collect local header candidates ────────────────────────────────
+  // Key: relative path for display; Value: full path (for dedup)
+  struct HeaderEntry {
+    std::string label;      // relative path used for matching + insert
+    std::string detail;     // "local" or "C header" (system)
+  };
+  std::vector<HeaderEntry> allHeaders;
+
+  // Scan directories for .h files
+  auto scanDir = [&](const fs::path &dir, const fs::path &baseForRel) {
+    if (dir.empty() || !fs::is_directory(dir)) return;
+    std::error_code ec;
+    for (auto &entry : fs::recursive_directory_iterator(dir, ec)) {
+      if (ec) break;
+      auto ext = entry.path().extension().string();
+      if (ext != ".h" && ext != ".H") continue;
+      auto rel = fs::relative(entry.path(), baseForRel);
+      allHeaders.push_back({rel.string(), "local"});
+    }
+  };
+
+  // 1) Source file's own directory
+  if (!filePath.empty()) {
+    auto srcDir = fs::path(filePath).parent_path();
+    scanDir(srcDir, srcDir);
+  }
+
+  // 2) Project root (skip hidden dirs and build dirs)
+  if (project && !project->projectRoot().empty()) {
+    auto root = fs::path(project->projectRoot());
+    std::error_code ec;
+    for (auto &entry : fs::directory_iterator(root, ec)) {
+      if (ec) break;
+      auto name = entry.path().filename().string();
+      if (name[0] == '.' || name == "build" || name == ".lucis") continue;
+      if (!fs::is_directory(entry.path())) continue;
+      scanDir(entry.path(), root);
+    }
+  }
+
+  // 3) System headers (cached)
   static std::vector<std::string> cachedHeaders;
   static std::vector<std::string> cachedHeadersLower;
   static bool cached = false;
@@ -4293,20 +4339,23 @@ void CompletionProvider::addHeaderSuggestions(
     }
     cached = true;
   }
+  for (auto &h : cachedHeaders)
+    allHeaders.push_back({h, "C header"});
 
+  // ── No prefix: show all ────────────────────────────────────────────
   if (prefix.empty()) {
-    for (auto &h : cachedHeaders) {
+    for (auto &e : allHeaders) {
       CompletionItem ci;
-      ci.label = h;
-      ci.kind = CompletionKind::File;
-      ci.detail = "C header";
-      ci.insertText = omitClosingChar ? h : h + ">";
+      ci.label      = e.label;
+      ci.kind       = CompletionKind::File;
+      ci.detail     = e.detail;
+      ci.insertText = omitClosingChar ? e.label : e.label + ">";
       items.push_back(std::move(ci));
     }
     return;
   }
 
-  // Fuzzy match algorithm: check if all characters of prefix exist in label in order
+  // ── Fuzzy match ────────────────────────────────────────────────────
   std::string prefixLower;
   prefixLower.reserve(prefix.size());
   for (auto c : prefix) prefixLower += (char)std::tolower((unsigned char)c);
@@ -4317,59 +4366,58 @@ void CompletionProvider::addHeaderSuggestions(
   };
   std::vector<ScoredMatch> matches;
 
-  for (size_t i = 0; i < cachedHeadersLower.size(); ++i) {
-    const std::string &labelLower = cachedHeadersLower[i];
-    
+  for (size_t i = 0; i < allHeaders.size(); ++i) {
+    std::string labelLower;
+    labelLower.reserve(allHeaders[i].label.size());
+    for (auto c : allHeaders[i].label)
+      labelLower += (char)std::tolower((unsigned char)c);
+
     size_t prefixIdx = 0;
     size_t labelIdx = 0;
     int score = 0;
     bool matched = true;
 
-    // Simple fuzzy: must find characters in order
     while (prefixIdx < prefixLower.size()) {
       if (labelIdx >= labelLower.size()) {
         matched = false;
         break;
       }
       if (labelLower[labelIdx] == prefixLower[prefixIdx]) {
-        // Bonus for matching at start of path component or after special chars
-        if (labelIdx == 0 || labelLower[labelIdx-1] == '/' || labelLower[labelIdx-1] == '_' || labelLower[labelIdx-1] == '-') {
-           score += 10;
-        } else {
-           score += 1;
-        }
+        if (labelIdx == 0 || labelLower[labelIdx-1] == '/' ||
+            labelLower[labelIdx-1] == '_' || labelLower[labelIdx-1] == '-')
+          score += 10;
+        else
+          score += 1;
         prefixIdx++;
       }
       labelIdx++;
     }
 
     if (matched) {
-      const std::string &h = cachedHeaders[i];
       // Bonus for exact prefix match
-      if (labelLower.compare(0, prefixLower.size(), prefixLower) == 0) {
+      if (labelLower.compare(0, prefixLower.size(), prefixLower) == 0)
         score += 50;
-      }
-      // Penalty for longer labels to prefer shorter matches
-      score -= (int)(h.size() / 2);
+      // Local headers boosted over system
+      if (allHeaders[i].detail == "local") score += 20;
+      score -= (int)(allHeaders[i].label.size() / 2);
       matches.push_back({i, score});
     }
   }
 
-  // Sort matches by score descending
-  std::sort(matches.begin(), matches.end(), [&](const ScoredMatch &a, const ScoredMatch &b) {
-    if (a.score != b.score) return a.score > b.score;
-    return cachedHeaders[a.index] < cachedHeaders[b.index];
-  });
+  std::sort(matches.begin(), matches.end(),
+            [&](const ScoredMatch &a, const ScoredMatch &b) {
+              if (a.score != b.score) return a.score > b.score;
+              return allHeaders[a.index].label < allHeaders[b.index].label;
+            });
 
-  // Limit results to avoid overwhelming the client
   size_t limit = std::min(matches.size(), (size_t)500);
   for (size_t i = 0; i < limit; ++i) {
-    const auto &h = cachedHeaders[matches[i].index];
+    auto &e = allHeaders[matches[i].index];
     CompletionItem ci;
-    ci.label = h;
-    ci.kind = CompletionKind::File;
-    ci.detail = "C header";
-    ci.insertText = omitClosingChar ? h : h + ">";
+    ci.label      = e.label;
+    ci.kind       = CompletionKind::File;
+    ci.detail     = e.detail;
+    ci.insertText = omitClosingChar ? e.label : e.label + ">";
     items.push_back(std::move(ci));
   }
 }
