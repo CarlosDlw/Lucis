@@ -1,6 +1,7 @@
 #include "lsp/ProjectContext.h"
 #include "namespace/ProjectScanner.h"
 #include "ffi/CHeaderResolver.h"
+#include "config/LucisConfig.h"
 
 #include <filesystem>
 
@@ -21,8 +22,12 @@ bool ProjectContext::build(const std::string& filePath) {
     projectRoot_ = findProjectRoot(filePath);
     if (projectRoot_.empty()) return false;
 
-    // Scan all .lc files in the project.
-    auto allFiles = ProjectScanner::scan(projectRoot_);
+    // If lucis.yaml exists, use its source paths to scope the scan.
+    // Otherwise scan the entire project root recursively.
+    auto config = LucisConfig::findInDir(projectRoot_);
+    auto allFiles = config
+        ? ProjectScanner::scan(projectRoot_, config->sourcePaths)
+        : ProjectScanner::scan(projectRoot_);
     if (allFiles.empty()) return false;
 
     // Parse all files and build the registry.
@@ -115,11 +120,10 @@ std::string ProjectContext::namespaceFor(const std::string& filePath) const {
 
 std::string ProjectContext::findProjectRoot(const std::string& filePath) {
     // Walk up from the file's directory looking for an explicit project marker.
-    // Using project markers (CMakeLists.txt, Makefile, .git, etc.) is far more
-    // reliable than scanning for .lc files, which can cause runaway traversal
-    // into system directories like /proc when no marker is found.
+    // lucis.yaml is checked first — it is the authoritative project boundary.
+    // Fall back to CMakeLists.txt, Makefile, .git, etc. for backward compat.
     static const std::vector<std::string> kMarkers = {
-        "CMakeLists.txt", "Makefile", "makefile", ".git", ".hg", ".svn"
+        "lucis.yaml", "CMakeLists.txt", "Makefile", "makefile", ".git", ".hg", ".svn"
     };
 
     try {

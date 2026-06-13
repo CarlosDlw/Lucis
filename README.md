@@ -68,15 +68,16 @@ Dependencies:
 | LLVM | 15+ (18+ recommended) |
 | ANTLR4 C++ Runtime | 4.13+ |
 | libclang | any |
+| yaml-cpp | 0.7+ |
 | zlib, pthreads | any |
 
 ### Install dependencies
 
 Install the equivalent development packages for your distro. Typical package names:
 
-- Ubuntu/Debian: `cmake`, `build-essential`, `llvm-dev`, `libclang-dev`, `libantlr4-runtime-dev`, `zlib1g-dev`, `pkg-config`
-- Arch Linux: `cmake`, `base-devel`, `llvm`, `clang`, `antlr4-runtime`, `zlib`, `pkgconf`
-- Fedora: `cmake`, `gcc-c++`, `llvm-devel`, `clang-devel`, `antlr4-cpp-runtime-devel`, `zlib-devel`, `pkgconf-pkg-config`
+- Ubuntu/Debian: `cmake`, `build-essential`, `llvm-dev`, `libclang-dev`, `libantlr4-runtime-dev`, `libyaml-cpp-dev`, `zlib1g-dev`, `pkg-config`
+- Arch Linux: `cmake`, `base-devel`, `llvm`, `clang`, `antlr4-runtime`, `yaml-cpp`, `zlib`, `pkgconf`
+- Fedora: `cmake`, `gcc-c++`, `llvm-devel`, `clang-devel`, `antlr4-cpp-runtime-devel`, `yaml-cpp-devel`, `zlib-devel`, `pkgconf-pkg-config`
 
 **Note for Static Linkage (--static):**
 If you plan to use the `--static` flag, you must also install the static library versions for system dependencies:
@@ -162,6 +163,7 @@ If CMake reports missing ANTLR4 runtime or libclang:
 ## Usage
 
 ```
+lucis init  [path]                                               Create a new project
 lucis build <file> [-o <out>] [-O <lvl>] [--lto] [--emit-...]  Compile to binary
 lucis run   <file> [-O <lvl>] [--lto] [-- args...]             JIT execution
 lucis check <file> [-I <dir>]                                   Type-check only

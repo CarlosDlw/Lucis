@@ -7,6 +7,7 @@
 #include "cli/TestCommand.h"
 #include "cli/HelpCommand.h"
 #include "cli/VersionCommand.h"
+#include "cli/InitCommand.h"
 #include "helpc/HelpC.h"
 #include "lsp/LspServer.h"
 #include "machine_code/CodeGen.h"
@@ -25,6 +26,7 @@ CLI::CLI(int argc, char* argv[])
     commands_.push_back(std::make_unique<CheckCommand>());
     commands_.push_back(std::make_unique<TestCommand>());
     commands_.push_back(std::make_unique<VersionCommand>());
+    commands_.push_back(std::make_unique<InitCommand>());
 
     auto helpCmd = std::make_unique<HelpCommand>();
     {

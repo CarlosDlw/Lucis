@@ -178,6 +178,10 @@ if(NOT LIBCLANG_INCLUDE_DIR OR NOT LIBCLANG_LIB)
 endif()
 message(STATUS "Found libclang: ${LIBCLANG_LIB}")
 
+# ─── yaml-cpp (project config parser) ─────────────────────────────────────────
+find_package(yaml-cpp REQUIRED)
+message(STATUS "Found yaml-cpp: ${yaml-cpp_DIR}")
+
 # ─── Builtins (C library linked into every compiled binary) ───────────────────
 add_library(lucis_builtins STATIC
     src/builtins/log/log.c
@@ -273,6 +277,7 @@ set(SOURCES
     src/lsp/SignatureHelpProvider.cpp
     src/lsp/SemanticTokensProvider.cpp
     src/lsp/ProjectContext.cpp
+    src/config/LucisConfig.cpp
 )
 
 # ─── Target ───────────────────────────────────────────────────────────────────
@@ -307,6 +312,7 @@ target_link_libraries(lucis PRIVATE
     ${ANTLR4_LIB}
     ${LLVM_LIBS}
     ${LIBCLANG_LIB}
+    yaml-cpp::yaml-cpp
 )
 
 # Export all symbols so LLVM MCJIT can resolve builtins via dlsym (lucis run command).
