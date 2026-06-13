@@ -254,14 +254,12 @@ std::vector<std::string> CHeaderResolver::listSystemHeaders() {
         std::error_code ec;
         if (!fs::is_directory(dir, ec)) continue;
 
-        // Use follow_directory_symlink to ensure we enter symlinked directories
-        auto options = fs::directory_options::skip_permission_denied | 
-                       fs::directory_options::follow_directory_symlink;
+        auto options = fs::directory_options::skip_permission_denied;
         
         for (auto& entry : fs::recursive_directory_iterator(dir, options, ec)) {
             if (ec) break;
+            if (entry.is_symlink()) continue;
             
-            // Following symlinks for files as well
             std::error_code status_ec;
             auto status = entry.status(status_ec);
             if (status_ec || !fs::is_regular_file(status)) continue;

@@ -16,10 +16,12 @@ std::vector<std::string> ProjectScanner::scan(const std::string& rootDir) {
              rootDir, fs::directory_options::skip_permission_denied);
          it != fs::recursive_directory_iterator(); ++it) {
 
-        // Skip only .lucis directory
+        // Skip known non-project directories to avoid mixing unrelated
+        // .lc files into the same project context.
         if (it->is_directory()) {
             auto dirName = it->path().filename().string();
-            if (dirName == ".lucis") {
+            if (dirName == ".lucis" || dirName == "build" ||
+                dirName == ".git" || dirName == ".svn" || dirName == ".hg") {
                 it.disable_recursion_pending();
                 continue;
             }

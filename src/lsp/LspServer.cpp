@@ -147,6 +147,18 @@ void LspServer::handleInitialized(const json& /*msg*/) {
     try {
         std::cerr << "[lucis-lsp] initialized\n";
 
+        // Ensure .lucis cache directory exists in the project root so the
+        // header cache can persist across sessions.
+        auto cwd = fs::current_path();
+        auto root = ProjectContext::findProjectRoot(cwd.string());
+        if (!root.empty()) {
+            auto lucisDir = fs::path(root) / ".lucis";
+            std::error_code ec;
+            fs::create_directories(lucisDir, ec);
+            if (ec)
+                std::cerr << "[lucis-lsp] could not create " << lucisDir << "\n";
+        }
+
         // Warm caches in background to avoid blocking first completion.
         std::thread([] {
             std::cerr << "[lucis-lsp] warming C header cache...\n";
