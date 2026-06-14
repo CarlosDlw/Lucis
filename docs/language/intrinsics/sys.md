@@ -297,6 +297,91 @@ Prefetches memory for writing. Same locality semantics as `prefetch_read`.
 
 ---
 
+## Typed Memory Access
+
+Generic intrinsics for direct, non-volatile reads and writes through raw pointers. Unlike `volatile_load`/`volatile_store`, these carry no ordering guarantees and may be optimized by the compiler.
+
+### `lucis::sys::read\<T\>(ptr) -> T`
+
+```lucis
+int32 val = lucis::sys::read<int32>(&data);
+```
+
+Performs a typed load from `ptr`. Equivalent to `*ptr` in C, emitting a direct LLVM `load` instruction with no function call overhead.
+
+| Param | Type | Description |
+|-------|------|-------------|
+| `<T>` | type | Value type to load |
+| `ptr` | `*_any` | Pointer to read from |
+
+### `lucis::sys::write\<T\>(ptr, val)`
+
+```lucis
+lucis::sys::write<int32>(&data, 42);
+```
+
+Performs a typed store through `ptr`. Equivalent to `*ptr = val` in C, emitting a direct LLVM `store` instruction.
+
+---
+
+## Pointer Arithmetic
+
+### `lucis::sys::offset\<T\>(ptr, count) -> *T`
+
+```lucis
+*int32 next = lucis::sys::offset<*int32>(ptr, 3);
+```
+
+Advances a pointer by `count` elements via LLVM `getelementptr`. `T` must be a pointer type (e.g. `<*int32>`) — the element type is extracted from it.
+
+| Param | Type | Description |
+|-------|------|-------------|
+| `<T>` | type | Pointer type (e.g. `*int32`) |
+| `ptr` | `*_any` | Source pointer |
+| `count` | `int64` | Number of elements to advance |
+
+---
+
+## Bit Cast
+
+### `lucis::sys::bitcast\<T, U\>(val) -> U`
+
+```lucis
+float32 f = lucis::sys::bitcast<int32, float32>(i);
+```
+
+Reinterprets the bit pattern of `val` (of type `T`) as type `U`. Both types must have the same size in memory. Emits a direct LLVM `bitcast` instruction — no runtime cost.
+
+| Param | Type | Description |
+|-------|------|-------------|
+| `<T>` | type | Source type |
+| `<U>` | type | Target type |
+| `val` | `_any` | Value to reinterpret |
+
+---
+
+## Compiler Hints
+
+Optimizer directives that shrinkwrap runtime invariants or mark impossible paths.
+
+### `lucis::sys::assume(cond)`
+
+```lucis
+lucis::sys::assume(ptr != null);
+```
+
+Provides an optimizer hint that `cond` is always true (`@llvm.assume`). If the condition is false at runtime, behaviour is undefined. Use to help the compiler generate better code around invariants you know to hold.
+
+### `lucis::sys::unreachable()`
+
+```lucis
+lucis::sys::unreachable();
+```
+
+Marks the current point as unreachable (`@llvm.unreachable`). If control flow reaches this call, behaviour is undefined. Useful in default branches that should never execute.
+
+---
+
 ## CPU Control
 
 Architecture-specific CPU hints and introspection, using inline assembly with target-triple detection.
