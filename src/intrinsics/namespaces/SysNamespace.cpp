@@ -862,5 +862,193 @@ void registerSysNamespace(IntrinsicRegistry& reg, TypeRegistry& typeReg) {
     for (int n = 0; n <= 6; n++)
         sys.functions.push_back(makeSyscall(n));
 
+    // ── read<T>(ptr) → T — typed load from raw pointer ─────────────
+    {
+        IntrinsicFunction fn;
+        fn.name = "read";
+        fn.returnType = "_any";
+        fn.isGeneric = true;
+        fn.params.push_back({"_any", false});
+        fn.description =
+            "Performs a typed read from a raw pointer.\n"
+            "Equivalent to dereferencing a pointer of type T.\n\n"
+            "```lucis\n"
+            "int32 val = lucis::sys::read<int32>(ptr);\n"
+            "```";
+
+        fn.lowering.kind = IntrinsicFunction::Lowering::InlineIR;
+        fn.lowering.emitIR = [](
+            llvm::IRBuilder<>& builder,
+            llvm::Module* module,
+            llvm::LLVMContext& context,
+            const TypeRegistry& typeRegistry,
+            const std::vector<llvm::Value*>& args,
+            const std::vector<const TypeInfo*>& typeArgs) -> llvm::Value* {
+
+            auto& dl = module->getDataLayout();
+            auto* valTy = typeArgs[0]->toLLVMType(context, dl);
+            return builder.CreateLoad(valTy, args[0], "read");
+        };
+
+        sys.functions.push_back(std::move(fn));
+    }
+
+    // ── write<T>(ptr, val) → void — typed store to raw pointer ────
+    {
+        IntrinsicFunction fn;
+        fn.name = "write";
+        fn.returnType = "void";
+        fn.isGeneric = true;
+        fn.params.push_back({"_any", false});
+        fn.params.push_back({"_any", false});
+        fn.description =
+            "Performs a typed write to a raw pointer.\n"
+            "Equivalent to assigning through a pointer of type T.\n\n"
+            "```lucis\n"
+            "lucis::sys::write<int32>(ptr, 42);\n"
+            "```";
+
+        fn.lowering.kind = IntrinsicFunction::Lowering::InlineIR;
+        fn.lowering.emitIR = [](
+            llvm::IRBuilder<>& builder,
+            llvm::Module* module,
+            llvm::LLVMContext& context,
+            const TypeRegistry& typeRegistry,
+            const std::vector<llvm::Value*>& args,
+            const std::vector<const TypeInfo*>& typeArgs) -> llvm::Value* {
+
+            builder.CreateStore(args[1], args[0]);
+            return llvm::UndefValue::get(llvm::Type::getVoidTy(context));
+        };
+
+        sys.functions.push_back(std::move(fn));
+    }
+
+    // ── offset<T>(ptr, count) → *T — typed pointer arithmetic ─────
+    {
+        IntrinsicFunction fn;
+        fn.name = "offset";
+        fn.returnType = "_any";
+        fn.isGeneric = true;
+        fn.params.push_back({"_any", false});
+        fn.params.push_back({"int64", false});
+        fn.description =
+            "Performs typed pointer arithmetic via GEP.\n"
+            "Returns a pointer of the same type advanced by count elements.\n"
+            "T must be a pointer type (e.g. <*int32>).\n\n"
+            "```lucis\n"
+            "*int32 next = lucis::sys::offset<*int32>(ptr, 3);\n"
+            "```";
+
+        fn.lowering.kind = IntrinsicFunction::Lowering::InlineIR;
+        fn.lowering.emitIR = [](
+            llvm::IRBuilder<>& builder,
+            llvm::Module* module,
+            llvm::LLVMContext& context,
+            const TypeRegistry& typeRegistry,
+            const std::vector<llvm::Value*>& args,
+            const std::vector<const TypeInfo*>& typeArgs) -> llvm::Value* {
+
+            auto& dl = module->getDataLayout();
+            auto* ptrTy = typeArgs[0]->toLLVMType(context, dl);
+            auto* elemTy = typeArgs[0]->pointeeType->toLLVMType(context, dl);
+            (void)ptrTy;
+            return builder.CreateGEP(elemTy, args[0], args[1], "offset");
+        };
+
+        sys.functions.push_back(std::move(fn));
+    }
+
+    // ── bitcast<T, U>(val) → U — reinterpret bits ────────────────
+    {
+        IntrinsicFunction fn;
+        fn.name = "bitcast";
+        fn.returnType = "_any";
+        fn.isGeneric = true;
+        fn.returnTypeArgIndex = 1;
+        fn.params.push_back({"_any", false});
+        fn.description =
+            "Reinterprets the bit pattern of a value as a different type.\n"
+            "Both types must have the same size in memory.\n\n"
+            "```lucis\n"
+            "float32 f = lucis::sys::bitcast<int32, float32>(i);\n"
+            "```";
+
+        fn.lowering.kind = IntrinsicFunction::Lowering::InlineIR;
+        fn.lowering.emitIR = [](
+            llvm::IRBuilder<>& builder,
+            llvm::Module* module,
+            llvm::LLVMContext& context,
+            const TypeRegistry& typeRegistry,
+            const std::vector<llvm::Value*>& args,
+            const std::vector<const TypeInfo*>& typeArgs) -> llvm::Value* {
+
+            auto& dl = module->getDataLayout();
+            auto* targetTy = typeArgs[1]->toLLVMType(context, dl);
+            return builder.CreateBitCast(args[0], targetTy, "bitcast");
+        };
+
+        sys.functions.push_back(std::move(fn));
+    }
+
+    // ── assume(cond) → void — optimizer hint ─────────────────────
+    {
+        IntrinsicFunction fn;
+        fn.name = "assume";
+        fn.returnType = "void";
+        fn.params.push_back({"bool", false});
+        fn.description =
+            "Provides an optimizer hint that the given condition is always true.\n"
+            "If the condition is false at runtime, behavior is undefined.\n"
+            "Useful for expressing invariants to enable better optimization.\n\n"
+            "```lucis\n"
+            "lucis::sys::assume(ptr != null);\n"
+            "```";
+
+        fn.lowering.kind = IntrinsicFunction::Lowering::InlineIR;
+        fn.lowering.emitIR = [](
+            llvm::IRBuilder<>& builder,
+            llvm::Module* module,
+            llvm::LLVMContext& context,
+            const TypeRegistry& typeRegistry,
+            const std::vector<llvm::Value*>& args,
+            const std::vector<const TypeInfo*>& typeArgs) -> llvm::Value* {
+
+            builder.CreateAssumption(args[0]);
+            return llvm::UndefValue::get(llvm::Type::getVoidTy(context));
+        };
+
+        sys.functions.push_back(std::move(fn));
+    }
+
+    // ── unreachable() → void — marks code as unreachable ──────────
+    {
+        IntrinsicFunction fn;
+        fn.name = "unreachable";
+        fn.returnType = "void";
+        fn.description =
+            "Marks the current point in code as unreachable.\n"
+            "Behavior is undefined if control flow reaches this call.\n"
+            "Useful in default cases that should never execute.\n\n"
+            "```lucis\n"
+            "lucis::sys::unreachable();\n"
+            "```";
+
+        fn.lowering.kind = IntrinsicFunction::Lowering::InlineIR;
+        fn.lowering.emitIR = [](
+            llvm::IRBuilder<>& builder,
+            llvm::Module* module,
+            llvm::LLVMContext& context,
+            const TypeRegistry& typeRegistry,
+            const std::vector<llvm::Value*>& args,
+            const std::vector<const TypeInfo*>& typeArgs) -> llvm::Value* {
+
+            builder.CreateUnreachable();
+            return llvm::UndefValue::get(llvm::Type::getVoidTy(context));
+        };
+
+        sys.functions.push_back(std::move(fn));
+    }
+
     reg.registerNamespace(std::move(sys));
 }

@@ -24,6 +24,7 @@ struct IntrinsicFunction {
     std::vector<size_t> borrowedArgs;
     std::string description;
     bool isGeneric = false;
+    size_t returnTypeArgIndex = 0; // which type arg to use as return type when returnType == "_any"
 
     struct Lowering {
         enum Kind { LLVMIntrinsic, BuiltinCall, InlineIR };

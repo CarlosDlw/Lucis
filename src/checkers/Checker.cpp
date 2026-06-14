@@ -4213,9 +4213,12 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
                 }
             }
 
-            // Return type: "_any" resolves to first type arg
-            if (intrinsic->returnType == "_any" && !typeArgs.empty())
-                return typeArgs[0];
+            // Return type: "_any" resolves to the designated type arg
+            if (intrinsic->returnType == "_any" && !typeArgs.empty()) {
+                size_t idx = intrinsic->returnTypeArgIndex;
+                if (idx < typeArgs.size())
+                    return typeArgs[idx];
+            }
             return resolveBuiltinReturnType(intrinsic->returnType);
         }
 
