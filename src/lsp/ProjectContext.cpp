@@ -28,6 +28,28 @@ bool ProjectContext::build(const std::string& filePath) {
     auto allFiles = config
         ? ProjectScanner::scan(projectRoot_, config->sourcePaths)
         : ProjectScanner::scan(projectRoot_);
+
+    // ── Scan system stdlib paths ─────────────────────────────────────────────
+    // Mirroring LucisPipeline.cpp logic to ensure LSP sees stdlib.
+    {
+        std::vector<std::string> stdlibPaths;
+#ifdef LUCIS_STDLIB_DIR
+        stdlibPaths.push_back(LUCIS_STDLIB_DIR);
+#endif
+        stdlibPaths.emplace_back("/usr/share/lucis/stdlib/");
+        stdlibPaths.emplace_back("/usr/local/share/lucis/stdlib/");
+
+        for (const auto& sp : stdlibPaths) {
+            if (sp.empty() || !fs::exists(sp)) continue;
+            auto extra = ProjectScanner::scan(sp);
+            allFiles.insert(allFiles.end(), extra.begin(), extra.end());
+        }
+    }
+
+    // Deduplicate paths
+    std::sort(allFiles.begin(), allFiles.end());
+    allFiles.erase(std::unique(allFiles.begin(), allFiles.end()), allFiles.end());
+
     if (allFiles.empty()) return false;
 
     // Parse all files and build the registry.

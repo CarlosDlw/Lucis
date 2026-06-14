@@ -41,6 +41,7 @@ public:
         std::vector<std::string> userLinkerFlags;
         std::string binaryName;   // from lucis.yaml, used as default output name
         std::string outDir;       // from lucis.yaml out_dir (default: build)
+        std::vector<std::string> stdlibPaths; // Additional stdlib search paths
         bool quiet = false;
     };
 

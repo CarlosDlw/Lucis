@@ -216,17 +216,30 @@ static bool tryLinkMulti(const char*                      linker,
     return WIFEXITED(status) && WEXITSTATUS(status) == 0;
 }
 
-// Locate the builtins static library next to the lucis executable.
+// Locate the builtins static library.
 static std::string findBuiltinsPath() {
     char selfPath[4096];
     ssize_t len = ::readlink("/proc/self/exe", selfPath, sizeof(selfPath) - 1);
-    if (len > 0) {
-        selfPath[len] = '\0';
-        std::string dir(selfPath);
-        dir = dir.substr(0, dir.rfind('/'));
-        return dir + "/liblucis_builtins.a";
+    if (len <= 0) return "liblucis_builtins.a";
+
+    selfPath[len] = '\0';
+    std::string binPath(selfPath);
+    std::string binDir = binPath.substr(0, binPath.rfind('/'));
+
+    // Potential locations for the builtins library
+    std::vector<std::string> candidates = {
+        binDir + "/liblucis_builtins.a",
+        binDir + "/../lib/liblucis_builtins.a",
+        binDir + "/../lib64/liblucis_builtins.a"
+    };
+
+    for (const auto& candidate : candidates) {
+        if (llvm::sys::fs::exists(candidate)) {
+            return candidate;
+        }
     }
-    return "liblucis_builtins.a"; // fallback
+
+    return binDir + "/liblucis_builtins.a"; // Final fallback
 }
 
 // ── Public API ───────────────────────────────────────────────────────────────

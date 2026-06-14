@@ -10,6 +10,7 @@
 #include <iomanip>
 #include <algorithm>
 #include <filesystem>
+#include <unordered_set>
 #include <unistd.h>
 
 namespace fs = std::filesystem;
@@ -101,6 +102,30 @@ std::unique_ptr<PipelineResult> LucisPipeline::run(const Options& opts) {
     // ── Step 2: scan ────────────────────────────────────────────────────────
     progress(++step, 5, "scanning .lc files");
     auto allFiles = ProjectScanner::scan(result->projectRoot);
+
+    // Scan system stdlib paths for library .lc files.
+    {
+        std::vector<std::string> stdlibSearchPaths = opts.stdlibPaths;
+
+        // Compile-time default (set by CMake install).
+#ifdef LUCIS_STDLIB_DIR
+        stdlibSearchPaths.push_back(LUCIS_STDLIB_DIR);
+#endif
+        // Common system install path (Linux: /usr/share/lucis/stdlib/).
+        stdlibSearchPaths.emplace_back("/usr/share/lucis/stdlib/");
+
+        std::unordered_set<std::string> seen;
+        for (const auto& sp : stdlibSearchPaths) {
+            if (sp.empty() || !seen.insert(sp).second) continue;
+            auto extra = ProjectScanner::scan(sp);
+            allFiles.insert(allFiles.end(), extra.begin(), extra.end());
+        }
+    }
+
+    // Deduplicate (canonical paths ensure same file produces same string).
+    std::sort(allFiles.begin(), allFiles.end());
+    allFiles.erase(std::unique(allFiles.begin(), allFiles.end()), allFiles.end());
+
     if (allFiles.empty()) {
         printErrorLine("no .lc files found in '" + result->projectRoot + "'");
         result->hasErrors = true;

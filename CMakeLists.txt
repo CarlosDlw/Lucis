@@ -335,6 +335,22 @@ if(LUCIS_ENABLE_SANITIZERS
     message(STATUS "Lucis debug runtime diagnostics enabled (ASan/UBSan)")
 endif()
 
+# ─── System stdlib path ────────────────────────────────────────────────────────
+set(LUCIS_STDLIB_INSTALL_DIR "${CMAKE_INSTALL_PREFIX}/share/lucis/stdlib")
+target_compile_definitions(lucis PRIVATE
+    LUCIS_STDLIB_DIR="${LUCIS_STDLIB_INSTALL_DIR}"
+)
+
+# ─── Install stdlib .lc files ─────────────────────────────────────────────────
+install(DIRECTORY stdlib/
+    DESTINATION ${CMAKE_INSTALL_PREFIX}/share/lucis/stdlib
+    FILES_MATCHING PATTERN "*.lc"
+)
+
+# ─── Install compiler binary and builtins library ─────────────────────────────
+install(TARGETS lucis DESTINATION bin)
+install(TARGETS lucis_builtins DESTINATION lib)
+
 # ─── Build instructions ───────────────────────────────────────────────────────
 # mkdir build && cd build && cmake .. && make -j$(nproc)
 # ./lucis ../examples/main.lc

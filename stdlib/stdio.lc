@@ -1,0 +1,15 @@
+namespace stdio;
+
+/**
+ * Writes up to count bytes from buf to a file descriptor.
+ * Returns the number of bytes written, -1 on error.
+ * 
+ * @param fd File Descriptor
+ * @param buf Pointer to the data that will be written
+ * @param count Number of bytes to write
+ * 
+ * @returns The number of bytes written, -1 on error.
+*/
+fn write(int32 fd, cstring buf, int32 count) int32 {
+    return lucis::io::write(fd, buf, count);
+}
