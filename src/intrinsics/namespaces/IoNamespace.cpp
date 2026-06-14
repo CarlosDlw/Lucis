@@ -303,5 +303,69 @@ void registerIoNamespace(IntrinsicRegistry& reg, TypeRegistry& typeReg) {
         io.functions.push_back(std::move(fn));
     }
 
+    // ── dup(fd) → int32 ──────────────────────────────────────────
+    {
+        IntrinsicFunction fn;
+        fn.name = "dup";
+        fn.returnType = "int32";
+        fn.params.push_back({"int32", false});
+        fn.description =
+            "Duplicates a file descriptor.\n"
+            "Returns a new fd (the lowest-numbered unused fd), -1 on error.\n\n"
+            "```lucis\n"
+            "int32 newfd = lucis::io::dup(fd);\n"
+            "```";
+
+        fn.lowering.kind = IntrinsicFunction::Lowering::InlineIR;
+        fn.lowering.emitIR = [declareCFunc](
+            llvm::IRBuilder<>& builder,
+            llvm::Module* module,
+            llvm::LLVMContext& context,
+            const TypeRegistry& typeRegistry,
+            const std::vector<llvm::Value*>& args,
+            const std::vector<const TypeInfo*>& typeArgs) -> llvm::Value* {
+
+            auto* i32Ty = llvm::Type::getInt32Ty(context);
+            auto* callee = declareCFunc(module, context, "lucis_dup",
+                i32Ty, {i32Ty});
+            return builder.CreateCall(callee, args, "newfd");
+        };
+
+        io.functions.push_back(std::move(fn));
+    }
+
+    // ── dup2(oldfd, newfd) → int32 ────────────────────────────────
+    {
+        IntrinsicFunction fn;
+        fn.name = "dup2";
+        fn.returnType = "int32";
+        fn.params.push_back({"int32", false});
+        fn.params.push_back({"int32", false});
+        fn.description =
+            "Duplicates a file descriptor to a specific fd number.\n"
+            "If newfd is already open, it is closed first.\n"
+            "Returns newfd on success, -1 on error.\n\n"
+            "```lucis\n"
+            "lucis::io::dup2(fd, 1);  // redirect fd → stdout\n"
+            "```";
+
+        fn.lowering.kind = IntrinsicFunction::Lowering::InlineIR;
+        fn.lowering.emitIR = [declareCFunc](
+            llvm::IRBuilder<>& builder,
+            llvm::Module* module,
+            llvm::LLVMContext& context,
+            const TypeRegistry& typeRegistry,
+            const std::vector<llvm::Value*>& args,
+            const std::vector<const TypeInfo*>& typeArgs) -> llvm::Value* {
+
+            auto* i32Ty = llvm::Type::getInt32Ty(context);
+            auto* callee = declareCFunc(module, context, "lucis_dup2",
+                i32Ty, {i32Ty, i32Ty});
+            return builder.CreateCall(callee, args, "ret");
+        };
+
+        io.functions.push_back(std::move(fn));
+    }
+
     reg.registerNamespace(std::move(io));
 }

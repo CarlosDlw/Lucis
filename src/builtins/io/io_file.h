@@ -33,6 +33,12 @@ int lucis_unlink(const char* path);
 // File size: fd → size in bytes, -1 on error
 int64_t lucis_fileSize_fd(int fd);
 
+// Dup: fd → new fd (-1 on error)
+int lucis_dup(int fd);
+
+// Dup2: oldfd, newfd → new fd (-1 on error)
+int lucis_dup2(int oldfd, int newfd);
+
 #ifdef __cplusplus
 }
 #endif

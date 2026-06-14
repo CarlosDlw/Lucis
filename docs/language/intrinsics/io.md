@@ -100,6 +100,37 @@ lucis::io::unlink(c"file.txt");
 
 Deletes a file from the filesystem. Returns `0` on success, `-1` on error.
 
+---
+
+## File Descriptor Management
+
+### `lucis::io::dup(fd) -> int32`
+
+```lucis
+int32 newfd = lucis::io::dup(fd);
+```
+
+Duplicates a file descriptor. Returns a new fd (the lowest-numbered unused fd), or `-1` on error. The two fds share the same file offset and flags.
+
+### `lucis::io::dup2(oldfd, newfd) -> int32`
+
+```lucis
+lucis::io::dup2(fd, 1);  // redirect fd → stdout
+```
+
+Duplicates `oldfd` to `newfd`. If `newfd` was already open, it is closed first. Returns `newfd` on success, `-1` on error. Commonly used for redirection (stdin/stdout/stderr).
+
+```lucis
+// Redirect stdout to a file
+int32 fd = lucis::io::open(c"output.txt", 65, 420);
+int32 saved = lucis::io::dup(1);
+lucis::io::dup2(fd, 1);
+// stdout now writes to output.txt
+lucis::io::dup2(saved, 1);  // restore
+lucis::io::close(saved);
+lucis::io::close(fd);
+```
+
 ### `lucis::io::file_size(fd) -> int64`
 
 ```lucis

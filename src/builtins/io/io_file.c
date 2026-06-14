@@ -13,6 +13,8 @@
   #define HIDDEN_FSTAT   _fstat
   #define HIDDEN_FSYNC   _commit
   #define HIDDEN_UNLINK  _unlink
+  #define HIDDEN_DUP     _dup
+  #define HIDDEN_DUP2    _dup2
   #define HIDDEN_STAT    struct _stat
   typedef int hidden_ssize_t;
 #else
@@ -28,6 +30,8 @@
   #define HIDDEN_FSTAT   fstat
   #define HIDDEN_FSYNC   fsync
   #define HIDDEN_UNLINK  unlink
+  #define HIDDEN_DUP     dup
+  #define HIDDEN_DUP2    dup2
   #define HIDDEN_STAT    struct stat
   typedef ssize_t hidden_ssize_t;
 #endif
@@ -60,6 +64,14 @@ int lucis_fsync(int fd) {
 
 int lucis_unlink(const char* path) {
     return HIDDEN_UNLINK(path);
+}
+
+int lucis_dup(int fd) {
+    return HIDDEN_DUP(fd);
+}
+
+int lucis_dup2(int oldfd, int newfd) {
+    return HIDDEN_DUP2(oldfd, newfd);
 }
 
 int64_t lucis_fileSize_fd(int fd) {
