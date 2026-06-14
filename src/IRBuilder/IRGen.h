@@ -241,14 +241,19 @@ private:
     // Spawn counter for unique wrapper function names
     unsigned spawnCounter_ = 0;
 
+    struct MethodEntry {
+        llvm::Function* fn;
+        const TypeInfo* returnType;
+    };
+
     // Struct methods registered via `extend` blocks
-    // structName → { methodName → Function* }
+    // structName → { methodName → MethodEntry }
     std::unordered_map<std::string,
-        std::unordered_map<std::string, llvm::Function*>> structMethods_;
+        std::unordered_map<std::string, MethodEntry>> structMethods_;
 
     // Static struct methods (no &self)
     std::unordered_map<std::string,
-        std::unordered_map<std::string, llvm::Function*>> staticStructMethods_;
+        std::unordered_map<std::string, MethodEntry>> staticStructMethods_;
 
     // Namespace context for cross-file resolution
     const NamespaceRegistry* nsRegistry_ = nullptr;

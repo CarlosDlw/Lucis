@@ -3,7 +3,7 @@
 #include "types/TypeInfo.h"
 
 #include <string>
-#include <unordered_map>
+#include <map>
 
 class TypeRegistry {
 public:
@@ -25,7 +25,7 @@ public:
     bool isUnsignedType(const std::string& name) const;
 
 private:
-    std::unordered_map<std::string, TypeInfo> types_;
+    std::map<std::string, TypeInfo> types_;
 
     void registerBuiltins();
 };

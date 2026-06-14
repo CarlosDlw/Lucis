@@ -752,9 +752,9 @@ std::any IRGen::visitExtendDecl(LucisParser::ExtendDeclContext* ctx) {
         }
 
         if (isStatic)
-            staticStructMethods_[structName][methodName] = fn;
+            staticStructMethods_[structName][methodName] = { fn, retTI };
         else
-            structMethods_[structName][methodName] = fn;
+            structMethods_[structName][methodName] = { fn, retTI };
 
         loweringInfos.push_back(ExtendMethodLoweringInfo{
             method,
@@ -1758,9 +1758,9 @@ void IRGen::registerCrossFileSymbols(LucisParser::ProgramContext* ctx) {
                     funcName, module_);
 
                 if (isStatic)
-                    staticStructMethods_[structName][methodName] = fn;
+                    staticStructMethods_[structName][methodName] = { fn, retTI };
                 else
-                    structMethods_[structName][methodName] = fn;
+                    structMethods_[structName][methodName] = { fn, retTI };
             }
         }
     };
@@ -8253,7 +8253,7 @@ std::any IRGen::visitStaticMethodCallExpr(
                         llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
                 }
 
-                auto* fn = mIt->second;
+                auto* fn = mIt->second.fn;
                 std::vector<llvm::Value*> callArgs;
                 std::vector<LucisParser::ExpressionContext*> argExprs;
                 if (auto* argList = ctx->argList()) {
@@ -8475,7 +8475,7 @@ std::any IRGen::visitStaticMethodCallExpr(
             auto mIt = smIt->second.find(methodName);
             if (mIt == smIt->second.end()) break;
 
-            auto* fn = mIt->second;
+            auto* fn = mIt->second.fn;
             std::vector<llvm::Value*> callArgs;
             std::vector<LucisParser::ExpressionContext*> genArgExprs;
             if (auto* argList = ctx->argList()) {
@@ -8525,7 +8525,7 @@ std::any IRGen::visitStaticMethodCallExpr(
             llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
     }
 
-    auto* fn = mIt->second;
+    auto* fn = mIt->second.fn;
 
     // Collect arguments
     std::vector<llvm::Value*> callArgs;
@@ -12376,6 +12376,39 @@ IRGen::resolveIncrDecrTarget(LucisParser::ExpressionContext* expr) {
         }
         auto* alloca   = it->second.alloca;
         auto* structTI = it->second.typeInfo;
+
+        // Auto-dereference pointer-to-struct/union for &self in extend methods
+        if (structTI && structTI->kind == TypeKind::Pointer && structTI->pointeeType &&
+            (structTI->pointeeType->kind == TypeKind::Struct ||
+             structTI->pointeeType->kind == TypeKind::Union)) {
+            auto* ptrVal = builder_->CreateLoad(
+                llvm::PointerType::getUnqual(*context_), alloca, "selfptr");
+            auto* pointeeTI = structTI->pointeeType;
+            int pFieldIdx = -1;
+            const TypeInfo* pFieldTI = nullptr;
+            for (size_t f = 0; f < pointeeTI->fields.size(); f++) {
+                if (pointeeTI->fields[f].name == fieldName) {
+                    pFieldIdx = static_cast<int>(f);
+                    pFieldTI = pointeeTI->fields[f].typeInfo;
+                    break;
+                }
+            }
+            if (pFieldIdx < 0) {
+                std::cerr << "lucis: '" << pointeeTI->name
+                          << "' has no field '" << fieldName << "'\n";
+                return undef;
+            }
+            auto* pFieldLLTy = pFieldTI->toLLVMType(*context_, module_->getDataLayout());
+            auto* structLLTy = llvm::StructType::getTypeByName(*context_, pointeeTI->name);
+            if (!structLLTy) {
+                structLLTy = static_cast<llvm::StructType*>(
+                    pointeeTI->toLLVMType(*context_, module_->getDataLayout()));
+            }
+            auto* gep = builder_->CreateStructGEP(
+                structLLTy, ptrVal, pFieldIdx, fieldName + "_ptr");
+            return { gep, pFieldLLTy };
+        }
+
         if (!structTI || (structTI->kind != TypeKind::Struct &&
                           structTI->kind != TypeKind::Union)) {
             std::cerr << "lucis: '" << varName << "' is not a struct or union\n";
@@ -14066,22 +14099,8 @@ const TypeInfo* IRGen::resolveExprTypeInfo(LucisParser::ExpressionContext* ctx) 
                 auto smIt = staticStructMethods_.find(instanceTI->name);
                 if (smIt != staticStructMethods_.end()) {
                     auto mIt = smIt->second.find(methodName);
-                    if (mIt != smIt->second.end()) {
-                        auto* fn = mIt->second;
-                        auto* retTy = fn->getReturnType();
-                        if (retTy->isIntegerTy(1))   return typeRegistry_.lookup("bool");
-                        if (retTy->isIntegerTy(8))   return typeRegistry_.lookup("int8");
-                        if (retTy->isIntegerTy(16))  return typeRegistry_.lookup("int16");
-                        if (retTy->isIntegerTy(32))  return typeRegistry_.lookup("int32");
-                        if (retTy->isIntegerTy(64))  return typeRegistry_.lookup("int64");
-                        if (retTy->isIntegerTy(128)) return typeRegistry_.lookup("int128");
-                        if (retTy->isFloatTy())      return typeRegistry_.lookup("float32");
-                        if (retTy->isDoubleTy())     return typeRegistry_.lookup("float64");
-                        if (retTy->isVoidTy())       return typeRegistry_.lookup("void");
-                        if (auto* st = llvm::dyn_cast<llvm::StructType>(retTy))
-                            if (st->hasName())
-                                return typeRegistry_.lookup(st->getName().str());
-                    }
+                    if (mIt != smIt->second.end())
+                        return mIt->second.returnType;
                 }
                 break;
             }
@@ -14090,22 +14109,8 @@ const TypeInfo* IRGen::resolveExprTypeInfo(LucisParser::ExpressionContext* ctx) 
         auto smIt = staticStructMethods_.find(structName);
         if (smIt != staticStructMethods_.end()) {
             auto mIt = smIt->second.find(methodName);
-            if (mIt != smIt->second.end()) {
-                auto* fn = mIt->second;
-                auto* retTy = fn->getReturnType();
-                if (retTy->isIntegerTy(1))   return typeRegistry_.lookup("bool");
-                if (retTy->isIntegerTy(8))   return typeRegistry_.lookup("int8");
-                if (retTy->isIntegerTy(16))  return typeRegistry_.lookup("int16");
-                if (retTy->isIntegerTy(32))  return typeRegistry_.lookup("int32");
-                if (retTy->isIntegerTy(64))  return typeRegistry_.lookup("int64");
-                if (retTy->isIntegerTy(128)) return typeRegistry_.lookup("int128");
-                if (retTy->isFloatTy())      return typeRegistry_.lookup("float32");
-                if (retTy->isDoubleTy())     return typeRegistry_.lookup("float64");
-                if (retTy->isVoidTy())       return typeRegistry_.lookup("void");
-                if (auto* st = llvm::dyn_cast<llvm::StructType>(retTy))
-                    if (st->hasName())
-                        return typeRegistry_.lookup(st->getName().str());
-            }
+            if (mIt != smIt->second.end())
+                return mIt->second.returnType;
         }
         return nullptr;
     }
@@ -14132,23 +14137,9 @@ const TypeInfo* IRGen::resolveExprTypeInfo(LucisParser::ExpressionContext* ctx) 
 
             auto smIt = staticStructMethods_.find(instanceTI->name);
             if (smIt != staticStructMethods_.end()) {
-                auto mIt = smIt->second.find(ids[1]->getText());
-                if (mIt != smIt->second.end()) {
-                    auto* fn = mIt->second;
-                    auto* retTy = fn->getReturnType();
-                    if (retTy->isIntegerTy(1))   return typeRegistry_.lookup("bool");
-                    if (retTy->isIntegerTy(8))   return typeRegistry_.lookup("int8");
-                    if (retTy->isIntegerTy(16))  return typeRegistry_.lookup("int16");
-                    if (retTy->isIntegerTy(32))  return typeRegistry_.lookup("int32");
-                    if (retTy->isIntegerTy(64))  return typeRegistry_.lookup("int64");
-                    if (retTy->isIntegerTy(128)) return typeRegistry_.lookup("int128");
-                    if (retTy->isFloatTy())      return typeRegistry_.lookup("float32");
-                    if (retTy->isDoubleTy())     return typeRegistry_.lookup("float64");
-                    if (retTy->isVoidTy())       return typeRegistry_.lookup("void");
-                    if (auto* st = llvm::dyn_cast<llvm::StructType>(retTy))
-                        if (st->hasName())
-                            return typeRegistry_.lookup(st->getName().str());
-                }
+                    auto mIt = smIt->second.find(ids[1]->getText());
+                    if (mIt != smIt->second.end())
+                        return mIt->second.returnType;
             }
         }
         return nullptr;
@@ -14173,6 +14164,9 @@ const TypeInfo* IRGen::resolveExprTypeInfo(LucisParser::ExpressionContext* ctx) 
     if (auto* mc = dynamic_cast<LucisParser::MethodCallExprContext*>(ctx)) {
         auto* recvTI = resolveExprTypeInfo(mc->expression());
         if (!recvTI) return nullptr;
+        // Auto-dereference pointer receivers for chained calls (ptr.method())
+        if (recvTI->kind == TypeKind::Pointer && recvTI->pointeeType)
+            recvTI = recvTI->pointeeType;
         auto methodName = mc->IDENTIFIER()->getText();
 
         auto recvArrayDims = resolveExprArrayDims(mc->expression());
@@ -14236,22 +14230,8 @@ const TypeInfo* IRGen::resolveExprTypeInfo(LucisParser::ExpressionContext* ctx) 
             auto smIt = structMethods_.find(recvTI->name);
             if (smIt != structMethods_.end()) {
                 auto mIt = smIt->second.find(methodName);
-                if (mIt != smIt->second.end()) {
-                    auto* fn = mIt->second;
-                    auto* retTy = fn->getReturnType();
-                    if (retTy->isIntegerTy(1))   return typeRegistry_.lookup("bool");
-                    if (retTy->isIntegerTy(8))   return typeRegistry_.lookup("int8");
-                    if (retTy->isIntegerTy(16))  return typeRegistry_.lookup("int16");
-                    if (retTy->isIntegerTy(32))  return typeRegistry_.lookup("int32");
-                    if (retTy->isIntegerTy(64))  return typeRegistry_.lookup("int64");
-                    if (retTy->isIntegerTy(128)) return typeRegistry_.lookup("int128");
-                    if (retTy->isFloatTy())      return typeRegistry_.lookup("float32");
-                    if (retTy->isDoubleTy())     return typeRegistry_.lookup("float64");
-                    if (retTy->isVoidTy())       return typeRegistry_.lookup("void");
-                    if (auto* st = llvm::dyn_cast<llvm::StructType>(retTy))
-                        if (st->hasName())
-                            return typeRegistry_.lookup(st->getName().str());
-                }
+                if (mIt != smIt->second.end())
+                    return mIt->second.returnType;
             }
         }
 
@@ -14275,22 +14255,8 @@ const TypeInfo* IRGen::resolveExprTypeInfo(LucisParser::ExpressionContext* ctx) 
             auto smIt = structMethods_.find(recvTI->name);
             if (smIt != structMethods_.end()) {
                 auto mIt = smIt->second.find(methodName);
-                if (mIt != smIt->second.end()) {
-                    auto* fn = mIt->second;
-                    auto* retTy = fn->getReturnType();
-                    if (retTy->isIntegerTy(1))   return typeRegistry_.lookup("bool");
-                    if (retTy->isIntegerTy(8))   return typeRegistry_.lookup("int8");
-                    if (retTy->isIntegerTy(16))  return typeRegistry_.lookup("int16");
-                    if (retTy->isIntegerTy(32))  return typeRegistry_.lookup("int32");
-                    if (retTy->isIntegerTy(64))  return typeRegistry_.lookup("int64");
-                    if (retTy->isIntegerTy(128)) return typeRegistry_.lookup("int128");
-                    if (retTy->isFloatTy())      return typeRegistry_.lookup("float32");
-                    if (retTy->isDoubleTy())     return typeRegistry_.lookup("float64");
-                    if (retTy->isVoidTy())       return typeRegistry_.lookup("void");
-                    if (auto* st = llvm::dyn_cast<llvm::StructType>(retTy))
-                        if (st->hasName())
-                            return typeRegistry_.lookup(st->getName().str());
-                }
+                if (mIt != smIt->second.end())
+                    return mIt->second.returnType;
             }
         }
 
@@ -14754,7 +14720,7 @@ void IRGen::emitScopeCallback(LucisParser::ScopeCallbackContext* ctx) {
                 return;
             }
 
-            auto* fn = mIt->second;
+            auto* fn = mIt->second.fn;
             std::vector<llvm::Value*> callArgs = { locIt->second.alloca };
 
             if (auto* argList = ctx->argList()) {
@@ -15451,7 +15417,7 @@ IRGen::visitMethodCallExpr(LucisParser::MethodCallExprContext* ctx) {
         if (smIt != structMethods_.end()) {
             auto mIt = smIt->second.find(methodName);
             if (mIt != smIt->second.end()) {
-                auto* fn = mIt->second;
+                auto* fn = mIt->second.fn;
 
                 // Collect argument values
                 std::vector<llvm::Value*> callArgs;
@@ -17793,7 +17759,7 @@ IRGen::visitArrowMethodCallExpr(LucisParser::ArrowMethodCallExprContext* ctx) {
             llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
     }
 
-    auto* fn = smIt->second.at(methodName);
+    auto* fn = smIt->second.at(methodName).fn;
 
     // Build call args: first arg is the pointer (self)
     std::vector<llvm::Value*> callArgs;
@@ -18792,9 +18758,9 @@ const TypeInfo* IRGen::instantiateGenericStruct(
                 fnType, llvm::Function::ExternalLinkage, funcName, module_);
 
             if (isStatic)
-                staticStructMethods_[mangledName][methodName] = fn;
+                staticStructMethods_[mangledName][methodName] = { fn, retTI };
             else
-                structMethods_[mangledName][methodName] = fn;
+                structMethods_[mangledName][methodName] = { fn, retTI };
 
             // Emit body
             auto* savedFunc = currentFunction_;
@@ -19394,7 +19360,7 @@ std::any IRGen::visitGenericStaticMethodCallExpr(
             llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
     }
 
-    auto* fn = mIt->second;
+    auto* fn = mIt->second.fn;
 
     // Collect arguments
     std::vector<llvm::Value*> callArgs;
