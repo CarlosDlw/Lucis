@@ -1050,5 +1050,67 @@ void registerSysNamespace(IntrinsicRegistry& reg, TypeRegistry& typeReg) {
         sys.functions.push_back(std::move(fn));
     }
 
+    // ── size_of<T>() → usize — compile-time type size ────────────
+    {
+        IntrinsicFunction fn;
+        fn.name = "size_of";
+        fn.returnType = "usize";
+        fn.isGeneric = true;
+        fn.description =
+            "Returns the size of type T in bytes at compile time.\n"
+            "The result is a constant determined from the LLVM DataLayout.\n\n"
+            "```lucis\n"
+            "usize sz = lucis::sys::size_of<int32>();  // → 4\n"
+            "```";
+
+        fn.lowering.kind = IntrinsicFunction::Lowering::InlineIR;
+        fn.lowering.emitIR = [](
+            llvm::IRBuilder<>& builder,
+            llvm::Module* module,
+            llvm::LLVMContext& context,
+            const TypeRegistry& typeRegistry,
+            const std::vector<llvm::Value*>& args,
+            const std::vector<const TypeInfo*>& typeArgs) -> llvm::Value* {
+
+            auto& dl = module->getDataLayout();
+            auto* ty = typeArgs[0]->toLLVMType(context, dl);
+            uint64_t size = dl.getTypeStoreSize(ty);
+            return llvm::ConstantInt::get(dl.getIntPtrType(context), size);
+        };
+
+        sys.functions.push_back(std::move(fn));
+    }
+
+    // ── align_of<T>() → usize — compile-time type alignment ──────
+    {
+        IntrinsicFunction fn;
+        fn.name = "align_of";
+        fn.returnType = "usize";
+        fn.isGeneric = true;
+        fn.description =
+            "Returns the alignment of type T in bytes at compile time.\n"
+            "The result is a constant determined from the LLVM DataLayout.\n\n"
+            "```lucis\n"
+            "usize al = lucis::sys::align_of<int32>();  // → 4\n"
+            "```";
+
+        fn.lowering.kind = IntrinsicFunction::Lowering::InlineIR;
+        fn.lowering.emitIR = [](
+            llvm::IRBuilder<>& builder,
+            llvm::Module* module,
+            llvm::LLVMContext& context,
+            const TypeRegistry& typeRegistry,
+            const std::vector<llvm::Value*>& args,
+            const std::vector<const TypeInfo*>& typeArgs) -> llvm::Value* {
+
+            auto& dl = module->getDataLayout();
+            auto* ty = typeArgs[0]->toLLVMType(context, dl);
+            uint64_t align = dl.getABITypeAlign(ty).value();
+            return llvm::ConstantInt::get(dl.getIntPtrType(context), align);
+        };
+
+        sys.functions.push_back(std::move(fn));
+    }
+
     reg.registerNamespace(std::move(sys));
 }

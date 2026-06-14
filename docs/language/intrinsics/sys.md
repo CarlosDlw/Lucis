@@ -360,6 +360,28 @@ Reinterprets the bit pattern of `val` (of type `T`) as type `U`. Both types must
 
 ---
 
+## Type Introspection
+
+Compile-time queries about type layout, resolved from the LLVM `DataLayout` for the target triple.
+
+### `lucis::sys::size_of\<T\>() -> usize`
+
+```lucis
+usize sz = lucis::sys::size_of<int32>();  // → 4
+```
+
+Returns the storage size of type `T` in bytes. The result is a compile-time constant.
+
+### `lucis::sys::align_of\<T\>() -> usize`
+
+```lucis
+usize al = lucis::sys::align_of<int32>();  // → 4
+```
+
+Returns the ABI-required alignment of type `T` in bytes. The result is a compile-time constant.
+
+---
+
 ## Compiler Hints
 
 Optimizer directives that shrinkwrap runtime invariants or mark impossible paths.
