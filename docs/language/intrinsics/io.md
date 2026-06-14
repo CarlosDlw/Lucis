@@ -80,6 +80,34 @@ int64 end = lucis::io::lseek(fd, 0, 2);  // SEEK_END   → end
 
 Repositions the file offset of an open file descriptor. Returns the resulting offset, or `-1i64` on error.
 
+---
+
+## File Management
+
+### `lucis::io::fsync(fd) -> int32`
+
+```lucis
+lucis::io::fsync(fd);
+```
+
+Synchronises a file's in-core state (written data) with the storage device. Returns `0` on success, `-1` on error.
+
+### `lucis::io::unlink(path) -> int32`
+
+```lucis
+lucis::io::unlink(c"file.txt");
+```
+
+Deletes a file from the filesystem. Returns `0` on success, `-1` on error.
+
+### `lucis::io::file_size(fd) -> int64`
+
+```lucis
+int64 sz = lucis::io::file_size(fd);
+```
+
+Returns the size of an open file in bytes via `fstat`/`_fstat`. Returns `-1i64` on error.
+
 | Whence | Value | Description |
 |--------|-------|-------------|
 | `SEEK_SET` | `0` | Relative to beginning of file |

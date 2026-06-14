@@ -24,6 +24,15 @@ int lucis_close(int fd);
 // Seek: fd, offset, whence → new offset (-1 on error)
 int64_t lucis_lseek(int fd, int64_t offset, int whence);
 
+// Sync: fd → 0 on success, -1 on error
+int lucis_fsync(int fd);
+
+// Unlink: path → 0 on success, -1 on error
+int lucis_unlink(const char* path);
+
+// File size: fd → size in bytes, -1 on error
+int64_t lucis_fileSize_fd(int fd);
+
 #ifdef __cplusplus
 }
 #endif

@@ -208,5 +208,100 @@ void registerIoNamespace(IntrinsicRegistry& reg, TypeRegistry& typeReg) {
         io.functions.push_back(std::move(fn));
     }
 
+    // ── fsync(fd) → int32 ────────────────────────────────────────
+    {
+        IntrinsicFunction fn;
+        fn.name = "fsync";
+        fn.returnType = "int32";
+        fn.params.push_back({"int32", false});
+        fn.description =
+            "Synchronises a file's in-core state with storage device.\n"
+            "Returns 0 on success, -1 on error.\n\n"
+            "```lucis\n"
+            "lucis::io::fsync(fd);\n"
+            "```";
+
+        fn.lowering.kind = IntrinsicFunction::Lowering::InlineIR;
+        fn.lowering.emitIR = [declareCFunc](
+            llvm::IRBuilder<>& builder,
+            llvm::Module* module,
+            llvm::LLVMContext& context,
+            const TypeRegistry& typeRegistry,
+            const std::vector<llvm::Value*>& args,
+            const std::vector<const TypeInfo*>& typeArgs) -> llvm::Value* {
+
+            auto* i32Ty = llvm::Type::getInt32Ty(context);
+            auto* callee = declareCFunc(module, context, "lucis_fsync",
+                i32Ty, {i32Ty});
+            return builder.CreateCall(callee, args, "ret");
+        };
+
+        io.functions.push_back(std::move(fn));
+    }
+
+    // ── unlink(path) → int32 ──────────────────────────────────────
+    {
+        IntrinsicFunction fn;
+        fn.name = "unlink";
+        fn.returnType = "int32";
+        fn.params.push_back({"_any", false});
+        fn.description =
+            "Deletes a file from the filesystem.\n"
+            "Returns 0 on success, -1 on error.\n\n"
+            "```lucis\n"
+            "lucis::io::unlink(c\"file.txt\");\n"
+            "```";
+
+        fn.lowering.kind = IntrinsicFunction::Lowering::InlineIR;
+        fn.lowering.emitIR = [declareCFunc](
+            llvm::IRBuilder<>& builder,
+            llvm::Module* module,
+            llvm::LLVMContext& context,
+            const TypeRegistry& typeRegistry,
+            const std::vector<llvm::Value*>& args,
+            const std::vector<const TypeInfo*>& typeArgs) -> llvm::Value* {
+
+            auto* i32Ty = llvm::Type::getInt32Ty(context);
+            auto* ptrTy = llvm::PointerType::getUnqual(context);
+            auto* callee = declareCFunc(module, context, "lucis_unlink",
+                i32Ty, {ptrTy});
+            return builder.CreateCall(callee, args, "ret");
+        };
+
+        io.functions.push_back(std::move(fn));
+    }
+
+    // ── file_size(fd) → int64 ─────────────────────────────────────
+    {
+        IntrinsicFunction fn;
+        fn.name = "file_size";
+        fn.returnType = "int64";
+        fn.params.push_back({"int32", false});
+        fn.description =
+            "Returns the size of an open file in bytes.\n"
+            "Equivalent to fstat + st_size, returns -1 on error.\n\n"
+            "```lucis\n"
+            "int64 sz = lucis::io::file_size(fd);\n"
+            "```";
+
+        fn.lowering.kind = IntrinsicFunction::Lowering::InlineIR;
+        fn.lowering.emitIR = [declareCFunc](
+            llvm::IRBuilder<>& builder,
+            llvm::Module* module,
+            llvm::LLVMContext& context,
+            const TypeRegistry& typeRegistry,
+            const std::vector<llvm::Value*>& args,
+            const std::vector<const TypeInfo*>& typeArgs) -> llvm::Value* {
+
+            auto* i32Ty = llvm::Type::getInt32Ty(context);
+            auto* i64Ty = llvm::Type::getInt64Ty(context);
+            auto* callee = declareCFunc(module, context, "lucis_fileSize_fd",
+                i64Ty, {i32Ty});
+            return builder.CreateCall(callee, args, "sz");
+        };
+
+        io.functions.push_back(std::move(fn));
+    }
+
     reg.registerNamespace(std::move(io));
 }
