@@ -6401,6 +6401,11 @@ void Checker::checkCompoundAssignStmt(LucisParser::CompoundAssignStmtContext* st
         error(stmt, "operator '" + opText +
                          "' requires integer operand, got '" + rhsType->name + "'");
 
+    // Type compatibility between variable and RHS
+    if (rhsType && varType && !isAssignable(varType, rhsType))
+        error(stmt, "type mismatch in compound assignment: variable type '" +
+                    varType->name + "', cannot use '" + rhsType->name + "'");
+
     // Compile-time division by zero check
     if (opText == "/=" || opText == "%=") {
         if (auto* intLit = dynamic_cast<LucisParser::IntLitExprContext*>(stmt->expression())) {
@@ -6525,6 +6530,11 @@ void Checker::checkFieldCompoundAssignStmt(LucisParser::FieldCompoundAssignStmtC
     if (needsInteger && rhsType && !isInteger(rhsType))
         error(stmt, "operator '" + opText +
                          "' requires integer operand, got '" + rhsType->name + "'");
+
+    // Type compatibility between field and RHS
+    if (rhsType && currentType && !isAssignable(currentType, rhsType))
+        error(stmt, "type mismatch in field compound assignment: field type '" +
+                    currentType->name + "', cannot use '" + rhsType->name + "'");
 
     // Compile-time division by zero check
     if (opText == "/=" || opText == "%=") {
@@ -6711,6 +6721,11 @@ void Checker::checkArrowCompoundAssignStmt(LucisParser::ArrowCompoundAssignStmtC
         error(stmt, "operator '" + opText +
                          "' requires integer operand, got '" + rhsType->name + "'");
 
+    // Type compatibility between field and RHS
+    if (rhsType && fieldType && !isAssignable(fieldType, rhsType))
+        error(stmt, "type mismatch in arrow compound assignment: field type '" +
+                    fieldType->name + "', cannot use '" + rhsType->name + "'");
+
     if (opText == "/=" || opText == "%=") {
         if (auto* intLit = dynamic_cast<LucisParser::IntLitExprContext*>(stmt->expression())) {
             if (intLit->INT_LIT()->getText() == "0")
@@ -6798,6 +6813,11 @@ void Checker::checkDerefCompoundAssignStmt(LucisParser::DerefCompoundAssignStmtC
     if (needsInteger && rhsType && !isInteger(rhsType))
         error(stmt, "operator '" + opText +
                          "' requires integer operand, got '" + rhsType->name + "'");
+
+    // Type compatibility between deref target and RHS
+    if (rhsType && targetType && !isAssignable(targetType, rhsType))
+        error(stmt, "type mismatch in deref compound assignment: target type '" +
+                    targetType->name + "', cannot use '" + rhsType->name + "'");
 
     if (opText == "/=" || opText == "%=") {
         auto* rhsExpr = stmt->expression(stmt->IDENTIFIER() ? 0 : 1);
