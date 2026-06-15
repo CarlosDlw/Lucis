@@ -906,6 +906,7 @@ bool Checker::check(LucisParser::ProgramContext* tree) {
         // Imported function signatures may reference generic types (e.g. Result<T>)
         // that were not explicitly imported via `use`. Ensure those type templates
         // are registered before function signature/type resolution.
+        std::unordered_set<std::string> seenDeps;  // prevent cycles
         auto ensureTypeDependencyFromSpec =
             [&](auto&& self, LucisParser::TypeSpecContext* ts, const std::string& ns) -> void {
                 if (!ts) return;
@@ -919,6 +920,7 @@ bool Checker::check(LucisParser::ProgramContext* tree) {
 
                 if (!ts->IDENTIFIER()) return;
                 auto baseName = ts->IDENTIFIER()->getText();
+
                 auto* depSym = moduleRegistry_->findSymbol(ns, baseName);
                 if (!depSym) {
                     for (auto& candidateNs : moduleRegistry_->allModules()) {
@@ -929,9 +931,23 @@ bool Checker::check(LucisParser::ProgramContext* tree) {
                 if (!depSym) return;
                 if (depSym->sourceFile == currentFile_) return;
 
+                // Check if the type needs processing (not registered, or only a skeleton)
+                auto* existingTI = typeRegistry_.lookup(baseName);
+                bool needsProc = !existingTI;
+                if (existingTI && existingTI->kind == TypeKind::Struct &&
+                    existingTI->fields.empty() && existingTI->bitWidth == 0)
+                    needsProc = true;
+                if (existingTI && existingTI->kind == TypeKind::Union &&
+                    existingTI->fields.empty() && existingTI->bitWidth == 0)
+                    needsProc = true;
+                if (existingTI && existingTI->kind == TypeKind::Enum &&
+                    existingTI->enumVariantInfos.empty())
+                    needsProc = true;
+
                 if (depSym->kind == ExportedSymbol::Enum &&
-                    !typeRegistry_.lookup(baseName) &&
+                    needsProc &&
                     !genericEnumTemplates_.count(baseName)) {
+                    if (!seenDeps.insert(baseName).second) return;
                     auto* ed = static_cast<LucisParser::EnumDeclContext*>(depSym->decl);
                     // Pre-resolve payload types before checking the enum
                     for (auto* variant : ed->enumVariant())
@@ -941,8 +957,9 @@ bool Checker::check(LucisParser::ProgramContext* tree) {
                     return;
                 }
                 if (depSym->kind == ExportedSymbol::Struct &&
-                    !typeRegistry_.lookup(baseName) &&
+                    needsProc &&
                     !genericStructTemplates_.count(baseName)) {
+                    if (!seenDeps.insert(baseName).second) return;
                     auto* sd = static_cast<LucisParser::StructDeclContext*>(depSym->decl);
                     // Pre-resolve field types before checking the struct
                     for (auto* field : sd->structField())
@@ -951,8 +968,9 @@ bool Checker::check(LucisParser::ProgramContext* tree) {
                     return;
                 }
                 if (depSym->kind == ExportedSymbol::Union &&
-                    !typeRegistry_.lookup(baseName) &&
+                    needsProc &&
                     !genericUnionTemplates_.count(baseName)) {
+                    if (!seenDeps.insert(baseName).second) return;
                     auto* ud = static_cast<LucisParser::UnionDeclContext*>(depSym->decl);
                     // Pre-resolve field types before checking the union
                     for (auto* field : ud->unionField())
