@@ -707,7 +707,9 @@ std::vector<uint32_t> SemanticTokensProvider::tokenize(const std::string& source
                  type == LucisLexer::SUFFIXED_OCT ||
                  type == LucisLexer::SUFFIXED_BIN ||
                  type == LucisLexer::SUFFIXED_FLOAT ||
-                 type == LucisLexer::SUFFIXED_DOT_FLOAT) {
+                 type == LucisLexer::SUFFIXED_DOT_FLOAT ||
+                 type == LucisLexer::SUFFIXED_INT_FLOAT ||
+                 type == LucisLexer::SUFFIXED_FLOAT_INT) {
             emit(raw, line, col, len, SemanticTokenType::Number);
         }
         else if (type == LucisLexer::BOOL_LIT) {

@@ -492,10 +492,12 @@ expression
     | LBRACKET (expression (COMMA expression)*)? RBRACKET      # arrayLitExpr
     | NULL_LIT                                                 # nullLitExpr
     | SUFFIXED_INT                                             # suffixedIntLitExpr
+    | SUFFIXED_INT_FLOAT                                       # suffixedIntFloatExpr
     | SUFFIXED_HEX                                             # suffixedHexLitExpr
     | SUFFIXED_OCT                                             # suffixedOctLitExpr
     | SUFFIXED_BIN                                             # suffixedBinLitExpr
     | SUFFIXED_FLOAT                                           # suffixedFloatLitExpr
+    | SUFFIXED_FLOAT_INT                                       # suffixedFloatIntExpr
     | SUFFIXED_DOT_FLOAT                                       # suffixedLeadingDotFloatExpr
     | INT_LIT                                                  # intLitExpr
     | HEX_LIT                                                  # hexLitExpr

@@ -678,6 +678,14 @@ static std::string inferExprTypeName(
     auto r = suffixedTypeName(sd->SUFFIXED_DOT_FLOAT()->getText());
     if (!r.empty()) return r;
   }
+  if (auto* si = dynamic_cast<LucisParser::SuffixedIntFloatExprContext*>(expr)) {
+    auto r = suffixedTypeName(si->SUFFIXED_INT_FLOAT()->getText());
+    if (!r.empty()) return r;
+  }
+  if (auto* sf = dynamic_cast<LucisParser::SuffixedFloatIntExprContext*>(expr)) {
+    auto r = suffixedTypeName(sf->SUFFIXED_FLOAT_INT()->getText());
+    if (!r.empty()) return r;
+  }
   if (dynamic_cast<LucisParser::IntLitExprContext *>(expr) ||
       dynamic_cast<LucisParser::HexLitExprContext *>(expr) ||
       dynamic_cast<LucisParser::OctLitExprContext *>(expr) ||

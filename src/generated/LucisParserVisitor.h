@@ -1,5 +1,5 @@
 
-// Generated from grammar/LucisParser.g4 by ANTLR 4.13.2
+// Generated from LucisParser.g4 by ANTLR 4.13.2
 
 #pragma once
 
@@ -185,6 +185,8 @@ public:
 
     virtual std::any visitTernaryExpr(LucisParser::TernaryExprContext *context) = 0;
 
+    virtual std::any visitSuffixedIntFloatExpr(LucisParser::SuffixedIntFloatExprContext *context) = 0;
+
     virtual std::any visitChainedTupleIndexExpr(LucisParser::ChainedTupleIndexExprContext *context) = 0;
 
     virtual std::any visitNullLitExpr(LucisParser::NullLitExprContext *context) = 0;
@@ -204,6 +206,8 @@ public:
     virtual std::any visitPropagateExpr(LucisParser::PropagateExprContext *context) = 0;
 
     virtual std::any visitSuffixedHexLitExpr(LucisParser::SuffixedHexLitExprContext *context) = 0;
+
+    virtual std::any visitSuffixedFloatIntExpr(LucisParser::SuffixedFloatIntExprContext *context) = 0;
 
     virtual std::any visitAddSubExpr(LucisParser::AddSubExprContext *context) = 0;
 

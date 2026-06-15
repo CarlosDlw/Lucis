@@ -5765,6 +5765,36 @@ std::any IRGen::visitSuffixedLeadingDotFloatExpr(
         llvm::ConstantFP::get(llvm::Type::getDoubleTy(*context_), v));
 }
 
+std::any IRGen::visitSuffixedIntFloatExpr(LucisParser::SuffixedIntFloatExprContext* ctx) {
+    std::string suffix;
+    auto base = splitSuffix(ctx->SUFFIXED_INT_FLOAT()->getText(), suffix);
+    double v = std::stod(base);
+    int bits = suffixFloatWidth(suffix);
+    if (bits == 32) {
+        return static_cast<llvm::Value*>(
+            llvm::ConstantFP::get(llvm::Type::getFloatTy(*context_), static_cast<float>(v)));
+    }
+    if (bits == 80) {
+        return static_cast<llvm::Value*>(
+            llvm::ConstantFP::get(llvm::Type::getX86_FP80Ty(*context_), v));
+    }
+    if (bits == 128) {
+        return static_cast<llvm::Value*>(
+            llvm::ConstantFP::get(llvm::Type::getFP128Ty(*context_), v));
+    }
+    return static_cast<llvm::Value*>(
+        llvm::ConstantFP::get(llvm::Type::getDoubleTy(*context_), v));
+}
+
+std::any IRGen::visitSuffixedFloatIntExpr(LucisParser::SuffixedFloatIntExprContext* ctx) {
+    std::string suffix;
+    auto base = splitSuffix(ctx->SUFFIXED_FLOAT_INT()->getText(), suffix);
+    double v = std::stod(base);
+    int bits = suffixIntWidth(suffix);
+    auto* ty = llvm::Type::getIntNTy(*context_, bits);
+    return static_cast<llvm::Value*>(llvm::ConstantInt::get(ty, static_cast<int64_t>(v)));
+}
+
 // ── Unsuffixed literal visitors ─────────────────────────────────────────
 
 std::any IRGen::visitIntLitExpr(LucisParser::IntLitExprContext* ctx) {
@@ -13756,6 +13786,12 @@ const TypeInfo* IRGen::resolveExprTypeInfo(LucisParser::ExpressionContext* ctx) 
     }
     if (auto* sd = dynamic_cast<LucisParser::SuffixedLeadingDotFloatExprContext*>(ctx)) {
         if (auto* t = resolveSuf(sd->SUFFIXED_DOT_FLOAT()->getText())) return t;
+    }
+    if (auto* si = dynamic_cast<LucisParser::SuffixedIntFloatExprContext*>(ctx)) {
+        if (auto* t = resolveSuf(si->SUFFIXED_INT_FLOAT()->getText())) return t;
+    }
+    if (auto* sf = dynamic_cast<LucisParser::SuffixedFloatIntExprContext*>(ctx)) {
+        if (auto* t = resolveSuf(sf->SUFFIXED_FLOAT_INT()->getText())) return t;
     }
 
     // ── Unsuffixed literals ──────────────────────────────────────────

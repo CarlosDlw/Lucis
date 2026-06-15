@@ -230,6 +230,10 @@ Checker::tryEvalUSizeRangeExpr(LucisParser::ExpressionContext* expr) const {
     if (auto* sb = dynamic_cast<LucisParser::SuffixedBinLitExprContext*>(expr))
         return tryEvalSuffixed(sb->SUFFIXED_BIN()->getText());
 
+    // Float-with-integer-suffix literals (e.g., 4.2u64) are not range-evaluable
+    if (dynamic_cast<LucisParser::SuffixedFloatIntExprContext*>(expr))
+        return std::nullopt;
+
     if (auto* id = dynamic_cast<LucisParser::IdentExprContext*>(expr)) {
         auto it = locals_.find(id->IDENTIFIER()->getText());
         if (it != locals_.end() && it->second.hasKnownUSizeRange)
@@ -1765,7 +1769,8 @@ void Checker::checkNegativeToUnsigned(const TypeInfo* target,
         dynamic_cast<LucisParser::SuffixedIntLitExprContext*>(expr) ||
         dynamic_cast<LucisParser::SuffixedHexLitExprContext*>(expr) ||
         dynamic_cast<LucisParser::SuffixedOctLitExprContext*>(expr) ||
-        dynamic_cast<LucisParser::SuffixedBinLitExprContext*>(expr))
+        dynamic_cast<LucisParser::SuffixedBinLitExprContext*>(expr) ||
+        dynamic_cast<LucisParser::SuffixedFloatIntExprContext*>(expr))
         return;
 
     // Case 2: Negative literal (-N) → always invalid for unsigned
@@ -1862,6 +1867,12 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
     }
     if (auto* sd = dynamic_cast<LucisParser::SuffixedLeadingDotFloatExprContext*>(expr)) {
         if (auto* t = resolveSuffixed(sd->SUFFIXED_DOT_FLOAT()->getText())) return t;
+    }
+    if (auto* si = dynamic_cast<LucisParser::SuffixedIntFloatExprContext*>(expr)) {
+        if (auto* t = resolveSuffixed(si->SUFFIXED_INT_FLOAT()->getText())) return t;
+    }
+    if (auto* sf = dynamic_cast<LucisParser::SuffixedFloatIntExprContext*>(expr)) {
+        if (auto* t = resolveSuffixed(sf->SUFFIXED_FLOAT_INT()->getText())) return t;
     }
 
     // ── Unsuffixed literals ───────────────────────────────────────────

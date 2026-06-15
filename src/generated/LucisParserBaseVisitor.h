@@ -1,5 +1,5 @@
 
-// Generated from grammar/LucisParser.g4 by ANTLR 4.13.2
+// Generated from LucisParser.g4 by ANTLR 4.13.2
 
 #pragma once
 
@@ -347,6 +347,10 @@ public:
     return visitChildren(ctx);
   }
 
+  virtual std::any visitSuffixedIntFloatExpr(LucisParser::SuffixedIntFloatExprContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
   virtual std::any visitChainedTupleIndexExpr(LucisParser::ChainedTupleIndexExprContext *ctx) override {
     return visitChildren(ctx);
   }
@@ -384,6 +388,10 @@ public:
   }
 
   virtual std::any visitSuffixedHexLitExpr(LucisParser::SuffixedHexLitExprContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual std::any visitSuffixedFloatIntExpr(LucisParser::SuffixedFloatIntExprContext *ctx) override {
     return visitChildren(ctx);
   }
 
