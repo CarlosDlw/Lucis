@@ -103,6 +103,36 @@ int64 flags = 0b1010;     // coerced to int64
 int32 perms = 0o755;      // coerced to int32
 ```
 
+### Suffixed Literals (Rust-style)
+
+You can also specify the exact type of a literal with a suffix:
+
+```lucis
+uint8  a = 255u8;         // unsigned 8-bit
+int16  b = -1i16;         // signed 16-bit
+uint32 c = 0xFF00FF00u32; // unsigned 32-bit
+int64  d = 42i64;         // signed 64-bit
+float32 e = 3.14f32;      // 32-bit float
+
+uint64 hex = 0xDEADBEEFu64;
+uint16 oct = 0o755u16;
+uint8  bin = 0b1010u8;
+```
+
+Supported suffixes:
+
+| Suffix | Type | Suffix | Type | Suffix | Type |
+|--------|------|--------|------|--------|------|
+| `i8` | `int8` | `u8` | `uint8` | `f32` | `float32` |
+| `i16` | `int16` | `u16` | `uint16` | `f64` | `float64` |
+| `i32` | `int32` | `u32` | `uint32` | `f80` | `float80` |
+| `i64` | `int64` | `u64` | `uint64` | `f128` | `float128` |
+| `i128` | `int128` | `u128` | `uint128` | | |
+| `iinf` | `intinf` | `usize` | `usize` | | |
+| `isize` | `isize` | | | | |
+
+Suffixed literals work with all literal forms (decimal, hex `0x`, octal `0o`, binary `0b`, and scientific float).
+
 ### Integer Methods
 
 All integer types (`int*` and `uint*`) support these methods via dot notation:

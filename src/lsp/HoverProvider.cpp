@@ -4114,6 +4114,45 @@ static std::string inferExprTypeName(
     if (!expr) return "";
 
     // Literals
+    auto suffixedTypeName = [](const std::string& text) -> std::string {
+        static const std::unordered_map<std::string, std::string> kSuf = {
+            {"i8","int8"},{"i16","int16"},{"i32","int32"},{"i64","int64"},
+            {"i128","int128"},{"iinf","intinf"},{"isize","isize"},
+            {"u8","uint8"},{"u16","uint16"},{"u32","uint32"},{"u64","uint64"},
+            {"u128","uint128"},{"usize","usize"},
+            {"f32","float32"},{"f64","float64"},{"f80","float80"},{"f128","float128"}
+        };
+        for (auto& [suf, tn] : kSuf) {
+            if (text.size() > suf.size() &&
+                text.compare(text.size() - suf.size(), suf.size(), suf) == 0)
+                return tn;
+        }
+        return "";
+    };
+    if (auto* si = dynamic_cast<LucisParser::SuffixedIntLitExprContext*>(expr)) {
+        auto r = suffixedTypeName(si->SUFFIXED_INT()->getText());
+        if (!r.empty()) return r;
+    }
+    if (auto* sh = dynamic_cast<LucisParser::SuffixedHexLitExprContext*>(expr)) {
+        auto r = suffixedTypeName(sh->SUFFIXED_HEX()->getText());
+        if (!r.empty()) return r;
+    }
+    if (auto* so = dynamic_cast<LucisParser::SuffixedOctLitExprContext*>(expr)) {
+        auto r = suffixedTypeName(so->SUFFIXED_OCT()->getText());
+        if (!r.empty()) return r;
+    }
+    if (auto* sb = dynamic_cast<LucisParser::SuffixedBinLitExprContext*>(expr)) {
+        auto r = suffixedTypeName(sb->SUFFIXED_BIN()->getText());
+        if (!r.empty()) return r;
+    }
+    if (auto* sf = dynamic_cast<LucisParser::SuffixedFloatLitExprContext*>(expr)) {
+        auto r = suffixedTypeName(sf->SUFFIXED_FLOAT()->getText());
+        if (!r.empty()) return r;
+    }
+    if (auto* sd = dynamic_cast<LucisParser::SuffixedLeadingDotFloatExprContext*>(expr)) {
+        auto r = suffixedTypeName(sd->SUFFIXED_DOT_FLOAT()->getText());
+        if (!r.empty()) return r;
+    }
     if (dynamic_cast<LucisParser::IntLitExprContext*>(expr) ||
         dynamic_cast<LucisParser::HexLitExprContext*>(expr) ||
         dynamic_cast<LucisParser::OctLitExprContext*>(expr) ||
