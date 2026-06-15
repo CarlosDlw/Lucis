@@ -6,6 +6,9 @@
 #include <llvm/IR/Intrinsics.h>
 #include <llvm/IR/Verifier.h>
 
+#include <vector>
+#include <unordered_map>
+
 // getDefaultTargetTriple moved in LLVM 15
 #ifdef LLVM_VERSION_15_OR_NEWER
 #  include <llvm/TargetParser/Host.h>
@@ -5639,6 +5642,130 @@ std::any IRGen::visitDoWhileStmt(LucisParser::DoWhileStmtContext* ctx) {
     builder_->SetInsertPoint(endBB);
     return {};
 }
+
+// ── Suffixed literal visitors (Rust-style) ───────────────────────────────
+
+// Shared helper: split suffix from literal text, return suffix and base text.
+static std::string splitSuffix(const std::string& text, std::string& suffix) {
+    static const std::vector<std::string> suffixes = {
+        "i8", "i16", "i32", "i64", "i128", "iinf", "isize",
+        "u8", "u16", "u32", "u64", "u128", "usize",
+        "f32", "f64", "f80", "f128"
+    };
+    for (auto& suf : suffixes) {
+        if (text.size() > suf.size() &&
+            text.compare(text.size() - suf.size(), suf.size(), suf) == 0) {
+            suffix = suf;
+            return text.substr(0, text.size() - suf.size());
+        }
+    }
+    suffix.clear();
+    return text;
+}
+
+// Map suffix → LLVM integer type width in bits
+static int suffixIntWidth(const std::string& suf) {
+    if (suf == "i8" || suf == "u8") return 8;
+    if (suf == "i16" || suf == "u16") return 16;
+    if (suf == "i32" || suf == "u32") return 32;
+    if (suf == "i64" || suf == "u64" || suf == "isize" || suf == "usize") return 64;
+    if (suf == "i128" || suf == "u128") return 128;
+    if (suf == "iinf") return 256;
+    return 32; // fallback
+}
+
+// Map suffix → LLVM float type width in bits
+static int suffixFloatWidth(const std::string& suf) {
+    if (suf == "f32") return 32;
+    if (suf == "f64") return 64;
+    if (suf == "f80") return 80;
+    if (suf == "f128") return 128;
+    return 64; // fallback
+}
+
+std::any IRGen::visitSuffixedIntLitExpr(LucisParser::SuffixedIntLitExprContext* ctx) {
+    std::string suffix;
+    auto base = splitSuffix(ctx->SUFFIXED_INT()->getText(), suffix);
+    llvm::APInt ap(256, base, 10);
+    int bits = suffixIntWidth(suffix);
+    auto* ty = llvm::Type::getIntNTy(*context_, bits);
+    return static_cast<llvm::Value*>(llvm::ConstantInt::get(ty, ap.sextOrTrunc(bits)));
+}
+
+std::any IRGen::visitSuffixedHexLitExpr(LucisParser::SuffixedHexLitExprContext* ctx) {
+    std::string suffix;
+    auto base = splitSuffix(ctx->SUFFIXED_HEX()->getText(), suffix);
+    auto hex = base.substr(2); // strip 0x/0X
+    llvm::APInt ap(256, hex, 16);
+    int bits = suffixIntWidth(suffix);
+    auto* ty = llvm::Type::getIntNTy(*context_, bits);
+    return static_cast<llvm::Value*>(llvm::ConstantInt::get(ty, ap.sextOrTrunc(bits)));
+}
+
+std::any IRGen::visitSuffixedOctLitExpr(LucisParser::SuffixedOctLitExprContext* ctx) {
+    std::string suffix;
+    auto base = splitSuffix(ctx->SUFFIXED_OCT()->getText(), suffix);
+    auto oct = base.substr(2); // strip 0o/0O
+    llvm::APInt ap(256, oct, 8);
+    int bits = suffixIntWidth(suffix);
+    auto* ty = llvm::Type::getIntNTy(*context_, bits);
+    return static_cast<llvm::Value*>(llvm::ConstantInt::get(ty, ap.sextOrTrunc(bits)));
+}
+
+std::any IRGen::visitSuffixedBinLitExpr(LucisParser::SuffixedBinLitExprContext* ctx) {
+    std::string suffix;
+    auto base = splitSuffix(ctx->SUFFIXED_BIN()->getText(), suffix);
+    auto bin = base.substr(2); // strip 0b/0B
+    llvm::APInt ap(256, bin, 2);
+    int bits = suffixIntWidth(suffix);
+    auto* ty = llvm::Type::getIntNTy(*context_, bits);
+    return static_cast<llvm::Value*>(llvm::ConstantInt::get(ty, ap.sextOrTrunc(bits)));
+}
+
+std::any IRGen::visitSuffixedFloatLitExpr(LucisParser::SuffixedFloatLitExprContext* ctx) {
+    std::string suffix;
+    auto base = splitSuffix(ctx->SUFFIXED_FLOAT()->getText(), suffix);
+    double v = std::stod(base);
+    int bits = suffixFloatWidth(suffix);
+    if (bits == 32) {
+        return static_cast<llvm::Value*>(
+            llvm::ConstantFP::get(llvm::Type::getFloatTy(*context_), static_cast<float>(v)));
+    }
+    if (bits == 80) {
+        return static_cast<llvm::Value*>(
+            llvm::ConstantFP::get(llvm::Type::getX86_FP80Ty(*context_), v));
+    }
+    if (bits == 128) {
+        return static_cast<llvm::Value*>(
+            llvm::ConstantFP::get(llvm::Type::getFP128Ty(*context_), v));
+    }
+    return static_cast<llvm::Value*>(
+        llvm::ConstantFP::get(llvm::Type::getDoubleTy(*context_), v));
+}
+
+std::any IRGen::visitSuffixedLeadingDotFloatExpr(
+        LucisParser::SuffixedLeadingDotFloatExprContext* ctx) {
+    std::string suffix;
+    auto base = splitSuffix(ctx->SUFFIXED_DOT_FLOAT()->getText(), suffix);
+    double v = std::stod("0" + base); // base is like ".5" → "0.5"
+    int bits = suffixFloatWidth(suffix);
+    if (bits == 32) {
+        return static_cast<llvm::Value*>(
+            llvm::ConstantFP::get(llvm::Type::getFloatTy(*context_), static_cast<float>(v)));
+    }
+    if (bits == 80) {
+        return static_cast<llvm::Value*>(
+            llvm::ConstantFP::get(llvm::Type::getX86_FP80Ty(*context_), v));
+    }
+    if (bits == 128) {
+        return static_cast<llvm::Value*>(
+            llvm::ConstantFP::get(llvm::Type::getFP128Ty(*context_), v));
+    }
+    return static_cast<llvm::Value*>(
+        llvm::ConstantFP::get(llvm::Type::getDoubleTy(*context_), v));
+}
+
+// ── Unsuffixed literal visitors ─────────────────────────────────────────
 
 std::any IRGen::visitIntLitExpr(LucisParser::IntLitExprContext* ctx) {
     auto text = ctx->INT_LIT()->getText();
@@ -13597,7 +13724,41 @@ bool IRGen::isPointerType(LucisParser::TypeSpecContext* ctx) {
 }
 
 const TypeInfo* IRGen::resolveExprTypeInfo(LucisParser::ExpressionContext* ctx) {
-    // ── Literals ─────────────────────────────────────────────────────
+    // ── Suffixed literals ────────────────────────────────────────────
+    static const std::unordered_map<std::string, std::string> kSufMap = {
+        {"i8", "int8"}, {"i16", "int16"}, {"i32", "int32"}, {"i64", "int64"},
+        {"i128", "int128"}, {"iinf", "intinf"}, {"isize", "isize"},
+        {"u8", "uint8"}, {"u16", "uint16"}, {"u32", "uint32"}, {"u64", "uint64"},
+        {"u128", "uint128"}, {"usize", "usize"},
+        {"f32", "float32"}, {"f64", "float64"}, {"f80", "float80"}, {"f128", "float128"}
+    };
+    auto resolveSuf = [&](const std::string& text) -> const TypeInfo* {
+        std::string suffix;
+        splitSuffix(text, suffix);
+        if (suffix.empty()) return nullptr;
+        auto it = kSufMap.find(suffix);
+        return it != kSufMap.end() ? typeRegistry_.lookup(it->second) : nullptr;
+    };
+    if (auto* si = dynamic_cast<LucisParser::SuffixedIntLitExprContext*>(ctx)) {
+        if (auto* t = resolveSuf(si->SUFFIXED_INT()->getText())) return t;
+    }
+    if (auto* sh = dynamic_cast<LucisParser::SuffixedHexLitExprContext*>(ctx)) {
+        if (auto* t = resolveSuf(sh->SUFFIXED_HEX()->getText())) return t;
+    }
+    if (auto* so = dynamic_cast<LucisParser::SuffixedOctLitExprContext*>(ctx)) {
+        if (auto* t = resolveSuf(so->SUFFIXED_OCT()->getText())) return t;
+    }
+    if (auto* sb = dynamic_cast<LucisParser::SuffixedBinLitExprContext*>(ctx)) {
+        if (auto* t = resolveSuf(sb->SUFFIXED_BIN()->getText())) return t;
+    }
+    if (auto* sf = dynamic_cast<LucisParser::SuffixedFloatLitExprContext*>(ctx)) {
+        if (auto* t = resolveSuf(sf->SUFFIXED_FLOAT()->getText())) return t;
+    }
+    if (auto* sd = dynamic_cast<LucisParser::SuffixedLeadingDotFloatExprContext*>(ctx)) {
+        if (auto* t = resolveSuf(sd->SUFFIXED_DOT_FLOAT()->getText())) return t;
+    }
+
+    // ── Unsuffixed literals ──────────────────────────────────────────
     if (dynamic_cast<LucisParser::IntLitExprContext*>(ctx) ||
         dynamic_cast<LucisParser::HexLitExprContext*>(ctx) ||
         dynamic_cast<LucisParser::OctLitExprContext*>(ctx) ||

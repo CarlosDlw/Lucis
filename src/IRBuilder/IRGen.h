@@ -84,6 +84,12 @@ public:
     std::any visitHexLitExpr(LucisParser::HexLitExprContext* ctx)       override;
     std::any visitOctLitExpr(LucisParser::OctLitExprContext* ctx)       override;
     std::any visitBinLitExpr(LucisParser::BinLitExprContext* ctx)       override;
+    std::any visitSuffixedIntLitExpr(LucisParser::SuffixedIntLitExprContext* ctx) override;
+    std::any visitSuffixedHexLitExpr(LucisParser::SuffixedHexLitExprContext* ctx) override;
+    std::any visitSuffixedOctLitExpr(LucisParser::SuffixedOctLitExprContext* ctx) override;
+    std::any visitSuffixedBinLitExpr(LucisParser::SuffixedBinLitExprContext* ctx) override;
+    std::any visitSuffixedFloatLitExpr(LucisParser::SuffixedFloatLitExprContext* ctx) override;
+    std::any visitSuffixedLeadingDotFloatExpr(LucisParser::SuffixedLeadingDotFloatExprContext* ctx) override;
     std::any visitFloatLitExpr(LucisParser::FloatLitExprContext* ctx)   override;
     std::any visitLeadingDotFloatLitExpr(LucisParser::LeadingDotFloatLitExprContext* ctx) override;
     std::any visitBoolLitExpr(LucisParser::BoolLitExprContext* ctx)     override;

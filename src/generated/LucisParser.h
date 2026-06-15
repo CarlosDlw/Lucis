@@ -1,5 +1,5 @@
 
-// Generated from LucisParser.g4 by ANTLR 4.13.2
+// Generated from grammar/LucisParser.g4 by ANTLR 4.13.2
 
 #pragma once
 
@@ -24,18 +24,19 @@ public:
     INTINF = 56, ISIZE = 57, UINT1 = 58, UINT8 = 59, UINT16 = 60, UINT32 = 61, 
     UINT64 = 62, UINT128 = 63, USIZE = 64, FLOAT32 = 65, FLOAT64 = 66, FLOAT80 = 67, 
     FLOAT128 = 68, DOUBLE = 69, BOOL = 70, CHAR = 71, VOID = 72, STRING = 73, 
-    CSTRING = 74, HEX_LIT = 75, OCT_LIT = 76, BIN_LIT = 77, INT_LIT = 78, 
-    FLOAT_LIT = 79, BOOL_LIT = 80, C_STR_LIT = 81, STR_LIT = 82, CHAR_LIT = 83, 
-    IDENTIFIER = 84, PLUS_ASSIGN = 85, MINUS_ASSIGN = 86, STAR_ASSIGN = 87, 
-    SLASH_ASSIGN = 88, PERCENT_ASSIGN = 89, AMP_ASSIGN = 90, PIPE_ASSIGN = 91, 
-    CARET_ASSIGN = 92, LSHIFT_ASSIGN = 93, RSHIFT_ASSIGN = 94, SEMI = 95, 
-    COLON = 96, SCOPE = 97, COMMA = 98, DOT = 99, ASSIGN = 100, LPAREN = 101, 
-    RPAREN = 102, LBRACE = 103, RBRACE = 104, LBRACKET = 105, RBRACKET = 106, 
-    STAR = 107, AMPERSAND = 108, MINUS = 109, PLUS = 110, SLASH = 111, PERCENT = 112, 
-    EQ = 113, NEQ = 114, LTE = 115, GTE = 116, LT = 117, GT = 118, LAND = 119, 
-    LOR = 120, NOT = 121, INCR = 122, DECR = 123, LSHIFT = 124, PIPE = 125, 
-    CARET = 126, TILDE = 127, QUESTION = 128, WS = 129, LINE_COMMENT = 130, 
-    BLOCK_COMMENT = 131
+    CSTRING = 74, SUFFIXED_HEX = 75, SUFFIXED_OCT = 76, SUFFIXED_BIN = 77, 
+    SUFFIXED_INT = 78, SUFFIXED_FLOAT = 79, SUFFIXED_DOT_FLOAT = 80, HEX_LIT = 81, 
+    OCT_LIT = 82, BIN_LIT = 83, INT_LIT = 84, FLOAT_LIT = 85, BOOL_LIT = 86, 
+    C_STR_LIT = 87, STR_LIT = 88, CHAR_LIT = 89, IDENTIFIER = 90, PLUS_ASSIGN = 91, 
+    MINUS_ASSIGN = 92, STAR_ASSIGN = 93, SLASH_ASSIGN = 94, PERCENT_ASSIGN = 95, 
+    AMP_ASSIGN = 96, PIPE_ASSIGN = 97, CARET_ASSIGN = 98, LSHIFT_ASSIGN = 99, 
+    RSHIFT_ASSIGN = 100, SEMI = 101, COLON = 102, SCOPE = 103, COMMA = 104, 
+    DOT = 105, ASSIGN = 106, LPAREN = 107, RPAREN = 108, LBRACE = 109, RBRACE = 110, 
+    LBRACKET = 111, RBRACKET = 112, STAR = 113, AMPERSAND = 114, MINUS = 115, 
+    PLUS = 116, SLASH = 117, PERCENT = 118, EQ = 119, NEQ = 120, LTE = 121, 
+    GTE = 122, LT = 123, GT = 124, LAND = 125, LOR = 126, NOT = 127, INCR = 128, 
+    DECR = 129, LSHIFT = 130, PIPE = 131, CARET = 132, TILDE = 133, QUESTION = 134, 
+    WS = 135, LINE_COMMENT = 136, BLOCK_COMMENT = 137
   };
 
   enum {
@@ -1481,6 +1482,15 @@ public:
     virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
   };
 
+  class  SuffixedOctLitExprContext : public ExpressionContext {
+  public:
+    SuffixedOctLitExprContext(ExpressionContext *ctx);
+
+    antlr4::tree::TerminalNode *SUFFIXED_OCT();
+
+    virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+  };
+
   class  FieldAccessExprContext : public ExpressionContext {
   public:
     FieldAccessExprContext(ExpressionContext *ctx);
@@ -1648,6 +1658,15 @@ public:
     virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
   };
 
+  class  SuffixedLeadingDotFloatExprContext : public ExpressionContext {
+  public:
+    SuffixedLeadingDotFloatExprContext(ExpressionContext *ctx);
+
+    antlr4::tree::TerminalNode *SUFFIXED_DOT_FLOAT();
+
+    virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+  };
+
   class  BitAndExprContext : public ExpressionContext {
   public:
     BitAndExprContext(ExpressionContext *ctx);
@@ -1710,6 +1729,15 @@ public:
     virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
   };
 
+  class  SuffixedHexLitExprContext : public ExpressionContext {
+  public:
+    SuffixedHexLitExprContext(ExpressionContext *ctx);
+
+    antlr4::tree::TerminalNode *SUFFIXED_HEX();
+
+    virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+  };
+
   class  AddSubExprContext : public ExpressionContext {
   public:
     AddSubExprContext(ExpressionContext *ctx);
@@ -1719,6 +1747,15 @@ public:
     ExpressionContext* expression(size_t i);
     antlr4::tree::TerminalNode *PLUS();
     antlr4::tree::TerminalNode *MINUS();
+
+    virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+  };
+
+  class  SuffixedFloatLitExprContext : public ExpressionContext {
+  public:
+    SuffixedFloatLitExprContext(ExpressionContext *ctx);
+
+    antlr4::tree::TerminalNode *SUFFIXED_FLOAT();
 
     virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
   };
@@ -1738,6 +1775,15 @@ public:
 
     antlr4::tree::TerminalNode *AMPERSAND();
     ExpressionContext *expression();
+
+    virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+  };
+
+  class  SuffixedBinLitExprContext : public ExpressionContext {
+  public:
+    SuffixedBinLitExprContext(ExpressionContext *ctx);
+
+    antlr4::tree::TerminalNode *SUFFIXED_BIN();
 
     virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
   };
@@ -2360,6 +2406,15 @@ public:
     HexLitExprContext(ExpressionContext *ctx);
 
     antlr4::tree::TerminalNode *HEX_LIT();
+
+    virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+  };
+
+  class  SuffixedIntLitExprContext : public ExpressionContext {
+  public:
+    SuffixedIntLitExprContext(ExpressionContext *ctx);
+
+    antlr4::tree::TerminalNode *SUFFIXED_INT();
 
     virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
   };

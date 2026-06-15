@@ -87,7 +87,15 @@ VOID      : 'void';
 STRING    : 'string';
 CSTRING   : 'cstring';  // alias for *char
 
-// Literals
+// Literals (suffixed forms before bare forms so ANTLR picks the longer match)
+SUFFIXED_HEX   : '0' [xX] [0-9a-fA-F]+ [iu] ('8' | '16' | '32' | '64' | '128' | 'size' | 'inf');
+SUFFIXED_OCT   : '0' [oO] [0-7]+ [iu] ('8' | '16' | '32' | '64' | '128' | 'size' | 'inf');
+SUFFIXED_BIN   : '0' [bB] [01]+ [iu] ('8' | '16' | '32' | '64' | '128' | 'size' | 'inf');
+SUFFIXED_INT   : [0-9]+ [iu] ('8' | '16' | '32' | '64' | '128' | 'size' | 'inf');
+SUFFIXED_FLOAT : [0-9]+ '.' [0-9]+ ([eE] [+-]? [0-9]+)? 'f' ('32' | '64' | '80' | '128')
+               | [0-9]+ [eE] [+-]? [0-9]+ 'f' ('32' | '64' | '80' | '128')
+               ;
+SUFFIXED_DOT_FLOAT : '.' [0-9]+ 'f' ('32' | '64' | '80' | '128');
 HEX_LIT   : '0' [xX] [0-9a-fA-F]+;
 OCT_LIT   : '0' [oO] [0-7]+;
 BIN_LIT   : '0' [bB] [01]+;
@@ -104,6 +112,7 @@ fragment CHAR_ESC : '\\' ('n' | 'r' | 't' | '\\' | '\'' | '"' | '0' | 'a' | 'b' 
                   | '\\x' [0-9a-fA-F] [0-9a-fA-F]
                   ;
 CHAR_LIT  : '\'' ( CHAR_ESC | ~['\\r\n] ) '\'';
+
 // Identifier
 IDENTIFIER: [a-zA-Z_][a-zA-Z0-9_]*;
 

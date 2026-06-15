@@ -1,5 +1,5 @@
 
-// Generated from LucisParser.g4 by ANTLR 4.13.2
+// Generated from grammar/LucisParser.g4 by ANTLR 4.13.2
 
 #pragma once
 
@@ -299,6 +299,10 @@ public:
     return visitChildren(ctx);
   }
 
+  virtual std::any visitSuffixedOctLitExpr(LucisParser::SuffixedOctLitExprContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
   virtual std::any visitFieldAccessExpr(LucisParser::FieldAccessExprContext *ctx) override {
     return visitChildren(ctx);
   }
@@ -355,6 +359,10 @@ public:
     return visitChildren(ctx);
   }
 
+  virtual std::any visitSuffixedLeadingDotFloatExpr(LucisParser::SuffixedLeadingDotFloatExprContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
   virtual std::any visitBitAndExpr(LucisParser::BitAndExprContext *ctx) override {
     return visitChildren(ctx);
   }
@@ -375,7 +383,15 @@ public:
     return visitChildren(ctx);
   }
 
+  virtual std::any visitSuffixedHexLitExpr(LucisParser::SuffixedHexLitExprContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
   virtual std::any visitAddSubExpr(LucisParser::AddSubExprContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual std::any visitSuffixedFloatLitExpr(LucisParser::SuffixedFloatLitExprContext *ctx) override {
     return visitChildren(ctx);
   }
 
@@ -384,6 +400,10 @@ public:
   }
 
   virtual std::any visitAddrOfExpr(LucisParser::AddrOfExprContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual std::any visitSuffixedBinLitExpr(LucisParser::SuffixedBinLitExprContext *ctx) override {
     return visitChildren(ctx);
   }
 
@@ -580,6 +600,10 @@ public:
   }
 
   virtual std::any visitHexLitExpr(LucisParser::HexLitExprContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual std::any visitSuffixedIntLitExpr(LucisParser::SuffixedIntLitExprContext *ctx) override {
     return visitChildren(ctx);
   }
 

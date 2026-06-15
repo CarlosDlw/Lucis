@@ -491,6 +491,12 @@ expression
     | LBRACKET expression PIPE FOR typeSpec IDENTIFIER IN expression (IF expression)? RBRACKET  # listCompExpr
     | LBRACKET (expression (COMMA expression)*)? RBRACKET      # arrayLitExpr
     | NULL_LIT                                                 # nullLitExpr
+    | SUFFIXED_INT                                             # suffixedIntLitExpr
+    | SUFFIXED_HEX                                             # suffixedHexLitExpr
+    | SUFFIXED_OCT                                             # suffixedOctLitExpr
+    | SUFFIXED_BIN                                             # suffixedBinLitExpr
+    | SUFFIXED_FLOAT                                           # suffixedFloatLitExpr
+    | SUFFIXED_DOT_FLOAT                                       # suffixedLeadingDotFloatExpr
     | INT_LIT                                                  # intLitExpr
     | HEX_LIT                                                  # hexLitExpr
     | OCT_LIT                                                  # octLitExpr

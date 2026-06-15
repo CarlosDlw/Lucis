@@ -1,5 +1,5 @@
 
-// Generated from LucisParser.g4 by ANTLR 4.13.2
+// Generated from grammar/LucisParser.g4 by ANTLR 4.13.2
 
 #pragma once
 
@@ -161,6 +161,8 @@ public:
 
     virtual std::any visitStructPosInitExpr(LucisParser::StructPosInitExprContext *context) = 0;
 
+    virtual std::any visitSuffixedOctLitExpr(LucisParser::SuffixedOctLitExprContext *context) = 0;
+
     virtual std::any visitFieldAccessExpr(LucisParser::FieldAccessExprContext *context) = 0;
 
     virtual std::any visitTypeofExpr(LucisParser::TypeofExprContext *context) = 0;
@@ -189,6 +191,8 @@ public:
 
     virtual std::any visitMulExpr(LucisParser::MulExprContext *context) = 0;
 
+    virtual std::any visitSuffixedLeadingDotFloatExpr(LucisParser::SuffixedLeadingDotFloatExprContext *context) = 0;
+
     virtual std::any visitBitAndExpr(LucisParser::BitAndExprContext *context) = 0;
 
     virtual std::any visitIsExpr(LucisParser::IsExprContext *context) = 0;
@@ -199,11 +203,17 @@ public:
 
     virtual std::any visitPropagateExpr(LucisParser::PropagateExprContext *context) = 0;
 
+    virtual std::any visitSuffixedHexLitExpr(LucisParser::SuffixedHexLitExprContext *context) = 0;
+
     virtual std::any visitAddSubExpr(LucisParser::AddSubExprContext *context) = 0;
+
+    virtual std::any visitSuffixedFloatLitExpr(LucisParser::SuffixedFloatLitExprContext *context) = 0;
 
     virtual std::any visitIntLitExpr(LucisParser::IntLitExprContext *context) = 0;
 
     virtual std::any visitAddrOfExpr(LucisParser::AddrOfExprContext *context) = 0;
+
+    virtual std::any visitSuffixedBinLitExpr(LucisParser::SuffixedBinLitExprContext *context) = 0;
 
     virtual std::any visitTupleIndexExpr(LucisParser::TupleIndexExprContext *context) = 0;
 
@@ -302,6 +312,8 @@ public:
     virtual std::any visitBoolLitExpr(LucisParser::BoolLitExprContext *context) = 0;
 
     virtual std::any visitHexLitExpr(LucisParser::HexLitExprContext *context) = 0;
+
+    virtual std::any visitSuffixedIntLitExpr(LucisParser::SuffixedIntLitExprContext *context) = 0;
 
     virtual std::any visitChainedTupleArrowIndexExpr(LucisParser::ChainedTupleArrowIndexExprContext *context) = 0;
 

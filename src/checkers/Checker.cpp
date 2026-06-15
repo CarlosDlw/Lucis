@@ -4,6 +4,8 @@
 #include <cctype>
 #include <functional>
 #include <limits>
+#include <unordered_map>
+#include <vector>
 
 // In Checker.cpp, ensure we update any places where IntrinsicRegistry is initialized or used.
 // Checker constructor:
@@ -196,6 +198,37 @@ Checker::tryEvalUSizeRangeExpr(LucisParser::ExpressionContext* expr) const {
             return std::nullopt;
         }
     }
+
+    // Suffixed integer literals: strip suffix, parse numeric part
+    auto tryEvalSuffixed = [](const std::string& text)
+        -> std::optional<std::pair<uint64_t, uint64_t>> {
+        static const std::vector<std::string> suffixes = {
+            "i8", "i16", "i32", "i64", "i128", "iinf", "isize",
+            "u8", "u16", "u32", "u64", "u128", "usize"
+        };
+        for (auto& suf : suffixes) {
+            if (text.size() > suf.size() &&
+                text.compare(text.size() - suf.size(), suf.size(), suf) == 0) {
+                try {
+                    auto num = text.substr(0, text.size() - suf.size());
+                    if (num.empty() || num[0] == '-') return std::nullopt;
+                    auto v = static_cast<uint64_t>(std::stoull(num));
+                    return std::make_pair(v, v);
+                } catch (...) {
+                    return std::nullopt;
+                }
+            }
+        }
+        return std::nullopt;
+    };
+    if (auto* si = dynamic_cast<LucisParser::SuffixedIntLitExprContext*>(expr))
+        return tryEvalSuffixed(si->SUFFIXED_INT()->getText());
+    if (auto* sh = dynamic_cast<LucisParser::SuffixedHexLitExprContext*>(expr))
+        return tryEvalSuffixed(sh->SUFFIXED_HEX()->getText());
+    if (auto* so = dynamic_cast<LucisParser::SuffixedOctLitExprContext*>(expr))
+        return tryEvalSuffixed(so->SUFFIXED_OCT()->getText());
+    if (auto* sb = dynamic_cast<LucisParser::SuffixedBinLitExprContext*>(expr))
+        return tryEvalSuffixed(sb->SUFFIXED_BIN()->getText());
 
     if (auto* id = dynamic_cast<LucisParser::IdentExprContext*>(expr)) {
         auto it = locals_.find(id->IDENTIFIER()->getText());
@@ -1728,7 +1761,11 @@ void Checker::checkNegativeToUnsigned(const TypeInfo* target,
     if (dynamic_cast<LucisParser::IntLitExprContext*>(expr) ||
         dynamic_cast<LucisParser::HexLitExprContext*>(expr) ||
         dynamic_cast<LucisParser::OctLitExprContext*>(expr) ||
-        dynamic_cast<LucisParser::BinLitExprContext*>(expr))
+        dynamic_cast<LucisParser::BinLitExprContext*>(expr) ||
+        dynamic_cast<LucisParser::SuffixedIntLitExprContext*>(expr) ||
+        dynamic_cast<LucisParser::SuffixedHexLitExprContext*>(expr) ||
+        dynamic_cast<LucisParser::SuffixedOctLitExprContext*>(expr) ||
+        dynamic_cast<LucisParser::SuffixedBinLitExprContext*>(expr))
         return;
 
     // Case 2: Negative literal (-N) → always invalid for unsigned
@@ -1791,7 +1828,43 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
         return resolveTypeSpec(ts, dims);
     };
 
-    // ── Literals ──────────────────────────────────────────────────────
+    // ── Suffixed literals (Rust-style: 42u64, 0xFFi8, 3.14f32) ────────
+    static const std::unordered_map<std::string, std::string> kSuffixTypeMap = {
+        {"i8", "int8"}, {"i16", "int16"}, {"i32", "int32"}, {"i64", "int64"},
+        {"i128", "int128"}, {"iinf", "intinf"}, {"isize", "isize"},
+        {"u8", "uint8"}, {"u16", "uint16"}, {"u32", "uint32"}, {"u64", "uint64"},
+        {"u128", "uint128"}, {"usize", "usize"},
+        {"f32", "float32"}, {"f64", "float64"}, {"f80", "float80"}, {"f128", "float128"}
+    };
+    auto resolveSuffixed = [&](const std::string& text) -> const TypeInfo* {
+        for (auto& [suf, typeName] : kSuffixTypeMap) {
+            if (text.size() > suf.size() &&
+                text.compare(text.size() - suf.size(), suf.size(), suf) == 0)
+                return typeRegistry_.lookup(typeName);
+        }
+        return nullptr;
+    };
+
+    if (auto* si = dynamic_cast<LucisParser::SuffixedIntLitExprContext*>(expr)) {
+        if (auto* t = resolveSuffixed(si->SUFFIXED_INT()->getText())) return t;
+    }
+    if (auto* sh = dynamic_cast<LucisParser::SuffixedHexLitExprContext*>(expr)) {
+        if (auto* t = resolveSuffixed(sh->SUFFIXED_HEX()->getText())) return t;
+    }
+    if (auto* so = dynamic_cast<LucisParser::SuffixedOctLitExprContext*>(expr)) {
+        if (auto* t = resolveSuffixed(so->SUFFIXED_OCT()->getText())) return t;
+    }
+    if (auto* sb = dynamic_cast<LucisParser::SuffixedBinLitExprContext*>(expr)) {
+        if (auto* t = resolveSuffixed(sb->SUFFIXED_BIN()->getText())) return t;
+    }
+    if (auto* sf = dynamic_cast<LucisParser::SuffixedFloatLitExprContext*>(expr)) {
+        if (auto* t = resolveSuffixed(sf->SUFFIXED_FLOAT()->getText())) return t;
+    }
+    if (auto* sd = dynamic_cast<LucisParser::SuffixedLeadingDotFloatExprContext*>(expr)) {
+        if (auto* t = resolveSuffixed(sd->SUFFIXED_DOT_FLOAT()->getText())) return t;
+    }
+
+    // ── Unsuffixed literals ───────────────────────────────────────────
     if (dynamic_cast<LucisParser::IntLitExprContext*>(expr) ||
         dynamic_cast<LucisParser::HexLitExprContext*>(expr) ||
         dynamic_cast<LucisParser::OctLitExprContext*>(expr) ||
