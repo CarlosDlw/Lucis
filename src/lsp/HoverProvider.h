@@ -182,6 +182,11 @@ private:
         LucisParser::ProgramContext* tree, const CBindings& bindings,
         const ProjectContext* project);
 
+    std::optional<HoverResult> hoverModulePathSegment(
+        const std::string& modulePath,
+        antlr4::Token* token,
+        const ProjectContext* project);
+
     // Formatting helpers.
     std::string typeSpecToString(LucisParser::TypeSpecContext* ctx);
     std::string formatFunctionDecl(LucisParser::FunctionDeclContext* func);

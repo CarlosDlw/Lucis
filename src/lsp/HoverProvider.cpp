@@ -8,6 +8,7 @@
 
 #include <sstream>
 #include <fstream>
+#include <unordered_set>
 #include <filesystem>
 
 namespace fs = std::filesystem;
@@ -290,8 +291,13 @@ std::optional<HoverResult> HoverProvider::hover(const std::string& source,
             // Hover on module path identifiers
             for (auto* id : item->modulePath()->IDENTIFIER()) {
                 if (id->getSymbol() == hoveredToken) {
-                    std::string md = "```lucis\n(module) " + item->modulePath()->getText() + "\n```";
-                    return makeResult(hoveredToken, md);
+                    std::string partialPath;
+                    for (auto* pid : item->modulePath()->IDENTIFIER()) {
+                        if (!partialPath.empty()) partialPath += "::";
+                        partialPath += pid->getText();
+                        if (pid == id) break;
+                    }
+                    return hoverModulePathSegment(partialPath, hoveredToken, project);
                 }
             }
         }
@@ -305,8 +311,13 @@ std::optional<HoverResult> HoverProvider::hover(const std::string& source,
             // Hover on module path identifiers
             for (auto* id : group->modulePath()->IDENTIFIER()) {
                 if (id->getSymbol() == hoveredToken) {
-                    std::string md = "```lucis\n(module) " + modulePath + "\n```";
-                    return makeResult(hoveredToken, md);
+                    std::string partialPath;
+                    for (auto* pid : group->modulePath()->IDENTIFIER()) {
+                        if (!partialPath.empty()) partialPath += "::";
+                        partialPath += pid->getText();
+                        if (pid == id) break;
+                    }
+                    return hoverModulePathSegment(partialPath, hoveredToken, project);
                 }
             }
             // Hover on imported symbol names
@@ -954,35 +965,59 @@ std::optional<HoverResult> HoverProvider::hoverImportedSymbol(
 
     // 2. Project registry (user code)
     if (project && project->isValid()) {
-        auto* sym = project->registry().findSymbol(modulePath, symbolName);
+        auto registryPath = ModuleRegistry::usePathToModulePath(modulePath);
+        auto* sym = project->registry().findSymbol(registryPath, symbolName);
         if (sym) {
+            const auto& crossDocs = docCommentsForFile(sym->sourceFile);
             switch (sym->kind) {
                 case ExportedSymbol::Function:
-                    if (auto* fd = dynamic_cast<LucisParser::FunctionDeclContext*>(sym->decl))
-                        return makeResult(token, formatFunctionDecl(fd));
+                    if (auto* fd = dynamic_cast<LucisParser::FunctionDeclContext*>(sym->decl)) {
+                        std::string md = formatFunctionDecl(fd);
+                        size_t declLine = fd->getStart()->getLine() - 1;
+                        md = appendDocToHover(md, crossDocs, declLine);
+                        return makeResult(token, md);
+                    }
                     break;
                 case ExportedSymbol::Struct:
-                    if (auto* sd = dynamic_cast<LucisParser::StructDeclContext*>(sym->decl))
-                        return makeResult(token, formatStructDecl(sd));
+                    if (auto* sd = dynamic_cast<LucisParser::StructDeclContext*>(sym->decl)) {
+                        std::string md = formatStructDecl(sd);
+                        size_t declLine = sd->getStart()->getLine() - 1;
+                        md = appendDocToHover(md, crossDocs, declLine);
+                        return makeResult(token, md);
+                    }
                     break;
                 case ExportedSymbol::Enum:
-                    if (auto* ed = dynamic_cast<LucisParser::EnumDeclContext*>(sym->decl))
-                        return makeResult(token, formatEnumDecl(ed));
+                    if (auto* ed = dynamic_cast<LucisParser::EnumDeclContext*>(sym->decl)) {
+                        std::string md = formatEnumDecl(ed);
+                        size_t declLine = ed->getStart()->getLine() - 1;
+                        md = appendDocToHover(md, crossDocs, declLine);
+                        return makeResult(token, md);
+                    }
                     break;
                 case ExportedSymbol::Union:
-                    if (auto* ud = dynamic_cast<LucisParser::UnionDeclContext*>(sym->decl))
-                        return makeResult(token, formatUnionDecl(ud));
+                    if (auto* ud = dynamic_cast<LucisParser::UnionDeclContext*>(sym->decl)) {
+                        std::string md = formatUnionDecl(ud);
+                        size_t declLine = ud->getStart()->getLine() - 1;
+                        md = appendDocToHover(md, crossDocs, declLine);
+                        return makeResult(token, md);
+                    }
                     break;
                 case ExportedSymbol::TypeAlias:
                     if (auto* ta = dynamic_cast<LucisParser::TypeAliasDeclContext*>(sym->decl)) {
                         std::string md = "```lucis\ntype " + symbolName + " = "
                                        + typeSpecToString(ta->typeSpec()) + "\n```";
+                        size_t declLine = ta->getStart()->getLine() - 1;
+                        md = appendDocToHover(md, crossDocs, declLine);
                         return makeResult(token, md);
                     }
                     break;
                 case ExportedSymbol::ExtendBlock:
-                    if (auto* ext = dynamic_cast<LucisParser::ExtendDeclContext*>(sym->decl))
-                        return makeResult(token, formatExtendMethods(ext));
+                    if (auto* ext = dynamic_cast<LucisParser::ExtendDeclContext*>(sym->decl)) {
+                        std::string md = formatExtendMethods(ext);
+                        size_t declLine = ext->getStart()->getLine() - 1;
+                        md = appendDocToHover(md, crossDocs, declLine);
+                        return makeResult(token, md);
+                    }
                     break;
             }
         }
@@ -1007,6 +1042,44 @@ std::optional<HoverResult> HoverProvider::hoverImportedSymbol(
     }
 
     return std::nullopt;
+}
+
+std::optional<HoverResult>
+HoverProvider::hoverModulePathSegment(const std::string& modulePath,
+                                       antlr4::Token* token,
+                                       const ProjectContext* project) {
+    std::string md = "```lucis\n(module) " + modulePath + "\n```";
+    if (project && project->isValid()) {
+        auto regPath = ModuleRegistry::usePathToModulePath(modulePath);
+        if (project->registry().hasModule(regPath)) {
+            auto syms = project->registry().getModuleSymbols(regPath);
+            if (!syms.empty()) {
+                md += "\n---\n";
+                md += "**exports:**\n";
+                for (auto* s : syms) {
+                    if (s->kind == ExportedSymbol::ExtendBlock) continue;
+                    md += "- " + s->name + "\n";
+                }
+            }
+        }
+        // Check for sub-modules
+        std::string subMods;
+        std::unordered_set<std::string> seen;
+        for (auto& mod : project->registry().allModules()) {
+            if (mod.size() > regPath.size() + 1 &&
+                mod.substr(0, regPath.size() + 1) == regPath + "/") {
+                auto rest = mod.substr(regPath.size() + 1);
+                auto sep = rest.find('/');
+                auto sub = (sep != std::string::npos) ? rest.substr(0, sep) : rest;
+                if (seen.insert(sub).second)
+                    subMods += "- \xf0\x9f\x93\x81 " + sub + "\n";
+            }
+        }
+        if (!subMods.empty()) {
+            md += "\n**sub-modules:**\n" + subMods;
+        }
+    }
+    return makeResult(token, md);
 }
 
 // ═══════════════════════════════════════════════════════════════════════
