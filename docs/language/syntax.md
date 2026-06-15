@@ -62,19 +62,18 @@ bool isReady = true;
 
 Lucis is case-sensitive: `count`, `Count`, and `COUNT` are three different identifiers.
 
-## Namespaces
+## Modules & Imports
 
 Every `.lc` file must begin with a namespace declaration:
 
 ```
-namespace MyModule;
 ```
 
 The namespace name is used for module resolution when importing symbols across files. It must be the first non-comment line in the file.
 
 ## Imports
 
-After the namespace, you can import symbols from the standard library or other modules:
+At the top of the file, you can import symbols from the standard library or other modules:
 
 ```
 use std::log::println;                    // import a single function

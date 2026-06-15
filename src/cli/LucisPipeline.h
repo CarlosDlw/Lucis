@@ -39,6 +39,7 @@ public:
         std::string binaryName;
         std::string outDir;
         std::vector<std::string> stdlibPaths;
+        std::vector<std::string> sourcePaths;
         bool quiet = false;
     };
 
@@ -50,6 +51,7 @@ private:
                                              const std::string& projectRoot);
     static std::string resolveUseToFile(const std::string& useIdent,
                                          const std::string& projectRoot,
-                                         const std::vector<std::string>& searchDirs);
+                                         const std::vector<std::string>& searchDirs,
+                                         const std::vector<std::string>& sourcePaths);
     static std::vector<std::string> extractUseModulePaths(LucisParser::ProgramContext* tree);
 };

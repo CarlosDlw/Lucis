@@ -58,7 +58,7 @@ The complete guide to T's syntax and semantics, from basics to advanced features
 - [Generics](language/generics.md) — Generic type parameters (`vec<T>`, `map<K, V>`)
 - [Expressions](language/expressions.md) — Expression types, ternary, null coalescing, cast (`as`), type check (`is`), `sizeof`, `typeof`
 
-### Modules and Namespaces
+### Modules
 
 - [Modules](language/modules.md) — The `use` / `import` system and module resolution
 - [Namespaces](language/namespaces.md) — Namespace declaration, resolution, and multi-file projects

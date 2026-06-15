@@ -122,7 +122,6 @@ yield();          // let other threads run
 ## Complete Example
 
 ```
-namespace ConcurrencyDemo;
 
 use std::log::println;
 use std::thread::{ Task, Mutex, cpuCount };

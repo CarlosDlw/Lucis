@@ -2604,7 +2604,8 @@ void CompletionProvider::addImportedSymbols(std::vector<CompletionItem> &items,
 
       bool isModule = modulePath.empty();
       if (!isModule && project && project->isValid()) {
-        isModule = project->registry().hasModule(importedPath);
+        isModule = project->registry().hasModule(
+            ModuleRegistry::usePathToModulePath(importedPath));
       }
       // For `use std::X;` imports, the imported symbol may be a std module.
       if (!isModule && modulePath == "std") {
@@ -3630,6 +3631,7 @@ void CompletionProvider::addUseCompletions(std::vector<CompletionItem> &items,
         // For "MyNamespace" — offer it
         auto topLevel = ns;
         auto sep = ns.find("::");
+        if (sep == std::string::npos) sep = ns.find('/');
         if (sep != std::string::npos)
           topLevel = ns.substr(0, sep);
         if (!seenTopLevel.insert(topLevel).second)
@@ -3663,6 +3665,28 @@ void CompletionProvider::addUseCompletions(std::vector<CompletionItem> &items,
     return;
   }
 
+  // Case 2.5: user module root — suggest submodules
+  if (project && project->isValid() && !modulePath.empty()) {
+    std::string slashedPath = ModuleRegistry::usePathToModulePath(modulePath);
+    std::unordered_set<std::string> submodules;
+    for (auto& mod : project->registry().allModules()) {
+      if (mod.substr(0, slashedPath.size() + 1) != slashedPath + "/")
+        continue;
+      auto rest = mod.substr(slashedPath.size() + 1);
+      auto nextSep = rest.find('/');
+      auto sub = (nextSep != std::string::npos) ? rest.substr(0, nextSep) : rest;
+      if (!matchesPrefix(sub, prefix)) continue;
+      if (!submodules.insert(sub).second) continue;
+      CompletionItem ci;
+      ci.label = sub;
+      ci.kind = CompletionKind::Module;
+      ci.detail = modulePath + "::" + sub;
+      ci.insertText = sub + "::";
+      items.push_back(std::move(ci));
+    }
+    if (!items.empty()) return;
+  }
+
   // Case 3: modulePath is a full std module (e.g. "std::log") — suggest symbols
   auto it = stdModules.find(modulePath);
   if (it != stdModules.end()) {
@@ -3684,9 +3708,10 @@ void CompletionProvider::addUseCompletions(std::vector<CompletionItem> &items,
     return;
   }
 
-  // Case 4: User namespace — suggest exported symbols
+  // Case 4: User module — suggest exported symbols
   if (project && project->isValid()) {
-    auto syms = project->registry().getModuleSymbols(modulePath);
+    auto registryPath = ModuleRegistry::usePathToModulePath(modulePath);
+    auto syms = project->registry().getModuleSymbols(registryPath);
     for (auto *sym : syms) {
       if (!matchesPrefix(sym->name, prefix))
         continue;
@@ -3816,7 +3841,8 @@ resolveImportedModuleAlias(const std::string &alias,
         return fullPath;
       }
       if (project && project->isValid() &&
-          project->registry().hasModule(fullPath)) {
+          project->registry().hasModule(
+              ModuleRegistry::usePathToModulePath(fullPath))) {
         return fullPath;
       }
       return modulePath;

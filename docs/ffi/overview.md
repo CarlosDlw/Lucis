@@ -102,7 +102,6 @@ Lucis types map directly to C types with no conversion:
 This example demonstrates all core FFI features in a single file:
 
 ```
-namespace FFIDemo;
 
 #include <stdio.h>
 #include <math.h>

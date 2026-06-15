@@ -62,7 +62,6 @@ User-defined functions can be imported from other `.lc` files using the namespac
 
 ```
 // math.lc
-namespace Math;
 
 fn add(int32 a, int32 b) int32 {
     ret a + b;
@@ -75,7 +74,6 @@ fn multiply(int32 a, int32 b) int32 {
 
 ```
 // main.lc
-namespace Main;
 
 use Math::add;
 use Math::multiply;

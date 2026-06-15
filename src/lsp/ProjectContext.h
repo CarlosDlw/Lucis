@@ -30,6 +30,9 @@ public:
     // Returns the project root.
     const std::string& projectRoot() const { return projectRoot_; }
 
+    // Source paths from lucis.yaml (for import resolution).
+    const std::vector<std::string>& sourcePaths() const { return sourcePaths_; }
+
     // Check if context is valid.
     bool isValid() const { return valid_; }
 
@@ -37,11 +40,12 @@ public:
     static std::string findProjectRoot(const std::string& filePath);
 
 private:
-    ModuleRegistry registry_;
-    CBindings      cBindings_;
-    TypeRegistry   cTypeReg_;
-    std::string    projectRoot_;
-    bool           valid_ = false;
+    ModuleRegistry              registry_;
+    CBindings                   cBindings_;
+    TypeRegistry                cTypeReg_;
+    std::string                 projectRoot_;
+    std::vector<std::string>    sourcePaths_;
+    bool                        valid_ = false;
 
     // Keep parse results alive (they own the ASTs referenced by the registry).
     struct SourceUnit {

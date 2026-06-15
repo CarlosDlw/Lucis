@@ -114,30 +114,33 @@ After parsing all files, the compiler builds a global symbol registry. This allo
 The `NamespaceRegistry` class tracks every exported symbol:
 
 ```
-NamespaceRegistry
-├── registerFile(namespace, symbols)
+ModuleRegistry
+├── registerFile(modulePath, symbols)
 │   Records all functions, structs, enums from a file
 │
-├── findSymbol(namespace, name)
-│   Looks up a symbol by namespace + name
+├── findSymbol(modulePath, name)
+│   Looks up a symbol by module path + name
 │
-└── getExternalSymbols(namespace)
-    Returns all symbols visible to a namespace via `use` imports
+└── getExternalSymbols(modulePath)
+    Returns all symbols visible to a module via `use` imports
 ```
 
 Each symbol is stored as an `ExportedSymbol` with:
 - Name (e.g., `"add"`)
 - Kind (function, struct, enum, type alias)
 - Source file path
-- Namespace path (e.g., `"math::utils"`)
+- Module path (e.g., `"lib/math"`)
 
 ### How `use` Works
 
-When you write `use math::utils::add;`, the checker resolves this through the namespace registry:
+When you write `use lib::math::add;`, the compiler resolves this through the module registry:
 
-1. Look up namespace `math::utils`
-2. Find symbol `add` in that namespace
-3. Make it available in the current file's scope
+1. Convert module path `lib::math` → `lib/math`
+2. Look up module `lib/math` in the registry (registered during BFS import resolution)
+3. Find symbol `add` in that module
+4. Make it available in the current file's scope
+
+The pipeline uses BFS to discover files: starting from the entry point, it parses `use` declarations, resolves each to a file path (searching project root, sourcePaths from lucis.yaml, and stdlib directories), and recursively processes imported files.
 
 ---
 

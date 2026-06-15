@@ -39,7 +39,6 @@ T sits in the same space as C, Zig, Odin, and V — compiled languages with manu
 ## Hello World
 
 ```
-namespace Hello;
 
 use std::log::println;
 

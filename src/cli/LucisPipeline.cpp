@@ -61,6 +61,8 @@ std::string LucisPipeline::getProjectRoot(const std::string& inputFile) {
     for (auto ancestor = dir; ; ancestor = ancestor.parent_path()) {
         if (fs::exists(ancestor / "lucis.yaml"))
             return ancestor.string();
+        if (fs::exists(ancestor / ".git"))
+            return ancestor.string();
         if (ancestor == ancestor.parent_path()) break;
     }
     return dir.string();
@@ -80,24 +82,28 @@ std::string LucisPipeline::filePathToModulePath(const std::string& filePath,
 
 std::string LucisPipeline::resolveUseToFile(const std::string& useIdent,
                                              const std::string& projectRoot,
-                                             const std::vector<std::string>& searchDirs) {
-    // First convert "src::lexer::lexer" → "src/lexer/lexer" (module path)
+                                             const std::vector<std::string>& searchDirs,
+                                             const std::vector<std::string>& sourcePaths) {
+    // First convert "lib::math" → "lib/math" (module path)
     std::string modPath;
     {
         std::string tmp = useIdent;
         for (auto& c : tmp) if (c == ':') c = '/';
         for (size_t i = 0; i < tmp.size(); i++) {
             if (tmp[i] == '/' && i + 1 < tmp.size() && tmp[i+1] == '/') {
-                i++; // skip doubled slash from "::"
+                modPath += '/'; // normalize "::" → single "/"
+                i++; // skip the doubled slash
                 continue;
             }
             modPath += tmp[i];
         }
     }
 
-    // Build search directories: project root first, then source paths, then stdlib
+    // Build search directories: project root, then source paths, then stdlib
     std::vector<fs::path> searchPaths;
     searchPaths.push_back(fs::path(projectRoot));
+    for (auto& sp : sourcePaths)
+        searchPaths.push_back(fs::path(projectRoot) / sp);
     for (auto& sp : searchDirs)
         searchPaths.push_back(fs::path(sp));
 
@@ -179,30 +185,34 @@ std::unique_ptr<PipelineResult> LucisPipeline::run(const Options& opts) {
     result->buildDir = result->projectRoot + "/.lucis/build";
     fs::create_directories(result->buildDir);
 
-    // Build search directories: stdlib paths + LUCIS_STDLIB_DIR + system path
+        // Build search directories: stdlib paths + LUCIS_STDLIB_DIR + system path
     std::vector<std::string> searchDirs = opts.stdlibPaths;
 #ifdef LUCIS_STDLIB_DIR
     searchDirs.push_back(LUCIS_STDLIB_DIR);
 #endif
+    searchDirs.emplace_back("/usr/local/share/lucis/stdlib/");
     searchDirs.emplace_back("/usr/share/lucis/stdlib/");
 
     // ── Step 2: resolve imports transitively (BFS) ─────────────────────────
     progress(2, 5, "resolving import tree");
     std::unordered_set<std::string> visited;
-    std::deque<std::string> queue;
-    queue.push_back(opts.inputFile);
+    // Queue stores (filePath, logicalModulePath)
+    // For entry point: modulePath derived from file path
+    // For use-resolved files: modulePath from usePath converted to "/" format
+    std::deque<std::pair<std::string, std::string>> queue;
+    queue.emplace_back(opts.inputFile, filePathToModulePath(opts.inputFile, result->projectRoot));
     visited.insert(opts.inputFile);
 
     bool anyParseError = false;
     size_t totalUnits = 0;
 
     while (!queue.empty()) {
-        auto filePath = queue.front();
+        auto [filePath, modulePath] = queue.front();
         queue.pop_front();
 
         SourceUnit unit;
         unit.filePath    = filePath;
-        unit.modulePath  = filePathToModulePath(filePath, result->projectRoot);
+        unit.modulePath  = modulePath;
         unit.parseResult = Parser::parse(filePath);
 
         if (unit.parseResult.hasErrors) {
@@ -220,9 +230,11 @@ std::unique_ptr<PipelineResult> LucisPipeline::run(const Options& opts) {
         // Extract use declarations and enqueue their module files
         auto usePaths = extractUseModulePaths(unit.parseResult.tree);
         for (auto& usePath : usePaths) {
-            auto modFile = resolveUseToFile(usePath, result->projectRoot, searchDirs);
+            auto modFile = resolveUseToFile(usePath, result->projectRoot, searchDirs, opts.sourcePaths);
             if (!modFile.empty() && visited.insert(modFile).second) {
-                queue.push_back(modFile);
+                // Use the import path as the logical module path
+                auto logicalPath = ModuleRegistry::usePathToModulePath(usePath);
+                queue.emplace_back(modFile, logicalPath);
             }
         }
     }

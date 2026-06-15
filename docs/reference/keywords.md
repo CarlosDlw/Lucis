@@ -6,11 +6,10 @@ Lucis has 39 reserved keywords and 20 type keywords. All keywords are lowercase.
 
 ## Reserved Keywords
 
-### Namespace and Imports
+### Modules and Imports
 
 | Keyword | Description | Example |
 |---------|-------------|---------|
-| `namespace` | Declares the file's namespace | `namespace Main;` |
 | `use` | Imports symbols from a module | `use std::log::println;` |
 
 ### Declarations

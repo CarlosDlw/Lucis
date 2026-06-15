@@ -43,14 +43,16 @@ void RunCommand::buildArgs(ArgParser& parser) const {
 std::string RunCommand::resolveInputFile(const ArgParser& parser,
                                           LucisConfig* outConfig) const {
     auto file = parser.get("file");
+
+    // Always load lucis.yaml when available (even with explicit file)
+    auto config = LucisConfig::findInDir(fs::current_path().string());
+    if (config && outConfig) *outConfig = *config;
+
     if (!file.empty()) return file;
 
-    auto config = LucisConfig::findInDir(fs::current_path().string());
     if (!config) return {};
 
-    if (outConfig) *outConfig = *config;
-
-    // Try main.lc in src/, then main.lc in project root
+    // No explicit file — try src/main.lc, then main.lc
     for (auto& candidate : { "src/main.lc", "main.lc" }) {
         auto path = fs::path(candidate);
         if (fs::exists(path))
@@ -75,6 +77,7 @@ int RunCommand::run(const ArgParser& parser) {
     pipeOpts.userLinkerFlags  = parser.has("link") ? parser.getAll("link") : config.linker.libs;
     pipeOpts.binaryName       = config.binary;
     pipeOpts.outDir           = config.outDir;
+    pipeOpts.sourcePaths      = config.sourcePaths;
 
     OptimizationLevel lucisOptLevel = OptimizationLevel::O0;
 

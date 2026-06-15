@@ -1392,10 +1392,10 @@ std::any IRGen::visitUseItem(LucisParser::UseItemContext* ctx) {
         imports_.addImport(path, symbolName);
     } else if (ImportResolver::isStdModule(qualifiedPath)) {
         // Module alias import, e.g. `use std::log;`
-        userImports_[symbolName] = qualifiedPath;
+        userImports_[symbolName] = ModuleRegistry::usePathToModulePath(qualifiedPath);
     } else {
-        // User namespace import — record for call resolution
-        userImports_[symbolName] = path;
+        // User module import — record for call resolution
+        userImports_[symbolName] = ModuleRegistry::usePathToModulePath(path);
     }
     return {};
 }
@@ -1413,8 +1413,9 @@ std::any IRGen::visitUseGroup(LucisParser::UseGroupContext* ctx) {
             imports_.addImport(path, id->getText());
         }
     } else {
+        auto modPath = ModuleRegistry::usePathToModulePath(path);
         for (auto* id : ctx->IDENTIFIER()) {
-            userImports_[id->getText()] = path;
+            userImports_[id->getText()] = modPath;
         }
     }
     return {};
@@ -1460,9 +1461,9 @@ void IRGen::registerCrossFileSymbols(LucisParser::ProgramContext* ctx) {
                 if (ImportResolver::isStdModule(path)) {
                     imports_.addImport(path, symbolName);
                 } else if (ImportResolver::isStdModule(qualifiedPath)) {
-                    userImports_[symbolName] = qualifiedPath;
+                    userImports_[symbolName] = ModuleRegistry::usePathToModulePath(qualifiedPath);
                 } else {
-                    userImports_[symbolName] = path;
+                    userImports_[symbolName] = ModuleRegistry::usePathToModulePath(path);
                 }
             }
             // use Module::{A, B}; (useGroup)
@@ -1476,8 +1477,9 @@ void IRGen::registerCrossFileSymbols(LucisParser::ProgramContext* ctx) {
                     for (auto* id : group->IDENTIFIER())
                         imports_.addImport(path, id->getText());
                 } else {
+                    auto modPath = ModuleRegistry::usePathToModulePath(path);
                     for (auto* id : group->IDENTIFIER())
-                        userImports_[id->getText()] = path;
+                        userImports_[id->getText()] = modPath;
                 }
             }
         }

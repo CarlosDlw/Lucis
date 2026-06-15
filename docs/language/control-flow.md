@@ -7,7 +7,6 @@ This page covers all control flow constructs in T: conditionals, loops, switch, 
 The `if` statement executes a block when a condition is true. Parentheses around the condition are optional:
 
 ```
-namespace IfDemo;
 
 use std::log::println;
 
@@ -31,7 +30,6 @@ fn main() int32 {
 ### Else and Else If
 
 ```
-namespace ElseDemo;
 
 use std::log::println;
 
@@ -75,7 +73,6 @@ Lucis has two forms of `for` loops: C-style and for-in.
 ### C-Style For Loop
 
 ```
-namespace ForClassicDemo;
 
 use std::log::println;
 
@@ -99,7 +96,6 @@ fn main() int32 {
 Use `..` for exclusive ranges and `..=` for inclusive ranges:
 
 ```
-namespace ForRangeDemo;
 
 use std::log::println;
 
@@ -121,7 +117,6 @@ fn main() int32 {
 ### For-In with Arrays
 
 ```
-namespace ForArrayDemo;
 
 use std::log::println;
 
@@ -147,7 +142,6 @@ fn main() int32 {
 The `while` loop repeats as long as a condition is true. Parentheses are optional:
 
 ```
-namespace WhileDemo;
 
 use std::log::println;
 
@@ -184,7 +178,6 @@ while (j > 7) {
 The `do-while` loop executes the body at least once, then checks the condition:
 
 ```
-namespace DoWhileDemo;
 
 use std::log::println;
 
@@ -209,7 +202,6 @@ fn main() int32 {
 The `loop` keyword creates an infinite loop. Use `break` to exit:
 
 ```
-namespace LoopDemo;
 
 use std::log::println;
 
@@ -239,7 +231,6 @@ fn main() int32 {
 `break` exits the innermost loop. `continue` skips to the next iteration:
 
 ```
-namespace BreakContinueDemo;
 
 use std::log::println;
 
@@ -276,7 +267,6 @@ fn main() int32 {
 The `switch` statement matches a value against multiple cases. Parentheses around the value are optional. Each case uses a block with braces — there is no fallthrough:
 
 ```
-namespace SwitchDemo;
 
 use std::log::println;
 
@@ -309,7 +299,6 @@ fn main() int32 {
 A single case can match multiple values separated by commas:
 
 ```
-namespace SwitchMultiDemo;
 
 use std::log::println;
 
@@ -359,7 +348,6 @@ switch v {
 T uses `try`/`catch`/`finally` for error handling with a built-in `Error` type:
 
 ```
-namespace TryCatchDemo;
 
 use std::log::println;
 

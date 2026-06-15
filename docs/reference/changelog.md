@@ -4,6 +4,34 @@ All notable changes to the Lucis language and its compiler.
 
 ---
 
+## v0.0.2-beta — Path-Based Imports
+
+### Breaking Changes
+
+- **`namespace` keyword removed.** Files no longer declare `namespace X;`. The file path relative to project root is the module identity.
+- **`use` is path-based.** `use lib::math::add` resolves to `lib/math.lc` (searched in project root + `sourcePaths` from `lucis.yaml`).
+- **No directory scanning.** The compiler uses BFS import resolution from the entry point — only files referenced by `use` are opened.
+
+### Migration
+
+```lucis
+// Before
+namespace Main;
+use std::log::println;
+
+// After
+use std::log::println;
+```
+
+### Internal
+
+- `NamespaceRegistry` → `ModuleRegistry` (keyed by file path)
+- `ProjectScanner` removed
+- Pipeline/LSP use BFS import resolution
+- `lucis.yaml` `source` paths used as search prefixes
+
+---
+
 ## v0.0.1 beta — Initial Release
 
 First public release of the Lucis language compiler.
@@ -17,7 +45,7 @@ First public release of the Lucis language compiler.
 - **Ranges**: `..` (exclusive) and `..=` (inclusive)
 - **Data Types**: `struct`, `enum`, `union`, type aliases
 - **Generics**: Parametric polymorphism with `<T>` syntax and specialization via monomorphization
-- **Namespaces**: `namespace` declarations, `use` imports with selective and group syntax
+- **Modules**: import system via `use` declarations with selective and group syntax
 - **Extend Blocks**: Add methods to any type via `extend`
 - **Error Handling**: `try`/`catch`/`finally`, `throw`, `defer` for cleanup
 - **Pointers**: Raw pointers (`*T`), `&` and `*` operators, arrow access (`->`)

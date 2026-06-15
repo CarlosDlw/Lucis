@@ -42,12 +42,13 @@ void BuildCommand::buildArgs(ArgParser& parser) const {
 std::string BuildCommand::resolveInputFile(const ArgParser& parser,
                                             LucisConfig* outConfig) const {
     auto file = parser.get("file");
-    if (!file.empty()) return file;
 
     auto config = LucisConfig::findInDir(fs::current_path().string());
-    if (!config) return {};
+    if (config && outConfig) *outConfig = *config;
 
-    if (outConfig) *outConfig = *config;
+    if (!file.empty()) return file;
+
+    if (!config) return {};
 
     for (auto& candidate : { "src/main.lc", "main.lc" }) {
         auto path = fs::path(candidate);
@@ -73,6 +74,7 @@ int BuildCommand::run(const ArgParser& parser) {
     pipeOpts.userLinkerFlags  = parser.has("link") ? parser.getAll("link") : config.linker.libs;
     pipeOpts.binaryName       = config.binary;
     pipeOpts.outDir           = config.outDir;
+    pipeOpts.sourcePaths      = config.sourcePaths;
 
     OptimizationLevel lucisOptLevel = OptimizationLevel::O0;
 

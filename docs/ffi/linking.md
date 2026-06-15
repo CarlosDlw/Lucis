@@ -114,7 +114,6 @@ brew install sqlite
 2. Write your Lucis code with `extern` declarations or `#include`:
 
 ```
-namespace SQLiteDemo;
 
 extern int32 sqlite3_libversion_number();
 extern *char sqlite3_libversion();
@@ -162,7 +161,6 @@ int multiply(int a, int b) { return a * b; }
 2. Use it from Lucis with `#include "..."`:
 
 ```
-namespace LocalLib;
 
 #include <stdio.h>
 #include "mymath.h"

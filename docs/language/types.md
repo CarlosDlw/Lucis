@@ -22,7 +22,6 @@ Lucis has a rich set of primitive types with explicit sizes. There is no implici
 | `isize` | pointer-sized | 32 or 64 bits, matching the target architecture |
 
 ```
-namespace IntDemo;
 
 use std::log::println;
 
@@ -56,7 +55,6 @@ fn main() int32 {
 | `usize` | pointer-sized | 0 to max pointer value |
 
 ```
-namespace UintDemo;
 
 use std::log::println;
 
@@ -167,7 +165,6 @@ All integer types (`int*` and `uint*`) support these methods via dot notation:
 | `toChar()` | `-> char` | Convert to character |
 
 ```
-namespace IntMethodsDemo;
 
 use std::log::println;
 
@@ -204,7 +201,6 @@ fn main() int32 {
 | `double` | 8 bytes | Alias for `float64` |
 
 ```
-namespace FloatDemo;
 
 use std::log::println;
 
@@ -276,7 +272,6 @@ All float types support these methods via dot notation:
 | `toBits()` | `-> uint64` | Bit representation |
 
 ```
-namespace FloatMethodsDemo;
 
 use std::log::println;
 
@@ -309,7 +304,6 @@ fn main() int32 {
 | `bool` | 1 bit (`i1` in LLVM) | `true` or `false` |
 
 ```
-namespace BoolDemo;
 
 use std::log::println;
 
@@ -339,7 +333,6 @@ fn main() int32 {
 | `char` | 1 byte | ASCII character (0–255) |
 
 ```
-namespace CharDemo;
 
 use std::log::println;
 
@@ -381,7 +374,6 @@ fn main() int32 {
 | `digitToInt()` | `-> int32` | Digit character to integer value |
 
 ```
-namespace CharMethodsDemo;
 
 use std::log::println;
 
@@ -408,7 +400,6 @@ fn main() int32 {
 Strings in Lucis are **not** null-terminated. They carry their length and are backed by a `uint8` array. For null-terminated C strings, use [`cstring`](#c-string-type) or `c"..."` literals.
 
 ```
-namespace StringDemo;
 
 use std::log::println;
 
@@ -479,7 +470,6 @@ fn main() int32 {
 | `hash()` | `-> uint64` | Hash value |
 
 ```
-namespace StringMethodsDemo;
 
 use std::log::println;
 
@@ -526,7 +516,6 @@ fn greet(string name) void {
 Lucis provides two ways to create C strings:
 
 ```
-namespace CStringDemo;
 
 use std::log::println;
 

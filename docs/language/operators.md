@@ -14,7 +14,6 @@ This page documents all operators in Lucis, organized by category, with examples
 | `-` (unary) | Negation | `-42` |
 
 ```
-namespace ArithmeticDemo;
 
 use std::log::println;
 
@@ -54,7 +53,6 @@ All comparison operators return `bool`:
 | `>=` | Greater than or equal | `10 >= 10` → `true` |
 
 ```
-namespace ComparisonDemo;
 
 use std::log::println;
 
@@ -85,7 +83,6 @@ fn main() int32 {
 | `!` | Logical NOT | `!true` → `false` |
 
 ```
-namespace LogicalDemo;
 
 use std::log::println;
 
@@ -120,7 +117,6 @@ fn main() int32 {
 | `>>` | Right shift | `64 >> 2` → `16` |
 
 ```
-namespace BitwiseDemo;
 
 use std::log::println;
 
@@ -167,7 +163,6 @@ fn main() int32 {
 | `>>=` | Right shift and assign |
 
 ```
-namespace AssignDemo;
 
 use std::log::println;
 
@@ -207,7 +202,6 @@ int32 max = a > b ? a : b;
 ```
 
 ```
-namespace TernaryDemo;
 
 use std::log::println;
 
@@ -239,7 +233,6 @@ int32 result = ptr ?? 0;    // 0 if ptr is null
 ```
 
 ```
-namespace NullCoalDemo;
 
 use std::log::println;
 
@@ -262,7 +255,6 @@ fn main() int32 {
 | `typeof(expr)` | Type name as string | `typeof(42)` → `"int32"` |
 
 ```
-namespace TypeOpDemo;
 
 use std::log::println;
 
@@ -302,7 +294,7 @@ See [Ranges](ranges.md) for full documentation.
 
 ## Scope Resolution Operator
 
-`::` is used for namespace access, enum variants, and static method calls:
+`::` is used for module access, enum variants, and static method calls:
 
 ```
 use std::log::println;        // module access

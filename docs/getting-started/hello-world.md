@@ -7,7 +7,6 @@ This page walks you through writing, compiling, and running your first Lucis pro
 Create a file called `hello.lc`:
 
 ```
-namespace Hello;
 
 use std::log::println;
 
@@ -45,7 +44,6 @@ Every Lucis program has three essential parts:
 ### 1. Namespace Declaration
 
 ```
-namespace Hello;
 ```
 
 Every `.lc` file **must** begin with a namespace declaration. This names the module and is used for imports across files.
@@ -84,7 +82,6 @@ fn main() int32 {
 ### Variables and Arithmetic
 
 ```
-namespace Arithmetic;
 
 use std::log::println;
 
@@ -110,7 +107,6 @@ Area:
 ### Multiple Types
 
 ```
-namespace Types;
 
 use std::log::println;
 
@@ -144,7 +140,6 @@ A
 ### Functions
 
 ```
-namespace Functions;
 
 use std::log::println;
 
@@ -177,7 +172,6 @@ Output:
 ### Control Flow
 
 ```
-namespace Flow;
 
 use std::log::println;
 
@@ -214,9 +208,8 @@ Good
 ## File Structure Summary
 
 ```
-namespace Name;          // required — first line of every file
 
-use std::module::func;   // imports — at the top, after namespace
+use std::module::func;   // imports — at the top of the file
 
 // function definitions
 

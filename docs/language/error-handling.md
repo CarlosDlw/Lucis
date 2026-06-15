@@ -226,7 +226,6 @@ enum Bad {
 ### Complete example — built-in Error
 
 ```
-namespace Main;
 
 #include <stdlib.h>
 #include <stdio.h>
@@ -264,7 +263,6 @@ fn main() int32 {
 ### Complete example — custom error payload with `?`
 
 ```
-namespace Main;
 
 struct HttpError {
     status int32;

@@ -207,7 +207,6 @@ int rect_area(Rect r) { return r.size.x * r.size.y; }
 
 ```
 // main.lc
-namespace StructAbiTest;
 
 #include <stdio.h>
 #include "structs.h"

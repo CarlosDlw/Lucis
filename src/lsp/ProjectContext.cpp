@@ -23,27 +23,35 @@ bool ProjectContext::build(const std::string& filePath) {
     projectRoot_ = findProjectRoot(filePath);
     if (projectRoot_.empty()) return false;
 
+    // Load source paths from lucis.yaml
+    sourcePaths_.clear();
+    if (auto config = LucisConfig::load(projectRoot_ + "/lucis.yaml"))
+        sourcePaths_ = config->sourcePaths;
+
     // Build search directories: project root + stdlib paths
     std::vector<std::string> searchDirs;
     searchDirs.push_back(projectRoot_);
 #ifdef LUCIS_STDLIB_DIR
     searchDirs.push_back(LUCIS_STDLIB_DIR);
 #endif
+    searchDirs.emplace_back("/usr/local/share/lucis/stdlib/");
     searchDirs.emplace_back("/usr/share/lucis/stdlib/");
 
     // BFS import resolution starting from the given file
     std::unordered_set<std::string> visited;
-    std::deque<std::string> queue;
-    queue.push_back(filePath);
+    // Queue stores (filePath, logicalModulePath)
+    std::deque<std::pair<std::string, std::string>> queue;
+    auto entryModPath = fs::relative(filePath, projectRoot_).replace_extension("").string();
+    queue.emplace_back(filePath, entryModPath);
     visited.insert(filePath);
 
     while (!queue.empty()) {
-        auto curPath = queue.front();
+        auto [curPath, modPath] = queue.front();
         queue.pop_front();
 
         SourceUnit unit;
         unit.filePath    = curPath;
-        unit.modulePath  = fs::relative(curPath, projectRoot_).replace_extension("").string();
+        unit.modulePath  = modPath;
         unit.parseResult = Parser::parse(curPath);
 
         if (!unit.parseResult.tree)
@@ -94,8 +102,10 @@ bool ProjectContext::build(const std::string& filePath) {
                 return;
             }
             auto modFile = resolveUseToFile(usePath);
-            if (!modFile.empty() && visited.insert(modFile).second)
-                queue.push_back(modFile);
+            if (!modFile.empty() && visited.insert(modFile).second) {
+                auto logicalPath = ModuleRegistry::usePathToModulePath(usePath);
+                queue.emplace_back(modFile, logicalPath);
+            }
         };
 
         for (auto* pre : unit.parseResult.tree->preambleDecl()) {
@@ -180,6 +190,7 @@ std::string ProjectContext::resolveUseToFile(const std::string& useIdent) const 
         for (auto& c : tmp) if (c == ':') c = '/';
         for (size_t i = 0; i < tmp.size(); i++) {
             if (tmp[i] == '/' && i + 1 < tmp.size() && tmp[i+1] == '/') {
+                modPath += '/';
                 i++;
                 continue;
             }
@@ -187,12 +198,15 @@ std::string ProjectContext::resolveUseToFile(const std::string& useIdent) const 
         }
     }
 
-    // Build search directories
+    // Build search directories: project root, source paths, stdlib
     std::vector<fs::path> searchPaths;
     searchPaths.push_back(fs::path(projectRoot_));
+    for (auto& sp : sourcePaths_)
+        searchPaths.push_back(fs::path(projectRoot_) / sp);
 #ifdef LUCIS_STDLIB_DIR
     searchPaths.push_back(fs::path(LUCIS_STDLIB_DIR));
 #endif
+    searchPaths.emplace_back("/usr/local/share/lucis/stdlib/");
     searchPaths.emplace_back("/usr/share/lucis/stdlib/");
 
     for (auto& base : searchPaths) {

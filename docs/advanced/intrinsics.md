@@ -425,7 +425,6 @@ cmake --build build
 Test it with a simple Lucis file:
 
 ```lucis
-namespace Main;
 use std::log::println;
 
 fn main() int32 {

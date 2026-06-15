@@ -541,7 +541,7 @@ project/
 ├── mymath.c
 └── .lucis/
     ├── build/
-    │   ├── MyNamespace__main.o    # compiled TM code
+    │   ├── module__main.o    # compiled IR code
     │   └── c__mymath.o            # auto-compiled C code
     └── cache/
 ```
@@ -780,7 +780,7 @@ matching signature works without casts.
   another function).
 - The callback's signature must match what the C function expects at
   the ABI level.
-- Namespace mangling is handled transparently — passing `compareInts`
+- Module-based mangling is handled transparently — passing `compareInts`
   resolves to the mangled LLVM name automatically.
 
 ---

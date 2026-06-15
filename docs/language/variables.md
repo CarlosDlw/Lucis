@@ -18,7 +18,6 @@ bool is_active = true;
 Instead of writing the type explicitly, you can use `auto` to let the compiler infer the type from the initializer expression:
 
 ```
-namespace AutoDemo;
 
 use std::log::println;
 
@@ -63,7 +62,6 @@ The inferred type follows the same rules as explicit types:
 You can declare a variable without assigning a value. The compiler zero-initializes it:
 
 ```
-namespace UninitDemo;
 
 use std::log::println;
 
@@ -102,7 +100,6 @@ Zero-initialization values by type:
 Variables can be reassigned after declaration. There is no `const` or `let` — all variables are mutable:
 
 ```
-namespace ReassignDemo;
 
 use std::log::println;
 
@@ -138,7 +135,6 @@ Use clone/copy-style APIs when you need to keep both values alive.
 T supports compound assignment operators that combine an operation with assignment:
 
 ```
-namespace CompoundDemo;
 
 use std::log::println;
 
@@ -171,7 +167,6 @@ The full list of compound assignment operators: `+=`, `-=`, `*=`, `/=`, `%=`, `&
 T supports both prefix and postfix `++` and `--`:
 
 ```
-namespace IncrDemo;
 
 use std::log::println;
 
@@ -207,7 +202,6 @@ fn main() int32 {
 Variables are scoped to the block `{}` in which they are declared. A variable declared inside a block is not accessible outside that block:
 
 ```
-namespace ScopeDemo;
 
 use std::log::println;
 
@@ -236,7 +230,6 @@ fn main() int32 {
 A variable in an inner scope can have the same name as a variable in an outer scope. The inner variable shadows the outer one for the duration of the block:
 
 ```
-namespace ShadowDemo;
 
 use std::log::println;
 
@@ -271,7 +264,6 @@ int32 area = width * height;
 Variables declared outside of any function are global and accessible throughout the file:
 
 ```
-namespace GlobalDemo;
 
 use std::log::println;
 

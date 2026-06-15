@@ -16,7 +16,6 @@ Ranges represent a sequence of integer values between a start and end. Lucis has
 `start..end` produces values from `start` up to but **not** including `end`:
 
 ```
-namespace ExclusiveDemo;
 
 use std::log::println;
 
@@ -41,7 +40,6 @@ fn main() int32 {
 `start..=end` produces values from `start` up to **and** including `end`:
 
 ```
-namespace InclusiveDemo;
 
 use std::log::println;
 
@@ -66,7 +64,6 @@ fn main() int32 {
 Ranges are most commonly used with `for..in` loops to iterate over a sequence of integers:
 
 ```
-namespace RangeLoopDemo;
 
 use std::log::println;
 
@@ -97,7 +94,6 @@ fn main() int32 {
 Ranges are the primary source for list comprehensions:
 
 ```
-namespace RangeCompDemo;
 
 extern void printf(cstring fmt, ...);
 

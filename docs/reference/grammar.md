@@ -7,8 +7,7 @@ This page summarizes the formal grammar of the Lucis language, derived from the 
 ## Program Structure
 
 ```
-program       → namespaceDecl? useDecl* includeDecl* topLevelDecl* EOF
-namespaceDecl → 'namespace' IDENTIFIER ';'
+program       → useDecl* includeDecl* topLevelDecl* EOF
 ```
 
 ### Imports

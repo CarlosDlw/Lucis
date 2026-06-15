@@ -24,7 +24,6 @@ fn greet(string name) void {
 ## Calling Functions
 
 ```
-namespace CallDemo;
 
 use std::log::println;
 
@@ -104,7 +103,6 @@ Ownership diagnostics exposed through LSP include stable codes (for example `OWN
 T supports variadic functions — functions that accept a variable number of arguments. The variadic parameter uses `...` before the parameter name:
 
 ```
-namespace VariadicDemo;
 
 use std::log::println;
 
@@ -184,7 +182,6 @@ This is different from Lucis variadic functions — C variadic arguments are not
 Lucis also supports untyped variadic functions — functions declared with a bare `...` as the last parameter, without a type or parameter name:
 
 ```
-namespace UntypedVariadicDemo;
 
 use std::log::println;
 
@@ -262,7 +259,6 @@ fn main() int32 {
 Functions can be referenced by their address and stored in variables:
 
 ```
-namespace FnPointerDemo;
 
 use std::log::println;
 
@@ -316,7 +312,6 @@ type Action = fn() -> void;
 Functions can accept function pointers as parameters and return them:
 
 ```
-namespace HigherOrderDemo;
 
 use std::log::println;
 
@@ -342,7 +337,6 @@ fn main() int32 {
 Functions can be called before they are defined in the same file. The compiler resolves all function declarations before generating code:
 
 ```
-namespace ForwardDemo;
 
 use std::log::println;
 
