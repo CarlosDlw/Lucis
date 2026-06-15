@@ -133,29 +133,19 @@ bool ModuleRegistry::hasModule(const std::string& modulePath) const {
 std::string ModuleRegistry::mangle(const std::string& modulePath,
                                     const std::string& name) {
     if (name == "main") return "main";
-    // Use only the filename stem (last component) for cleaner FFI symbols
-    std::string stem = modulePath;
-    auto pos = stem.rfind('/');
-    if (pos != std::string::npos) stem = stem.substr(pos + 1);
-    // Replace any remaining special chars with _
-    for (auto& c : stem) {
-        if (c == '/' || c == ':' || c == '\\')
-            c = '_';
-    }
-    std::string collapsed;
-    bool lastUnderscore = false;
-    for (auto& c : stem) {
-        if (c == '_') {
-            if (!lastUnderscore) {
-                collapsed += '_';
-                lastUnderscore = true;
-            }
+    std::string result;
+    bool lastSep = false;
+    for (auto& c : modulePath) {
+        if (c == '/' || c == ':' || c == '\\') {
+            if (!lastSep) { result += '_'; lastSep = true; }
         } else {
-            collapsed += c;
-            lastUnderscore = false;
+            result += c;
+            lastSep = false;
         }
     }
-    return collapsed + "__" + name;
+    // Trim trailing underscore from collapsed separators
+    while (!result.empty() && result.back() == '_') result.pop_back();
+    return result + "__" + name;
 }
 
 std::vector<std::string> ModuleRegistry::allModules() const {
