@@ -374,6 +374,9 @@ void MethodRegistry::registerBuiltins() {
 
     registerMethod({ "len",       {TypeKind::String}, {}, "usize",
                      .emitTag = "string.len" });
+    
+    registerMethod({ "ptr",       {TypeKind::String}, {}, "*void",
+                     .emitTag = "string.ptr"  });
 
     registerMethod({ "isEmpty",   {TypeKind::String}, {}, "bool",
                      .emitTag = "string.isEmpty" });

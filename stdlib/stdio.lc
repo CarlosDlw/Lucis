@@ -1,15 +1,68 @@
 namespace stdio;
 
+use std::log::{ print, sprintf };
+
 /**
- * Writes up to count bytes from buf to a file descriptor.
- * Returns the number of bytes written, -1 on error.
+ * Formats and prints a string to the standard output.
+ * Supports placeholders:
+ * - {s}: string
+ * - {d}: int32
+ * - {l}: int64
+ * - {f}: float64 (default 6 decimal places)
+ * - {f:N}: float64 with N decimal places
  * 
- * @param fd File Descriptor
- * @param buf Pointer to the data that will be written
- * @param count Number of bytes to write
- * 
- * @returns The number of bytes written, -1 on error.
+ * @param format The format string
+ * @param ... Variadic arguments for the placeholders
 */
-fn write(int32 fd, cstring buf, int32 count) int32 {
-    return lucis::io::write(fd, buf, count);
+fn printf(string format, ...) void {
+    va_list va = lucis::unsafe::va_list();
+    lucis::unsafe::va_start(va);
+
+    for int32 i in 0..format.len() {
+        char c = format[i];
+
+        if c == '{' {
+            i++;
+
+            if i >= format.len() break;
+
+            char spec = format[i];
+
+            switch spec {
+                case 's' {
+                    string value = lucis::unsafe::va_arg_string(va);
+                    print(value);
+                }
+                case 'd' {
+                    int32 value = lucis::unsafe::va_arg_int32(va);
+                    print(value);
+                }
+                case 'l' {
+                    int64 value = lucis::unsafe::va_arg_int64(va);
+                    print(value);
+                }
+                case 'f' {
+                    int32 precision = 6;
+                    if i + 1 < format.len() && format[i + 1] == ':' {
+                        i += 2;
+                        precision = 0;
+                        while i < format.len() && format[i].isDigit() {
+                            precision = precision * 10 + format[i].digitToInt();
+                            i++;
+                        }
+                    }
+                    float64 value = lucis::unsafe::va_arg_float64(va);
+                    print(value.toStringPrecision(precision));
+                }
+            }
+
+            while i < format.len() && format[i] != '}' {
+                i++;
+            }
+        } else {
+            print(c);
+        }
+    }
+
+    lucis::unsafe::va_end(va);
 }

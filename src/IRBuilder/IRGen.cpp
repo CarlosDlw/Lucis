@@ -15528,6 +15528,10 @@ IRGen::visitMethodCallExpr(LucisParser::MethodCallExprContext* ctx) {
             if (methodName == "len") {
                 return static_cast<llvm::Value*>(strLen);
             }
+            if (methodName == "ptr") {
+                // returns a ptr
+                return static_cast<llvm::Value*>(strPtr);
+            }
             if (methodName == "isEmpty") {
                 auto* zero = llvm::ConstantInt::get(usizeTy, 0);
                 return static_cast<llvm::Value*>(
