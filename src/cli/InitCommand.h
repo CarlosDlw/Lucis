@@ -28,7 +28,6 @@ public:
         bool exists = fs::exists(target);
 
         if (!exists) {
-            // Create the directory tree
             std::error_code ec;
             fs::create_directories(target, ec);
             if (ec) {
@@ -36,9 +35,13 @@ public:
                           << "': " << ec.message() << "\n";
                 return 1;
             }
-            fs::create_directories(target / "src", ec);
             std::cout << "created directory '" << path << "/'\n";
-            std::cout << "created directory '" << path << "/src/'\n";
+        }
+
+        // Always ensure src/ exists
+        {
+            std::error_code ec;
+            fs::create_directories(target / "src", ec);
         }
 
         auto absPath = fs::absolute(target).string();
