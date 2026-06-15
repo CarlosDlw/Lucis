@@ -208,14 +208,8 @@ std::string LspServer::findMainFile(const std::string& projectRoot) {
             std::string content((std::istreambuf_iterator<char>(f)),
                                  std::istreambuf_iterator<char>());
 
-            // Must declare the Main namespace
-            if (content.find("namespace Main") == std::string::npos) continue;
-
-            // Must define a top-level main() — look for common signatures:
-            // "main()" or "main(int" ...
-            bool hasMain = content.find(" main(") != std::string::npos
-                        || content.find("\nmain(") != std::string::npos;
-            if (!hasMain) continue;
+            // Must have a main() function
+            if (content.find("fn main(") == std::string::npos) continue;
 
             return entry.path().string();
         }
@@ -244,10 +238,8 @@ void LspServer::rebuildContext(const std::string& filePath, bool force) {
         if (f) {
             std::string content((std::istreambuf_iterator<char>(f)),
                                  std::istreambuf_iterator<char>());
-            bool hasNamespaceMain = content.find("namespace Main") != std::string::npos;
-            bool hasMain = content.find(" main(") != std::string::npos
-                        || content.find("\nmain(") != std::string::npos;
-            if (hasNamespaceMain && hasMain)
+            bool hasMainFn = content.find("fn main(") != std::string::npos;
+            if (hasMainFn)
                 mainFilePath_ = filePath;
         }
     }

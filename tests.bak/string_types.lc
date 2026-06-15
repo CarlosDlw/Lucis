@@ -1,0 +1,83 @@
+namespace Main;
+
+use std::log::println;
+use std::test::{ assertEqual };
+
+fn testStringTypes() int32 {
+    println("[Testing string type...]");
+
+    string base = "Hello, World!";
+    string padded = "  Hello, World!  ";
+    string empty = "";
+
+    // Identity and metadata
+    assertEqual(sizeof(string), sizeof(*char) + sizeof(usize));
+    assertEqual(typeof(base), "string");
+    assertEqual(base.len(), 13);
+    assertEqual(empty.isEmpty(), true);
+    assertEqual(base.isEmpty(), false);
+
+    // Access and search
+    assertEqual(base.at(0), 'H');
+    assertEqual(base.front(), 'H');
+    assertEqual(base.back(), '!');
+    assertEqual(base.contains("World"), true);
+    assertEqual(base.contains("Lucis"), false);
+    assertEqual(base.startsWith("Hello"), true);
+    assertEqual(base.endsWith("!"), true);
+    assertEqual(base.indexOf("o"), 4);
+    assertEqual(base.lastIndexOf("o"), 8);
+    assertEqual(base.count("l"), 3);
+
+    // Extraction
+    assertEqual(base.substring(7, 5), "World");
+    assertEqual(base.slice(0, 5), "Hello");
+    assertEqual(base.slice(-6, -1), "World");
+
+    // Transformations
+    assertEqual(padded.trim(), "Hello, World!");
+    assertEqual(padded.trimLeft(), "Hello, World!  ");
+    assertEqual(padded.trimRight(), "  Hello, World!");
+    assertEqual("---core---".trimChar('-'), "core");
+    assertEqual(base.toUpper(), "HELLO, WORLD!");
+    assertEqual(base.toLower(), "hello, world!");
+    assertEqual("hELLO".capitalize(), "HELLO");
+    assertEqual("abc".reverse(), "cba");
+    assertEqual("ha".repeat(3), "hahaha");
+    assertEqual("foo".concat("bar"), "foobar");
+    assertEqual("42".padLeft(5, '0'), "00042");
+    assertEqual("42".padRight(5, '_'), "42___");
+
+    // Replace and edit
+    assertEqual("foo bar foo".replace("foo", "baz"), "baz bar baz");
+    assertEqual("foo bar foo".replaceFirst("foo", "baz"), "baz bar foo");
+    assertEqual("unhappy".removePrefix("un"), "happy");
+    assertEqual("file.txt".removeSuffix(".txt"), "file");
+    assertEqual("abcdef".remove(2, 2), "abef");
+    assertEqual("abef".insert(2, "cd"), "abcdef");
+
+    // Comparisons and predicates
+    assertEqual("abc".compareTo("abc"), 0);
+    assertEqual("abc".compareTo("abd"), -1);
+    assertEqual("abd".compareTo("abc"), 1);
+    assertEqual("LuCIS".equalsIgnoreCase("lucis"), true);
+    assertEqual("LuCIS".equalsIgnoreCase("luz"), false);
+    assertEqual("12345".isNumeric(), true);
+    assertEqual("abcXYZ".isAlpha(), true);
+    assertEqual("abc123".isAlphaNum(), true);
+    assertEqual("ABC".isUpper(), true);
+    assertEqual("abc".isLower(), true);
+    assertEqual(" \t\n".isBlank(), true);
+    assertEqual(" a ".isBlank(), false);
+
+    // Parsing and hashing
+    assertEqual("12345".toInt(), 12345);
+    assertEqual("12.5".toFloat(), 12.5);
+    assertEqual("true".toBool(), true);
+    assertEqual("false".toBool(), false);
+    assertEqual(typeof("lucis".hash()), "uint64");
+    assertEqual("lucis".hash() == "lucis".hash(), true);
+
+    println("✔ string tests passed");
+    ret 0;
+}

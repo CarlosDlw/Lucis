@@ -8,5 +8,4 @@
         "alternativeJar": "../antlr-4.13.2-complete.jar",
     },
     // desable clangd in this workspace
-    "clangd.enable": false
 }

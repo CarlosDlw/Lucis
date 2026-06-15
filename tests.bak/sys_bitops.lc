@@ -1,0 +1,41 @@
+namespace Main;
+
+use std::log::println;
+use std::test::{ assertEqual };
+
+fn testSysBitOps() int32 {
+    println("[Testing lucis::sys bit manipulation intrinsics...]");
+
+    // ── bitreverse ───────────────────────────────────────────────
+    assertEqual(lucis::sys::bitreverse<int32>(0x12345678), 0x1E6A2C48);
+    assertEqual(lucis::sys::bitreverse<int16>(0x1234), 0x2C48);
+    assertEqual(lucis::sys::bitreverse<int8>(0x78), 0x1E);
+
+    // ── bswap ────────────────────────────────────────────────────
+    assertEqual(lucis::sys::bswap<int32>(0x12345678), 0x78563412);
+    assertEqual(lucis::sys::bswap<int64>(0x0102030405060708), 0x0807060504030201);
+
+    // ── ctpop ────────────────────────────────────────────────────
+    assertEqual(lucis::sys::ctpop<int32>(0x12345678), 13);
+    assertEqual(lucis::sys::ctpop<int8>(0xFF), 8);
+    assertEqual(lucis::sys::ctpop<int8>(0x00), 0);
+
+    // ── ctlz ─────────────────────────────────────────────────────
+    assertEqual(lucis::sys::ctlz<int32>(0x12345678), 3);
+    assertEqual(lucis::sys::ctlz<int32>(0), 32);
+    assertEqual(lucis::sys::ctlz<int8>(0x0F), 4);
+
+    // ── cttz ─────────────────────────────────────────────────────
+    assertEqual(lucis::sys::cttz<int32>(0x12345678), 3);
+    assertEqual(lucis::sys::cttz<int32>(0), 32);
+    assertEqual(lucis::sys::cttz<int8>(0x10), 4);
+
+    // ── compose: bswap(bitreverse(x)) == bitreverse(bswap(x)) ────
+    int32 x = 0x12345678;
+    int32 a = lucis::sys::bswap<int32>(lucis::sys::bitreverse<int32>(x));
+    int32 b = lucis::sys::bitreverse<int32>(lucis::sys::bswap<int32>(x));
+    assertEqual(a, b);
+
+    println("✔ sys::bit ops tests passed");
+    ret 0;
+}

@@ -1,0 +1,28 @@
+namespace Main;
+
+use std::log::println;
+use std::test::{ assertEqual };
+
+fn writeAnswer(*int32 out) void {
+    *out = 42;
+}
+
+fn clearValue(*int32 out) void {
+    *out = 0;
+}
+
+fn testVoidTypes() int32 {
+    println("[Testing void type...]");
+
+    int32 value = -1;
+
+    // The function has no return value, so correctness is validated by side effects.
+    writeAnswer(&value);
+    assertEqual(value, 42);
+
+    clearValue(&value);
+    assertEqual(value, 0);
+
+    println("✔ void tests passed");
+    ret 0;
+}

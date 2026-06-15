@@ -34,12 +34,15 @@ public:
     // exported by any known module, or an empty string otherwise.
     static std::string suggestImport(const std::string& symbol);
 
-    // Returns true if the given module path is a known stdlib module.
+    // Returns true if the given module path is a standard library path.
     static bool isStdModule(const std::string& modulePath);
 
     // Returns true if the module exports the given symbol name.
     static bool moduleExportsSymbol(const std::string& modulePath,
                                     const std::string& symbolName);
+
+    // Returns the standard library install path.
+    static std::string stdlibPath();
 
 private:
     std::vector<ImportedSymbol>        imports_;

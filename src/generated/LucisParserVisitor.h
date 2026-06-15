@@ -23,8 +23,6 @@ public:
 
     virtual std::any visitPreambleDecl(LucisParser::PreambleDeclContext *context) = 0;
 
-    virtual std::any visitNamespaceDecl(LucisParser::NamespaceDeclContext *context) = 0;
-
     virtual std::any visitUseRoot(LucisParser::UseRootContext *context) = 0;
 
     virtual std::any visitUseItem(LucisParser::UseItemContext *context) = 0;

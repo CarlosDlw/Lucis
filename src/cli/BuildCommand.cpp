@@ -6,7 +6,6 @@
 #include "LLVM_IR/IRModule.h"
 #include "LLVM_Optimizer/Optimizer.h"
 #include "machine_code/CodeGen.h"
-#include "namespace/ProjectScanner.h"
 
 #include <iostream>
 #include <iomanip>
@@ -45,30 +44,16 @@ std::string BuildCommand::resolveInputFile(const ArgParser& parser,
     auto file = parser.get("file");
     if (!file.empty()) return file;
 
-    // No explicit file — try lucis.yaml from CWD upward.
     auto config = LucisConfig::findInDir(fs::current_path().string());
     if (!config) return {};
 
     if (outConfig) *outConfig = *config;
 
-    // Scan source dirs for the main entrypoint.
-    auto files = config->sourcePaths.empty()
-        ? ProjectScanner::scan(fs::current_path().string())
-        : ProjectScanner::scan(fs::current_path().string(), config->sourcePaths);
-
-    // Look for a file with namespace Main and a main() function.
-    for (const auto& f : files) {
-        std::ifstream ifs(f);
-        if (!ifs) continue;
-        std::string content((std::istreambuf_iterator<char>(ifs)),
-                             std::istreambuf_iterator<char>());
-        if (content.find("namespace Main") == std::string::npos) continue;
-        if (content.find("main(") == std::string::npos) continue;
-        return f;
+    for (auto& candidate : { "src/main.lc", "main.lc" }) {
+        auto path = fs::path(candidate);
+        if (fs::exists(path))
+            return fs::canonical(path).string();
     }
-
-    // Fallback: return the first .lc file found.
-    if (!files.empty()) return files[0];
     return {};
 }
 
@@ -243,7 +228,7 @@ int BuildCommand::run(const ArgParser& parser) {
                       << "] " << unit.filePath << "\n";
 
         IRGen irGen;
-        irGen.setNamespaceContext(pipeline->registry.get(), unit.namespaceName, unit.filePath);
+        irGen.setModuleContext(pipeline->registry.get(), unit.modulePath, unit.filePath);
         irGen.setCBindings(pipeline->cBindings.get());
         auto irMod = irGen.generate(unit.parseResult.tree, unit.filePath);
         if (!irMod) {
@@ -359,7 +344,7 @@ int BuildCommand::run(const ArgParser& parser) {
         std::string stem;
         for (auto& unit : pipeline->units) {
             if (unit.filePath == uir.filePath) {
-                stem = unit.namespaceName + "__" + fs::path(uir.filePath).stem().string();
+                stem = unit.modulePath + "__" + fs::path(uir.filePath).stem().string();
                 break;
             }
         }

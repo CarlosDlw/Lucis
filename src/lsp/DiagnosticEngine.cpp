@@ -120,9 +120,9 @@ std::vector<Diagnostic> DiagnosticEngine::run(const std::string& source,
     if (parsed.tree && !parsed.hasErrors) {
         Checker checker;
 
-        // Set namespace context from the project registry.
-        std::string ns = project->namespaceFor(filePath);
-        checker.setNamespaceContext(&project->registry(), ns, filePath);
+        // Set module context from the project registry.
+        std::string modPath = project->modulePathFor(filePath);
+        checker.setModuleContext(&project->registry(), modPath, filePath);
 
         // Use project-wide C bindings.
         checker.setCBindings(&project->cBindings());

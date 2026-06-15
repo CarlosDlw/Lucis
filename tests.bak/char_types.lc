@@ -1,0 +1,44 @@
+namespace Main;
+
+use std::log::println;
+use std::test::{ assertEqual };
+
+fn testCharTypes() int32 {
+    println("[Testing character type...]");
+
+    char upper = 'A';
+    char lower = 'a';
+    char digit = '9';
+    char tab = '\t';
+    char space = ' ';
+    char hexA = '\x41';
+
+    // Identity and metadata
+    assertEqual(sizeof(char), 1);
+    assertEqual(typeof(upper), "char");
+    assertEqual(upper.toInt(), 65);
+    assertEqual(lower.toInt(), 97);
+    assertEqual(digit.toInt(), 57);
+    assertEqual(hexA, 'A');
+
+    // Classification methods
+    assertEqual(upper.isAlpha(), true);
+    assertEqual(lower.isAlpha(), true);
+    assertEqual(digit.isDigit(), true);
+    assertEqual(upper.isDigit(), false);
+    assertEqual(space.isSpace(), true);
+    assertEqual(tab.isSpace(), true);
+    assertEqual(upper.isUpper(), true);
+    assertEqual(lower.isLower(), true);
+    assertEqual(upper.isAscii(), true);
+
+    // Conversion methods
+    assertEqual(lower.toUpper(), 'A');
+    assertEqual(upper.toLower(), 'a');
+    assertEqual(digit.digitToInt(), 9);
+    assertEqual(upper.toString(), "A");
+    assertEqual('x'.repeat(4), "xxxx");
+
+    println("✔ char tests passed");
+    ret 0;
+}

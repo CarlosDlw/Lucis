@@ -6,18 +6,13 @@ options {
 
 // Entry point
 program
-    : namespaceDecl? preambleDecl* topLevelDecl* EOF
+    : preambleDecl* topLevelDecl* EOF
     ;
 
 // use and #include can appear in any order
 preambleDecl
     : useDecl
     | includeDecl
-    ;
-
-// namespace Main;
-namespaceDecl
-    : NAMESPACE IDENTIFIER SEMI
     ;
 
 // use std::log::println;

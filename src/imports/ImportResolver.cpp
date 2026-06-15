@@ -1,5 +1,6 @@
 #include "imports/ImportResolver.h"
 
+#include <cstdlib>
 #include <iostream>
 
 // Known builtin modules → exported symbols
@@ -124,7 +125,23 @@ std::string ImportResolver::suggestImport(const std::string& symbol) {
 }
 
 bool ImportResolver::isStdModule(const std::string& modulePath) {
-    return knownModules_.find(modulePath) != knownModules_.end();
+    // Check exact match against known modules (old :: format)
+    if (knownModules_.find(modulePath) != knownModules_.end()) return true;
+    // Check path format (std/ prefix)
+    if (modulePath.rfind("std/", 0) == 0) return true;
+    // Check :: format prefix (std:: prefix)
+    if (modulePath.rfind("std::", 0) == 0) return true;
+    return false;
+}
+
+std::string ImportResolver::stdlibPath() {
+    const char* env = std::getenv("LUCIS_STDLIB_DIR");
+    if (env) return env;
+#ifdef LUCIS_STDLIB_DIR
+    return LUCIS_STDLIB_DIR;
+#else
+    return "/usr/local/share/lucis/stdlib";
+#endif
 }
 
 bool ImportResolver::moduleExportsSymbol(const std::string& modulePath,
@@ -135,18 +152,6 @@ bool ImportResolver::moduleExportsSymbol(const std::string& modulePath,
 
 void ImportResolver::addImport(const std::string& modulePath,
                                const std::string& symbol) {
-    // Validate against known modules
-    auto it = knownModules_.find(modulePath);
-    if (it == knownModules_.end()) {
-        std::cerr << "lucis: unknown module '" << modulePath << "'\n";
-        return;
-    }
-    if (it->second.find(symbol) == it->second.end()) {
-        std::cerr << "lucis: module '" << modulePath
-                  << "' does not export '" << symbol << "'\n";
-        return;
-    }
-
     if (symbols_.insert(symbol).second) {
         imports_.push_back({ modulePath, symbol });
     }

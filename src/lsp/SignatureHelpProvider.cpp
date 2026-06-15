@@ -3,7 +3,7 @@
 #include "lsp/DocComment.h"
 #include "parser/Parser.h"
 #include "ffi/CHeaderResolver.h"
-#include "namespace/NamespaceRegistry.h"
+#include "namespace/ModuleRegistry.h"
 
 #include <sstream>
 #include <fstream>
@@ -635,8 +635,8 @@ SignatureHelpProvider::signatureHelp(
 
         // 4) Cross-file extend methods
         if (project && project->isValid()) {
-            for (auto& ns : project->registry().allNamespaces()) {
-                auto syms = project->registry().getNamespaceSymbols(ns);
+            for (auto& ns : project->registry().allModules()) {
+                auto syms = project->registry().getModuleSymbols(ns);
                 for (auto* sym : syms) {
                     if (sym->kind != ExportedSymbol::ExtendBlock) continue;
                     auto* ext = dynamic_cast<LucisParser::ExtendDeclContext*>(sym->decl);
@@ -691,8 +691,8 @@ SignatureHelpProvider::signatureHelp(
 
         // 2) Cross-file extend blocks
         if (result.signatures.empty() && project && project->isValid()) {
-            for (auto& ns : project->registry().allNamespaces()) {
-                auto syms = project->registry().getNamespaceSymbols(ns);
+            for (auto& ns : project->registry().allModules()) {
+                auto syms = project->registry().getModuleSymbols(ns);
                 for (auto* sym : syms) {
                     if (sym->kind != ExportedSymbol::ExtendBlock) continue;
                     auto* ext = dynamic_cast<LucisParser::ExtendDeclContext*>(sym->decl);
@@ -766,7 +766,7 @@ SignatureHelpProvider::signatureHelp(
 
     // 3) Cross-file functions (imported via `use`)
     if (project && project->isValid()) {
-        for (auto& ns : project->registry().allNamespaces()) {
+        for (auto& ns : project->registry().allModules()) {
             auto* sym = project->registry().findSymbol(ns, name);
             if (!sym) continue;
             if (sym->kind == ExportedSymbol::Function) {

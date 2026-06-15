@@ -245,8 +245,7 @@ set(SOURCES
     src/LLVM_Optimizer/Optimizer.cpp
     src/machine_code/CodeGen.cpp
     src/imports/ImportResolver.cpp
-    src/namespace/ProjectScanner.cpp
-    src/namespace/NamespaceRegistry.cpp
+    src/namespace/ModuleRegistry.cpp
     src/types/TypeInfo.cpp
     src/types/TypeRegistry.cpp
     src/types/MethodRegistry.cpp

@@ -2,7 +2,7 @@
 #include "lsp/ProjectContext.h"
 #include "parser/Parser.h"
 #include "ffi/CHeaderResolver.h"
-#include "namespace/NamespaceRegistry.h"
+#include "namespace/ModuleRegistry.h"
 
 #include <filesystem>
 
@@ -582,7 +582,7 @@ std::optional<DefinitionResult> DefinitionProvider::resolveIdent(
             }
         }
         if (!ed && project && project->isValid()) {
-            for (auto& ns : project->registry().allNamespaces()) {
+            for (auto& ns : project->registry().allModules()) {
                 auto* sym = project->registry().findSymbol(ns, baseName);
                 if (!sym || sym->kind != ExportedSymbol::Enum) continue;
                 auto* decl = dynamic_cast<LucisParser::EnumDeclContext*>(sym->decl);
@@ -619,7 +619,7 @@ std::optional<DefinitionResult> DefinitionProvider::resolveIdent(
 
     // 10) Cross-file symbol from project registry
     if (project && project->isValid()) {
-        for (auto& ns : project->registry().allNamespaces()) {
+        for (auto& ns : project->registry().allModules()) {
             auto* sym = project->registry().findSymbol(ns, name);
             if (!sym || !sym->decl) continue;
             auto* declStart = sym->decl->getStart();
@@ -741,7 +741,7 @@ std::optional<DefinitionResult> DefinitionProvider::resolveTypeName(
 
     // Cross-file
     if (project && project->isValid()) {
-        for (auto& ns : project->registry().allNamespaces()) {
+        for (auto& ns : project->registry().allModules()) {
             auto* sym = project->registry().findSymbol(ns, name);
             if (!sym || !sym->decl) continue;
             if (sym->kind != ExportedSymbol::Struct &&
@@ -865,8 +865,8 @@ std::optional<DefinitionResult> DefinitionProvider::walkExprForDef(
 
                 // Search cross-file extend blocks
                 if (project && project->isValid()) {
-                    for (auto& ns : project->registry().allNamespaces()) {
-                        auto syms = project->registry().getNamespaceSymbols(ns);
+                    for (auto& ns : project->registry().allModules()) {
+                        auto syms = project->registry().getModuleSymbols(ns);
                         for (auto* sym : syms) {
                             if (sym->kind != ExportedSymbol::ExtendBlock) continue;
                             auto* ext = dynamic_cast<LucisParser::ExtendDeclContext*>(sym->decl);
@@ -923,7 +923,7 @@ std::optional<DefinitionResult> DefinitionProvider::walkExprForDef(
                         }
 
                         if (structName.empty() && project && project->isValid()) {
-                            for (auto& ns : project->registry().allNamespaces()) {
+                            for (auto& ns : project->registry().allModules()) {
                                 auto* sym = project->registry().findSymbol(ns, calleeName);
                                 if (!sym || sym->kind != ExportedSymbol::Function) continue;
                                 auto* fd = dynamic_cast<LucisParser::FunctionDeclContext*>(sym->decl);
@@ -997,7 +997,7 @@ std::optional<DefinitionResult> DefinitionProvider::walkExprForDef(
             }
             // Cross-file enum
             if (project && project->isValid()) {
-                for (auto& ns : project->registry().allNamespaces()) {
+                for (auto& ns : project->registry().allModules()) {
                     auto* sym = project->registry().findSymbol(ns, enumName);
                     if (!sym || sym->kind != ExportedSymbol::Enum) continue;
                     auto* ed = dynamic_cast<LucisParser::EnumDeclContext*>(sym->decl);
@@ -1048,8 +1048,8 @@ std::optional<DefinitionResult> DefinitionProvider::walkExprForDef(
 
             // Search cross-file extend blocks
             if (project && project->isValid()) {
-                for (auto& ns : project->registry().allNamespaces()) {
-                    auto syms = project->registry().getNamespaceSymbols(ns);
+                for (auto& ns : project->registry().allModules()) {
+                    auto syms = project->registry().getModuleSymbols(ns);
                     for (auto* sym : syms) {
                         if (sym->kind != ExportedSymbol::ExtendBlock) continue;
                         auto* ext = dynamic_cast<LucisParser::ExtendDeclContext*>(sym->decl);
@@ -2054,7 +2054,7 @@ std::optional<DefinitionResult> DefinitionProvider::resolveStructField(
 
     // Cross-file struct
     if (project && project->isValid()) {
-        for (auto& ns : project->registry().allNamespaces()) {
+        for (auto& ns : project->registry().allModules()) {
             auto* sym = project->registry().findSymbol(ns, structName);
             if (!sym || sym->kind != ExportedSymbol::Struct) continue;
             auto* sd2 = dynamic_cast<LucisParser::StructDeclContext*>(sym->decl);

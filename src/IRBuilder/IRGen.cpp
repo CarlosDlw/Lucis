@@ -17,7 +17,7 @@
 #endif
 
 #include "generated/LucisLexer.h"
-#include "namespace/NamespaceRegistry.h"
+#include "namespace/ModuleRegistry.h"
 #include "ffi/CBindings.h"
 
 #include <cctype>
@@ -27,12 +27,12 @@ IRGen::IRGen()
     : intrinsicRegistry_(typeRegistry_) {
 }
 
-void IRGen::setNamespaceContext(const NamespaceRegistry* registry,
-                                 const std::string& currentNamespace,
-                                 const std::string& currentFile) {
-    nsRegistry_       = registry;
-    currentNamespace_ = currentNamespace;
-    currentFile_      = currentFile;
+void IRGen::setModuleContext(const ModuleRegistry* registry,
+                              const std::string& modulePath,
+                              const std::string& currentFile) {
+    moduleRegistry_     = registry;
+    currentModulePath_  = modulePath;
+    currentFile_        = currentFile;
 }
 
 void IRGen::setCBindings(const CBindings* bindings) {
@@ -1105,8 +1105,8 @@ void IRGen::forwardDeclareFunction(LucisParser::FunctionDeclContext* ctx) {
         emitName = "lucis_user_main";
     } else if (funcName == "main") {
         emitName = "main";
-    } else if (nsRegistry_) {
-        emitName = NamespaceRegistry::mangle(currentNamespace_, funcName);
+    } else if (moduleRegistry_) {
+        emitName = ModuleRegistry::mangle(currentModulePath_, funcName);
     } else {
         emitName = funcName;
     }
@@ -1126,7 +1126,7 @@ void IRGen::forwardDeclareFunction(LucisParser::FunctionDeclContext* ctx) {
     fnReturnArrayDims_[emitName] = retArrayDims;
 
     // Register in callTargetMap_ so calls resolve before body generation
-    if (nsRegistry_ && funcName != "main") {
+    if (moduleRegistry_ && funcName != "main") {
         callTargetMap_[funcName] = emitName;
     }
 
@@ -1200,14 +1200,14 @@ std::any IRGen::visitFunctionDecl(LucisParser::FunctionDeclContext* ctx) {
         emitName = "lucis_user_main";
     } else if (funcName == "main") {
         emitName = "main";
-    } else if (nsRegistry_) {
-        emitName = NamespaceRegistry::mangle(currentNamespace_, funcName);
+    } else if (moduleRegistry_) {
+        emitName = ModuleRegistry::mangle(currentModulePath_, funcName);
     } else {
         emitName = funcName;
     }
 
     // Register in callTargetMap_ so local calls resolve to this mangled name
-    if (nsRegistry_ && funcName != "main") {
+    if (moduleRegistry_ && funcName != "main") {
         callTargetMap_[funcName] = emitName;
     }
 
@@ -1388,9 +1388,9 @@ std::any IRGen::visitUseItem(LucisParser::UseItemContext* ctx) {
     auto symbolName = ctx->IDENTIFIER()->getText();
     auto qualifiedPath = path + "::" + symbolName;
 
-    if (NamespaceRegistry::isStdModule(path)) {
+    if (ImportResolver::isStdModule(path)) {
         imports_.addImport(path, symbolName);
-    } else if (NamespaceRegistry::isStdModule(qualifiedPath)) {
+    } else if (ImportResolver::isStdModule(qualifiedPath)) {
         // Module alias import, e.g. `use std::log;`
         userImports_[symbolName] = qualifiedPath;
     } else {
@@ -1408,7 +1408,7 @@ std::any IRGen::visitUseGroup(LucisParser::UseGroupContext* ctx) {
         path += id->getText();
     }
 
-    if (NamespaceRegistry::isStdModule(path)) {
+    if (ImportResolver::isStdModule(path)) {
         for (auto* id : ctx->IDENTIFIER()) {
             imports_.addImport(path, id->getText());
         }
@@ -1435,7 +1435,7 @@ std::any IRGen::visitUseEnumWildcard(LucisParser::UseEnumWildcardContext* ctx) {
 // ═══════════════════════════════════════════════════════════════════════
 
 void IRGen::registerCrossFileSymbols(LucisParser::ProgramContext* ctx) {
-    if (!nsRegistry_) return;
+    if (!moduleRegistry_) return;
 
     // Populate userImports_ from preamble use declarations before any
     // cross-file symbol processing (visitUseItem/visitUseGroup run later
@@ -1457,9 +1457,9 @@ void IRGen::registerCrossFileSymbols(LucisParser::ProgramContext* ctx) {
                 }
                 auto symbolName = item->IDENTIFIER()->getText();
                 auto qualifiedPath = path + "::" + symbolName;
-                if (NamespaceRegistry::isStdModule(path)) {
+                if (ImportResolver::isStdModule(path)) {
                     imports_.addImport(path, symbolName);
-                } else if (NamespaceRegistry::isStdModule(qualifiedPath)) {
+                } else if (ImportResolver::isStdModule(qualifiedPath)) {
                     userImports_[symbolName] = qualifiedPath;
                 } else {
                     userImports_[symbolName] = path;
@@ -1472,7 +1472,7 @@ void IRGen::registerCrossFileSymbols(LucisParser::ProgramContext* ctx) {
                     if (!path.empty()) path += "::";
                     path += id->getText();
                 }
-                if (NamespaceRegistry::isStdModule(path)) {
+                if (ImportResolver::isStdModule(path)) {
                     for (auto* id : group->IDENTIFIER())
                         imports_.addImport(path, id->getText());
                 } else {
@@ -1527,8 +1527,8 @@ void IRGen::registerCrossFileSymbols(LucisParser::ProgramContext* ctx) {
         }
     }
 
-    auto sameNsSymbols = nsRegistry_->getExternalSymbols(
-        currentNamespace_, currentFile_);
+    auto sameNsSymbols = moduleRegistry_->getExternalSymbols(
+        currentModulePath_, currentFile_);
 
     auto ensureTypeDependencyFromSpec =
         [&](auto&& self, LucisParser::TypeSpecContext* ts, const std::string& ns) -> void {
@@ -1543,10 +1543,10 @@ void IRGen::registerCrossFileSymbols(LucisParser::ProgramContext* ctx) {
 
             if (!ts->IDENTIFIER()) return;
             auto baseName = ts->IDENTIFIER()->getText();
-            auto* depSym = nsRegistry_->findSymbol(ns, baseName);
+            auto* depSym = moduleRegistry_->findSymbol(ns, baseName);
             if (!depSym) {
-                for (auto& candidateNs : nsRegistry_->allNamespaces()) {
-                    depSym = nsRegistry_->findSymbol(candidateNs, baseName);
+                for (auto& candidateNs : moduleRegistry_->allModules()) {
+                    depSym = moduleRegistry_->findSymbol(candidateNs, baseName);
                     if (depSym) break;
                 }
             }
@@ -1628,7 +1628,7 @@ void IRGen::registerCrossFileSymbols(LucisParser::ProgramContext* ctx) {
             if (structCtx && !typeRegistry_.lookup(sym->name)) {
                 for (auto* field : structCtx->structField())
                     ensureTypeDependencyFromSpec(
-                        ensureTypeDependencyFromSpec, field->typeSpec(), currentNamespace_);
+                        ensureTypeDependencyFromSpec, field->typeSpec(), currentModulePath_);
                 visitStructDecl(structCtx);
             }
         } else if (sym->kind == ExportedSymbol::Union) {
@@ -1636,7 +1636,7 @@ void IRGen::registerCrossFileSymbols(LucisParser::ProgramContext* ctx) {
             if (unionCtx && !typeRegistry_.lookup(sym->name)) {
                 for (auto* field : unionCtx->unionField())
                     ensureTypeDependencyFromSpec(
-                        ensureTypeDependencyFromSpec, field->typeSpec(), currentNamespace_);
+                        ensureTypeDependencyFromSpec, field->typeSpec(), currentModulePath_);
                 visitUnionDecl(unionCtx);
             }
         }
@@ -1644,7 +1644,7 @@ void IRGen::registerCrossFileSymbols(LucisParser::ProgramContext* ctx) {
 
     // ── Phase 1c: Register enums / type aliases from imported namespaces
     for (auto& [symbolName, sourceNs] : userImports_) {
-        auto* sym = nsRegistry_->findSymbol(sourceNs, symbolName);
+        auto* sym = moduleRegistry_->findSymbol(sourceNs, symbolName);
         if (!sym) continue;
 
         if (sym->kind == ExportedSymbol::Enum) {
@@ -1660,7 +1660,7 @@ void IRGen::registerCrossFileSymbols(LucisParser::ProgramContext* ctx) {
 
     // ── Phase 1d: Register structs / unions from imported namespaces ────
     for (auto& [symbolName, sourceNs] : userImports_) {
-        auto* sym = nsRegistry_->findSymbol(sourceNs, symbolName);
+        auto* sym = moduleRegistry_->findSymbol(sourceNs, symbolName);
         if (!sym) continue;
 
         if (sym->kind == ExportedSymbol::Struct) {
@@ -1686,7 +1686,7 @@ void IRGen::registerCrossFileSymbols(LucisParser::ProgramContext* ctx) {
     //    For same-namespace and imported structs, find their extend blocks
     //    and declare methods as extern functions.
     auto declareExtendMethods = [&](const std::string& ns) {
-        auto allSyms = nsRegistry_->getNamespaceSymbols(ns);
+        auto allSyms = moduleRegistry_->getModuleSymbols(ns);
         for (auto* sym : allSyms) {
             if (sym->kind != ExportedSymbol::ExtendBlock) continue;
             if (sym->sourceFile == currentFile_) continue;
@@ -1769,7 +1769,7 @@ void IRGen::registerCrossFileSymbols(LucisParser::ProgramContext* ctx) {
     };
 
     // Extend blocks from same namespace
-    declareExtendMethods(currentNamespace_);
+    declareExtendMethods(currentModulePath_);
 
     // Extend blocks from imported namespaces
     std::unordered_set<std::string> processedNs;
@@ -1783,7 +1783,7 @@ void IRGen::registerCrossFileSymbols(LucisParser::ProgramContext* ctx) {
         if (sym->kind == ExportedSymbol::Function) {
             auto* funcCtx = dynamic_cast<LucisParser::FunctionDeclContext*>(sym->decl);
             if (!funcCtx) continue;
-            ensureFunctionTypeDependencies(funcCtx, currentNamespace_);
+            ensureFunctionTypeDependencies(funcCtx, currentModulePath_);
 
             if (funcCtx->typeParamList()) {
                 GenericFuncTemplate tmpl;
@@ -1794,8 +1794,8 @@ void IRGen::registerCrossFileSymbols(LucisParser::ProgramContext* ctx) {
                 continue;
             }
 
-            auto mangledName = NamespaceRegistry::mangle(
-                currentNamespace_, sym->name);
+            auto mangledName = ModuleRegistry::mangle(
+                currentModulePath_, sym->name);
             if (!module_->getFunction(mangledName))
                 declareExternFunction(mangledName, funcCtx);
             // Map unmangled name → mangled name for call resolution
@@ -1805,7 +1805,7 @@ void IRGen::registerCrossFileSymbols(LucisParser::ProgramContext* ctx) {
 
     // ── Phase 2b: Declare extern functions from imported namespaces ────
     for (auto& [symbolName, sourceNs] : userImports_) {
-        auto* sym = nsRegistry_->findSymbol(sourceNs, symbolName);
+        auto* sym = moduleRegistry_->findSymbol(sourceNs, symbolName);
         if (!sym || sym->kind != ExportedSymbol::Function) continue;
 
         auto* funcCtx = dynamic_cast<LucisParser::FunctionDeclContext*>(sym->decl);
@@ -1821,7 +1821,7 @@ void IRGen::registerCrossFileSymbols(LucisParser::ProgramContext* ctx) {
             continue;
         }
 
-        auto mangledName = NamespaceRegistry::mangle(sourceNs, sym->name);
+        auto mangledName = ModuleRegistry::mangle(sourceNs, sym->name);
         if (!module_->getFunction(mangledName))
             declareExternFunction(mangledName, funcCtx);
         callTargetMap_[symbolName] = mangledName;
@@ -8379,7 +8379,7 @@ std::any IRGen::visitStaticMethodCallExpr(
             modulePath += ids[i]->getText();
         }
 
-        if (!NamespaceRegistry::isStdModule(modulePath)) {
+        if (!ImportResolver::isStdModule(modulePath)) {
             // Qualified static method call on user type: LIB::User::new(args)
             if (ids.size() == 3) {
                 auto nsName = ids[0]->getText();
@@ -8458,15 +8458,15 @@ std::any IRGen::visitStaticMethodCallExpr(
 
     auto importIt = userImports_.find(structName);
     if (importIt != userImports_.end()) {
-        if (NamespaceRegistry::isStdModule(importIt->second)) {
+        if (ImportResolver::isStdModule(importIt->second)) {
             if (auto* moduleResult = emitStdModuleCall(importIt->second)) {
                 return static_cast<llvm::Value*>(moduleResult);
             }
-        } else if (nsRegistry_) {
-            auto* sym = nsRegistry_->findSymbol(importIt->second, methodName);
+        } else if (moduleRegistry_) {
+            auto* sym = moduleRegistry_->findSymbol(importIt->second, methodName);
             if (sym && sym->kind == ExportedSymbol::Function) {
                 auto* funcDecl = static_cast<LucisParser::FunctionDeclContext*>(sym->decl);
-                auto mangledName = NamespaceRegistry::mangle(importIt->second, methodName);
+                auto mangledName = ModuleRegistry::mangle(importIt->second, methodName);
                 if (!module_->getFunction(mangledName))
                     declareExternFunction(mangledName, funcDecl);
 
@@ -13699,7 +13699,7 @@ const TypeInfo* IRGen::resolveTypeInfo(LucisParser::TypeSpecContext* ctx) {
         if (substIt != currentGenericSubst_.end()) return substIt->second;
 
         // Namespace-aware lazy type loading (cross-file support).
-        if (nsRegistry_) {
+        if (moduleRegistry_) {
             auto loadSymbolType = [&](const ExportedSymbol* sym) {
                 if (!sym || !sym->decl) return;
                 if (sym->kind == ExportedSymbol::Enum) {
@@ -13713,14 +13713,14 @@ const TypeInfo* IRGen::resolveTypeInfo(LucisParser::TypeSpecContext* ctx) {
                 }
             };
 
-            if (auto* sameNs = nsRegistry_->findSymbol(currentNamespace_, name)) {
+            if (auto* sameNs = moduleRegistry_->findSymbol(currentModulePath_, name)) {
                 loadSymbolType(sameNs);
                 if (auto* loaded = typeRegistry_.lookup(name)) return loaded;
             }
 
             auto importIt = userImports_.find(name);
             if (importIt != userImports_.end()) {
-                if (auto* imported = nsRegistry_->findSymbol(importIt->second, name)) {
+                if (auto* imported = moduleRegistry_->findSymbol(importIt->second, name)) {
                     loadSymbolType(imported);
                     if (auto* loaded = typeRegistry_.lookup(name)) return loaded;
                 }
@@ -13731,7 +13731,7 @@ const TypeInfo* IRGen::resolveTypeInfo(LucisParser::TypeSpecContext* ctx) {
                 std::unordered_set<std::string> scannedNs;
                 for (const auto& [_, ns] : userImports_) {
                     if (scannedNs.insert(ns).second) {
-                        if (auto* found = nsRegistry_->findSymbol(ns, name)) {
+                        if (auto* found = moduleRegistry_->findSymbol(ns, name)) {
                             loadSymbolType(found);
                             if (auto* loaded = typeRegistry_.lookup(name)) return loaded;
                         }

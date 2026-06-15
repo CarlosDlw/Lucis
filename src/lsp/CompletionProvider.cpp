@@ -3,7 +3,7 @@
 #include "imports/ImportResolver.h"
 #include "lsp/DocComment.h"
 #include "lsp/ProjectContext.h"
-#include "namespace/NamespaceRegistry.h"
+#include "namespace/ModuleRegistry.h"
 #include "parser/Parser.h"
 
 #include <algorithm>
@@ -402,7 +402,7 @@ findFunctionDeclForInference(const std::string &name,
     }
   }
   if (flc->project && flc->project->isValid()) {
-    for (auto &ns : flc->project->registry().allNamespaces()) {
+    for (auto &ns : flc->project->registry().allModules()) {
       auto *sym = flc->project->registry().findSymbol(ns, name);
       if (!sym || sym->kind != ExportedSymbol::Function)
         continue;
@@ -425,7 +425,7 @@ findEnumDeclForInference(const std::string &name, const FuncLookupCtx *flc) {
     }
   }
   if (flc->project && flc->project->isValid()) {
-    for (auto &ns : flc->project->registry().allNamespaces()) {
+    for (auto &ns : flc->project->registry().allModules()) {
       auto *sym = flc->project->registry().findSymbol(ns, name);
       if (!sym || sym->kind != ExportedSymbol::Enum)
         continue;
@@ -448,7 +448,7 @@ findStructDeclForInference(const std::string &name, const FuncLookupCtx *flc) {
     }
   }
   if (flc->project && flc->project->isValid()) {
-    for (auto &ns : flc->project->registry().allNamespaces()) {
+    for (auto &ns : flc->project->registry().allModules()) {
       auto *sym = flc->project->registry().findSymbol(ns, name);
       if (!sym || sym->kind != ExportedSymbol::Struct)
         continue;
@@ -471,7 +471,7 @@ findUnionDeclForInference(const std::string &name, const FuncLookupCtx *flc) {
     }
   }
   if (flc->project && flc->project->isValid()) {
-    for (auto &ns : flc->project->registry().allNamespaces()) {
+    for (auto &ns : flc->project->registry().allModules()) {
       auto *sym = flc->project->registry().findSymbol(ns, name);
       if (!sym || sym->kind != ExportedSymbol::Union)
         continue;
@@ -612,7 +612,7 @@ static std::string lookupFuncReturnType(const std::string &funcName,
   }
   // Cross-file functions (imported via `use`)
   if (flc->project && flc->project->isValid()) {
-    for (auto &ns : flc->project->registry().allNamespaces()) {
+    for (auto &ns : flc->project->registry().allModules()) {
       auto *sym = flc->project->registry().findSymbol(ns, funcName);
       if (!sym)
         continue;
@@ -914,7 +914,7 @@ static std::string inferExprTypeName(
 
       std::string methodName = ids.back()->getText();
 
-      if (NamespaceRegistry::isStdModule(ownerPath) && flc && flc->builtinReg) {
+      if (ImportResolver::isStdModule(ownerPath) && flc && flc->builtinReg) {
         if (auto *sig = flc->builtinReg->lookup(methodName))
           return sig->returnType;
       }
@@ -980,8 +980,8 @@ static std::string inferExprTypeName(
         }
       }
       if (flc && flc->project && flc->project->isValid()) {
-        for (auto &ns : flc->project->registry().allNamespaces()) {
-          auto syms = flc->project->registry().getNamespaceSymbols(ns);
+        for (auto &ns : flc->project->registry().allModules()) {
+          auto syms = flc->project->registry().getModuleSymbols(ns);
           for (auto *sym : syms) {
             if (sym->kind != ExportedSymbol::ExtendBlock)
               continue;
@@ -1061,8 +1061,8 @@ static std::string inferExprTypeName(
 
       // 1b) Check cross-file extend methods
       if (flc && flc->project && flc->project->isValid()) {
-        for (auto &ns : flc->project->registry().allNamespaces()) {
-          auto syms = flc->project->registry().getNamespaceSymbols(ns);
+        for (auto &ns : flc->project->registry().allModules()) {
+          auto syms = flc->project->registry().getModuleSymbols(ns);
           for (auto *sym : syms) {
             if (sym->kind != ExportedSymbol::ExtendBlock)
               continue;
@@ -2604,7 +2604,7 @@ void CompletionProvider::addImportedSymbols(std::vector<CompletionItem> &items,
 
       bool isModule = modulePath.empty();
       if (!isModule && project && project->isValid()) {
-        isModule = project->registry().hasNamespace(importedPath);
+        isModule = project->registry().hasModule(importedPath);
       }
       // For `use std::X;` imports, the imported symbol may be a std module.
       if (!isModule && modulePath == "std") {
@@ -2790,7 +2790,7 @@ void CompletionProvider::addEnumWildcardVariants(std::vector<CompletionItem>& it
         }
 
         if (project && project->isValid()) {
-            for (auto& ns : project->registry().allNamespaces()) {
+            for (auto& ns : project->registry().allModules()) {
                 auto* sym = project->registry().findSymbol(ns, baseName);
                 if (!sym || sym->kind != ExportedSymbol::Enum) continue;
                 auto* decl = dynamic_cast<LucisParser::EnumDeclContext*>(sym->decl);
@@ -2940,14 +2940,14 @@ void CompletionProvider::addProjectSymbols(std::vector<CompletionItem> &items,
   if (!project || !project->isValid())
     return;
 
-  std::string currentNs = project->namespaceFor(filePath);
+  std::string currentModPath = project->modulePathFor(filePath);
 
-  // Same-namespace symbols declared in OTHER files.
-  // This is what makes `log()` from another file in `namespace Main`
+  // Same-module symbols declared in OTHER files.
+  // This is what makes symbols from another file in the same module
   // appear in general completion without requiring `use`.
-  if (!currentNs.empty()) {
+  if (!currentModPath.empty()) {
     auto sameNsExternal =
-        project->registry().getExternalSymbols(currentNs, filePath);
+        project->registry().getExternalSymbols(currentModPath, filePath);
     for (auto *sym : sameNsExternal) {
       if (sym->kind == ExportedSymbol::ExtendBlock)
         continue;
@@ -2962,7 +2962,7 @@ void CompletionProvider::addProjectSymbols(std::vector<CompletionItem> &items,
         ci.kind = CompletionKind::Function;
         auto *fd = dynamic_cast<LucisParser::FunctionDeclContext *>(sym->decl);
         if (fd) {
-          ci.detail = formatFuncSignature(fd) + " [" + currentNs + "]";
+          ci.detail = formatFuncSignature(fd) + " [" + currentModPath + "]";
           ci.documentation = "```lucis\n" + formatFuncSignature(fd) + "\n```";
 
           if (auto *params = fd->paramList();
@@ -2982,25 +2982,25 @@ void CompletionProvider::addProjectSymbols(std::vector<CompletionItem> &items,
             ci.insertText = sym->name + "()";
           }
         } else {
-          ci.detail = "function [" + currentNs + "]";
+          ci.detail = "function [" + currentModPath + "]";
         }
         break;
       }
       case ExportedSymbol::Struct:
         ci.kind = CompletionKind::Struct;
-        ci.detail = "struct " + sym->name + " [" + currentNs + "]";
+        ci.detail = "struct " + sym->name + " [" + currentModPath + "]";
         break;
       case ExportedSymbol::Enum:
         ci.kind = CompletionKind::Enum;
-        ci.detail = "enum " + sym->name + " [" + currentNs + "]";
+        ci.detail = "enum " + sym->name + " [" + currentModPath + "]";
         break;
       case ExportedSymbol::Union:
         ci.kind = CompletionKind::Struct;
-        ci.detail = "union " + sym->name + " [" + currentNs + "]";
+        ci.detail = "union " + sym->name + " [" + currentModPath + "]";
         break;
       case ExportedSymbol::TypeAlias:
         ci.kind = CompletionKind::Class;
-        ci.detail = "type " + sym->name + " [" + currentNs + "]";
+        ci.detail = "type " + sym->name + " [" + currentModPath + "]";
         break;
       default:
         continue;
@@ -3206,7 +3206,7 @@ void CompletionProvider::addStructFields(std::vector<CompletionItem> &items,
 
   // Cross-file struct
   if (project && project->isValid()) {
-    for (auto &ns : project->registry().allNamespaces()) {
+    for (auto &ns : project->registry().allModules()) {
       auto *sym = project->registry().findSymbol(ns, lookupName);
       if (!sym)
         continue;
@@ -3346,8 +3346,8 @@ void CompletionProvider::addExtendMethods(std::vector<CompletionItem> &items,
 
   // Cross-file extend blocks
   if (project && project->isValid()) {
-    for (auto &ns : project->registry().allNamespaces()) {
-      auto syms = project->registry().getNamespaceSymbols(ns);
+    for (auto &ns : project->registry().allModules()) {
+      auto syms = project->registry().getModuleSymbols(ns);
       for (auto *sym : syms) {
         if (sym->kind != ExportedSymbol::ExtendBlock)
           continue;
@@ -3623,7 +3623,7 @@ void CompletionProvider::addUseCompletions(std::vector<CompletionItem> &items,
     // Project namespaces
     if (project && project->isValid()) {
       std::unordered_set<std::string> seenTopLevel;
-      for (auto &ns : project->registry().allNamespaces()) {
+      for (auto &ns : project->registry().allModules()) {
         // Skip "std::" prefixed
         if (ns.substr(0, 5) == "std::")
           continue;
@@ -3639,7 +3639,7 @@ void CompletionProvider::addUseCompletions(std::vector<CompletionItem> &items,
         CompletionItem ci;
         ci.label = topLevel;
         ci.kind = CompletionKind::Module;
-        ci.detail = "namespace";
+        ci.detail = "module";
         ci.insertText = topLevel + "::";
         items.push_back(std::move(ci));
       }
@@ -3686,7 +3686,7 @@ void CompletionProvider::addUseCompletions(std::vector<CompletionItem> &items,
 
   // Case 4: User namespace — suggest exported symbols
   if (project && project->isValid()) {
-    auto syms = project->registry().getNamespaceSymbols(modulePath);
+    auto syms = project->registry().getModuleSymbols(modulePath);
     for (auto *sym : syms) {
       if (!matchesPrefix(sym->name, prefix))
         continue;
@@ -3747,7 +3747,7 @@ void CompletionProvider::addEnumVariants(std::vector<CompletionItem> &items,
 
   // Cross-file enum
   if (project && project->isValid()) {
-    for (auto &ns : project->registry().allNamespaces()) {
+    for (auto &ns : project->registry().allModules()) {
       auto *sym = project->registry().findSymbol(ns, enumName);
       if (!sym || sym->kind != ExportedSymbol::Enum)
         continue;
@@ -3816,7 +3816,7 @@ resolveImportedModuleAlias(const std::string &alias,
         return fullPath;
       }
       if (project && project->isValid() &&
-          project->registry().hasNamespace(fullPath)) {
+          project->registry().hasModule(fullPath)) {
         return fullPath;
       }
       return modulePath;
@@ -3906,8 +3906,8 @@ void CompletionProvider::addStaticMethods(std::vector<CompletionItem> &items,
 
   // Cross-file extend blocks
   if (project && project->isValid()) {
-    for (auto &ns : project->registry().allNamespaces()) {
-      auto syms = project->registry().getNamespaceSymbols(ns);
+    for (auto &ns : project->registry().allModules()) {
+      auto syms = project->registry().getModuleSymbols(ns);
       for (auto *sym : syms) {
         if (sym->kind != ExportedSymbol::ExtendBlock)
           continue;
@@ -4090,8 +4090,8 @@ void CompletionProvider::addTypeNames(std::vector<CompletionItem> &items,
 
   // Cross-file types
   if (project && project->isValid()) {
-    for (auto &ns : project->registry().allNamespaces()) {
-      auto syms = project->registry().getNamespaceSymbols(ns);
+    for (auto &ns : project->registry().allModules()) {
+      auto syms = project->registry().getModuleSymbols(ns);
       for (auto *sym : syms) {
         if (sym->kind != ExportedSymbol::Struct &&
             sym->kind != ExportedSymbol::Enum &&
@@ -4632,8 +4632,8 @@ std::string CompletionProvider::resolveMethodReturnType(
 
   // 5) Check extend methods from project (cross-file)
   if (project && project->isValid()) {
-    for (auto &ns : project->registry().allNamespaces()) {
-      auto syms = project->registry().getNamespaceSymbols(ns);
+    for (auto &ns : project->registry().allModules()) {
+      auto syms = project->registry().getModuleSymbols(ns);
       for (auto *sym : syms) {
         if (sym->kind != ExportedSymbol::ExtendBlock)
           continue;
@@ -4727,7 +4727,7 @@ std::string CompletionProvider::resolveFieldType(
 
   // 2) Cross-file user struct/union
   if (project && project->isValid()) {
-    for (auto &ns : project->registry().allNamespaces()) {
+    for (auto &ns : project->registry().allModules()) {
       auto *sym = project->registry().findSymbol(ns, receiverLookup);
       if (!sym)
         continue;

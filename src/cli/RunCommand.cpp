@@ -6,7 +6,6 @@
 #include "LLVM_IR/IRModule.h"
 #include "LLVM_Optimizer/Optimizer.h"
 #include "machine_code/CodeGen.h"
-#include "namespace/ProjectScanner.h"
 
 #include <iostream>
 #include <iomanip>
@@ -51,21 +50,12 @@ std::string RunCommand::resolveInputFile(const ArgParser& parser,
 
     if (outConfig) *outConfig = *config;
 
-    auto files = config->sourcePaths.empty()
-        ? ProjectScanner::scan(fs::current_path().string())
-        : ProjectScanner::scan(fs::current_path().string(), config->sourcePaths);
-
-    for (const auto& f : files) {
-        std::ifstream ifs(f);
-        if (!ifs) continue;
-        std::string content((std::istreambuf_iterator<char>(ifs)),
-                             std::istreambuf_iterator<char>());
-        if (content.find("namespace Main") == std::string::npos) continue;
-        if (content.find("main(") == std::string::npos) continue;
-        return f;
+    // Try main.lc in src/, then main.lc in project root
+    for (auto& candidate : { "src/main.lc", "main.lc" }) {
+        auto path = fs::path(candidate);
+        if (fs::exists(path))
+            return fs::canonical(path).string();
     }
-
-    if (!files.empty()) return files[0];
     return {};
 }
 
@@ -138,7 +128,7 @@ int RunCommand::run(const ArgParser& parser) {
                       << "] " << unit.filePath << "\n";
 
         IRGen irGen;
-        irGen.setNamespaceContext(pipeline->registry.get(), unit.namespaceName, unit.filePath);
+        irGen.setModuleContext(pipeline->registry.get(), unit.modulePath, unit.filePath);
         irGen.setCBindings(pipeline->cBindings.get());
         auto irMod = irGen.generate(unit.parseResult.tree, unit.filePath);
         if (!irMod) {

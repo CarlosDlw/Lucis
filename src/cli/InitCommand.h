@@ -51,8 +51,7 @@ public:
         auto mainPath = target / "src" / "main.lc";
         if (!fs::exists(mainPath)) {
             std::ofstream ofs(mainPath);
-            ofs << "namespace Main;\n\n"
-                << "use std::log::println;\n\n"
+            ofs << "use std::log::println;\n\n"
                 << "fn main() int32 {\n"
                 << "    println(\"Hello, Lucis!\");\n"
                 << "    ret 0;\n"

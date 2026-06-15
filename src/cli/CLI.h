@@ -5,7 +5,7 @@
 #include <memory>
 
 #include "parser/Parser.h"
-#include "namespace/NamespaceRegistry.h"
+#include "namespace/ModuleRegistry.h"
 
 class Command;
 

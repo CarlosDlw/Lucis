@@ -1,0 +1,60 @@
+namespace Main;
+
+use std::log::println;
+use std::test::{ assertEqual };
+
+fn testFloatMethodsExtra() int32 {
+    println("[Testing extra float methods...]");
+
+    float64 x = -3.7;
+    assertEqual(x.abs(), 3.7);
+    assertEqual(x.ceil(), -3.0);
+    assertEqual(x.floor(), -4.0);
+    assertEqual(x.round(), -4.0);
+    assertEqual(x.trunc(), -3.0);
+    assertEqual(x.fract() > 0.2, true);
+    assertEqual(x.fract() < 0.4, true);
+
+    float64 p = 9.0;
+    assertEqual(p.sqrt(), 3.0);
+    assertEqual((8.0).cbrt().toInt(), 2);
+    assertEqual((2.0).pow(3.0), 8.0);
+
+    assertEqual((1.0).exp().toInt(), 2);
+    assertEqual((3.0).exp2(), 8.0);
+    assertEqual((2.718281828).ln().toInt(), 0);
+    assertEqual((8.0).log2(), 3.0);
+    assertEqual((1000.0).log10(), 3.0);
+
+    assertEqual((0.0).sin(), 0.0);
+    assertEqual((0.0).cos(), 1.0);
+    assertEqual((0.0).tan(), 0.0);
+    assertEqual((0.0).asin(), 0.0);
+    assertEqual((1.0).acos(), 0.0);
+    assertEqual((0.0).atan(), 0.0);
+    assertEqual((1.0).atan2(1.0).toString().contains("0.7"), true);
+
+    assertEqual((0.0).sinh(), 0.0);
+    assertEqual((0.0).cosh(), 1.0);
+    assertEqual((0.0).tanh(), 0.0);
+    assertEqual((3.0).hypot(4.0), 5.0);
+
+    assertEqual((0.0).lerp(10.0, 0.25), 2.5);
+    assertEqual((-3.0).copySign(2.0), 3.0);
+    assertEqual((-3.0).copySign(-2.0), -3.0);
+    assertEqual((-3.0).sign(), -1.0);
+
+    assertEqual((0.0 / 0.0).isNaN(), true);
+    assertEqual((1.0 / 0.0).isInf(), true);
+    assertEqual((1.0).isFinite(), true);
+    assertEqual((1.0).isNormal(), true);
+    assertEqual((-1.0).isNegative(), true);
+
+    assertEqual((180.0).toRadians().toString().contains("3.14"), true);
+    assertEqual((3.141592653589793).toDegrees().toInt(), 180);
+    assertEqual((3.1415926535).toStringPrecision(2).contains("3.14"), true);
+    assertEqual((1.0).toBits() > 0, true);
+
+    println("✔ extra float method tests passed");
+    ret 0;
+}

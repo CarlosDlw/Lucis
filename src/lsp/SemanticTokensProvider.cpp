@@ -46,7 +46,6 @@ static inline void emit(std::vector<RawSemanticToken>& out,
 // Keyword token types (by lexer token id)
 static bool isKeyword(size_t tokenType) {
     switch (tokenType) {
-        case LucisLexer::NAMESPACE: case LucisLexer::USE: case LucisLexer::RET:
         case LucisLexer::STRUCT: case LucisLexer::UNION: case LucisLexer::ENUM:
         case LucisLexer::FN: case LucisLexer::TYPE: case LucisLexer::AS:
         case LucisLexer::IS: case LucisLexer::SIZEOF: case LucisLexer::TYPEOF:
@@ -130,13 +129,6 @@ static void classifyIdent(IdentMap& map, antlr4::tree::TerminalNode* node,
 // Walk the parse tree to classify IDENTIFIER tokens by their context.
 static void walkTree(IdentMap& map, antlr4::tree::ParseTree* node) {
     if (!node) return;
-
-    // ── namespace ──
-    if (auto* ctx = dynamic_cast<LucisParser::NamespaceDeclContext*>(node)) {
-        classifyIdent(map, ctx->IDENTIFIER(),
-                      SemanticTokenType::Namespace,
-                      static_cast<uint32_t>(SemanticTokenMod::Declaration));
-    }
 
     // ── use ── modulePath identifiers are namespaces
     else if (auto* ctx = dynamic_cast<LucisParser::ModulePathContext*>(node)) {

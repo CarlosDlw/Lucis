@@ -1,0 +1,186 @@
+namespace Main;
+
+use std::log::println;
+use std::test::{ assertEqual };
+
+fn arrayParamLenAndFirst([]string names) int32 {
+    // Methods currently supported directly on []T parameters (slice lowering path)
+    assertEqual(names.len(), 3);
+    assertEqual(names.isEmpty(), false);
+    assertEqual(names.at(0), "carlos");
+    assertEqual(names.first(), "carlos");
+    assertEqual(names.last(), "lucis");
+    assertEqual(names.at(1), "dlw");
+    assertEqual(names.at(2), "lucis");
+    assertEqual(typeof(names), "[]string");
+
+    // Full string-array method coverage using a local array value.
+    []string localNames = ["carlos", "dlw", "lucis"];
+    assertEqual(localNames.contains("dlw"), true);
+    assertEqual(localNames.indexOf("dlw"), 1);
+    assertEqual(localNames.lastIndexOf("dlw"), 1);
+    assertEqual(localNames.count("dlw"), 1);
+
+    []string namesCopy = localNames.copy();
+    assertEqual(namesCopy.equals(localNames), true);
+
+    []string middle = localNames.slice(1, 3);
+    assertEqual(middle.equals(["dlw", "lucis"]), true);
+
+    assertEqual(localNames.toString().contains("carlos"), true);
+    assertEqual(localNames.join("-").contains("dlw"), true);
+
+    // Mutating methods on independent arrays
+    []string rotated = localNames.copy();
+    rotated.rotate(1);
+    assertEqual(rotated.equals(["lucis", "carlos", "dlw"]), true);
+    rotated.rotate(-1);
+    assertEqual(rotated.equals(localNames), true);
+
+    []string swapped = localNames.copy();
+    swapped.swap(0, 2);
+    assertEqual(swapped.equals(["lucis", "dlw", "carlos"]), true);
+
+    []string reversed = localNames.copy();
+    reversed.reverse();
+    assertEqual(reversed.equals(["lucis", "dlw", "carlos"]), true);
+
+    []string filled = localNames.copy();
+    filled.fill("x");
+    assertEqual(filled.equals(["x", "x", "x"]), true);
+
+    // Numeric-only methods validated from docs list
+    []int32 numeric = [1, 2, 3, 4, 5];
+    assertEqual(numeric.sum(), 15);
+    assertEqual(numeric.product(), 120);
+    assertEqual(numeric.min(), 1);
+    assertEqual(numeric.max(), 5);
+    assertEqual(numeric.minIndex(), 0);
+    assertEqual(numeric.maxIndex(), 4);
+    assertEqual(numeric.average(), 3.0);
+
+    []int32 order = [30, 10, 20];
+    assertEqual(order.isSorted(), false);
+    order.sort();
+    assertEqual(order.equals([10, 20, 30]), true);
+    assertEqual(order.isSorted(), true);
+    order.sortDesc();
+    assertEqual(order.equals([30, 20, 10]), true);
+
+    ret names.len();
+}
+
+fn testArrayFeaturesFull() int32 {
+    println("[Testing full array feature/method coverage...]");
+
+    // Declaration forms
+    [5]int32 fixed = [10, 20, 30, 40, 50];
+    []int32 inferred = [1, 2, 3, 4, 5];
+    [3]float64 coords = [1.0, 2.5, 3.7];
+    [6]char hello = ['H', 'e', 'l', 'l', 'o', '\0'];
+
+    assertEqual(fixed.len(), 5);
+    assertEqual(inferred.len(), 5);
+    assertEqual(coords.len(), 3);
+
+    // Indexing + assignment
+    assertEqual(inferred[0], 1);
+    inferred[2] = 99;
+    assertEqual(inferred[2], 99);
+
+    // Multi-dimensional arrays
+    [][]int32 matrix = [[1, 2, 3], [4, 5, 6]];
+    assertEqual(matrix[0][0], 1);
+    assertEqual(matrix[0][2], 3);
+    assertEqual(matrix[1][1], 5);
+    matrix[1][2] = 42;
+    assertEqual(matrix[1][2], 42);
+
+    // Core methods
+    []int32 arr = [30, 10, 20, 10, 40];
+    assertEqual(arr.len(), 5);
+    assertEqual(arr.isEmpty(), false);
+    assertEqual(arr.at(2), 20);
+    assertEqual(arr.first(), 30);
+    assertEqual(arr.last(), 40);
+    assertEqual(arr.contains(10), true);
+    assertEqual(arr.indexOf(10), 1);
+    assertEqual(arr.lastIndexOf(10), 3);
+    assertEqual(arr.count(10), 2);
+
+    []int32 filled = [1, 2, 3, 4, 5];
+    filled.fill(7);
+    assertEqual(filled.equals([7, 7, 7, 7, 7]), true);
+
+    []int32 swapped = [1, 2, 3, 4, 5];
+    swapped.swap(0, 4);
+    assertEqual(swapped.equals([5, 2, 3, 4, 1]), true);
+
+    []int32 rev = [1, 2, 3, 4, 5];
+    rev.reverse();
+    assertEqual(rev.equals([5, 4, 3, 2, 1]), true);
+
+    []int32 copied = arr.copy();
+    assertEqual(copied.equals(arr), true);
+
+    []int32 sliced = arr.slice(1, 4);
+    assertEqual(sliced.equals([10, 20, 10]), true);
+
+    []int32 nums = [1, 2, 3, 4, 5];
+    assertEqual(nums.sum(), 15);
+    assertEqual(nums.product(), 120);
+    assertEqual(nums.min(), 1);
+    assertEqual(nums.max(), 5);
+    assertEqual(nums.minIndex(), 0);
+    assertEqual(nums.maxIndex(), 4);
+    assertEqual(nums.average(), 3.0);
+
+    []int32 order = [30, 10, 20];
+    assertEqual(order.isSorted(), false);
+    order.sort();
+    assertEqual(order.equals([10, 20, 30]), true);
+    assertEqual(order.isSorted(), true);
+    order.sortDesc();
+    assertEqual(order.equals([30, 20, 10]), true);
+
+    []int32 eqA = [1, 2, 3];
+    []int32 eqB = [1, 2, 3];
+    assertEqual(eqA.equals(eqB), true);
+
+    assertEqual(eqA.toString().contains("["), true);
+    assertEqual(eqA.join("-").contains("-"), true);
+
+    []int32 rot = [1, 2, 3, 4];
+    rot.rotate(1);
+    assertEqual(rot.equals([4, 1, 2, 3]), true);
+    rot.rotate(-1);
+    assertEqual(rot.equals([1, 2, 3, 4]), true);
+
+    // List comprehensions
+    [4]int32 seq = [x | for int32 x in 0..4];
+    assertEqual(seq.equals([0, 1, 2, 3]), true);
+
+    [4]int32 squares = [x * x | for int32 x in 0..4];
+    assertEqual(squares.equals([0, 1, 4, 9]), true);
+
+    [5]int32 incl = [x | for int32 x in 1..=5];
+    assertEqual(incl.equals([1, 2, 3, 4, 5]), true);
+
+    [8]int32 evens = [x | for int32 x in 0..8 if x % 2 == 0];
+    assertEqual(evens.equals([0, 2, 4, 6, 0, 0, 0, 0]), true);
+
+    [6]int32 oddSquares = [x * x | for int32 x in 0..6 if x % 2 != 0];
+    assertEqual(oddSquares.equals([1, 9, 25, 0, 0, 0]), true);
+
+    // Array decay + pointer dereference (explicit parentheses to avoid cast precedence ambiguity)
+    char firstChar = *((&hello) as *char);
+    assertEqual(firstChar, 'H');
+
+    // Regression: []string parameter should lower as slice and keep correct values.
+    []string names = ["carlos", "dlw", "lucis"];
+    assertEqual(arrayParamLenAndFirst(names), 3);
+    assertEqual(arrayParamLenAndFirst(["carlos", "dlw", "lucis"]), 3);
+
+    println("✔ full array feature/method tests passed");
+    ret 0;
+}

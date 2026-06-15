@@ -3,7 +3,7 @@
 #include "lsp/DocComment.h"
 #include "parser/Parser.h"
 #include "ffi/CHeaderResolver.h"
-#include "namespace/NamespaceRegistry.h"
+#include "namespace/ModuleRegistry.h"
 #include "imports/ImportResolver.h"
 
 #include <sstream>
@@ -262,14 +262,6 @@ std::optional<HoverResult> HoverProvider::hover(const std::string& source,
 
     // Walk the parse tree to find the context of this token.
     // Strategy: iterate top-level declarations and expressions to find a match.
-
-    // ── Namespace declaration: namespace Main; ──────────────────────
-    if (auto* nsDecl = parsed.tree->namespaceDecl()) {
-        if (nsDecl->IDENTIFIER() && nsDecl->IDENTIFIER()->getSymbol() == hoveredToken) {
-            std::string md = "```lucis\n(namespace) " + tokenText + "\n```";
-            return makeResult(hoveredToken, md);
-        }
-    }
 
     // ── Use declarations: use Utils::{ add, Role, User }; ──────────
     for (auto* pre : parsed.tree->preambleDecl()) {
@@ -657,7 +649,7 @@ std::optional<HoverResult> HoverProvider::hoverIdent(
 
     // 3) Cross-file symbol from project registry (imported via `use`)
     if (project && project->isValid()) {
-        for (auto& ns : project->registry().allNamespaces()) {
+        for (auto& ns : project->registry().allModules()) {
             auto* sym = project->registry().findSymbol(ns, name);
             if (!sym) continue;
 
@@ -1167,8 +1159,8 @@ std::optional<HoverResult> HoverProvider::walkExprForHover(
 
             // Search cross-file structs
             if (project && project->isValid()) {
-                for (auto& ns : project->registry().allNamespaces()) {
-                    auto syms = project->registry().getNamespaceSymbols(ns);
+                for (auto& ns : project->registry().allModules()) {
+                    auto syms = project->registry().getModuleSymbols(ns);
                     for (auto* sym : syms) {
                         if (sym->kind != ExportedSymbol::Struct) continue;
                         auto* sd = dynamic_cast<LucisParser::StructDeclContext*>(sym->decl);
@@ -1322,7 +1314,7 @@ std::optional<HoverResult> HoverProvider::walkExprForHover(
                         "```lucis\n(intrinsic namespace) " + ns + "\n```");
                 }
 
-                // Type/namespace: resolve only the first segment as type symbol.
+                // Type/module: resolve only the first segment as type symbol.
                 if (i == 0) {
                     if (auto modulePath = resolveImportedModuleAliasPath(hoveredToken, tree)) {
                         return makeResult(hoveredToken,
@@ -1434,7 +1426,7 @@ std::optional<HoverResult> HoverProvider::walkExprForHover(
                     if (auto h = buildCallHover(fd)) return h;
                 }
                 if (project && project->isValid()) {
-                    for (auto& ns : project->registry().allNamespaces()) {
+                    for (auto& ns : project->registry().allModules()) {
                         auto* sym = project->registry().findSymbol(ns, funcName);
                         if (!sym || sym->kind != ExportedSymbol::Function) continue;
                         auto* fd = dynamic_cast<LucisParser::FunctionDeclContext*>(sym->decl);
@@ -1485,8 +1477,8 @@ std::optional<HoverResult> HoverProvider::walkExprForHover(
                 }
                 // Cross-file struct fields
                 if (project && project->isValid()) {
-                    for (auto& ns : project->registry().allNamespaces()) {
-                        auto syms = project->registry().getNamespaceSymbols(ns);
+                    for (auto& ns : project->registry().allModules()) {
+                        auto syms = project->registry().getModuleSymbols(ns);
                         for (auto* sym : syms) {
                             if (sym->kind != ExportedSymbol::Struct ||
                                 sym->name != structName) continue;
@@ -2822,8 +2814,8 @@ std::optional<HoverResult> HoverProvider::walkStmtForHover(
                         }
 
                         if (project && project->isValid()) {
-                            for (auto& ns : project->registry().allNamespaces()) {
-                                for (auto* sym : project->registry().getNamespaceSymbols(ns)) {
+                            for (auto& ns : project->registry().allModules()) {
+                                for (auto* sym : project->registry().getModuleSymbols(ns)) {
                                     if (sym->kind != ExportedSymbol::ExtendBlock) continue;
                                     auto* ext = dynamic_cast<LucisParser::ExtendDeclContext*>(sym->decl);
                                     if (!ext) continue;
@@ -3028,7 +3020,7 @@ std::optional<HoverResult> HoverProvider::hoverTypeName(
 
     // Cross-file type from project registry
     if (project && project->isValid()) {
-        for (auto& ns : project->registry().allNamespaces()) {
+        for (auto& ns : project->registry().allModules()) {
             auto* sym = project->registry().findSymbol(ns, name);
             if (!sym) continue;
             if (sym->kind == ExportedSymbol::Struct) {
@@ -3338,8 +3330,8 @@ std::optional<HoverResult> HoverProvider::hoverMethodCall(
 
     // Cross-file extend blocks from project registry
     if (project && project->isValid()) {
-        for (auto& ns : project->registry().allNamespaces()) {
-            auto syms = project->registry().getNamespaceSymbols(ns);
+        for (auto& ns : project->registry().allModules()) {
+            auto syms = project->registry().getModuleSymbols(ns);
             for (auto* sym : syms) {
                 if (sym->kind != ExportedSymbol::ExtendBlock) continue;
                 auto* ext = dynamic_cast<LucisParser::ExtendDeclContext*>(sym->decl);
@@ -3505,8 +3497,8 @@ std::optional<HoverResult> HoverProvider::hoverFieldAccess(
 
     // Search project registry for cross-file struct fields
     if (project && project->isValid()) {
-        for (auto& ns : project->registry().allNamespaces()) {
-            auto syms = project->registry().getNamespaceSymbols(ns);
+        for (auto& ns : project->registry().allModules()) {
+            auto syms = project->registry().getModuleSymbols(ns);
             for (auto* sym : syms) {
                 if (sym->kind == ExportedSymbol::Struct) {
                     auto* sd = dynamic_cast<LucisParser::StructDeclContext*>(sym->decl);
@@ -3603,7 +3595,7 @@ std::optional<HoverResult> HoverProvider::hoverEnumAccess(
 
     // Cross-file enum from project registry
     if (project && project->isValid()) {
-        for (auto& ns : project->registry().allNamespaces()) {
+        for (auto& ns : project->registry().allModules()) {
             auto* sym = project->registry().findSymbol(ns, typeName);
             if (!sym || sym->kind != ExportedSymbol::Enum) continue;
             auto* enumCtx = dynamic_cast<LucisParser::EnumDeclContext*>(sym->decl);
@@ -3680,26 +3672,6 @@ std::optional<HoverResult> HoverProvider::hoverStaticMethodCall(
         return std::nullopt;
     }
 
-    // std module calls, e.g. std::log::println(...)
-    if (NamespaceRegistry::isStdModule(ownerPath)) {
-        if (const auto* sig = builtinRegistry_.lookup(methodName)) {
-            std::ostringstream ss;
-            ss << "```lucis\n(function) " << sig->returnType << " " << ownerPath
-               << "::" << methodName << "(";
-            for (size_t i = 0; i < sig->paramTypes.size(); ++i) {
-                if (i > 0) ss << ", ";
-                ss << sig->paramTypes[i];
-            }
-            if (sig->isVariadic) {
-                if (!sig->paramTypes.empty()) ss << ", ";
-                ss << "...";
-            }
-            ss << ")\n```";
-            return makeResult(token, ss.str());
-        }
-        return std::nullopt;
-    }
-
     // Check user extend block static methods
     for (auto* tld : tree->topLevelDecl()) {
         auto* ext = tld->extendDecl();
@@ -3748,8 +3720,8 @@ std::optional<HoverResult> HoverProvider::hoverStaticMethodCall(
 
     // Cross-file extend blocks
     if (project && project->isValid()) {
-        for (auto& ns : project->registry().allNamespaces()) {
-            auto syms = project->registry().getNamespaceSymbols(ns);
+        for (auto& ns : project->registry().allModules()) {
+            auto syms = project->registry().getModuleSymbols(ns);
             for (auto* sym : syms) {
                 if (sym->kind != ExportedSymbol::ExtendBlock) continue;
                 auto* ext = dynamic_cast<LucisParser::ExtendDeclContext*>(sym->decl);
@@ -3998,7 +3970,7 @@ static std::string lookupFuncReturnType(
 
     // 3) Cross-file functions (imported via `use`)
     if (flc->project && flc->project->isValid()) {
-        for (auto& ns : flc->project->registry().allNamespaces()) {
+        for (auto& ns : flc->project->registry().allModules()) {
             auto* sym = flc->project->registry().findSymbol(ns, funcName);
             if (!sym) continue;
             if (sym->kind == ExportedSymbol::Function) {
@@ -4029,7 +4001,7 @@ static LucisParser::FunctionDeclContext* findFunctionDeclForInference(
         }
     }
     if (flc->project && flc->project->isValid()) {
-        for (auto& ns : flc->project->registry().allNamespaces()) {
+        for (auto& ns : flc->project->registry().allModules()) {
             auto* sym = flc->project->registry().findSymbol(ns, name);
             if (!sym || sym->kind != ExportedSymbol::Function) continue;
             if (auto* fd = dynamic_cast<LucisParser::FunctionDeclContext*>(sym->decl))
@@ -4051,7 +4023,7 @@ static LucisParser::EnumDeclContext* findEnumDeclForInference(
         }
     }
     if (flc->project && flc->project->isValid()) {
-        for (auto& ns : flc->project->registry().allNamespaces()) {
+        for (auto& ns : flc->project->registry().allModules()) {
             auto* sym = flc->project->registry().findSymbol(ns, name);
             if (!sym || sym->kind != ExportedSymbol::Enum) continue;
             if (auto* ed = dynamic_cast<LucisParser::EnumDeclContext*>(sym->decl))
@@ -4073,7 +4045,7 @@ static LucisParser::StructDeclContext* findStructDeclForInference(
         }
     }
     if (flc->project && flc->project->isValid()) {
-        for (auto& ns : flc->project->registry().allNamespaces()) {
+        for (auto& ns : flc->project->registry().allModules()) {
             auto* sym = flc->project->registry().findSymbol(ns, name);
             if (!sym || sym->kind != ExportedSymbol::Struct) continue;
             if (auto* sd = dynamic_cast<LucisParser::StructDeclContext*>(sym->decl))
@@ -4095,7 +4067,7 @@ static LucisParser::UnionDeclContext* findUnionDeclForInference(
         }
     }
     if (flc->project && flc->project->isValid()) {
-        for (auto& ns : flc->project->registry().allNamespaces()) {
+        for (auto& ns : flc->project->registry().allModules()) {
             auto* sym = flc->project->registry().findSymbol(ns, name);
             if (!sym || sym->kind != ExportedSymbol::Union) continue;
             if (auto* ud = dynamic_cast<LucisParser::UnionDeclContext*>(sym->decl))
@@ -4387,11 +4359,6 @@ static std::string inferExprTypeName(
                 }
             }
 
-            if (NamespaceRegistry::isStdModule(ownerPath) && flc && flc->builtinReg) {
-                if (auto* sig = flc->builtinReg->lookup(methodName))
-                    return sig->returnType;
-            }
-
             // Check user-defined extend blocks in current file
             if (flc && flc->tree) {
                 for (auto* tld : flc->tree->topLevelDecl()) {
@@ -4445,8 +4412,8 @@ static std::string inferExprTypeName(
 
             // Check cross-file extend blocks
             if (flc && flc->project && flc->project->isValid()) {
-                for (auto& ns : flc->project->registry().allNamespaces()) {
-                    auto syms = flc->project->registry().getNamespaceSymbols(ns);
+                for (auto& ns : flc->project->registry().allModules()) {
+                    auto syms = flc->project->registry().getModuleSymbols(ns);
                     for (auto* sym : syms) {
                         if (sym->kind != ExportedSymbol::ExtendBlock) continue;
                         auto* ext = dynamic_cast<LucisParser::ExtendDeclContext*>(sym->decl);
@@ -4512,8 +4479,8 @@ static std::string inferExprTypeName(
 
             // 1b) Check cross-file extend methods
             if (flc && flc->project && flc->project->isValid()) {
-                for (auto& ns : flc->project->registry().allNamespaces()) {
-                    auto syms = flc->project->registry().getNamespaceSymbols(ns);
+                for (auto& ns : flc->project->registry().allModules()) {
+                    auto syms = flc->project->registry().getModuleSymbols(ns);
                     for (auto* sym : syms) {
                         if (sym->kind != ExportedSymbol::ExtendBlock) continue;
                         auto* ext = dynamic_cast<LucisParser::ExtendDeclContext*>(sym->decl);

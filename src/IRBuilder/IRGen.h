@@ -22,7 +22,7 @@
 #include "intrinsics/IntrinsicRegistry.h"
 #include "ffi/ABIInfo.h"
 
-class NamespaceRegistry;
+class ModuleRegistry;
 class CBindings;
 struct CStructMacro;
 
@@ -34,10 +34,10 @@ public:
     std::unique_ptr<IRModule> generate(LucisParser::ProgramContext* tree,
                                        const std::string& moduleName);
 
-    // Set namespace context for cross-file symbol resolution and mangling.
-    void setNamespaceContext(const NamespaceRegistry* registry,
-                             const std::string& currentNamespace,
-                             const std::string& currentFile);
+    // Set module context for cross-file symbol resolution and mangling.
+    void setModuleContext(const ModuleRegistry* registry,
+                          const std::string& modulePath,
+                          const std::string& currentFile);
 
     // Set C bindings from parsed #include headers.
     void setCBindings(const CBindings* bindings);
@@ -263,16 +263,16 @@ private:
     std::unordered_map<std::string,
         std::unordered_map<std::string, MethodEntry>> staticStructMethods_;
 
-    // Namespace context for cross-file resolution
-    const NamespaceRegistry* nsRegistry_ = nullptr;
-    std::string currentNamespace_;
+    // Module context for cross-file resolution
+    const ModuleRegistry* moduleRegistry_ = nullptr;
+    std::string currentModulePath_;
     std::string currentFile_;
 
     // Maps unmangled symbol name → mangled LLVM function name
     // Built during visitProgram to resolve calls efficiently.
     std::unordered_map<std::string, std::string> callTargetMap_;
 
-    // User imports: symbol name → source namespace
+    // User imports: symbol name → source module path
     std::unordered_map<std::string, std::string> userImports_;
 
     // Injected enum variant names from `use EnumType::*;`

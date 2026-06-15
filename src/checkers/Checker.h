@@ -14,7 +14,7 @@
 #include "types/ExtendedTypeRegistry.h"
 #include "types/BuiltinRegistry.h"
 #include "intrinsics/IntrinsicRegistry.h"
-#include "namespace/NamespaceRegistry.h"
+#include "namespace/ModuleRegistry.h"
 #include "lsp/Diagnostic.h"
 
 class CBindings;
@@ -27,10 +27,10 @@ public:
     const std::vector<std::string>& errors() const { return errors_; }
     const std::vector<Diagnostic>& diagnostics() const { return diagnostics_; }
 
-    // Set namespace context for cross-file symbol resolution.
-    void setNamespaceContext(const NamespaceRegistry* registry,
-                             const std::string& currentNamespace,
-                             const std::string& currentFile);
+    // Set module context for cross-file symbol resolution.
+    void setModuleContext(const ModuleRegistry* registry,
+                          const std::string& modulePath,
+                          const std::string& currentFile);
 
     // Set C bindings from parsed #include headers.
     void setCBindings(const CBindings* bindings);
@@ -236,12 +236,12 @@ private:
                                   antlr4::ParserRuleContext* ctx,
                                   const std::vector<LucisParser::ExpressionContext*>& args);
 
-    // ── Namespace context (set by CLI before check) ─────────────────
-    const NamespaceRegistry* nsRegistry_  = nullptr;
-    std::string currentNamespace_;
+    // ── Module context (set by CLI before check) ────────────────────
+    const ModuleRegistry* moduleRegistry_ = nullptr;
+    std::string currentModulePath_;
     std::string currentFile_;
 
-    // User imports: symbol name → namespace it was imported from
+    // User imports: symbol name → module path it was imported from
     std::unordered_map<std::string, std::string> userImports_;
 
     // Injected enum variant names from `use EnumType::*;`
@@ -267,7 +267,7 @@ private:
     // C global variables: name → type
     std::unordered_map<std::string, const TypeInfo*> cGlobals_;
 
-    // Check if a function is known (local, same-namespace, imported, or builtin)
+    // Check if a function is known (local, same-module, imported, or builtin)
     bool isKnownFunction(const std::string& name) const;
     bool isKnownType(const std::string& name) const;
 

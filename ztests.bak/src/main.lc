@@ -1,0 +1,5 @@
+namespace Main;
+
+fn main() int32 {
+    ret 0;
+}

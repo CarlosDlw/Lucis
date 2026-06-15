@@ -23,10 +23,6 @@ public:
     return visitChildren(ctx);
   }
 
-  virtual std::any visitNamespaceDecl(LucisParser::NamespaceDeclContext *ctx) override {
-    return visitChildren(ctx);
-  }
-
   virtual std::any visitUseRoot(LucisParser::UseRootContext *ctx) override {
     return visitChildren(ctx);
   }

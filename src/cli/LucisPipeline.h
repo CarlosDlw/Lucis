@@ -5,43 +5,40 @@
 #include <memory>
 
 #include "parser/Parser.h"
-#include "namespace/NamespaceRegistry.h"
+#include "namespace/ModuleRegistry.h"
 #include "ffi/CBindings.h"
 #include "types/TypeRegistry.h"
 
 struct SourceUnit {
     std::string filePath;
-    std::string namespaceName;
+    std::string modulePath;
     ParseResult parseResult;
 };
 
-// Result of the shared pipeline (scan → parse → namespace → C headers → check).
 struct PipelineResult {
     std::string projectRoot;
     std::string buildDir;
     std::vector<SourceUnit> units;
 
-    std::unique_ptr<NamespaceRegistry> registry;
+    std::unique_ptr<ModuleRegistry> registry;
     std::unique_ptr<CBindings> cBindings;
     std::unique_ptr<TypeRegistry> cTypeReg;
     std::vector<std::string> cSourceFiles;
 
-    // Auto-detected linker flags from C header resolution
     std::vector<std::string> linkerFlags;
 
     bool hasErrors = false;
 };
 
-// Shared compilation pipeline steps (scan → parse → namespace → C → check).
 class LucisPipeline {
 public:
     struct Options {
         std::string inputFile;
         std::vector<std::string> includePaths;
         std::vector<std::string> userLinkerFlags;
-        std::string binaryName;   // from lucis.yaml, used as default output name
-        std::string outDir;       // from lucis.yaml out_dir (default: build)
-        std::vector<std::string> stdlibPaths; // Additional stdlib search paths
+        std::string binaryName;
+        std::string outDir;
+        std::vector<std::string> stdlibPaths;
         bool quiet = false;
     };
 
@@ -49,5 +46,10 @@ public:
 
 private:
     static std::string getProjectRoot(const std::string& inputFile);
-    static std::string extractNamespace(LucisParser::ProgramContext* tree);
+    static std::string filePathToModulePath(const std::string& filePath,
+                                             const std::string& projectRoot);
+    static std::string resolveUseToFile(const std::string& useIdent,
+                                         const std::string& projectRoot,
+                                         const std::vector<std::string>& searchDirs);
+    static std::vector<std::string> extractUseModulePaths(LucisParser::ProgramContext* tree);
 };

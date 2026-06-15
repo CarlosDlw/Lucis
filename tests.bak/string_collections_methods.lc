@@ -1,0 +1,27 @@
+namespace Main;
+
+use std::log::println;
+use std::test::{ assertEqual };
+
+fn testStringCollectionsMethods() int32 {
+    println("[Testing string collection methods...]");
+
+    string base = "a,b,c";
+    vec<string> parts = base.split(",");
+    assertEqual(parts.len(), 3);
+
+    vec<char> chars = "abc".chars();
+    assertEqual(chars.len(), 3);
+
+    vec<uint8> bytes = "AZ".bytes();
+    assertEqual(bytes.len(), 2);
+
+    vec<string> lines = "x\ny\nz".lines();
+    assertEqual(lines.len(), 3);
+
+    vec<string> words = "one two   three".words();
+    assertEqual(words.len(), 3);
+
+    println("✔ string collection method tests passed");
+    ret 0;
+}

@@ -812,9 +812,9 @@ bool Checker::check(LucisParser::ProgramContext* tree) {
     checkUseDecls(tree);
 
     // Pass 1.5: register cross-file structs, enums, and functions
-    // from same namespace and user imports, so type resolution works.
+    // from same module and user imports, so type resolution works.
     // Process in dependency order: struct/union skeletons first, then enums/typeAliases.
-    if (nsRegistry_) {
+    if (moduleRegistry_) {
         // First pass: register struct/union skeletons so enum payloads can reference them
         for (auto* decl : tree->topLevelDecl()) {
             if (auto* sd = decl->structDecl()) {
@@ -852,9 +852,9 @@ bool Checker::check(LucisParser::ProgramContext* tree) {
             }
         }
 
-        // Same-namespace external symbols
-        auto extSyms = nsRegistry_->getExternalSymbols(
-            currentNamespace_, currentFile_);
+        // Same-module external symbols
+        auto extSyms = moduleRegistry_->getExternalSymbols(
+            currentModulePath_, currentFile_);
 
         // Pre-register skeletons for external structs and unions so recursive
         // dependencies do not trigger duplicate full type registration.
@@ -880,7 +880,7 @@ bool Checker::check(LucisParser::ProgramContext* tree) {
             }
         }
         for (auto& [symName, ns] : userImports_) {
-            auto* sym = nsRegistry_->findSymbol(ns, symName);
+            auto* sym = moduleRegistry_->findSymbol(ns, symName);
             if (!sym) continue;
             if (sym->kind == ExportedSymbol::Struct &&
                 !typeRegistry_.lookup(sym->name) &&
@@ -919,10 +919,10 @@ bool Checker::check(LucisParser::ProgramContext* tree) {
 
                 if (!ts->IDENTIFIER()) return;
                 auto baseName = ts->IDENTIFIER()->getText();
-                auto* depSym = nsRegistry_->findSymbol(ns, baseName);
+                auto* depSym = moduleRegistry_->findSymbol(ns, baseName);
                 if (!depSym) {
-                    for (auto& candidateNs : nsRegistry_->allNamespaces()) {
-                        depSym = nsRegistry_->findSymbol(candidateNs, baseName);
+                    for (auto& candidateNs : moduleRegistry_->allModules()) {
+                        depSym = moduleRegistry_->findSymbol(candidateNs, baseName);
                         if (depSym) break;
                     }
                 }
@@ -986,7 +986,7 @@ bool Checker::check(LucisParser::ProgramContext* tree) {
             }
         }
         for (auto& [symName, ns] : userImports_) {
-            auto* sym = nsRegistry_->findSymbol(ns, symName);
+            auto* sym = moduleRegistry_->findSymbol(ns, symName);
             if (!sym) continue;
             if (sym->kind == ExportedSymbol::Enum) {
                 if (typeRegistry_.lookup(sym->name) || genericEnumTemplates_.count(sym->name))
@@ -1012,7 +1012,7 @@ bool Checker::check(LucisParser::ProgramContext* tree) {
                 auto* decl = static_cast<LucisParser::StructDeclContext*>(sym->decl);
                 for (auto* field : decl->structField())
                     ensureTypeDependencyFromSpec(
-                        ensureTypeDependencyFromSpec, field->typeSpec(), currentNamespace_);
+                        ensureTypeDependencyFromSpec, field->typeSpec(), currentModulePath_);
                 checkStructDecl(decl);
             } else if (sym->kind == ExportedSymbol::Union) {
                 if (genericUnionTemplates_.count(sym->name))
@@ -1023,12 +1023,12 @@ bool Checker::check(LucisParser::ProgramContext* tree) {
                 auto* decl = static_cast<LucisParser::UnionDeclContext*>(sym->decl);
                 for (auto* field : decl->unionField())
                     ensureTypeDependencyFromSpec(
-                        ensureTypeDependencyFromSpec, field->typeSpec(), currentNamespace_);
+                        ensureTypeDependencyFromSpec, field->typeSpec(), currentModulePath_);
                 checkUnionDecl(decl);
             }
         }
         for (auto& [symName, ns] : userImports_) {
-            auto* sym = nsRegistry_->findSymbol(ns, symName);
+            auto* sym = moduleRegistry_->findSymbol(ns, symName);
             if (!sym) continue;
             if (sym->kind == ExportedSymbol::Struct) {
                 if (genericStructTemplates_.count(sym->name))
@@ -1056,7 +1056,7 @@ bool Checker::check(LucisParser::ProgramContext* tree) {
         }
 
         // Phase B.5: extend blocks for imported structs (auto-resolved)
-        // When a struct is imported, its extend blocks from the same namespace
+        // When a struct is imported, its extend blocks from the same module
         // must also be registered so methods like Type::new() work.
         for (auto* sym : extSyms) {
             if (sym->kind == ExportedSymbol::ExtendBlock) {
@@ -1066,12 +1066,12 @@ bool Checker::check(LucisParser::ProgramContext* tree) {
         }
         for (auto& [symName, ns] : userImports_) {
             // For each imported struct, look for its extend block in the same ns
-            auto* sym = nsRegistry_->findSymbol(ns, symName);
+            auto* sym = moduleRegistry_->findSymbol(ns, symName);
             if (!sym || (sym->kind != ExportedSymbol::Struct &&
                          sym->kind != ExportedSymbol::Union))
                 continue;
-            // Find extend block with the same name in the same namespace
-            auto nsSyms = nsRegistry_->getNamespaceSymbols(ns);
+            // Find extend block with the same name in the same module
+            auto nsSyms = moduleRegistry_->getModuleSymbols(ns);
             for (auto* nsSym : nsSyms) {
                 if (nsSym->kind == ExportedSymbol::ExtendBlock &&
                     nsSym->name == symName) {
@@ -1102,12 +1102,12 @@ bool Checker::check(LucisParser::ProgramContext* tree) {
         for (auto* sym : extSyms) {
             if (sym->kind == ExportedSymbol::Function) {
                 auto* decl = static_cast<LucisParser::FunctionDeclContext*>(sym->decl);
-                ensureFunctionTypeDependencies(decl, currentNamespace_);
+                ensureFunctionTypeDependencies(decl, currentModulePath_);
                 registerFunctionSignature(decl);
             }
         }
         for (auto& [symName, ns] : userImports_) {
-            auto* sym = nsRegistry_->findSymbol(ns, symName);
+            auto* sym = moduleRegistry_->findSymbol(ns, symName);
             if (!sym) continue;
             if (sym->kind == ExportedSymbol::Function) {
                 auto* decl = static_cast<LucisParser::FunctionDeclContext*>(sym->decl);
@@ -1118,7 +1118,7 @@ bool Checker::check(LucisParser::ProgramContext* tree) {
     }
 
     // Pass 2/3: local type registration.
-    if (!nsRegistry_) {
+    if (!moduleRegistry_) {
         for (auto* decl : tree->topLevelDecl()) {
             if (auto* ta = decl->typeAliasDecl()) {
                 checkTypeAliasDecl(ta);
@@ -1135,7 +1135,7 @@ bool Checker::check(LucisParser::ProgramContext* tree) {
             }
         }
     } else {
-        // Under namespace mode, aliases/enums were already registered in pass 1.5.
+        // Under module context, aliases/enums were already registered in pass 1.5.
         // Validate/upgrade local struct and union declarations now.
         for (auto* decl : tree->topLevelDecl()) {
             if (auto* sd = decl->structDecl()) {
@@ -1171,8 +1171,8 @@ bool Checker::check(LucisParser::ProgramContext* tree) {
         return false;
 
     // Pass 4: register function signatures (before checking bodies)
-    // In namespace mode Phase C registers external symbols from the project
-    // registry, but we must still ensure local file functions are registered
+    // When moduleRegistry_ is present, external symbols are registered
+    // in pass 1.5, but we must still ensure local file functions are registered
     // (avoid double-registration by checking `functions_`).
     for (auto* decl : tree->topLevelDecl()) {
         if (auto* func = decl->functionDecl()) {
@@ -1181,7 +1181,7 @@ bool Checker::check(LucisParser::ProgramContext* tree) {
                 continue;
             }
             auto funcName = func->IDENTIFIER(0)->getText();
-            if (!nsRegistry_ || !functions_.count(funcName)) {
+            if (!moduleRegistry_ || !functions_.count(funcName)) {
                 registerFunctionSignature(func);
             }
         }
@@ -1190,7 +1190,7 @@ bool Checker::check(LucisParser::ProgramContext* tree) {
         }
     }
 
-    // Register extern functions even in namespace mode
+    // Register extern functions even in module context
     for (auto* decl : tree->topLevelDecl()) {
         if (auto* ext = decl->externDecl()) {
             checkExternDecl(ext);
@@ -1939,7 +1939,7 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
             return nullptr;
         }
 
-        // User namespace import or same-namespace symbol
+        // User module import or same-module symbol
         if (userImports_.count(name)) return nullptr;
 
         // Enum variant imported via `use EnumType::*;`
@@ -1947,8 +1947,8 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
         if (evIt != enumVariantImports_.end())
             return evIt->second.enumType;
 
-        if (nsRegistry_ && !currentNamespace_.empty()) {
-            auto* sym = nsRegistry_->findSymbol(currentNamespace_, name);
+        if (moduleRegistry_ && !currentModulePath_.empty()) {
+            auto* sym = moduleRegistry_->findSymbol(currentModulePath_, name);
             if (sym && sym->sourceFile != currentFile_)
                 return nullptr;
         }
@@ -3587,7 +3587,7 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
             if (IntrinsicRegistry::isIntrinsicPrefix(idTexts[0])) {
                 std::string ns, funcName;
                 if (!IntrinsicRegistry::parseIntrinsicPath(idTexts, ns, funcName)) {
-                    error(expr, "invalid intrinsic path: expected 'lucis::namespace::function'");
+                    error(expr, "invalid intrinsic path: expected 'lucis::module::function'");
                     return nullptr;
                 }
 
@@ -3743,7 +3743,7 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
             auto rootName = ids.front()->getText();
             auto rootImport = userImports_.find(rootName);
             if (rootImport == userImports_.end() || rootImport->second != rootName) {
-                error(expr, "namespace root '" + rootName +
+                error(expr, "module root '" + rootName +
                              "' is not imported; add 'use " + rootName + ";'");
                 return nullptr;
             }
@@ -3754,7 +3754,7 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
                 modulePath += ids[i]->getText();
             }
 
-            if (NamespaceRegistry::isStdModule(modulePath)) {
+            if (ImportResolver::isStdModule(modulePath)) {
                 return checkStdModuleCall(modulePath);
             }
 
@@ -3764,13 +3764,13 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
                 auto typeName = ids[1]->getText();
                 auto methodName2 = ids[2]->getText();
 
-                // Validate type exists in namespace
-                if (nsRegistry_) {
-                    if (!nsRegistry_->hasNamespace(nsName)) {
-                        error(expr, "unknown namespace '" + nsName + "'");
+                // Validate type exists in module
+                if (moduleRegistry_) {
+                    if (!moduleRegistry_->hasModule(nsName)) {
+                        error(expr, "unknown module '" + nsName + "'");
                         return nullptr;
                     }
-                    auto* sym = nsRegistry_->findSymbol(nsName, typeName);
+                    auto* sym = moduleRegistry_->findSymbol(nsName, typeName);
                     if (!sym) {
                         error(expr, "'" + nsName + "::" + typeName + "' is not a known type");
                         return nullptr;
@@ -3805,11 +3805,11 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
 
         auto importedModule = userImports_.find(structName);
         if (importedModule != userImports_.end()) {
-            if (NamespaceRegistry::isStdModule(importedModule->second)) {
+            if (ImportResolver::isStdModule(importedModule->second)) {
                 return checkStdModuleCall(importedModule->second);
             }
-            if (nsRegistry_ && nsRegistry_->hasNamespace(importedModule->second)) {
-                auto* sym = nsRegistry_->findSymbol(importedModule->second, methodName);
+            if (moduleRegistry_ && moduleRegistry_->hasModule(importedModule->second)) {
+                auto* sym = moduleRegistry_->findSymbol(importedModule->second, methodName);
                 if (sym) {
                     if (sym->kind == ExportedSymbol::Function) {
                         auto* funcDecl = static_cast<LucisParser::FunctionDeclContext*>(sym->decl);
@@ -4706,12 +4706,12 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
 //  Top-level declaration checks
 // ═══════════════════════════════════════════════════════════════════════
 
-void Checker::setNamespaceContext(const NamespaceRegistry* registry,
-                                   const std::string& currentNamespace,
-                                   const std::string& currentFile) {
-    nsRegistry_       = registry;
-    currentNamespace_ = currentNamespace;
-    currentFile_      = currentFile;
+void Checker::setModuleContext(const ModuleRegistry* registry,
+                                const std::string& modulePath,
+                                const std::string& currentFile) {
+    moduleRegistry_     = registry;
+    currentModulePath_  = modulePath;
+    currentFile_        = currentFile;
 }
 
 void Checker::setCBindings(const CBindings* bindings) {
@@ -4729,9 +4729,9 @@ bool Checker::isKnownFunction(const std::string& name) const {
     if (imports_.isImported(name)) return true;
     // 4. User import
     if (userImports_.count(name)) return true;
-    // 5. Same-namespace symbol from another file
-    if (nsRegistry_ && !currentNamespace_.empty()) {
-        auto* sym = nsRegistry_->findSymbol(currentNamespace_, name);
+    // 5. Same-module symbol from another file
+    if (moduleRegistry_ && !currentModulePath_.empty()) {
+        auto* sym = moduleRegistry_->findSymbol(currentModulePath_, name);
         if (sym && sym->kind == ExportedSymbol::Function &&
             sym->sourceFile != currentFile_)
             return true;
@@ -4747,9 +4747,9 @@ bool Checker::isKnownType(const std::string& name) const {
     if (genericEnumTemplates_.count(name)) return true;
     // Check user imports for struct/enum/alias
     if (userImports_.count(name)) return true;
-    // Check same-namespace types from other files
-    if (nsRegistry_ && !currentNamespace_.empty()) {
-        auto* sym = nsRegistry_->findSymbol(currentNamespace_, name);
+    // Check same-module types from other files
+    if (moduleRegistry_ && !currentModulePath_.empty()) {
+        auto* sym = moduleRegistry_->findSymbol(currentModulePath_, name);
         if (sym && (sym->kind == ExportedSymbol::Struct ||
                     sym->kind == ExportedSymbol::Union ||
                     sym->kind == ExportedSymbol::Enum ||
@@ -4784,12 +4784,12 @@ void Checker::checkUseDecls(LucisParser::ProgramContext* tree) {
             auto rootName = root->IDENTIFIER()->getText();
             if (rootName == "std") {
                 userImports_[rootName] = rootName;
-            } else if (nsRegistry_ && nsRegistry_->hasNamespace(rootName)) {
+            } else if (moduleRegistry_ && moduleRegistry_->hasModule(rootName)) {
                 userImports_[rootName] = rootName;
-            } else if (!nsRegistry_) {
+            } else if (!moduleRegistry_) {
                 userImports_[rootName] = rootName;
             } else {
-                error(root, "unknown module or namespace root '" + rootName + "'");
+                error(root, "unknown module root '" + rootName + "'");
             }
         } else if (auto* item = dynamic_cast<LucisParser::UseItemContext*>(useDecl)) {
             std::string path;
@@ -4798,26 +4798,24 @@ void Checker::checkUseDecls(LucisParser::ProgramContext* tree) {
                 path += id->getText();
             }
             auto symbolName = item->IDENTIFIER()->getText();
-            auto qualifiedPath = path + "::" + symbolName;
+            auto modPath = ModuleRegistry::usePathToModulePath(path);
 
-            if (NamespaceRegistry::isStdModule(path)) {
+            if (ImportResolver::isStdModule(path)) {
                 imports_.addImport(path, symbolName);
-            } else if (NamespaceRegistry::isStdModule(qualifiedPath)) {
-                // Module alias import, e.g. `use std::log;`
-                userImports_[symbolName] = qualifiedPath;
-            } else if (nsRegistry_ && nsRegistry_->hasNamespace(path)) {
-                auto* sym = nsRegistry_->findSymbol(path, symbolName);
+            } else if (ImportResolver::isStdModule(path + "::" + symbolName)) {
+                userImports_[symbolName] = modPath;
+            } else if (moduleRegistry_ && moduleRegistry_->hasModule(modPath)) {
+                auto* sym = moduleRegistry_->findSymbol(modPath, symbolName);
                 if (!sym) {
-                    error(item, "namespace '" + path +
+                    error(item, "module '" + path +
                                 "' does not export '" + symbolName + "'");
                 } else {
-                    userImports_[symbolName] = path;
+                    userImports_[symbolName] = modPath;
                 }
-            } else if (!nsRegistry_) {
-                // No project context (LSP single-file mode) — assume valid
-                userImports_[symbolName] = path;
+            } else if (!moduleRegistry_) {
+                userImports_[symbolName] = modPath;
             } else {
-                error(item, "unknown module or namespace '" + path + "'");
+                error(item, "unknown module '" + path + "'");
             }
         } else if (auto* grp = dynamic_cast<LucisParser::UseGroupContext*>(useDecl)) {
             std::string path;
@@ -4825,29 +4823,29 @@ void Checker::checkUseDecls(LucisParser::ProgramContext* tree) {
                 if (!path.empty()) path += "::";
                 path += id->getText();
             }
+            auto modPath = ModuleRegistry::usePathToModulePath(path);
 
-            if (NamespaceRegistry::isStdModule(path)) {
+            if (ImportResolver::isStdModule(path)) {
                 for (auto* id : grp->IDENTIFIER()) {
                     imports_.addImport(path, id->getText());
                 }
-            } else if (nsRegistry_ && nsRegistry_->hasNamespace(path)) {
+            } else if (moduleRegistry_ && moduleRegistry_->hasModule(modPath)) {
                 for (auto* id : grp->IDENTIFIER()) {
                     auto symbolName = id->getText();
-                    auto* sym = nsRegistry_->findSymbol(path, symbolName);
+                    auto* sym = moduleRegistry_->findSymbol(modPath, symbolName);
                     if (!sym) {
-                        error(grp, "namespace '" + path +
+                        error(grp, "module '" + path +
                                     "' does not export '" + symbolName + "'");
                     } else {
-                        userImports_[symbolName] = path;
+                        userImports_[symbolName] = modPath;
                     }
                 }
-            } else if (!nsRegistry_) {
-                // No project context (LSP single-file mode) — assume valid
+            } else if (!moduleRegistry_) {
                 for (auto* id : grp->IDENTIFIER()) {
-                    userImports_[id->getText()] = path;
+                    userImports_[id->getText()] = modPath;
                 }
             } else {
-                error(grp, "unknown module or namespace '" + path + "'");
+                error(grp, "unknown module '" + path + "'");
             }
         } else if (auto* ew = dynamic_cast<LucisParser::UseEnumWildcardContext*>(useDecl)) {
             unsigned arrayDims = 0;
@@ -6117,7 +6115,7 @@ void Checker::checkVarDeclStmt(LucisParser::VarDeclStmtContext* stmt) {
         return;
     }
 
-    // ── Detect namespace prefix (qualified type: LIB::Point) ────────
+    // ── Detect module prefix (qualified type: LIB::Point) ────────
     bool hasNsPrefix = stmt->SCOPE() != nullptr;
     size_t identOffset = hasNsPrefix ? 1 : 0;
     std::string nsPrefix = hasNsPrefix && stmt->IDENTIFIER().size() > 0 ? stmt->IDENTIFIER(0)->getText() : "";
@@ -6202,12 +6200,12 @@ void Checker::checkVarDeclStmt(LucisParser::VarDeclStmtContext* stmt) {
         if (!activeTypeSubst_.empty())
             return resolveTypeSpecWithSubst(stmt->typeSpec(), activeTypeSubst_, arrayDims);
         if (hasNsPrefix) {
-            // Look up the type in the specified namespace
+            // Look up the type in the specified module
             auto* ts = stmt->typeSpec();
             if (ts && ts->IDENTIFIER()) {
                 auto typeName = ts->IDENTIFIER()->getText();
-                if (nsRegistry_) {
-                    auto* sym = nsRegistry_->findSymbol(nsPrefix, typeName);
+                if (moduleRegistry_) {
+                    auto* sym = moduleRegistry_->findSymbol(nsPrefix, typeName);
                     if (!sym) {
                         error(stmt, "'" + nsPrefix + "::" + typeName + "' is not exported");
                         return nullptr;
@@ -6215,7 +6213,7 @@ void Checker::checkVarDeclStmt(LucisParser::VarDeclStmtContext* stmt) {
                 }
                 auto* ti = typeRegistry_.lookup(typeName);
                 if (!ti) {
-                    error(stmt, "type '" + typeName + "' from namespace '" + nsPrefix +
+                    error(stmt, "type '" + typeName + "' from module '" + nsPrefix +
                                  "' is not imported; add 'use " + nsPrefix + "::" + typeName + ";'");
                     return nullptr;
                 }
@@ -7277,9 +7275,9 @@ std::string Checker::mangleGenericName(const std::string& baseName,
 const TypeInfo* Checker::tryResolveQualifiedType(antlr4::ParserRuleContext* ctx,
                                                 const std::string& first,
                                                 const std::string& second) {
-    // Try as namespace::type
-    if (nsRegistry_ && nsRegistry_->hasNamespace(first)) {
-        auto* sym = nsRegistry_->findSymbol(first, second);
+    // Try as module::type
+    if (moduleRegistry_ && moduleRegistry_->hasModule(first)) {
+        auto* sym = moduleRegistry_->findSymbol(first, second);
         if (sym) {
             if (auto* ti = typeRegistry_.lookup(second))
                 return ti;

@@ -1,16 +1,17 @@
 #include "cli/LucisPipeline.h"
 #include "parser/Parser.h"
 #include "checkers/Checker.h"
-#include "namespace/ProjectScanner.h"
-#include "namespace/NamespaceRegistry.h"
+#include "namespace/ModuleRegistry.h"
 #include "ffi/CBindings.h"
 #include "ffi/CHeaderResolver.h"
+#include "imports/ImportResolver.h"
 
 #include <iostream>
 #include <iomanip>
 #include <algorithm>
 #include <filesystem>
 #include <unordered_set>
+#include <deque>
 #include <unistd.h>
 
 namespace fs = std::filesystem;
@@ -53,7 +54,6 @@ void printErrorLine(const std::string& msg) {
 // ── Static helpers ────────────────────────────────────────────────────────────
 
 std::string LucisPipeline::getProjectRoot(const std::string& inputFile) {
-    // Walk up from the input file's directory looking for lucis.yaml.
     auto dir = fs::path(inputFile).parent_path();
     if (dir.empty()) dir = ".";
     dir = fs::canonical(dir);
@@ -61,18 +61,105 @@ std::string LucisPipeline::getProjectRoot(const std::string& inputFile) {
     for (auto ancestor = dir; ; ancestor = ancestor.parent_path()) {
         if (fs::exists(ancestor / "lucis.yaml"))
             return ancestor.string();
-        // Stop at the filesystem root (parent_path of "/" is "/").
         if (ancestor == ancestor.parent_path()) break;
     }
-
-    // Fallback: the input file's parent directory.
     return dir.string();
 }
 
-std::string LucisPipeline::extractNamespace(LucisParser::ProgramContext* tree) {
-    if (auto* nsDecl = tree->namespaceDecl())
-        return nsDecl->IDENTIFIER()->getText();
+std::string LucisPipeline::filePathToModulePath(const std::string& filePath,
+                                                  const std::string& projectRoot) {
+    fs::path absPath = fs::canonical(filePath);
+    fs::path rel = fs::relative(absPath, projectRoot);
+    std::string result = rel.replace_extension("").string();
+    // Normalize backslashes to forward slashes
+    for (auto& c : result) {
+        if (c == '\\') c = '/';
+    }
+    return result;
+}
+
+std::string LucisPipeline::resolveUseToFile(const std::string& useIdent,
+                                             const std::string& projectRoot,
+                                             const std::vector<std::string>& searchDirs) {
+    // First convert "src::lexer::lexer" → "src/lexer/lexer" (module path)
+    std::string modPath;
+    {
+        std::string tmp = useIdent;
+        for (auto& c : tmp) if (c == ':') c = '/';
+        for (size_t i = 0; i < tmp.size(); i++) {
+            if (tmp[i] == '/' && i + 1 < tmp.size() && tmp[i+1] == '/') {
+                i++; // skip doubled slash from "::"
+                continue;
+            }
+            modPath += tmp[i];
+        }
+    }
+
+    // Build search directories: project root first, then source paths, then stdlib
+    std::vector<fs::path> searchPaths;
+    searchPaths.push_back(fs::path(projectRoot));
+    for (auto& sp : searchDirs)
+        searchPaths.push_back(fs::path(sp));
+
+    // Try to locate modPath + ".lc" in each search directory
+    for (auto& base : searchPaths) {
+        auto candidate = base / (modPath + ".lc");
+        std::error_code ec;
+        if (fs::exists(candidate, ec) && !ec)
+            return fs::canonical(candidate, ec).string();
+    }
     return {};
+}
+
+std::vector<std::string> LucisPipeline::extractUseModulePaths(
+        LucisParser::ProgramContext* tree) {
+
+    std::vector<std::string> result;
+    // Check both preamble and top-level use declarations
+    auto extract = [&](auto* decl) {
+        if (auto* use = decl->useDecl()) {
+            if (auto* root = dynamic_cast<LucisParser::UseRootContext*>(use)) {
+                result.push_back(root->IDENTIFIER()->getText());
+            } else if (auto* item = dynamic_cast<LucisParser::UseItemContext*>(use)) {
+                // Reconstruct module path from the modulePath rule
+                std::string path;
+                for (auto* id : item->modulePath()->IDENTIFIER())
+                    path += (path.empty() ? "" : "::") + id->getText();
+                result.push_back(path);
+            } else if (auto* group = dynamic_cast<LucisParser::UseGroupContext*>(use)) {
+                std::string path;
+                for (auto* id : group->modulePath()->IDENTIFIER())
+                    path += (path.empty() ? "" : "::") + id->getText();
+                result.push_back(path);
+            } else if (auto* wild = dynamic_cast<LucisParser::UseEnumWildcardContext*>(use)) {
+                // use Type::* — module path comes from the type spec
+                // For now, just skip wildcard imports in module resolution
+                (void)wild;
+            }
+        }
+    };
+
+    for (auto* pre : tree->preambleDecl()) extract(pre);
+    for (auto* top : tree->topLevelDecl()) {
+        if (auto* use = top->useDecl()) {
+            // Top-level use declarations (not using preamble)
+            if (auto* root = dynamic_cast<LucisParser::UseRootContext*>(use)) {
+                result.push_back(root->IDENTIFIER()->getText());
+            } else if (auto* item = dynamic_cast<LucisParser::UseItemContext*>(use)) {
+                std::string path;
+                for (auto* id : item->modulePath()->IDENTIFIER())
+                    path += (path.empty() ? "" : "::") + id->getText();
+                result.push_back(path);
+            } else if (auto* group = dynamic_cast<LucisParser::UseGroupContext*>(use)) {
+                std::string path;
+                for (auto* id : group->modulePath()->IDENTIFIER())
+                    path += (path.empty() ? "" : "::") + id->getText();
+                result.push_back(path);
+            }
+        }
+    }
+
+    return result;
 }
 
 // ── Pipeline runner ───────────────────────────────────────────────────────────
@@ -89,84 +176,68 @@ std::unique_ptr<PipelineResult> LucisPipeline::run(const Options& opts) {
     // ── Step 1: project root & build dir ────────────────────────────────────
     progress(1, 5, "resolving project root");
     result->projectRoot = getProjectRoot(opts.inputFile);
-
-    // Build artifacts (object files, cache) always go to .lucis/build.
-    // The config's out_dir controls where the final binary is placed.
     result->buildDir = result->projectRoot + "/.lucis/build";
     fs::create_directories(result->buildDir);
-    auto buildProgress = [&, step = 1]() mutable { progress(++step, 5, "scanning .lc files"); };
-    buildProgress();
-    // We can't use a lambda chain here cleanly, so let's use a step counter
-    int step = 1;
 
-    // ── Step 2: scan ────────────────────────────────────────────────────────
-    progress(++step, 5, "scanning .lc files");
-    auto allFiles = ProjectScanner::scan(result->projectRoot);
-
-    // Scan system stdlib paths for library .lc files.
-    {
-        std::vector<std::string> stdlibSearchPaths = opts.stdlibPaths;
-
-        // Compile-time default (set by CMake install).
+    // Build search directories: stdlib paths + LUCIS_STDLIB_DIR + system path
+    std::vector<std::string> searchDirs = opts.stdlibPaths;
 #ifdef LUCIS_STDLIB_DIR
-        stdlibSearchPaths.push_back(LUCIS_STDLIB_DIR);
+    searchDirs.push_back(LUCIS_STDLIB_DIR);
 #endif
-        // Common system install path (Linux: /usr/share/lucis/stdlib/).
-        stdlibSearchPaths.emplace_back("/usr/share/lucis/stdlib/");
+    searchDirs.emplace_back("/usr/share/lucis/stdlib/");
 
-        std::unordered_set<std::string> seen;
-        for (const auto& sp : stdlibSearchPaths) {
-            if (sp.empty() || !seen.insert(sp).second) continue;
-            auto extra = ProjectScanner::scan(sp);
-            allFiles.insert(allFiles.end(), extra.begin(), extra.end());
-        }
-    }
+    // ── Step 2: resolve imports transitively (BFS) ─────────────────────────
+    progress(2, 5, "resolving import tree");
+    std::unordered_set<std::string> visited;
+    std::deque<std::string> queue;
+    queue.push_back(opts.inputFile);
+    visited.insert(opts.inputFile);
 
-    // Deduplicate (canonical paths ensure same file produces same string).
-    std::sort(allFiles.begin(), allFiles.end());
-    allFiles.erase(std::unique(allFiles.begin(), allFiles.end()), allFiles.end());
-
-    if (allFiles.empty()) {
-        printErrorLine("no .lc files found in '" + result->projectRoot + "'");
-        result->hasErrors = true;
-        return result;
-    }
-
-    // ── Step 3: parse ───────────────────────────────────────────────────────
-    progress(++step, 5, "parsing source files");
     bool anyParseError = false;
-    const size_t parseTotal = allFiles.size();
-    size_t parseIdx = 0;
-    for (auto& filePath : allFiles) {
-        ++parseIdx;
-        if (!opts.quiet)
-            printUnitLine(stage, "parse", parseIdx, parseTotal, filePath);
+    size_t totalUnits = 0;
+
+    while (!queue.empty()) {
+        auto filePath = queue.front();
+        queue.pop_front();
+
         SourceUnit unit;
         unit.filePath    = filePath;
+        unit.modulePath  = filePathToModulePath(filePath, result->projectRoot);
         unit.parseResult = Parser::parse(filePath);
+
         if (unit.parseResult.hasErrors) {
             printErrorLine("parse errors in '" + filePath + "'");
             anyParseError = true;
             continue;
         }
-        unit.namespaceName = extractNamespace(unit.parseResult.tree);
-        if (unit.namespaceName.empty()) {
-            printErrorLine("file '" + filePath + "' is missing a 'namespace' declaration");
-            anyParseError = true;
-            continue;
-        }
+
         result->units.push_back(std::move(unit));
+        totalUnits = result->units.size();
+        if (!opts.quiet) {
+            printUnitLine(stage, "parse", totalUnits, 0, filePath);
+        }
+
+        // Extract use declarations and enqueue their module files
+        auto usePaths = extractUseModulePaths(unit.parseResult.tree);
+        for (auto& usePath : usePaths) {
+            auto modFile = resolveUseToFile(usePath, result->projectRoot, searchDirs);
+            if (!modFile.empty() && visited.insert(modFile).second) {
+                queue.push_back(modFile);
+            }
+        }
     }
-    if (anyParseError) {
+
+    if (result->units.empty()) {
+        printErrorLine("no .lc files found or imported from '" + opts.inputFile + "'");
         result->hasErrors = true;
         return result;
     }
 
-    // ── Step 4: namespace registry ──────────────────────────────────────────
-    progress(++step, 5, "building namespace registry");
-    result->registry = std::make_unique<NamespaceRegistry>();
+    // ── Step 3: module registry ──────────────────────────────────────────
+    progress(3, 5, "building module registry");
+    result->registry = std::make_unique<ModuleRegistry>();
     for (auto& unit : result->units)
-        result->registry->registerFile(unit.namespaceName, unit.filePath, unit.parseResult.tree);
+        result->registry->registerFile(unit.modulePath, unit.filePath, unit.parseResult.tree);
     auto dupErrors = result->registry->validate();
     if (!dupErrors.empty()) {
         for (auto& err : dupErrors) printErrorLine(err);
@@ -174,8 +245,8 @@ std::unique_ptr<PipelineResult> LucisPipeline::run(const Options& opts) {
         return result;
     }
 
-    // ── Step 4.5: resolve C headers & compile C sources ─────────────────────
-    progress(step, 5, "resolving C includes and auto-link");
+    // ── Step 4: resolve C headers & compile C sources ─────────────────────
+    progress(4, 5, "resolving C includes and auto-link");
     result->cBindings = std::make_unique<CBindings>();
     result->cTypeReg  = std::make_unique<TypeRegistry>();
     {
@@ -208,7 +279,6 @@ std::unique_ptr<PipelineResult> LucisPipeline::run(const Options& opts) {
         }
     }
 
-    // Auto-detect required linker libraries from C headers
     for (auto& [flag, header] : result->cBindings->requiredLibs()) {
         bool alreadyProvided = false;
         for (auto& lf : opts.userLinkerFlags) {
@@ -221,12 +291,11 @@ std::unique_ptr<PipelineResult> LucisPipeline::run(const Options& opts) {
             result->linkerFlags.push_back(flag);
         }
     }
-    // Also include user flags (add -l prefix to match linker convention)
     for (auto& lf : opts.userLinkerFlags)
         result->linkerFlags.push_back("-l" + lf);
 
     // ── Step 5: semantic check ──────────────────────────────────────────────
-    progress(++step, 5, "running semantic checker");
+    progress(5, 5, "running semantic checker");
     bool anyCheckError = false;
     size_t checkIdx = 0;
     for (auto& unit : result->units) {
@@ -234,7 +303,7 @@ std::unique_ptr<PipelineResult> LucisPipeline::run(const Options& opts) {
         if (!opts.quiet)
             printUnitLine(stage, "check", checkIdx, result->units.size(), unit.filePath);
         Checker checker;
-        checker.setNamespaceContext(result->registry.get(), unit.namespaceName, unit.filePath);
+        checker.setModuleContext(result->registry.get(), unit.modulePath, unit.filePath);
         checker.setCBindings(result->cBindings.get());
         bool passed = checker.check(unit.parseResult.tree);
         for (auto& err : checker.errors())

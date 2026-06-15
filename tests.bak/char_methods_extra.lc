@@ -1,0 +1,23 @@
+namespace Main;
+
+use std::log::println;
+use std::test::{ assertEqual };
+
+fn testCharMethodsExtra() int32 {
+    println("[Testing extra char methods...]");
+
+    char hx = 'F';
+    char punct = '!';
+    char ctrl = '\n';
+    char printable = 'Z';
+    char alphaNum = '7';
+
+    assertEqual(hx.isHexDigit(), true);
+    assertEqual(punct.isPunct(), true);
+    assertEqual(ctrl.isControl(), true);
+    assertEqual(printable.isPrintable(), true);
+    assertEqual(alphaNum.isAlphaNum(), true);
+
+    println("✔ extra char method tests passed");
+    ret 0;
+}

@@ -1,0 +1,198 @@
+namespace Main;
+
+use std::log::println;
+use std::test::{ assertEqual };
+
+fn testUintTypes() int32 {
+    println("[Testing unsigned integer types...]");
+
+    uint1 u1 = 1;
+    uint1 u0 = 0;
+
+    // Limits and basic identity
+    assertEqual(u0, 0);
+    assertEqual(u1, 1);
+    assertEqual(sizeof(uint1), 1);
+    assertEqual(typeof(u1), "uint1");
+
+    // Arithmetic semantics
+    assertEqual(u1 + u0, 1);
+    assertEqual(u0 + u1, 1);
+    assertEqual(u1 - u1, 0);
+    assertEqual(u1 * u1, 1);
+    assertEqual(u0 * u1, 0);
+
+    // Comparisons
+    assertEqual(u1 == 1, true);
+    assertEqual(u0 == 0, true);
+    assertEqual(u1 != u0, true);
+    assertEqual(u1 > u0, true);
+    assertEqual(u0 < u1, true);
+
+    // Coercion to wider unsigned integer type
+    uint8 widened1 = u1;
+    assertEqual(widened1, 1);
+    assertEqual(typeof(widened1), "uint8");
+
+    println("✔ uint1 tests passed");
+
+    uint8 u8Max = 255;
+    uint8 u8One = 1;
+    uint8 u8Two = 2;
+
+    // Limits and basic identity
+    assertEqual(u8Max, 255);
+    assertEqual(sizeof(uint8), 1);
+    assertEqual(typeof(u8Max), "uint8");
+
+    // Arithmetic semantics
+    assertEqual(u8One + u8Two, 3);
+    assertEqual(u8Two - u8One, 1);
+    assertEqual(u8Two * u8Two, 4);
+    assertEqual(8 / u8Two, 4);
+    assertEqual(7 % u8Two, 1);
+
+    // Comparisons
+    assertEqual(u8Max > u8Two, true);
+    assertEqual(u8One < u8Max, true);
+    assertEqual(u8Max >= 255, true);
+    assertEqual(u8One <= u8Two, true);
+    assertEqual(u8Max != u8One, true);
+
+    // Coercion to wider unsigned integer type
+    uint16 widened8 = u8Max;
+    assertEqual(widened8, 255);
+    assertEqual(typeof(widened8), "uint16");
+
+    println("✔ uint8 tests passed");
+
+    uint16 u16Max = 65535;
+    uint16 u16One = 1;
+    uint16 u16Two = 2;
+
+    // Limits and basic identity
+    assertEqual(u16Max, 65535);
+    assertEqual(sizeof(uint16), 2);
+    assertEqual(typeof(u16Max), "uint16");
+
+    // Arithmetic semantics
+    assertEqual(u16One + u16Two, 3);
+    assertEqual(u16Two - u16One, 1);
+    assertEqual(u16Two * u16Two, 4);
+    assertEqual(10 / u16Two, 5);
+    assertEqual(9 % u16Two, 1);
+
+    // Comparisons
+    assertEqual(u16Max > u16Two, true);
+    assertEqual(u16One < u16Max, true);
+    assertEqual(u16Max >= 65535, true);
+    assertEqual(u16One <= u16Two, true);
+    assertEqual(u16Max != u16One, true);
+
+    // Coercion to wider unsigned integer type
+    uint32 widened16 = u16Max;
+    assertEqual(widened16, 65535);
+    assertEqual(typeof(widened16), "uint32");
+
+    println("✔ uint16 tests passed");
+
+    uint32 u32Max = 4294967295;
+    uint32 u32One = 1;
+    uint32 u32Two = 2;
+
+    // Limits and basic identity
+    assertEqual(u32Max, 4294967295);
+    assertEqual(sizeof(uint32), 4);
+    assertEqual(typeof(u32Max), "uint32");
+
+    // Arithmetic semantics
+    assertEqual(u32One + u32Two, 3);
+    assertEqual(u32Two - u32One, 1);
+    assertEqual(u32Two * u32Two, 4);
+    assertEqual(20 / u32Two, 10);
+    assertEqual(21 % u32Two, 1);
+
+    // Comparisons
+    assertEqual(u32Max > u32Two, true);
+    assertEqual(u32One < u32Max, true);
+    assertEqual(u32Max >= 4294967295, true);
+    assertEqual(u32One <= u32Two, true);
+    assertEqual(u32Max != u32One, true);
+
+    // Coercion to wider unsigned integer type
+    uint64 widened32 = u32Max;
+    assertEqual(widened32, 4294967295);
+    assertEqual(typeof(widened32), "uint64");
+
+    println("✔ uint32 tests passed");
+
+    uint64 u64Max = 18446744073709551615;
+    uint64 u64One = 1;
+    uint64 u64Two = 2;
+
+    // Limits and basic identity
+    assertEqual(u64Max, 18446744073709551615);
+    assertEqual(sizeof(uint64), 8);
+    assertEqual(typeof(u64Max), "uint64");
+
+    // Arithmetic semantics
+    assertEqual(u64One + u64Two, 3);
+    assertEqual(u64Two - u64One, 1);
+    assertEqual(u64Two * u64Two, 4);
+    assertEqual(40 / u64Two, 20);
+    assertEqual(41 % u64Two, 1);
+
+    // Comparisons
+    assertEqual(u64Max > u64Two, true);
+    assertEqual(u64One < u64Max, true);
+    assertEqual(u64Max >= 18446744073709551615, true);
+    assertEqual(u64One <= u64Two, true);
+    assertEqual(u64Max != u64One, true);
+
+    println("✔ uint64 tests passed");
+
+    uint128 u128A = 1;
+    uint128 u128B = 2;
+    uint128 u128Max = 340282366920938463463374607431768211455;
+
+    // Limits and basic identity
+    assertEqual(u128A, 1);
+    assertEqual(u128B, 2);
+    assertEqual(u128Max, 340282366920938463463374607431768211455);
+    assertEqual(sizeof(uint128), 16);
+    assertEqual(typeof(u128Max), "uint128");
+
+    // Arithmetic semantics
+    assertEqual(u128A + u128B, 3);
+    assertEqual(u128B - u128A, 1);
+    assertEqual(u128B * u128B, 4);
+    assertEqual(80 / u128B, 40);
+    assertEqual(81 % u128B, 1);
+
+    // Comparisons
+    assertEqual(u128Max > u128B, true);
+    assertEqual(u128A < u128Max, true);
+    assertEqual(u128Max >= u128Max, true);
+    assertEqual(u128A <= u128B, true);
+    assertEqual(u128A != u128B, true);
+
+    println("✔ uint128 tests passed");
+
+    usize uzA = 1;
+    usize uzB = 2;
+
+    // Platform-sized integer checks (portable)
+    assertEqual(typeof(uzA), "usize");
+    assertEqual(sizeof(usize), sizeof(isize));
+    assertEqual(uzA + uzB, 3);
+    assertEqual(uzB - uzA, 1);
+    assertEqual(uzB * uzB, 4);
+    assertEqual(100 / uzB, 50);
+    assertEqual(101 % uzB, 1);
+    assertEqual(uzB > uzA, true);
+    assertEqual(uzA < uzB, true);
+
+    println("✔ usize tests passed");
+
+    ret 0;
+}

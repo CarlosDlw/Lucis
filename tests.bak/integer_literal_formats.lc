@@ -1,0 +1,45 @@
+namespace Main;
+
+use std::log::println;
+use std::test::{ assertEqual };
+
+fn testIntegerLiteralFormats() int32 {
+    println("[Testing integer literal formats...]");
+
+    int32 dec = 255;
+    int32 hex = 0xFF;
+    int32 oct = 0o377;
+    int32 bin = 0b11111111;
+
+    // All representations must encode the same value
+    assertEqual(dec, 255);
+    assertEqual(hex, 255);
+    assertEqual(oct, 255);
+    assertEqual(bin, 255);
+    assertEqual(dec == hex, true);
+    assertEqual(hex == oct, true);
+    assertEqual(oct == bin, true);
+
+    // Uppercase prefixes should also be valid
+    int32 hexUpper = 0XFF;
+    int32 octUpper = 0O377;
+    int32 binUpper = 0B11111111;
+    assertEqual(hexUpper, 255);
+    assertEqual(octUpper, 255);
+    assertEqual(binUpper, 255);
+
+    // Coercion to target integer type
+    uint8 mask = 0xFF;
+    int64 flags = 0b1010;
+    int32 perms = 0o755;
+    assertEqual(mask, 255);
+    assertEqual(flags, 10);
+    assertEqual(perms, 493);
+    assertEqual(typeof(mask), "uint8");
+    assertEqual(typeof(flags), "int64");
+    assertEqual(typeof(perms), "int32");
+
+    println("✔ integer literal format tests passed");
+
+    ret 0;
+}

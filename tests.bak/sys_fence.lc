@@ -1,0 +1,34 @@
+namespace Main;
+
+use std::log::println;
+use std::test::{ assertEqual };
+
+fn testSysFence() int32 {
+    println("[Testing lucis::sys fence intrinsics...]");
+
+    // ── All 4 fencing levels ────────────────────────────────────
+    lucis::sys::fence_acquire();
+    lucis::sys::fence_release();
+    lucis::sys::fence_acq_rel();
+    lucis::sys::fence_seq_cst();
+
+    // ── Release / acquire publish pattern ───────────────────────
+    int32 flag = 0;
+    int32 data = 0;
+
+    // Thread 1 (simulated): publish data with release
+    data = 42;
+    lucis::sys::fence_release();
+    flag = 1;
+
+    // Thread 2 (simulated): consume with acquire
+    lucis::sys::fence_acquire();
+    int32 f = flag;
+    assertEqual(f, 1);
+    // If we saw flag=1, the fence guarantees we also see data=42
+    // (single-threaded test validates the fence doesn't corrupt state)
+    assertEqual(data, 42);
+
+    println("✔ sys::fence tests passed");
+    ret 0;
+}

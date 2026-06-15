@@ -1,8 +1,7 @@
 lexer grammar LucisLexer;
 
 // Keywords
-NAMESPACE : 'namespace';
-USE       : 'use';
+USE : 'use';
 RET       : 'ret' | 'return';
 STRUCT    : 'struct';
 UNION     : 'union';
