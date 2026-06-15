@@ -1,4 +1,3 @@
-
 use std::log::{ print, sprintf };
 
 /**
@@ -9,20 +8,21 @@ use std::log::{ print, sprintf };
  * - {l}: int64
  * - {f}: float64 (default 6 decimal places)
  * - {f:N}: float64 with N decimal places
- * 
+ * - {b}: bool (prints "true" or "false")
+ *
  * @param format The format string
  * @param ... Variadic arguments for the placeholders
-*/
+ */
 fn printf(string format, ...) void {
     va_list va = lucis::unsafe::va_list();
     lucis::unsafe::va_start(va);
 
-    for int32 i in 0..format.len() {
+    usize i = 0;
+    while i < format.len() {
         char c = format[i];
 
         if c == '{' {
             i++;
-
             if i >= format.len() break;
 
             char spec = format[i];
@@ -42,8 +42,9 @@ fn printf(string format, ...) void {
                 }
                 case 'f' {
                     int32 precision = 6;
-                    if i + 1 < format.len() && format[i + 1] == ':' {
-                        i += 2;
+                    i++;
+                    if i < format.len() && format[i] == ':' {
+                        i++;
                         precision = 0;
                         while i < format.len() && format[i].isDigit() {
                             precision = precision * 10 + format[i].digitToInt();
@@ -51,7 +52,17 @@ fn printf(string format, ...) void {
                         }
                     }
                     float64 value = lucis::unsafe::va_arg_float64(va);
-                    print(value.toStringPrecision(precision));
+                    string str = value.toStringPrecision(precision);
+                    print(str);
+                    i--;
+                }
+                case 'b' {
+                    bool value = lucis::unsafe::va_arg_bool(va);
+                    if value {
+                        print("true");
+                    } else {
+                        print("false");
+                    }
                 }
             }
 
@@ -61,6 +72,8 @@ fn printf(string format, ...) void {
         } else {
             print(c);
         }
+
+        i++;
     }
 
     lucis::unsafe::va_end(va);
