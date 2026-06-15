@@ -351,8 +351,11 @@ int BuildCommand::run(const ArgParser& parser) {
             }
         }
         if (stem.empty()) stem = fs::path(uir.filePath).stem().string();
+        // Sanitize: replace / with _ to avoid nested dirs in build/
+        for (auto& c : stem) if (c == '/' || c == '\\') c = '_';
 
         auto objPath = pipeline->buildDir + "/" + stem + ".o";
+        fs::create_directories(fs::path(objPath).parent_path());
         if (!CodeGen::emitObjectFile(uir.mod->module(), objPath, usePIC)) {
             std::cerr << "lucis: failed to emit object for '" << uir.filePath << "'\n";
             return 1;
