@@ -133,14 +133,18 @@ bool ModuleRegistry::hasModule(const std::string& modulePath) const {
 std::string ModuleRegistry::mangle(const std::string& modulePath,
                                     const std::string& name) {
     if (name == "main") return "main";
-    std::string result = modulePath;
-    for (auto& c : result) {
+    // Use only the filename stem (last component) for cleaner FFI symbols
+    std::string stem = modulePath;
+    auto pos = stem.rfind('/');
+    if (pos != std::string::npos) stem = stem.substr(pos + 1);
+    // Replace any remaining special chars with _
+    for (auto& c : stem) {
         if (c == '/' || c == ':' || c == '\\')
             c = '_';
     }
     std::string collapsed;
     bool lastUnderscore = false;
-    for (auto& c : result) {
+    for (auto& c : stem) {
         if (c == '_') {
             if (!lastUnderscore) {
                 collapsed += '_';
