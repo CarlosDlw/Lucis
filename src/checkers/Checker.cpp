@@ -903,6 +903,22 @@ bool Checker::check(LucisParser::ProgramContext* tree) {
             }
         }
 
+        // Register skeletons for ALL structs from ALL modules (transitive deps)
+        for (auto& mod : moduleRegistry_->allModules()) {
+            for (auto* sym : moduleRegistry_->getModuleSymbols(mod)) {
+                if (sym->kind == ExportedSymbol::Struct &&
+                    !typeRegistry_.lookup(sym->name) &&
+                    !genericStructTemplates_.count(sym->name)) {
+                    TypeInfo skeleton;
+                    skeleton.name = sym->name;
+                    skeleton.kind = TypeKind::Struct;
+                    skeleton.bitWidth = 0;
+                    skeleton.isSigned = false;
+                    typeRegistry_.registerType(std::move(skeleton));
+                }
+            }
+        }
+
         // Imported function signatures may reference generic types (e.g. Result<T>)
         // that were not explicitly imported via `use`. Ensure those type templates
         // are registered before function signature/type resolution.
@@ -1031,7 +1047,9 @@ bool Checker::check(LucisParser::ProgramContext* tree) {
                 for (auto* field : decl->structField())
                     ensureTypeDependencyFromSpec(
                         ensureTypeDependencyFromSpec, field->typeSpec(), currentModulePath_);
-                checkStructDecl(decl);
+                auto* recheck = typeRegistry_.lookup(sym->name);
+                if (!recheck || (recheck->kind == TypeKind::Struct && recheck->fields.empty() && recheck->bitWidth == 0))
+                    checkStructDecl(decl);
             } else if (sym->kind == ExportedSymbol::Union) {
                 if (genericUnionTemplates_.count(sym->name))
                     continue;
@@ -1058,7 +1076,10 @@ bool Checker::check(LucisParser::ProgramContext* tree) {
                 for (auto* field : decl->structField())
                     ensureTypeDependencyFromSpec(
                         ensureTypeDependencyFromSpec, field->typeSpec(), ns);
-                checkStructDecl(decl);
+                // Re-check: dependency resolution may have already fully registered this type
+                auto* recheck = typeRegistry_.lookup(sym->name);
+                if (!recheck || (recheck->kind == TypeKind::Struct && recheck->fields.empty() && recheck->bitWidth == 0))
+                    checkStructDecl(decl);
             } else if (sym->kind == ExportedSymbol::Union) {
                 if (genericUnionTemplates_.count(sym->name))
                     continue;
@@ -1069,7 +1090,9 @@ bool Checker::check(LucisParser::ProgramContext* tree) {
                 for (auto* field : decl->unionField())
                     ensureTypeDependencyFromSpec(
                         ensureTypeDependencyFromSpec, field->typeSpec(), ns);
-                checkUnionDecl(decl);
+                auto* recheck = typeRegistry_.lookup(sym->name);
+                if (!recheck || (recheck->kind == TypeKind::Union && recheck->fields.empty() && recheck->bitWidth == 0))
+                    checkUnionDecl(decl);
             }
         }
 
