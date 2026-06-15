@@ -3247,11 +3247,13 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
                 return typeRegistry_.lookup("usize");
         }
 
-        if (baseType && baseType->kind == TypeKind::Pointer &&
-            baseType->pointeeType &&
-            (baseType->pointeeType->kind == TypeKind::Struct ||
-             baseType->pointeeType->kind == TypeKind::Union)) {
-            baseType = baseType->pointeeType;
+        if (baseType && baseType->kind == TypeKind::Pointer) {
+            if (baseType->pointeeType && (baseType->pointeeType->kind == TypeKind::Struct ||
+                baseType->pointeeType->kind == TypeKind::Union)) {
+                baseType = baseType->pointeeType;
+            } else if (auto* pointeeTI = typeRegistry_.lookup(baseType->name.substr(1))) {
+                baseType = pointeeTI;
+            }
         }
 
         if (baseType && (baseType->kind == TypeKind::Struct || baseType->kind == TypeKind::Union)) {
@@ -3259,10 +3261,10 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
                 if (field.name == fieldName)
                     return field.typeInfo;
             }
-            error(expr, "'" + baseType->name +
+            error(expr, "[" + currentFile_ + "] '" + baseType->name +
                              "' has no field '" + fieldName + "'");
         } else if (baseType) {
-            error(expr, "'" + baseType->name +
+            error(expr, "[" + currentFile_ + "] '" + baseType->name +
                              "' has no field '" + fieldName + "'");
         }
         return nullptr;

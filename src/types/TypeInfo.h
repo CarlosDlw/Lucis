@@ -55,9 +55,9 @@ struct EnumVariantInfo {
 
 struct TypeInfo {
     std::string name;           // language name: "int32", "uint64", "float", etc.
-    TypeKind    kind;
-    unsigned    bitWidth;       // for Integer: 1,8,16,32,64,128,256. 0 = pointer-sized (isize/usize)
-    bool        isSigned;       // meaningful for Integer only
+    TypeKind    kind = TypeKind::Void;
+    unsigned    bitWidth = 0;       // for Integer: 1,8,16,32,64,128,256. 0 = pointer-sized (isize/usize)
+    bool        isSigned = false;       // meaningful for Integer only
     std::string builtinSuffix;  // suffix for C builtins: "i32", "u64", "f32", "str", "bool"
     std::vector<FieldInfo> fields;          // non-empty only for Struct
     std::vector<std::string> enumVariants;  // non-empty only for Enum

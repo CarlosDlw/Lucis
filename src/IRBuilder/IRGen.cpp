@@ -2102,8 +2102,7 @@ std::any IRGen::visitVarDeclStmt(LucisParser::VarDeclStmtContext* ctx) {
                 std::cerr << "lucis: internal error: Set missing elementType\n";
                 return {};
             }
-            auto  suffix = ti->elementType->builtinSuffix.empty()
-                               ? "raw" : ti->elementType->builtinSuffix;
+            auto  suffix = getVecSuffix(ti->elementType);
             auto* alloca = builder_->CreateAlloca(setTy, nullptr, name);
             locals_[name] = { alloca, ti, 0 };
 
@@ -2721,6 +2720,15 @@ std::any IRGen::visitFieldAssignStmt(LucisParser::FieldAssignStmtContext* ctx) {
         const TypeInfo* currentTI = structTI;
         for (size_t i = 1; i < identifiers.size(); i++) {
             auto fieldName = identifiers[i]->getText();
+    // Auto-deref pointer for chained field access
+    if (currentTI && currentTI->kind == TypeKind::Pointer && currentTI->pointeeType &&
+        (currentTI->pointeeType->kind == TypeKind::Struct ||
+         currentTI->pointeeType->kind == TypeKind::Union)) {
+        auto* derefPtrTy = llvm::PointerType::getUnqual(*context_);
+        currentPtr = builder_->CreateLoad(derefPtrTy, currentPtr, "chain_deref");
+        currentTI = currentTI->pointeeType;
+        currentTy = currentTI->toLLVMType(*context_, module_->getDataLayout());
+    }
             int fieldIdx = -1;
             for (size_t f = 0; f < currentTI->fields.size(); f++) {
                 if (currentTI->fields[f].name == fieldName) {
@@ -2768,6 +2776,15 @@ std::any IRGen::visitFieldAssignStmt(LucisParser::FieldAssignStmtContext* ctx) {
 
     for (size_t i = 1; i < identifiers.size(); i++) {
         auto fieldName = identifiers[i]->getText();
+    // Auto-deref pointer for chained field access
+    if (currentTI && currentTI->kind == TypeKind::Pointer && currentTI->pointeeType &&
+        (currentTI->pointeeType->kind == TypeKind::Struct ||
+         currentTI->pointeeType->kind == TypeKind::Union)) {
+        auto* derefPtrTy = llvm::PointerType::getUnqual(*context_);
+        currentPtr = builder_->CreateLoad(derefPtrTy, currentPtr, "chain_deref");
+        currentTI = currentTI->pointeeType;
+        currentTy = currentTI->toLLVMType(*context_, module_->getDataLayout());
+    }
         int fieldIdx = -1;
         for (size_t f = 0; f < currentTI->fields.size(); f++) {
             if (currentTI->fields[f].name == fieldName) {
@@ -2841,6 +2858,15 @@ std::any IRGen::visitFieldCompoundAssignStmt(
 
         for (size_t i = 1; i < identifiers.size(); i++) {
             auto fieldName = identifiers[i]->getText();
+    // Auto-deref pointer for chained field access
+    if (currentTI && currentTI->kind == TypeKind::Pointer && currentTI->pointeeType &&
+        (currentTI->pointeeType->kind == TypeKind::Struct ||
+         currentTI->pointeeType->kind == TypeKind::Union)) {
+        auto* derefPtrTy = llvm::PointerType::getUnqual(*context_);
+        currentPtr = builder_->CreateLoad(derefPtrTy, currentPtr, "chain_deref");
+        currentTI = currentTI->pointeeType;
+        currentTy = currentTI->toLLVMType(*context_, module_->getDataLayout());
+    }
             int fieldIdx = -1;
             for (size_t f = 0; f < currentTI->fields.size(); f++) {
                 if (currentTI->fields[f].name == fieldName) {
@@ -2930,6 +2956,15 @@ std::any IRGen::visitFieldCompoundAssignStmt(
 
     for (size_t i = 1; i < identifiers.size(); i++) {
         auto fieldName = identifiers[i]->getText();
+    // Auto-deref pointer for chained field access
+    if (currentTI && currentTI->kind == TypeKind::Pointer && currentTI->pointeeType &&
+        (currentTI->pointeeType->kind == TypeKind::Struct ||
+         currentTI->pointeeType->kind == TypeKind::Union)) {
+        auto* derefPtrTy = llvm::PointerType::getUnqual(*context_);
+        currentPtr = builder_->CreateLoad(derefPtrTy, currentPtr, "chain_deref");
+        currentTI = currentTI->pointeeType;
+        currentTy = currentTI->toLLVMType(*context_, module_->getDataLayout());
+    }
         int fieldIdx = -1;
         for (size_t f = 0; f < currentTI->fields.size(); f++) {
             if (currentTI->fields[f].name == fieldName) {
@@ -3122,6 +3157,15 @@ std::any IRGen::visitIndexFieldAssignStmt(
 
     for (size_t i = 1; i < identifiers.size(); i++) {
         auto fieldName = identifiers[i]->getText();
+    // Auto-deref pointer for chained field access
+    if (currentTI && currentTI->kind == TypeKind::Pointer && currentTI->pointeeType &&
+        (currentTI->pointeeType->kind == TypeKind::Struct ||
+         currentTI->pointeeType->kind == TypeKind::Union)) {
+        auto* derefPtrTy = llvm::PointerType::getUnqual(*context_);
+        currentPtr = builder_->CreateLoad(derefPtrTy, currentPtr, "chain_deref");
+        currentTI = currentTI->pointeeType;
+        currentTy = currentTI->toLLVMType(*context_, module_->getDataLayout());
+    }
         int fieldIdx = -1;
         for (size_t f = 0; f < currentTI->fields.size(); f++) {
             if (currentTI->fields[f].name == fieldName) {
@@ -3506,11 +3550,11 @@ std::any IRGen::visitArrowCompoundAssignStmt(
             break;
         }
     }
-    if (fieldIdx < 0) {
-        std::cerr << "lucis: struct '" << currentTI->name
-                  << "' has no field '" << fieldName << "'\n";
-        return {};
-    }
+        if (fieldIdx < 0) {
+            std::cerr << "lucis: [FA1] '" << currentTI->name
+                      << "' has no field '" << fieldName << "'\n";
+            return {};
+        }
 
     auto* structLLTy = currentTI->toLLVMType(*context_, module_->getDataLayout());
     auto* gep = builder_->CreateStructGEP(structLLTy, basePtr, fieldIdx, fieldName + "_ptr");
@@ -14715,6 +14759,7 @@ llvm::StructType* IRGen::getOrCreateSetStructType() {
 std::string IRGen::getVecSuffix(const TypeInfo* elemTI) {
     if (!elemTI) return "i32";
     if (elemTI->builtinSuffix.empty()) return "raw";
+    if (elemTI->builtinSuffix == "ptr") return "raw";
     return elemTI->builtinSuffix;
 }
 
@@ -15417,20 +15462,13 @@ IRGen::visitMethodCallExpr(LucisParser::MethodCallExprContext* ctx) {
             suffix = receiverTI->builtinSuffix; // "keySuffix_valSuffix"
         } else if (receiverTI->extendedKind == "Set") {
             extStructTy = getOrCreateSetStructType();
-            // Prefer ti->builtinSuffix (already has "raw" fallback applied)
-            // but fall back to elementType suffix with raw correction
-            if (!receiverTI->builtinSuffix.empty())
-                suffix = receiverTI->builtinSuffix;
-            else if (receiverTI->elementType)
-                suffix = receiverTI->elementType->builtinSuffix.empty()
-                             ? "raw" : receiverTI->elementType->builtinSuffix;
+            if (receiverTI->elementType)
+                suffix = getVecSuffix(receiverTI->elementType);
             else
                 suffix = "raw";
         } else {
             extStructTy = getOrCreateVecStructType();
-            if (!receiverTI->builtinSuffix.empty())
-                suffix = receiverTI->builtinSuffix;
-            else if (receiverTI->elementType)
+            if (receiverTI->elementType)
                 suffix = getVecSuffix(receiverTI->elementType);
             else
                 suffix = "raw";
