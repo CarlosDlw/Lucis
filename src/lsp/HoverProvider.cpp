@@ -5150,6 +5150,49 @@ static void collectLocalsFromStmts(
                     collectLocalsFromBlock(cu->block(), beforeLine, out, flc);
                 }
             }
+
+            // Match expression: inject pattern bindings for hover inside arm bodies
+            if (auto* me = dynamic_cast<LucisParser::MatchExprContext*>(vd->expression())) {
+                auto matchedType = inferExprTypeName(me->expression(), out, flc);
+                if (!matchedType.empty() && flc && flc->tree) {
+                    std::string baseName = matchedType;
+                    auto lt = baseName.find('<');
+                    if (lt != std::string::npos) baseName = baseName.substr(0, lt);
+                    LucisParser::EnumDeclContext* ed = nullptr;
+                    for (auto* tld : flc->tree->topLevelDecl()) {
+                        if (auto* e = tld->enumDecl();
+                            e && e->IDENTIFIER() && safeText(e->IDENTIFIER()) == baseName)
+                            { ed = e; break; }
+                    }
+                    if (ed) {
+                        for (auto* arm : me->matchArm()) {
+                            if (arm->block() && cursorInsideNode(arm->block(), beforeLine)) {
+                                for (size_t pi = 0; pi < arm->pattern().size(); pi++) {
+                                    auto* p = arm->pattern(pi);
+                                    if (p->LPAREN() && p->IDENTIFIER().size() >= 1) {
+                                        std::string bindName = p->IDENTIFIER().back()->getText();
+                                        if (bindName != "_" && !bindName.empty()) {
+                                            std::string vname;
+                                            if (p->SCOPE() && p->IDENTIFIER().size() >= 2)
+                                                vname = p->IDENTIFIER(1)->getText();
+                                            else
+                                                vname = p->IDENTIFIER(0)->getText();
+                                            for (auto* v : ed->enumVariant()) {
+                                                if (safeText(v->IDENTIFIER()) == vname && !v->typeSpec().empty()) {
+                                                    out[bindName] = {safeText(v->typeSpec(0)), 0};
+                                                    break;
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                collectLocalsFromBlock(arm->block(), beforeLine, out, flc);
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
         }
 
         // Recurse into nested blocks

@@ -151,7 +151,14 @@ private:
                                  LucisParser::ProgramContext* tree,
                                  const ProjectContext* project,
                                  const std::string& prefix,
-                                 size_t cursorLine);
+                                  size_t cursorLine);
+
+    // Add enum variant completions when inside a match expression body.
+    void addMatchArmCompletions(std::vector<CompletionItem>& items,
+                                LucisParser::ProgramContext* tree,
+                                size_t cursorLine,
+                                const std::string& prefix,
+                                const ProjectContext* project);
 
     // Add cross-file symbols from the project registry.
     void addProjectSymbols(std::vector<CompletionItem>& items,

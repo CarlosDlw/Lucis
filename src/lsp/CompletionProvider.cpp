@@ -1378,6 +1378,49 @@ static void collectLocalsFromStmts(
           collectLocalsFromBlock(cu->block(), beforeLine, out, flc);
         }
       }
+
+      // Match expression: inject pattern bindings
+      if (auto* me = dynamic_cast<LucisParser::MatchExprContext*>(vd->expression())) {
+        auto matchedType = inferExprTypeName(me->expression(), out, flc);
+        if (!matchedType.empty() && flc && flc->tree) {
+          std::string baseName = matchedType;
+          auto lt = baseName.find('<');
+          if (lt != std::string::npos) baseName = baseName.substr(0, lt);
+          LucisParser::EnumDeclContext* ed = nullptr;
+          for (auto* tld : flc->tree->topLevelDecl()) {
+            if (auto* e = tld->enumDecl();
+                e && e->IDENTIFIER() && safeText(e->IDENTIFIER()) == baseName)
+              { ed = e; break; }
+          }
+          if (ed) {
+            for (auto* arm : me->matchArm()) {
+              if (arm->block() && cursorInsideNode(arm->block(), beforeLine)) {
+                for (size_t pi = 0; pi < arm->pattern().size(); pi++) {
+                  auto* p = arm->pattern(pi);
+                  if (p->LPAREN() && p->IDENTIFIER().size() >= 1) {
+                    std::string bindName = p->IDENTIFIER().back()->getText();
+                    if (bindName != "_" && !bindName.empty()) {
+                      std::string vname;
+                      if (p->SCOPE() && p->IDENTIFIER().size() >= 2)
+                        vname = p->IDENTIFIER(1)->getText();
+                      else
+                        vname = p->IDENTIFIER(0)->getText();
+                      for (auto* v : ed->enumVariant()) {
+                        if (safeText(v->IDENTIFIER()) == vname && !v->typeSpec().empty()) {
+                          out[bindName] = {safeText(v->typeSpec(0)), 0};
+                          break;
+                        }
+                      }
+                    }
+                  }
+                }
+                collectLocalsFromBlock(arm->block(), beforeLine, out, flc);
+                break;
+              }
+            }
+          }
+        }
+      }
     }
 
     // Structural blocks
@@ -1863,6 +1906,7 @@ CompletionProvider::complete(const std::string &source, size_t line, size_t col,
     addProjectSymbols(items, project, filePath, req.prefix);
     addImportedSymbols(items, parsed->tree, project, req.prefix);
     addEnumWildcardVariants(items, parsed->tree, project, req.prefix, line);
+    addMatchArmCompletions(items, parsed->tree, line, req.prefix, project);
     addGlobalBuiltins(items, req.prefix);
     addCSymbols(items, *cBindingsPtr, req.prefix);
     addKeywords(items, req.prefix);
@@ -4467,6 +4511,81 @@ void CompletionProvider::addTypeNames(std::vector<CompletionItem> &items,
       }
     }
   }
+}
+
+void CompletionProvider::addMatchArmCompletions(
+    std::vector<CompletionItem>& items,
+    LucisParser::ProgramContext* tree, size_t cursorLine,
+    const std::string& prefix, const ProjectContext* project) {
+  if (!tree) return;
+
+  // Walk the tree to find if cursor is inside a match expression
+  std::function<bool(antlr4::ParserRuleContext*)> walkForMatch =
+    [&](antlr4::ParserRuleContext* ctx) -> bool {
+      if (!ctx) return false;
+      if (auto* me = dynamic_cast<LucisParser::MatchExprContext*>(ctx)) {
+        auto* start = me->getStart();
+        auto* stop  = me->getStop();
+        if (!start || !stop) return false;
+        size_t startLine = start->getLine() - 1;
+        size_t stopLine  = stop->getLine() - 1;
+        if (cursorLine < startLine || cursorLine > stopLine) return false;
+
+        auto* matchedExpr = me->expression();
+        if (!matchedExpr) return false;
+
+        std::unordered_map<std::string, LocalVar> dummyLocals;
+        FuncLookupCtx flc;
+        flc.tree = tree;
+        flc.project = project;
+        auto enumTypeName = inferExprTypeName(matchedExpr, dummyLocals, &flc);
+        if (enumTypeName.empty()) return false;
+
+        std::string baseName = enumTypeName;
+        auto lt = baseName.find('<');
+        if (lt != std::string::npos) baseName = baseName.substr(0, lt);
+
+        LucisParser::EnumDeclContext* ed = nullptr;
+        for (auto* tld : tree->topLevelDecl()) {
+          if (auto* e = tld->enumDecl();
+              e && e->IDENTIFIER() && safeText(e->IDENTIFIER()) == baseName)
+            { ed = e; break; }
+        }
+        if (!ed && project && project->isValid()) {
+          for (auto& ns : project->registry().allModules()) {
+            auto* sym = project->registry().findSymbol(ns, baseName);
+            if (!sym || sym->kind != ExportedSymbol::Enum) continue;
+            ed = dynamic_cast<LucisParser::EnumDeclContext*>(sym->decl);
+            if (ed) break;
+          }
+        }
+        if (!ed) return false;
+
+        for (auto* variant : ed->enumVariant()) {
+          auto* vId = variant->IDENTIFIER();
+          if (!vId) continue;
+          if (!matchesPrefix(vId->getText(), prefix)) continue;
+          CompletionItem ci;
+          ci.label = vId->getText();
+          ci.kind = CompletionKind::EnumMember;
+          ci.detail = baseName + "::" + vId->getText();
+          if (variant->LPAREN()) {
+            ci.insertText = vId->getText() + "(${1:_})";
+            ci.insertTextFormat = InsertTextFormat::Snippet;
+          }
+          items.push_back(std::move(ci));
+        }
+        return true;
+      }
+      for (auto* child : ctx->children) {
+        if (auto* prc = dynamic_cast<antlr4::ParserRuleContext*>(child)) {
+          if (walkForMatch(prc)) return true;
+        }
+      }
+      return false;
+    };
+
+  walkForMatch(tree);
 }
 
 void CompletionProvider::addKeywords(std::vector<CompletionItem> &items,
