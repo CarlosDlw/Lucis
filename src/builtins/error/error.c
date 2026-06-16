@@ -46,10 +46,28 @@ lucis_error* lucis_eh_get_error(lucis_eh_frame* frame) {
     return &frame->error;
 }
 
+// Phase 8: pool allocator — avoids malloc/free in hot paths
+#define EH_POOL_SIZE 16
+static __thread lucis_eh_frame eh_pool[EH_POOL_SIZE];
+static __thread int eh_pool_used = 0;
+
 lucis_eh_frame* lucis_eh_alloc(void) {
+    if (eh_pool_used < EH_POOL_SIZE) {
+        lucis_eh_frame* f = &eh_pool[eh_pool_used++];
+        memset(f, 0, sizeof(lucis_eh_frame));
+        return f;
+    }
+    // Pool exhausted — fallback to heap
     return (lucis_eh_frame*)calloc(1, sizeof(lucis_eh_frame));
 }
 
 void lucis_eh_free(lucis_eh_frame* frame) {
+    // Check if frame belongs to the pool
+    if (frame >= eh_pool && frame < eh_pool + EH_POOL_SIZE) {
+        // Return to pool: move last used into this slot
+        // (simple LIFO — only works if alloc/free are properly nested)
+        eh_pool_used--;
+        return;
+    }
     free(frame);
 }
