@@ -6686,6 +6686,38 @@ void Checker::checkVarDeclStmt(LucisParser::VarDeclStmtContext* stmt) {
         error(stmt, "type mismatch: cannot assign '" + initType->name +
                          "' to variable '" + name + "' of type '" +
                          typeInfo->name + "'");
+    } else if (initType && typeInfo) {
+        // Check array dimension mismatch between declared type and initializer
+        bool isArrayLit = dynamic_cast<LucisParser::ArrayLitExprContext*>(stmt->expression()) != nullptr;
+        if (arrayDims == 0 && isArrayLit) {
+            error(stmt, "type mismatch: cannot assign array literal to non-array variable '" +
+                             name + "'");
+        } else if (arrayDims > 0 && !isArrayLit) {
+            // Check if the initializer is clearly a scalar (int/float/bool/char/string literal)
+            bool isScalarLit =
+                dynamic_cast<LucisParser::IntLitExprContext*>(stmt->expression()) ||
+                dynamic_cast<LucisParser::HexLitExprContext*>(stmt->expression()) ||
+                dynamic_cast<LucisParser::OctLitExprContext*>(stmt->expression()) ||
+                dynamic_cast<LucisParser::BinLitExprContext*>(stmt->expression()) ||
+                dynamic_cast<LucisParser::FloatLitExprContext*>(stmt->expression()) ||
+                dynamic_cast<LucisParser::LeadingDotFloatLitExprContext*>(stmt->expression()) ||
+                dynamic_cast<LucisParser::BoolLitExprContext*>(stmt->expression()) ||
+                dynamic_cast<LucisParser::CharLitExprContext*>(stmt->expression()) ||
+                dynamic_cast<LucisParser::StrLitExprContext*>(stmt->expression()) ||
+                dynamic_cast<LucisParser::CStrLitExprContext*>(stmt->expression()) ||
+                dynamic_cast<LucisParser::SuffixedIntLitExprContext*>(stmt->expression()) ||
+                dynamic_cast<LucisParser::SuffixedHexLitExprContext*>(stmt->expression()) ||
+                dynamic_cast<LucisParser::SuffixedOctLitExprContext*>(stmt->expression()) ||
+                dynamic_cast<LucisParser::SuffixedBinLitExprContext*>(stmt->expression()) ||
+                dynamic_cast<LucisParser::SuffixedFloatLitExprContext*>(stmt->expression()) ||
+                dynamic_cast<LucisParser::SuffixedFloatIntExprContext*>(stmt->expression()) ||
+                dynamic_cast<LucisParser::SuffixedIntFloatExprContext*>(stmt->expression()) ||
+                dynamic_cast<LucisParser::SuffixedLeadingDotFloatExprContext*>(stmt->expression());
+            if (isScalarLit) {
+                error(stmt, "type mismatch: cannot assign scalar to array variable '" +
+                                 name + "'");
+            }
+        }
     }
 
     // Check: assigning a negative constant to an unsigned integer type
@@ -6768,6 +6800,38 @@ void Checker::checkAssignStmt(LucisParser::AssignStmtContext* stmt) {
             error(stmt, "type mismatch: cannot assign '" + rhsType->name +
                              "' to variable '" + name + "' of type '" +
                              expectedType->name + "'");
+        } else if (rhsType && expectedType && indexExprs.size() == 1) {
+            // Whole-variable assignment: check array dimension mismatch
+            unsigned varDims = it->second.arrayDims;
+            bool isArrayLit = dynamic_cast<LucisParser::ArrayLitExprContext*>(indexExprs.back()) != nullptr;
+            if (varDims == 0 && isArrayLit) {
+                error(stmt, "type mismatch: cannot assign array literal to non-array variable '" +
+                                 name + "'");
+            } else if (varDims > 0 && !isArrayLit) {
+                bool isScalarLit =
+                    dynamic_cast<LucisParser::IntLitExprContext*>(indexExprs.back()) ||
+                    dynamic_cast<LucisParser::HexLitExprContext*>(indexExprs.back()) ||
+                    dynamic_cast<LucisParser::OctLitExprContext*>(indexExprs.back()) ||
+                    dynamic_cast<LucisParser::BinLitExprContext*>(indexExprs.back()) ||
+                    dynamic_cast<LucisParser::FloatLitExprContext*>(indexExprs.back()) ||
+                    dynamic_cast<LucisParser::LeadingDotFloatLitExprContext*>(indexExprs.back()) ||
+                    dynamic_cast<LucisParser::BoolLitExprContext*>(indexExprs.back()) ||
+                    dynamic_cast<LucisParser::CharLitExprContext*>(indexExprs.back()) ||
+                    dynamic_cast<LucisParser::StrLitExprContext*>(indexExprs.back()) ||
+                    dynamic_cast<LucisParser::CStrLitExprContext*>(indexExprs.back()) ||
+                    dynamic_cast<LucisParser::SuffixedIntLitExprContext*>(indexExprs.back()) ||
+                    dynamic_cast<LucisParser::SuffixedHexLitExprContext*>(indexExprs.back()) ||
+                    dynamic_cast<LucisParser::SuffixedOctLitExprContext*>(indexExprs.back()) ||
+                    dynamic_cast<LucisParser::SuffixedBinLitExprContext*>(indexExprs.back()) ||
+                    dynamic_cast<LucisParser::SuffixedFloatLitExprContext*>(indexExprs.back()) ||
+                    dynamic_cast<LucisParser::SuffixedFloatIntExprContext*>(indexExprs.back()) ||
+                    dynamic_cast<LucisParser::SuffixedIntFloatExprContext*>(indexExprs.back()) ||
+                    dynamic_cast<LucisParser::SuffixedLeadingDotFloatExprContext*>(indexExprs.back());
+                if (isScalarLit) {
+                    error(stmt, "type mismatch: cannot assign scalar to array variable '" +
+                                     name + "'");
+                }
+            }
         }
         // Check: assigning a negative constant to an unsigned integer type
         checkNegativeToUnsigned(expectedType, indexExprs.back(), stmt);
@@ -7648,6 +7712,8 @@ unsigned Checker::resolveExprArrayDims(LucisParser::ExpressionContext* expr) {
             return 0;
         return pattern.okVariant->payloadFields[0].arrayDims;
     }
+    if (dynamic_cast<LucisParser::ArrayLitExprContext*>(expr))
+        return 1;
     return 0;
 }
 
