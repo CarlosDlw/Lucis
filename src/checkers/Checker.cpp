@@ -2203,37 +2203,64 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
         auto* sourceType = resolveExprType(pe->expression());
         if (!sourceType) return nullptr;
 
+        // Phase 3: void functions skip classifyUnwrapCatchEnum (allow unit variants)
+        bool isVoidReturn = currentReturnType_ &&
+                            currentReturnType_->kind == TypeKind::Void;
+
         UnwrapCatchPatternInfo pattern;
         std::string reason;
+        if (isVoidReturn) {
+            if (sourceType->kind != TypeKind::Enum || sourceType->enumVariantInfos.empty()) {
+                error(pe, "cannot use '?': expression must be an enum type");
+                return nullptr;
+            }
+            for (const auto& v : sourceType->enumVariantInfos) {
+                bool isErr = v.name == "Err" || v.name == "Error" ||
+                             v.name == "Failure" || v.name == "Fail" ||
+                             v.name == "None";
+                if (!isErr && v.payloadFields.size() == 1 &&
+                    v.payloadFields[0].typeInfo &&
+                    v.payloadFields[0].typeInfo->name == "Error")
+                    isErr = true;
+                if (isErr) { pattern.errVariant = &v; break; }
+            }
+            if (!pattern.errVariant) {
+                error(pe, "cannot use '?' in void function: enum '" +
+                           sourceType->name + "' has no error variant");
+                return nullptr;
+            }
+            return typeRegistry_.lookup("void");
+        }
+
         if (!classifyUnwrapCatchEnum(sourceType, pattern, reason)) {
             error(pe, reason);
             return nullptr;
         }
         // '?' requires the function return type to match or be compatible
         if (currentReturnType_ && currentReturnType_ != sourceType) {
-            // Check if enums are compatible (same error payload, assignable success)
-            bool compatible = false;
-            if (currentReturnType_->kind == TypeKind::Enum &&
-                sourceType->kind == TypeKind::Enum) {
-                UnwrapCatchPatternInfo retPattern;
-                std::string retReason;
-                if (classifyUnwrapCatchEnum(currentReturnType_, retPattern, retReason)) {
-                    auto* srcErr = singlePayloadType(*pattern.errVariant);
-                    auto* retErr = singlePayloadType(*retPattern.errVariant);
-                    auto* srcOk  = singlePayloadType(*pattern.okVariant);
-                    auto* retOk  = singlePayloadType(*retPattern.okVariant);
-                    if (srcErr && retErr && srcErr == retErr &&
-                        srcOk && retOk && isAssignable(retOk, srcOk)) {
-                        compatible = true;
+                // Check if enums are compatible (same error payload, assignable success)
+                bool compatible = false;
+                if (currentReturnType_->kind == TypeKind::Enum &&
+                    sourceType->kind == TypeKind::Enum) {
+                    UnwrapCatchPatternInfo retPattern;
+                    std::string retReason;
+                    if (classifyUnwrapCatchEnum(currentReturnType_, retPattern, retReason)) {
+                        auto* srcErr = singlePayloadType(*pattern.errVariant);
+                        auto* retErr = singlePayloadType(*retPattern.errVariant);
+                        auto* srcOk  = singlePayloadType(*pattern.okVariant);
+                        auto* retOk  = singlePayloadType(*retPattern.okVariant);
+                        if (srcErr && retErr && srcErr == retErr &&
+                            srcOk && retOk && isAssignable(retOk, srcOk)) {
+                            compatible = true;
+                        }
                     }
                 }
-            }
-            if (!compatible) {
-                error(pe, "cannot use '?': function return type '" +
-                           currentReturnType_->name + "' is not compatible with '" +
-                           sourceType->name + "'");
-                return nullptr;
-            }
+                if (!compatible) {
+                    error(pe, "cannot use '?': function return type '" +
+                               currentReturnType_->name + "' is not compatible with '" +
+                               sourceType->name + "'");
+                    return nullptr;
+                }
         }
         return singlePayloadType(*pattern.okVariant);
     }
