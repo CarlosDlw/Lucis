@@ -1875,16 +1875,22 @@ CompletionProvider::analyzeContext(const std::string &source, size_t line,
     if (ws != std::string::npos)
       trimmed = trimmed.substr(ws);
 
-    // Detect: use ...
-    bool isUse = (trimmed.substr(0, 4) == "use " && trimmed.size() >= 4);
+    // Detect: use ... or just "use" (without space yet)
+    bool isUse = (trimmed == "use") ||
+                 (trimmed.substr(0, 4) == "use " && trimmed.size() >= 4);
     if (isUse) {
-      std::string afterUse = trimmed.substr(4);
-      // Strip leading whitespace
-      size_t start = afterUse.find_first_not_of(" \t");
-      if (start != std::string::npos)
-        afterUse = afterUse.substr(start);
-      else
+      std::string afterUse;
+      if (trimmed == "use") {
         afterUse.clear();
+      } else {
+        afterUse = trimmed.substr(4);
+        // Strip leading whitespace
+        size_t start = afterUse.find_first_not_of(" \t");
+        if (start != std::string::npos)
+          afterUse = afterUse.substr(start);
+        else
+          afterUse.clear();
+      }
 
       // Check for group import: use std::log::{println, |
       // Find last '{' — if present, we're completing inside a group
@@ -3715,6 +3721,37 @@ void CompletionProvider::addUseCompletions(std::vector<CompletionItem> &items,
         ci.insertText = topLevel + "::";
     items.push_back(std::move(ci));
   }
+
+      // Also scan stdlib directory for top-level .lc modules
+      {
+        static const std::vector<std::string> stdlibDirs = {
+#ifdef LUCIS_STDLIB_DIR
+            LUCIS_STDLIB_DIR,
+#endif
+            "/usr/local/share/lucis/stdlib/",
+            "/usr/share/lucis/stdlib/",
+        };
+        std::unordered_set<std::string> seenStdlib;
+        for (auto& dir : stdlibDirs) {
+          std::error_code ec;
+          for (auto& entry : fs::directory_iterator(dir, ec)) {
+            if (ec) break;
+            if (!entry.is_regular_file()) continue;
+            auto path = entry.path();
+            if (path.extension() != ".lc") continue;
+            auto name = path.stem().string();
+            if (name == "stdio") continue;
+            if (!seenStdlib.insert(name).second) continue;
+            if (!matchesPrefix(name, prefix)) continue;
+            CompletionItem ci;
+            ci.label = name;
+            ci.kind = CompletionKind::Module;
+            ci.detail = "stdlib";
+            ci.insertText = name + "::";
+            items.push_back(std::move(ci));
+          }
+        }
+      }
 
   // #[error] attribute — marks an enum variant as the error variant
   bool matchAttrError = (!prefix.empty() && prefix[0] == '#' &&
