@@ -61,9 +61,9 @@ enumDecl
     ;
 
 enumVariant
-    : IDENTIFIER
-    | IDENTIFIER LPAREN typeSpec (COMMA typeSpec)* RPAREN
-    | IDENTIFIER LBRACE enumPayloadField (COMMA enumPayloadField)* COMMA? RBRACE
+    : ATTR_ERROR? IDENTIFIER
+    | ATTR_ERROR? IDENTIFIER LPAREN typeSpec (COMMA typeSpec)* RPAREN
+    | ATTR_ERROR? IDENTIFIER LBRACE enumPayloadField (COMMA enumPayloadField)* COMMA? RBRACE
     ;
 
 enumPayloadField

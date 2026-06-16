@@ -117,6 +117,8 @@ fragment CHAR_ESC : '\\' ('n' | 'r' | 't' | '\\' | '\'' | '"' | '0' | 'a' | 'b' 
 CHAR_LIT  : '\'' ( CHAR_ESC | ~['\\r\n] ) '\'';
 
 // Identifier
+ATTR_ERROR : '#[error]' ;
+
 IDENTIFIER: [a-zA-Z_][a-zA-Z0-9_]*;
 
 // Compound assignment (must appear before single-char symbols)

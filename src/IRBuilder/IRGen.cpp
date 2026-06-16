@@ -89,7 +89,8 @@ static bool classifyUnwrapCatchEnum(const TypeInfo* enumType,
             return false;
         }
 
-        bool isErrName = variant.name == "Err" || variant.name == "Error" ||
+        bool isErrName = variant.isError ||
+                         variant.name == "Err" || variant.name == "Error" ||
                          variant.name == "Failure" || variant.name == "Fail" ||
                          variant.name == "None";
         if (isErrName || payloadTI->name == "Error") {
@@ -18753,7 +18754,8 @@ std::any IRGen::visitPropagateExpr(LucisParser::PropagateExprContext* ctx) {
             return {};
         }
         for (const auto& v : sourceTI->enumVariantInfos) {
-            bool isErr = v.name == "Err" || v.name == "Error" ||
+            bool isErr = v.isError ||
+                         v.name == "Err" || v.name == "Error" ||
                          v.name == "Failure" || v.name == "Fail" ||
                          v.name == "None";
             if (!isErr && v.payloadFields.size() == 1 &&
@@ -19345,6 +19347,7 @@ const TypeInfo* IRGen::instantiateGenericEnum(
         EnumVariantInfo info;
         info.name = variantName;
         info.discriminant = static_cast<unsigned>(ti.enumVariantInfos.size());
+        info.isError = (variantDecl->ATTR_ERROR() != nullptr);
 
         if (variantDecl->LPAREN()) {
             info.payloadKind = EnumPayloadKind::Tuple;

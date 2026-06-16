@@ -57,8 +57,9 @@ static bool classifyUnwrapCatchEnum(const TypeInfo* enumType,
             return false;
         }
 
-        // "error" variant naming convention: any variant whose name suggests error
-        bool isErrName = variant.name == "Err" || variant.name == "Error" ||
+        // "error" variant: #[error] attribute or naming convention
+        bool isErrName = variant.isError ||
+                         variant.name == "Err" || variant.name == "Error" ||
                          variant.name == "Failure" || variant.name == "Fail" ||
                          variant.name == "None";
         if (isErrName || payloadTI->name == "Error") {
@@ -2215,7 +2216,8 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
                 return nullptr;
             }
             for (const auto& v : sourceType->enumVariantInfos) {
-                bool isErr = v.name == "Err" || v.name == "Error" ||
+                bool isErr = v.isError ||
+                             v.name == "Err" || v.name == "Error" ||
                              v.name == "Failure" || v.name == "Fail" ||
                              v.name == "None";
                 if (!isErr && v.payloadFields.size() == 1 &&
@@ -5265,6 +5267,7 @@ void Checker::checkEnumDecl(LucisParser::EnumDeclContext* decl) {
         EnumVariantInfo info;
         info.name = variant;
         info.discriminant = static_cast<unsigned>(ti.enumVariantInfos.size());
+        info.isError = (variantDecl->ATTR_ERROR() != nullptr);
 
         if (variantDecl->LPAREN()) {
             info.payloadKind = EnumPayloadKind::Tuple;

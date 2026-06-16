@@ -51,6 +51,7 @@ struct EnumVariantInfo {
     unsigned discriminant = 0;
     EnumPayloadKind payloadKind = EnumPayloadKind::Unit;
     std::vector<FieldInfo> payloadFields;
+    bool isError = false;  // marked with #[error] attribute
 };
 
 struct TypeInfo {
