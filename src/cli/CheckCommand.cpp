@@ -18,7 +18,25 @@ int CheckCommand::run(const ArgParser& parser) {
     auto config = LucisConfig::findInDir(fs::current_path().string());
 
     LucisPipeline::Options pipeOpts;
-    pipeOpts.inputFile    = parser.get("file");
+    pipeOpts.inputFile = parser.get("file");
+    if (!pipeOpts.inputFile.empty()) {
+        if (fs::is_directory(pipeOpts.inputFile))
+            pipeOpts.inputFile.clear();
+    }
+    if (pipeOpts.inputFile.empty()) {
+        if (!config) {
+            std::cerr << "lucis: no input file specified and no lucis.yaml found\n";
+            std::cerr << "usage: lucis check <file>   or   lucis check  (from a project with lucis.yaml)\n";
+            return 1;
+        }
+        for (auto& candidate : { "src/main.lc", "main.lc" }) {
+            auto path = fs::path(candidate);
+            if (fs::exists(path)) {
+                pipeOpts.inputFile = fs::canonical(path).string();
+                break;
+            }
+        }
+    }
     pipeOpts.quiet        = parser.has("quiet");
     pipeOpts.includePaths = parser.getAll("include");
     if (config) pipeOpts.sourcePaths = config->sourcePaths;

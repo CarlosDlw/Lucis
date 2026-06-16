@@ -48,7 +48,10 @@ std::string RunCommand::resolveInputFile(const ArgParser& parser,
     auto config = LucisConfig::findInDir(fs::current_path().string());
     if (config && outConfig) *outConfig = *config;
 
-    if (!file.empty()) return file;
+    if (!file.empty()) {
+        if (!fs::is_directory(file)) return file;
+        // Directory was passed — fall through to config-based search
+    }
 
     if (!config) return {};
 

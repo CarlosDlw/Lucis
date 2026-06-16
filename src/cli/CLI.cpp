@@ -14,6 +14,9 @@
 
 #include <iostream>
 #include <algorithm>
+#include <filesystem>
+
+namespace fs = std::filesystem;
 
 CLI::~CLI() = default;
 
@@ -110,7 +113,10 @@ int CLI::run() {
     }
 
     // Legacy: handle positional args (lucis <file.lc> ...) — deprecated
-    bool legacyResult = parseLegacy(argc_, argv_);
+    // Only attempt legacy mode if the first arg looks like a source file
+    bool legacyResult = (fs::exists(first) && !fs::is_directory(first))
+                      ? parseLegacy(argc_, argv_)
+                      : false;
     if (legacyResult) {
         if (legacyOpts_.showHelp) {
             auto* help = findCommand("help");
