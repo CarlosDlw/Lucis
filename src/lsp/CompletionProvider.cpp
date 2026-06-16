@@ -938,6 +938,19 @@ static std::string inferExprTypeName(
       return ids[0]->getText();
     return "";
   }
+  // Generic enum access: Result<int32>::Ok → "Result<int32>"
+  if (auto *gea = dynamic_cast<LucisParser::GenericEnumAccessExprContext *>(expr)) {
+    auto ids = gea->IDENTIFIER();
+    if (ids.empty()) return "";
+    std::string outType = ids[0]->getText() + "<";
+    auto args = gea->typeSpec();
+    for (size_t i = 0; i < args.size(); i++) {
+      if (i > 0) outType += ",";
+      outType += args[i]->getText();
+    }
+    outType += ">";
+    return outType;
+  }
   // Static method call: Type::method(...) → look up return type from extend
   // blocks
   if (auto *smc =
