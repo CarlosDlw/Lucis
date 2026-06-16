@@ -4534,11 +4534,16 @@ void CompletionProvider::addMatchArmCompletions(
         auto* matchedExpr = me->expression();
         if (!matchedExpr) return false;
 
-        std::unordered_map<std::string, LocalVar> dummyLocals;
+        // Collect actual locals from enclosing scope so variables resolve
+        std::unordered_map<std::string, LocalVar> locals;
+        auto* func = findEnclosingFunction(tree, cursorLine);
+        if (func) {
+            locals = collectLocals(func, cursorLine, tree, nullptr, project);
+        }
         FuncLookupCtx flc;
         flc.tree = tree;
         flc.project = project;
-        auto enumTypeName = inferExprTypeName(matchedExpr, dummyLocals, &flc);
+        auto enumTypeName = inferExprTypeName(matchedExpr, locals, &flc);
         if (enumTypeName.empty()) return false;
 
         std::string baseName = enumTypeName;
