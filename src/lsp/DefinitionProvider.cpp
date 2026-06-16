@@ -777,7 +777,8 @@ std::optional<DefinitionResult> DefinitionProvider::resolveImportedSymbol(
 
     if (!project || !project->isValid()) return std::nullopt;
 
-    auto* sym = project->registry().findSymbol(modulePath, symbolName);
+    auto registryPath = ModuleRegistry::usePathToModulePath(modulePath);
+    auto* sym = project->registry().findSymbol(registryPath, symbolName);
     if (!sym || !sym->decl) return std::nullopt;
 
     // Phase 4: use ModuleRegistry location

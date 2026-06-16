@@ -2667,7 +2667,8 @@ void CompletionProvider::addImportedSymbols(std::vector<CompletionItem> &items,
         continue;
       }
 
-      auto *sym = project->registry().findSymbol(modulePath, symName);
+      auto registryPath = ModuleRegistry::usePathToModulePath(modulePath);
+      auto *sym = project->registry().findSymbol(registryPath, symName);
 
       if (!sym) {
         // Fallback: check stdlib builtins for std:: modules
