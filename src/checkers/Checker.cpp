@@ -2212,6 +2212,146 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
         return innerType;
     }
 
+    // ── Match expression: match expr { pattern -> body, ... } ─────────
+    if (auto* me = dynamic_cast<LucisParser::MatchExprContext*>(expr)) {
+        auto* matchedType = resolveExprType(me->expression());
+        if (!matchedType) return nullptr;
+
+        if (matchedType->kind != TypeKind::Enum) {
+            error(me, "match requires an enum expression, got '" +
+                       matchedType->name + "'");
+            return nullptr;
+        }
+
+        const TypeInfo* resultType = nullptr;
+        for (size_t i = 0; i < me->matchArm().size(); i++) {
+            auto* arm = me->matchArm(i);
+            auto* pattern = arm->pattern();
+
+            // Resolve pattern: find matching variant
+            const EnumVariantInfo* matchedVariant = nullptr;
+            std::string bindName;
+            std::string variantName;
+
+            if (pattern->WILDCARD()) {
+                // _ wildcard — matches any remaining variant
+                // still need to resolve body type below
+            } else if (!pattern->IDENTIFIER().empty()) {
+                if (pattern->SCOPE() && pattern->IDENTIFIER().size() >= 2) {
+                    variantName = pattern->IDENTIFIER(1)->getText();
+                } else {
+                    variantName = pattern->IDENTIFIER(0)->getText();
+                }
+            }
+
+            if (!variantName.empty()) {
+                // Find variant in enum
+                for (auto& v : matchedType->enumVariantInfos) {
+                    if (v.name == variantName) {
+                        matchedVariant = &v;
+                        break;
+                    }
+                }
+                if (!matchedVariant) {
+                    error(arm, "enum '" + matchedType->name +
+                               "' has no variant '" + variantName + "'");
+                    return nullptr;
+                }
+
+                // If payload binding: Variant(name)
+                if (pattern->LPAREN() && !pattern->IDENTIFIER().empty()) {
+                    size_t bindIdx = pattern->SCOPE() ? 2 : 1;
+                    if (bindIdx < pattern->IDENTIFIER().size()) {
+                        bindName = pattern->IDENTIFIER(bindIdx)->getText();
+                    } else if (pattern->WILDCARD()) {
+                        bindName = "_";
+                    }
+                    if (!bindName.empty() && bindName != "_") {
+                        if (matchedVariant->payloadFields.empty()) {
+                            error(arm, "variant '" + variantName +
+                                       "' has no payload to bind");
+                            return nullptr;
+                        }
+                        auto* payloadType = matchedVariant->payloadFields[0].typeInfo;
+                        locals_[bindName] = {payloadType, 0, true, true, nullptr};
+                    }
+                }
+            }
+
+            // Resolve guard condition if present
+            if (arm->IF()) {
+                auto* guardType = resolveExprType(arm->expression(0));
+                if (guardType && guardType->kind != TypeKind::Bool) {
+                    error(arm, "match guard must be a boolean expression");
+                    return nullptr;
+                }
+            }
+
+            // Resolve body type
+            const TypeInfo* bodyType = nullptr;
+            if (arm->block()) {
+                checkBlock(arm->block(), currentReturnType_);
+                bodyType = typeRegistry_.lookup("void");
+            } else {
+                size_t bodyExprIdx = arm->IF() ? 1 : 0;
+                bodyType = resolveExprType(arm->expression(bodyExprIdx));
+            }
+
+            if (bodyType && bodyType->kind != TypeKind::Void) {
+                if (!resultType) {
+                    resultType = bodyType;
+                } else if (resultType != bodyType && !isAssignable(resultType, bodyType)) {
+                    error(arm, "match arm type '" + bodyType->name +
+                               "' is not compatible with previous arm type '" +
+                               resultType->name + "'");
+                    return nullptr;
+                }
+            }
+
+            // Clean up binding from scope
+            if (!bindName.empty() && bindName != "_") {
+                locals_.erase(bindName);
+            }
+        }
+
+        // Exhaustiveness: check all variants are covered (unless wildcard present)
+        bool hasWildcard = false;
+        for (size_t i = 0; i < me->matchArm().size(); i++) {
+            if (me->matchArm(i)->pattern()->WILDCARD()) {
+                hasWildcard = true; break;
+            }
+        }
+        if (!hasWildcard && !matchedType->enumVariantInfos.empty()) {
+            // Collect covered variants
+            std::unordered_set<std::string> covered;
+            for (size_t i = 0; i < me->matchArm().size(); i++) {
+                auto* p = me->matchArm(i)->pattern();
+                if (!p->IDENTIFIER().empty()) {
+                    std::string vname;
+                    if (p->SCOPE() && p->IDENTIFIER().size() >= 2)
+                        vname = p->IDENTIFIER(1)->getText();
+                    else
+                        vname = p->IDENTIFIER(0)->getText();
+                    if (!vname.empty()) covered.insert(vname);
+                }
+            }
+            // Find missing variants
+            std::string missing;
+            for (auto& v : matchedType->enumVariantInfos) {
+                if (!covered.count(v.name)) {
+                    if (!missing.empty()) missing += ", ";
+                    missing += v.name;
+                }
+            }
+            if (!missing.empty()) {
+                error(me, "non-exhaustive match: missing variants " + missing);
+                return nullptr;
+            }
+        }
+
+        return resultType ? resultType : typeRegistry_.lookup("void");
+    }
+
     // ── Propagate operator: expr? — unwrap Result or return error ─────
     if (auto* pe = dynamic_cast<LucisParser::PropagateExprContext*>(expr)) {
         auto* sourceType = resolveExprType(pe->expression());
