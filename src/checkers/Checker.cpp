@@ -1029,6 +1029,9 @@ bool Checker::check(LucisParser::ProgramContext* tree) {
                 if (typeRegistry_.lookup(sym->name))
                     continue;
                 auto* decl = static_cast<LucisParser::TypeAliasDeclContext*>(sym->decl);
+                // Ensure transitive generic dependencies (e.g. Result<T>) are registered
+                ensureTypeDependencyFromSpec(ensureTypeDependencyFromSpec,
+                                             decl->typeSpec(), currentModulePath_);
                 checkTypeAliasDecl(decl);
             }
         }
@@ -1044,6 +1047,9 @@ bool Checker::check(LucisParser::ProgramContext* tree) {
                 if (typeRegistry_.lookup(sym->name))
                     continue;
                 auto* decl = static_cast<LucisParser::TypeAliasDeclContext*>(sym->decl);
+                // Ensure transitive generic dependencies
+                ensureTypeDependencyFromSpec(ensureTypeDependencyFromSpec,
+                                             decl->typeSpec(), ns);
                 checkTypeAliasDecl(decl);
             }
         }
