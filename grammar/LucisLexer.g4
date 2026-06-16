@@ -34,6 +34,7 @@ CATCH     : 'catch';
 FINALLY   : 'finally';
 THROW     : 'throw';
 DEFER     : 'defer';
+OR        : 'or';
 EXTERN    : 'extern';
 AUTO      : 'auto';
 VEC       : 'vec';

@@ -1127,7 +1127,7 @@ std::optional<DefinitionResult> DefinitionProvider::walkExprForDef(
 
     // ── Try expression: try expr ─────────────────────────────────
     if (auto* te = dynamic_cast<LucisParser::TryExprContext*>(expr)) {
-        return walkExprForDef(te->expression(), hoveredToken, tokenText, tree,
+        return walkExprForDef(te->expression(0), hoveredToken, tokenText, tree,
                               bindings, cursorLine, filePath, project);
     }
 

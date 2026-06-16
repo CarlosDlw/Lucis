@@ -1857,7 +1857,7 @@ void Checker::checkNegativeToUnsigned(const TypeInfo* target,
 
     // Unwrap try expression
     if (auto* te = dynamic_cast<LucisParser::TryExprContext*>(expr))
-        expr = te->expression();
+        expr = te->expression(0);
 
     // Case 1: Positive integer literal → always safe for unsigned
     if (dynamic_cast<LucisParser::IntLitExprContext*>(expr) ||
@@ -2196,8 +2196,21 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
     }
 
     // ── Try expression (unwrap — same type as inner) ─────────────────
-    if (auto* te = dynamic_cast<LucisParser::TryExprContext*>(expr))
-        return resolveExprType(te->expression());
+    if (auto* te = dynamic_cast<LucisParser::TryExprContext*>(expr)) {
+        auto* innerType = resolveExprType(te->expression(0));
+        // If 'or fallback' is present, validate it matches the inner type
+        if (te->OR() && te->expression().size() >= 2) {
+            auto* fallbackType = resolveExprType(te->expression(1));
+            if (fallbackType && innerType && !isAssignable(innerType, fallbackType)) {
+                error(te, "try-or fallback type '" +
+                           (fallbackType ? fallbackType->name : "?") +
+                           "' is not compatible with '" +
+                           (innerType ? innerType->name : "?") + "'");
+                return nullptr;
+            }
+        }
+        return innerType;
+    }
 
     // ── Propagate operator: expr? — unwrap Result or return error ─────
     if (auto* pe = dynamic_cast<LucisParser::PropagateExprContext*>(expr)) {

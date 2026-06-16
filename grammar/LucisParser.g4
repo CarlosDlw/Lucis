@@ -478,7 +478,9 @@ expression
     | expression QUESTION block?                                 # propagateExpr
     // Unwrap-catch expression: expr catch { ... }
     | expression CATCH block                                    # catchUnwrapExpr
-    // Try expression (lowest precedence – wraps entire sub-expression)
+    // Try expression with fallback: try expr or default
+    | TRY expression OR expression                               # tryExpr
+    // Try expression (wraps sub-expression in setjmp/longjmp)
     | TRY expression                                           # tryExpr
     // Atoms
     | LPAREN expression COMMA expression (COMMA expression)* RPAREN  # tupleLitExpr

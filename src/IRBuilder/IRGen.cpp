@@ -14120,6 +14120,10 @@ const TypeInfo* IRGen::resolveExprTypeInfo(LucisParser::ExpressionContext* ctx) 
     if (auto* tern = dynamic_cast<LucisParser::TernaryExprContext*>(ctx))
         return resolveExprTypeInfo(tern->expression(1));
 
+    // ── Try expression: try expr — same type as inner ────────────────
+    if (auto* te = dynamic_cast<LucisParser::TryExprContext*>(ctx))
+        return resolveExprTypeInfo(te->expression(0));
+
     // ── Propagate operator: expr? — success payload type ────────────
     if (auto* pe = dynamic_cast<LucisParser::PropagateExprContext*>(ctx)) {
         auto* sourceTI = resolveExprTypeInfo(pe->expression());
@@ -18622,7 +18626,7 @@ std::any IRGen::visitTryExpr(LucisParser::TryExprContext* ctx) {
     auto popFn  = declareBuiltin("lucis_eh_pop",  voidTy, {});
     auto freeFn = declareBuiltin("lucis_eh_free", voidTy, {ptrTy});
 
-    auto* exprVal = castValue(visit(ctx->expression()));
+    auto* exprVal = castValue(visit(ctx->expression(0)));
     auto* exprTy  = exprVal->getType();
 
     builder_->CreateCall(popFn, {});
@@ -18637,7 +18641,15 @@ std::any IRGen::visitTryExpr(LucisParser::TryExprContext* ctx) {
     builder_->CreateCall(popFn, {});
     builder_->CreateCall(freeFn, {framePtr});
 
-    llvm::Value* defaultVal = llvm::Constant::getNullValue(exprTy);
+    // Phase 7: 'or fallback' provides custom default value
+    llvm::Value* defaultVal = nullptr;
+    if (ctx->OR() && ctx->expression().size() >= 2) {
+        auto* fbVal = castValue(visit(ctx->expression(1)));
+        defaultVal = fbVal ? coerceValueToType(fbVal, exprTy)
+                           : llvm::Constant::getNullValue(exprTy);
+    } else {
+        defaultVal = llvm::Constant::getNullValue(exprTy);
+    }
 
     builder_->CreateBr(mergeBB);
 
