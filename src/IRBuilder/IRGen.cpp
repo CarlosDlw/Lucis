@@ -13922,6 +13922,11 @@ bool IRGen::isPointerType(LucisParser::TypeSpecContext* ctx) {
 }
 
 const TypeInfo* IRGen::resolveExprTypeInfo(LucisParser::ExpressionContext* ctx) {
+    // Check cache first (populated by visitFnCallExpr and others)
+    auto cacheIt = exprTypeCache_.find(ctx);
+    if (cacheIt != exprTypeCache_.end())
+        return cacheIt->second;
+
     // ── Suffixed literals ────────────────────────────────────────────
     static const std::unordered_map<std::string, std::string> kSufMap = {
         {"i8", "int8"}, {"i16", "int16"}, {"i32", "int32"}, {"i64", "int64"},
@@ -14728,6 +14733,18 @@ const TypeInfo* IRGen::resolveExprTypeInfo(LucisParser::ExpressionContext* ctx) 
     // ── Typeof → string ─────────────────────────────────────────────
     if (dynamic_cast<LucisParser::TypeofExprContext*>(ctx))
         return typeRegistry_.lookup("string");
+
+    // ── Function call: lookup return type ───────────────────────────
+    if (auto* call = dynamic_cast<LucisParser::FnCallExprContext*>(ctx)) {
+        if (auto* ident = dynamic_cast<LucisParser::IdentExprContext*>(call->expression())) {
+            auto emitName = resolveCallTarget(ident->IDENTIFIER()->getText());
+            auto it = fnReturnTypes_.find(emitName);
+            if (it != fnReturnTypes_.end()) {
+                exprTypeCache_[ctx] = it->second;
+                return it->second;
+            }
+        }
+    }
 
     return nullptr;
 }
@@ -18623,74 +18640,131 @@ std::any IRGen::visitThrowStmt(LucisParser::ThrowStmtContext* ctx) {
 }
 
 std::any IRGen::visitTryExpr(LucisParser::TryExprContext* ctx) {
-    auto* fn     = currentFunction_;
-    auto* ptrTy  = llvm::PointerType::getUnqual(*context_);
-    auto* i32Ty  = llvm::Type::getInt32Ty(*context_);
-    auto* voidTy = llvm::Type::getVoidTy(*context_);
+    auto* fn    = currentFunction_;
+    auto* i32Ty = llvm::Type::getInt32Ty(*context_);
 
-    // Allocate eh_frame on the heap
-    auto allocFn = declareBuiltin("lucis_eh_alloc", ptrTy, {});
-    auto* framePtr = builder_->CreateCall(allocFn, {}, "try_frame");
+    // Evaluate the source expression first
+    auto* sourceVal = castValue(visit(ctx->expression(0)));
+    auto* sourceTI  = resolveExprTypeInfo(ctx->expression(0));
 
-    // Push frame onto exception handler stack
-    auto pushFn = declareBuiltin("lucis_eh_push", voidTy, {ptrTy});
-    builder_->CreateCall(pushFn, {framePtr});
-
-    // Get jmp_buf pointer and call setjmp
-    auto getJmpBufFn = declareBuiltin("lucis_eh_get_jmpbuf", ptrTy, {ptrTy});
-    auto* jmpBufPtr  = builder_->CreateCall(getJmpBufFn, {framePtr}, "try_jmpbuf");
-    auto setjmpFn    = declareBuiltin("setjmp", i32Ty, {ptrTy});
-    auto* sjResult   = builder_->CreateCall(setjmpFn, {jmpBufPtr});
-
-    auto* isCaught = builder_->CreateICmpNE(sjResult,
-        llvm::ConstantInt::get(i32Ty, 0), "try_caught");
-
-    auto* exprBB    = llvm::BasicBlock::Create(*context_, "try.expr",    fn);
-    auto* defaultBB = llvm::BasicBlock::Create(*context_, "try.default", fn);
-    auto* mergeBB   = llvm::BasicBlock::Create(*context_, "try.merge",   fn);
-
-    builder_->CreateCondBr(isCaught, defaultBB, exprBB);
-
-    // ── Expression evaluation (no exception) ────────────────────────────
-    builder_->SetInsertPoint(exprBB);
-
-    auto popFn  = declareBuiltin("lucis_eh_pop",  voidTy, {});
-    auto freeFn = declareBuiltin("lucis_eh_free", voidTy, {ptrTy});
-
-    auto* exprVal = castValue(visit(ctx->expression(0)));
-    auto* exprTy  = exprVal->getType();
-
-    builder_->CreateCall(popFn, {});
-    builder_->CreateCall(freeFn, {framePtr});
-
-    auto* exprEndBB = builder_->GetInsertBlock();
-    builder_->CreateBr(mergeBB);
-
-    // ── Default value (exception caught) ────────────────────────────────
-    builder_->SetInsertPoint(defaultBB);
-
-    builder_->CreateCall(popFn, {});
-    builder_->CreateCall(freeFn, {framePtr});
-
-    // Phase 7: 'or fallback' provides custom default value
-    llvm::Value* defaultVal = nullptr;
-    if (ctx->OR() && ctx->expression().size() >= 2) {
-        auto* fbVal = castValue(visit(ctx->expression(1)));
-        defaultVal = fbVal ? coerceValueToType(fbVal, exprTy)
-                           : llvm::Constant::getNullValue(exprTy);
-    } else {
-        defaultVal = llvm::Constant::getNullValue(exprTy);
+    // Check if this is an unwrap-catchable enum (e.g. Result<T,E>)
+    UnwrapCatchPatternInfo pattern;
+    std::string reason;
+    if (!sourceTI || !classifyUnwrapCatchEnum(sourceTI, pattern, reason)) {
+        // Fallback: not an enum, just return the value directly
+        llvm::Value* result = sourceVal;
+        if (ctx->OR() && ctx->expression().size() >= 2) {
+            // Check last visited to see if expression threw an exception;
+            // if so, use fallback; otherwise, return the expression value.
+            auto allocFn = declareBuiltin("lucis_eh_alloc",
+                llvm::PointerType::getUnqual(*context_), {});
+            auto* framePtr = builder_->CreateCall(allocFn, {}, "try_frame");
+            auto pushFn = declareBuiltin("lucis_eh_push",
+                llvm::Type::getVoidTy(*context_),
+                {llvm::PointerType::getUnqual(*context_)});
+            builder_->CreateCall(pushFn, {framePtr});
+            auto getJmpBufFn = declareBuiltin("lucis_eh_get_jmpbuf",
+                llvm::PointerType::getUnqual(*context_),
+                {llvm::PointerType::getUnqual(*context_)});
+            auto* jmpBufPtr = builder_->CreateCall(getJmpBufFn, {framePtr}, "try_jmpbuf");
+            auto setjmpFn = declareBuiltin("setjmp", i32Ty,
+                {llvm::PointerType::getUnqual(*context_)});
+            auto* sjResult = builder_->CreateCall(setjmpFn, {jmpBufPtr});
+            auto* isCaught = builder_->CreateICmpNE(sjResult,
+                llvm::ConstantInt::get(i32Ty, 0), "try_caught");
+            auto* caughtBB = llvm::BasicBlock::Create(*context_, "try.caught", fn);
+            auto* okBB     = llvm::BasicBlock::Create(*context_, "try.ok",     fn);
+            auto* mergeBB  = llvm::BasicBlock::Create(*context_, "try.merge",  fn);
+            builder_->CreateCondBr(isCaught, caughtBB, okBB);
+            builder_->SetInsertPoint(okBB);
+            auto* okVal = sourceVal;
+            auto popFn  = declareBuiltin("lucis_eh_pop",
+                llvm::Type::getVoidTy(*context_), {});
+            auto freeFn = declareBuiltin("lucis_eh_free",
+                llvm::Type::getVoidTy(*context_),
+                {llvm::PointerType::getUnqual(*context_)});
+            builder_->CreateCall(popFn, {});
+            builder_->CreateCall(freeFn, {framePtr});
+            auto* okEndBB = builder_->GetInsertBlock();
+            builder_->CreateBr(mergeBB);
+            builder_->SetInsertPoint(caughtBB);
+            auto* fbVal = castValue(visit(ctx->expression(1)));
+            auto popFn2 = declareBuiltin("lucis_eh_pop",
+                llvm::Type::getVoidTy(*context_), {});
+            auto freeFn2 = declareBuiltin("lucis_eh_free",
+                llvm::Type::getVoidTy(*context_),
+                {llvm::PointerType::getUnqual(*context_)});
+            builder_->CreateCall(popFn2, {});
+            builder_->CreateCall(freeFn2, {framePtr});
+            auto* fbEndBB = builder_->GetInsertBlock();
+            builder_->CreateBr(mergeBB);
+            builder_->SetInsertPoint(mergeBB);
+            auto* eTy = okVal->getType();
+            auto* phi = builder_->CreatePHI(eTy, 2, "try_result");
+            phi->addIncoming(okVal, okEndBB);
+            phi->addIncoming(fbVal ? coerceValueToType(fbVal, eTy) : llvm::Constant::getNullValue(eTy), fbEndBB);
+            return static_cast<llvm::Value*>(phi);
+        }
+        return static_cast<llvm::Value*>(sourceVal);
     }
 
+    // ── Enum unwrapping path ────────────────────────────────────────────
+    auto* okPayloadTI = singlePayloadType(*pattern.okVariant);
+    auto* enumLLTy   = sourceTI->toLLVMType(*context_, module_->getDataLayout());
+    llvm::Type* resultTy =
+        okPayloadTI ? okPayloadTI->toLLVMType(*context_, module_->getDataLayout())
+                    : sourceVal->getType();
+
+    // Allocate temp, store source, and load tag
+    auto* tempAlloca = builder_->CreateAlloca(enumLLTy, nullptr, "try.tmp");
+    builder_->CreateStore(sourceVal, tempAlloca);
+    auto* tagPtr = builder_->CreateStructGEP(enumLLTy, tempAlloca, 0, "try.tag.ptr");
+    auto* tagVal = builder_->CreateLoad(i32Ty, tagPtr, "try.tag");
+
+    auto* isErr = builder_->CreateICmpEQ(
+        tagVal,
+        llvm::ConstantInt::get(i32Ty, pattern.errVariant->discriminant),
+        "try.is_err");
+
+    auto* okBB = llvm::BasicBlock::Create(*context_, "try.ok", fn);
+    auto* errBB = llvm::BasicBlock::Create(*context_, "try.err", fn);
+    auto* mergeBB = llvm::BasicBlock::Create(*context_, "try.merge", fn);
+    builder_->CreateCondBr(isErr, errBB, okBB);
+
+    // ── Ok: extract payload ─────────────────────────────────────────────
+    builder_->SetInsertPoint(okBB);
+    llvm::Value* okResult = nullptr;
+    if (okPayloadTI) {
+        auto* rawPayloadPtr = builder_->CreateStructGEP(enumLLTy, tempAlloca, 1, "try.ok.payload.ptr");
+        auto* payloadPtr = builder_->CreateBitCast(
+            rawPayloadPtr,
+            llvm::PointerType::getUnqual(resultTy),
+            "try.ok.payload.cast");
+        okResult = builder_->CreateLoad(resultTy, payloadPtr, "try.ok.payload");
+    } else {
+        okResult = llvm::Constant::getNullValue(resultTy);
+    }
+    auto* okEndBB = builder_->GetInsertBlock();
+    builder_->CreateBr(mergeBB);
+
+    // ── Err: use fallback value ─────────────────────────────────────────
+    builder_->SetInsertPoint(errBB);
+    llvm::Value* errResult = nullptr;
+    if (ctx->OR() && ctx->expression().size() >= 2) {
+        auto* fbVal = castValue(visit(ctx->expression(1)));
+        errResult = fbVal ? coerceValueToType(fbVal, resultTy)
+                          : llvm::Constant::getNullValue(resultTy);
+    } else {
+        errResult = llvm::Constant::getNullValue(resultTy);
+    }
+    auto* errEndBB = builder_->GetInsertBlock();
     builder_->CreateBr(mergeBB);
 
     // ── Merge ───────────────────────────────────────────────────────────
     builder_->SetInsertPoint(mergeBB);
-
-    auto* phi = builder_->CreatePHI(exprTy, 2, "try_result");
-    phi->addIncoming(exprVal, exprEndBB);
-    phi->addIncoming(defaultVal, defaultBB);
-
+    auto* phi = builder_->CreatePHI(resultTy, 2, "try_result");
+    phi->addIncoming(okResult, okEndBB);
+    phi->addIncoming(errResult, errEndBB);
     return static_cast<llvm::Value*>(phi);
 }
 

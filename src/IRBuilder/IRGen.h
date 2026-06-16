@@ -283,6 +283,9 @@ private:
     // User imports: symbol name → source module path
     std::unordered_map<std::string, std::string> userImports_;
 
+    // Caches resolved TypeInfo for expression nodes (used by resolveExprTypeInfo)
+    std::unordered_map<const antlr4::ParserRuleContext*, const TypeInfo*> exprTypeCache_;
+
     // Injected enum variant names from `use EnumType::*;`
     struct InjectedEnumVariant {
         const TypeInfo* enumType;
