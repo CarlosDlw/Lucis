@@ -622,9 +622,14 @@ std::optional<DefinitionResult> DefinitionProvider::resolveIdent(
         for (auto& ns : project->registry().allModules()) {
             auto* sym = project->registry().findSymbol(ns, name);
             if (!sym || !sym->decl) continue;
-            auto* declStart = sym->decl->getStart();
-            if (!declStart) continue;
-            return makeResult(declStart, filePath, sym->sourceFile);
+            // Phase 4: use ModuleRegistry location instead of AST token
+            DefinitionResult r;
+            r.uri     = "file://" + sym->sourceFile;
+            r.line    = static_cast<int>(sym->line) - 1;
+            r.col     = sym->column;
+            r.endLine = r.line;
+            r.endCol  = r.col + static_cast<unsigned>(sym->name.size());
+            return r;
         }
     }
 
@@ -748,9 +753,14 @@ std::optional<DefinitionResult> DefinitionProvider::resolveTypeName(
                 sym->kind != ExportedSymbol::Enum &&
                 sym->kind != ExportedSymbol::Union &&
                 sym->kind != ExportedSymbol::TypeAlias) continue;
-            auto* declStart = sym->decl->getStart();
-            if (!declStart) continue;
-            return makeResult(declStart, filePath, sym->sourceFile);
+            // Phase 4: use ModuleRegistry location
+            DefinitionResult r;
+            r.uri     = "file://" + sym->sourceFile;
+            r.line    = static_cast<int>(sym->line) - 1;
+            r.col     = sym->column;
+            r.endLine = r.line;
+            r.endCol  = r.col + static_cast<unsigned>(sym->name.size());
+            return r;
         }
     }
 
@@ -770,11 +780,14 @@ std::optional<DefinitionResult> DefinitionProvider::resolveImportedSymbol(
     auto* sym = project->registry().findSymbol(modulePath, symbolName);
     if (!sym || !sym->decl) return std::nullopt;
 
-    auto* declStart = sym->decl->getStart();
-    if (!declStart) return std::nullopt;
-
-    // For cross-file results we need a dummy filePath (unused in the overload)
-    return makeResult(declStart, "", sym->sourceFile);
+    // Phase 4: use ModuleRegistry location
+    DefinitionResult r;
+    r.uri     = "file://" + sym->sourceFile;
+    r.line    = static_cast<int>(sym->line) - 1;
+    r.col     = sym->column;
+    r.endLine = r.line;
+    r.endCol  = r.col + static_cast<unsigned>(symbolName.size());
+    return r;
 }
 
 // ═══════════════════════════════════════════════════════════════════════

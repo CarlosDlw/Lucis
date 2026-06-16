@@ -1438,6 +1438,11 @@ std::any IRGen::visitUseEnumWildcard(LucisParser::UseEnumWildcardContext* ctx) {
 void IRGen::registerCrossFileSymbols(LucisParser::ProgramContext* ctx) {
     if (!moduleRegistry_) return;
 
+    // Phase 2 note: SemanticDB is available via semanticDB_ for type lookups.
+    // The syncTypeFromSemanticDB() method can convert Decl→TypeInfo when needed.
+    // Full migration to SemanticDB as primary source is deferred to avoid
+    // disrupting the existing cross-file resolution pipeline.
+
     // Populate userImports_ from preamble use declarations before any
     // cross-file symbol processing (visitUseItem/visitUseGroup run later
     // during the main AST traversal, but we need the import map now).
@@ -1831,6 +1836,103 @@ void IRGen::registerCrossFileSymbols(LucisParser::ProgramContext* ctx) {
 
     // ── Phase 3: Register local functions into callTargetMap_ ──────────
     //    (done later in visitFunctionDecl via mangling)
+}
+
+// ── Phase 2: Sync type from SemanticDB into local TypeRegistry ────────────────
+
+bool IRGen::syncTypeFromSemanticDB(const std::string& name) {
+    if (!semanticDB_) return true;
+    if (typeRegistry_.lookup(name)) return true;
+
+    const auto* decl = semanticDB_->lookupAny(name);
+    if (!decl) return false;
+
+    switch (decl->kind) {
+    case semantic::DeclKind::Struct: {
+        const auto* sd = decl->as<semantic::StructDecl>();
+        if (!sd) return false;
+        TypeInfo ti;
+        ti.name = sd->name;
+        ti.kind = TypeKind::Struct;
+        ti.bitWidth = 0;
+        ti.isSigned = false;
+        ti.dropTracked = sd->dropTracked;
+        ti.moveOnly = sd->moveOnly;
+        for (const auto& f : sd->fields) {
+            FieldInfo fi;
+            fi.name = f.name;
+            fi.arrayDims = f.arrayDims;
+            fi.arraySizes = f.arraySizes;
+            fi.autoFill = f.autoFill;
+            if (f.type)
+                fi.typeInfo = typeRegistry_.lookup(f.type->name);
+            ti.fields.push_back(std::move(fi));
+        }
+        typeRegistry_.registerType(std::move(ti));
+        return true;
+    }
+    case semantic::DeclKind::Union: {
+        const auto* ud = decl->as<semantic::UnionDecl>();
+        if (!ud) return false;
+        TypeInfo ti;
+        ti.name = ud->name;
+        ti.kind = TypeKind::Union;
+        ti.bitWidth = 0;
+        ti.isSigned = false;
+        ti.dropTracked = ud->dropTracked;
+        ti.moveOnly = ud->moveOnly;
+        for (const auto& f : ud->fields) {
+            FieldInfo fi;
+            fi.name = f.name;
+            fi.arrayDims = f.arrayDims;
+            fi.arraySizes = f.arraySizes;
+            fi.autoFill = f.autoFill;
+            if (f.type)
+                fi.typeInfo = typeRegistry_.lookup(f.type->name);
+            ti.fields.push_back(std::move(fi));
+        }
+        typeRegistry_.registerType(std::move(ti));
+        return true;
+    }
+    case semantic::DeclKind::Enum: {
+        const auto* ed = decl->as<semantic::EnumDecl>();
+        if (!ed) return false;
+        TypeInfo ti;
+        ti.name = ed->name;
+        ti.kind = TypeKind::Enum;
+        ti.bitWidth = ed->bitWidth;
+        ti.isSigned = false;
+        ti.builtinSuffix = "i32";
+        ti.dropTracked = ed->dropTracked;
+        ti.moveOnly = ed->moveOnly;
+        for (const auto& v : ed->variants) {
+            ti.enumVariants.push_back(v.name);
+            EnumVariantInfo evi;
+            evi.name = v.name;
+            evi.discriminant = v.discriminant;
+            switch (v.payloadKind) {
+            case semantic::VariantPayloadKind::Unit:  evi.payloadKind = EnumPayloadKind::Unit; break;
+            case semantic::VariantPayloadKind::Tuple: evi.payloadKind = EnumPayloadKind::Tuple; break;
+            case semantic::VariantPayloadKind::Named: evi.payloadKind = EnumPayloadKind::Named; break;
+            }
+            for (const auto& pf : v.payloadFields) {
+                FieldInfo fi;
+                fi.name = pf.name;
+                fi.arrayDims = pf.arrayDims;
+                fi.arraySizes = pf.arraySizes;
+                fi.autoFill = pf.autoFill;
+                if (pf.type)
+                    fi.typeInfo = typeRegistry_.lookup(pf.type->name);
+                evi.payloadFields.push_back(std::move(fi));
+            }
+            ti.enumVariantInfos.push_back(std::move(evi));
+        }
+        typeRegistry_.registerType(std::move(ti));
+        return true;
+    }
+    default:
+        return false;
+    }
 }
 
 void IRGen::declareExternFunction(const std::string& mangledName,

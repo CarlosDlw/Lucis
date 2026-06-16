@@ -8,6 +8,7 @@
 #include "namespace/ModuleRegistry.h"
 #include "ffi/CBindings.h"
 #include "types/TypeRegistry.h"
+#include "semantic/SemanticDB.h"
 
 struct SourceUnit {
     std::string filePath;
@@ -23,6 +24,7 @@ struct PipelineResult {
     std::unique_ptr<ModuleRegistry> registry;
     std::unique_ptr<CBindings> cBindings;
     std::unique_ptr<TypeRegistry> cTypeReg;
+    std::unique_ptr<semantic::SemanticDB> semanticDB;
     std::vector<std::string> cSourceFiles;
 
     std::vector<std::string> linkerFlags;

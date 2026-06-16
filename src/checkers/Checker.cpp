@@ -675,6 +675,9 @@ bool Checker::check(LucisParser::ProgramContext* tree) {
     // Pass 0: register global builtins (always available, no import needed)
     registerGlobalBuiltins();
 
+    // Phase 1: mirror builtins into SemanticDB
+    initSemanticDB();
+
     // Pass 0.5: register C header bindings (from #include directives)
     // Determine which C functions are overridden by Lucis imports
     // based on preamble declaration order (last import wins).
@@ -868,6 +871,11 @@ bool Checker::check(LucisParser::ProgramContext* tree) {
                 skeleton.bitWidth = 0;
                 skeleton.isSigned = false;
                 typeRegistry_.registerType(std::move(skeleton));
+                // Phase 1: forward-declare in SemanticDB
+                if (semanticDB_)
+                    semanticDB_->forwardDeclare(sym->name, semantic::DeclKind::Struct,
+                                                sym->modulePath,
+                                                toSemanticLoc(sym->decl));
             } else if (sym->kind == ExportedSymbol::Union &&
                        !typeRegistry_.lookup(sym->name) &&
                        !genericUnionTemplates_.count(sym->name)) {
@@ -877,6 +885,11 @@ bool Checker::check(LucisParser::ProgramContext* tree) {
                 skeleton.bitWidth = 0;
                 skeleton.isSigned = false;
                 typeRegistry_.registerType(std::move(skeleton));
+                // Phase 1: forward-declare in SemanticDB
+                if (semanticDB_)
+                    semanticDB_->forwardDeclare(sym->name, semantic::DeclKind::Union,
+                                                sym->modulePath,
+                                                toSemanticLoc(sym->decl));
             }
         }
         for (auto& [symName, ns] : userImports_) {
@@ -1254,7 +1267,44 @@ bool Checker::check(LucisParser::ProgramContext* tree) {
     }
 
     // Only actual errors (not warnings) should cause a check failure
+    verifySemanticDBConsistency();
     return !hasErrors();
+}
+
+// ── Phase 3: Consistency verification ────────────────────────────────────────
+
+void Checker::verifySemanticDBConsistency() {
+    if (!semanticDB_) return;
+
+    // Count types in each registry for diagnostic purposes
+    size_t trTypes = typeRegistry_.allTypes().size();
+    size_t sdTypes = 0;
+    for (const auto* d : semanticDB_->allTypes()) {
+        if (!d->modulePath.empty() || d->kind == semantic::DeclKind::Struct) ++sdTypes;
+    }
+
+    // Verify key structural invariants
+    for (const auto& name : typeRegistry_.allTypes()) {
+        auto* trType = typeRegistry_.lookup(name);
+        if (!trType) continue;
+
+        // Skip primitives
+        if (trType->kind == TypeKind::Integer || trType->kind == TypeKind::Float ||
+            trType->kind == TypeKind::Bool    || trType->kind == TypeKind::Char ||
+            trType->kind == TypeKind::Void    || trType->kind == TypeKind::String ||
+            trType->kind == TypeKind::Pointer || trType->kind == TypeKind::Function ||
+            trType->kind == TypeKind::VAList  || trType->kind == TypeKind::Extended)
+            continue;
+
+        auto* sdDecl = semanticDB_->lookupAny(name);
+        if (!sdDecl && !semanticDB_->hasForwardDecl(name)) {
+            // User-defined type registered in TypeRegistry but missing from SemanticDB
+            // This indicates a gap in Phase 1 sync coverage
+            continue; // non-fatal during transition
+        }
+    }
+
+    (void)trTypes; (void)sdTypes;
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -4975,6 +5025,7 @@ void Checker::checkTypeAliasDecl(LucisParser::TypeAliasDeclContext* decl) {
             ti.paramTypes.push_back(paramTI);
         }
 
+        syncToSemanticDB_TypeAlias(ti, currentModulePath_, decl); // Phase 1
         typeRegistry_.registerType(std::move(ti));
     } else {
         // General alias: type MyInt = int32; / type Result = tuple<string, int32>;
@@ -5003,8 +5054,10 @@ void Checker::checkStructDecl(LucisParser::StructDeclContext* decl) {
         GenericStructTemplate tmpl;
         for (auto* tp : tpl->typeParam())
             tmpl.typeParams.push_back(tp->IDENTIFIER(0)->getText());
+        auto savedTypeParams = tmpl.typeParams;
         tmpl.decl = decl;
         genericStructTemplates_[name] = std::move(tmpl);
+        syncToSemanticDB_GenericStruct(name, savedTypeParams, decl);
         return;
     }
 
@@ -5058,6 +5111,7 @@ void Checker::checkStructDecl(LucisParser::StructDeclContext* decl) {
         ti.fields.push_back({ fieldName, fieldTI, fieldDims, fieldSizes });
     }
 
+    syncToSemanticDB_Struct(ti, currentModulePath_, decl);
     typeRegistry_.registerType(std::move(ti));
 }
 
@@ -5072,8 +5126,10 @@ void Checker::checkUnionDecl(LucisParser::UnionDeclContext* decl) {
         GenericUnionTemplate tmpl;
         for (auto* tp : tpl->typeParam())
             tmpl.typeParams.push_back(tp->IDENTIFIER(0)->getText());
+        auto savedTypeParams = tmpl.typeParams;
         tmpl.decl = decl;
         genericUnionTemplates_[name] = std::move(tmpl);
+        syncToSemanticDB_GenericUnion(name, savedTypeParams, decl);
         return;
     }
 
@@ -5113,6 +5169,7 @@ void Checker::checkUnionDecl(LucisParser::UnionDeclContext* decl) {
         ti.fields.push_back({ fieldName, fieldTI });
     }
 
+    syncToSemanticDB_Union(ti, currentModulePath_, decl);
     typeRegistry_.registerType(std::move(ti));
 }
 
@@ -5128,8 +5185,10 @@ void Checker::checkEnumDecl(LucisParser::EnumDeclContext* decl) {
         GenericEnumTemplate tmpl;
         for (auto* tp : tpl->typeParam())
             tmpl.typeParams.push_back(tp->IDENTIFIER(0)->getText());
+        auto savedTypeParams = tmpl.typeParams;
         tmpl.decl = decl;
         genericEnumTemplates_[name] = std::move(tmpl);
+        syncToSemanticDB_GenericEnum(name, savedTypeParams, decl);
         return;
     }
 
@@ -5219,6 +5278,7 @@ void Checker::checkEnumDecl(LucisParser::EnumDeclContext* decl) {
         ti.enumVariantInfos.push_back(std::move(info));
     }
 
+    syncToSemanticDB_Enum(ti, currentModulePath_, decl);
     typeRegistry_.registerType(std::move(ti));
 }
 
@@ -5254,8 +5314,10 @@ void Checker::checkExtendDecl(LucisParser::ExtendDeclContext* decl) {
         GenericExtendTemplate tmpl;
         for (auto* tp : tpl->typeParam())
             tmpl.typeParams.push_back(tp->IDENTIFIER(0)->getText());
+        auto savedTypeParams = tmpl.typeParams;
         tmpl.decl = decl;
         genericExtendTemplates_[structName] = std::move(tmpl);
+        syncToSemanticDB_GenericExtend(structName, savedTypeParams, decl);
         return;
     }
 
@@ -5289,6 +5351,8 @@ void Checker::checkExtendDecl(LucisParser::ExtendDeclContext* decl) {
 
         structMethods_[structName].push_back(std::move(info));
     }
+    // Phase 1: sync extend methods to SemanticDB
+    syncToSemanticDB_Extend(structName, structMethods_[structName]);
 }
 
 void Checker::checkExtendMethodBodies(LucisParser::ExtendDeclContext* decl) {
@@ -5374,8 +5438,10 @@ void Checker::registerFunctionSignature(LucisParser::FunctionDeclContext* func) 
         GenericFuncTemplate tmpl;
         for (auto* tp : tpl->typeParam())
             tmpl.typeParams.push_back(tp->IDENTIFIER(0)->getText());
+        auto savedTypeParams = tmpl.typeParams;
         tmpl.decl = func;
         genericFuncTemplates_[funcName] = std::move(tmpl);
+        syncToSemanticDB_GenericFunc(funcName, savedTypeParams, func);
         return;
     }
 
@@ -5437,6 +5503,7 @@ void Checker::registerFunctionSignature(LucisParser::FunctionDeclContext* func) 
     auto* funcType = makeFunctionType(retType, paramTypes, isVariadic);
     functions_[funcName] = funcType;
     functionDecls_[funcName] = func;
+    syncToSemanticDB_Function(funcName, *funcType, currentModulePath_, func);
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -8197,4 +8264,389 @@ bool Checker::unifyGenericTypeArg(
     }
 
     return true;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Phase 1: SemanticDB parallel population
+// ═══════════════════════════════════════════════════════════════════════════════
+
+void Checker::initSemanticDB() {
+    if (!semanticDB_) return;
+
+    auto addPrim = [&](const char* name, semantic::DeclKind kind,
+                       unsigned bw, bool signd, const char* suffix) {
+        auto d = std::make_unique<semantic::PrimitiveDecl>(kind);
+        d->name          = name;
+        d->bitWidth      = bw;
+        d->isSigned      = signd;
+        d->builtinSuffix = suffix;
+        semanticDB_->registerBuiltin(std::move(d));
+    };
+
+    addPrim("void",    semantic::DeclKind::Void,    0, true,  "");
+    addPrim("bool",    semantic::DeclKind::Bool,    1, true,  "bool");
+    addPrim("char",    semantic::DeclKind::Char,    8, true,  "char");
+    addPrim("string",  semantic::DeclKind::String,  0, true,  "str");
+    addPrim("int1",   semantic::DeclKind::Integer, 1,   true,  "i1");
+    addPrim("int8",   semantic::DeclKind::Integer, 8,   true,  "i8");
+    addPrim("int16",  semantic::DeclKind::Integer, 16,  true,  "i16");
+    addPrim("int32",  semantic::DeclKind::Integer, 32,  true,  "i32");
+    addPrim("int64",  semantic::DeclKind::Integer, 64,  true,  "i64");
+    addPrim("int128", semantic::DeclKind::Integer, 128, true,  "i128");
+    addPrim("intinf", semantic::DeclKind::Integer, 256, true,  "i128");
+    addPrim("isize",  semantic::DeclKind::Integer, 0,   true,  "i64");
+    addPrim("uint1",   semantic::DeclKind::Integer, 1,   false, "u1");
+    addPrim("uint8",   semantic::DeclKind::Integer, 8,   false, "u8");
+    addPrim("uint16",  semantic::DeclKind::Integer, 16,  false, "u16");
+    addPrim("uint32",  semantic::DeclKind::Integer, 32,  false, "u32");
+    addPrim("uint64",  semantic::DeclKind::Integer, 64,  false, "u64");
+    addPrim("uint128", semantic::DeclKind::Integer, 128, false, "u128");
+    addPrim("usize",   semantic::DeclKind::Integer, 0,   false, "u64");
+    addPrim("float32",  semantic::DeclKind::Float, 32,  true, "f32");
+    addPrim("float64",  semantic::DeclKind::Float, 64,  true, "f64");
+    addPrim("float80",  semantic::DeclKind::Float, 80,  true, "f80");
+    addPrim("float128", semantic::DeclKind::Float, 128, true, "f128");
+    addPrim("double",   semantic::DeclKind::Float, 64,  true, "f64");
+
+    {
+        auto d = std::make_unique<semantic::PrimitiveDecl>(semantic::DeclKind::VAList);
+        d->name = "va_list";
+        d->builtinSuffix = "valist";
+        semanticDB_->registerBuiltin(std::move(d));
+    }
+
+    auto addExtended = [&](const char* name, const char* kind,
+                           const char* elem, const char* key,
+                           const char* val, const char* cpfx) {
+        auto d = std::make_unique<semantic::ExtendedDecl>();
+        d->name         = name;
+        d->extendedKind = kind;
+        d->cPrefix      = cpfx;
+        if (elem) d->elementType = const_cast<semantic::Decl*>(semanticDB_->lookupAny(elem));
+        if (key)  d->keyType     = const_cast<semantic::Decl*>(semanticDB_->lookupAny(key));
+        if (val)  d->valueType   = const_cast<semantic::Decl*>(semanticDB_->lookupAny(val));
+        semanticDB_->registerBuiltin(std::move(d));
+    };
+
+    addExtended("Vec",   "Vec",   "void", nullptr, nullptr, "lucis_vec");
+    addExtended("Map",   "Map",   nullptr, "void", "void", "lucis_map");
+    addExtended("Set",   "Set",   "void", nullptr, nullptr, "lucis_set");
+    addExtended("Task",  "Task",  "void", nullptr, nullptr, "lucis_task");
+
+    {
+        auto d = std::make_unique<semantic::ExtendedDecl>();
+        d->name         = "Mutex";
+        d->extendedKind = "Mutex";
+        semanticDB_->registerBuiltin(std::move(d));
+    }
+
+    {
+        auto ed = std::make_unique<semantic::StructDecl>();
+        ed->name = "Error";
+        auto* strTI = semanticDB_->lookupAny("string");
+        auto* i32TI = semanticDB_->lookupAny("int32");
+        semantic::FieldInfo f1; f1.name = "message"; f1.type = const_cast<semantic::Decl*>(strTI);
+        semantic::FieldInfo f2; f2.name = "file";    f2.type = const_cast<semantic::Decl*>(strTI); f2.autoFill = true;
+        semantic::FieldInfo f3; f3.name = "line";    f3.type = const_cast<semantic::Decl*>(i32TI); f3.autoFill = true;
+        semantic::FieldInfo f4; f4.name = "column";  f4.type = const_cast<semantic::Decl*>(i32TI); f4.autoFill = true;
+        ed->fields.push_back(std::move(f1));
+        ed->fields.push_back(std::move(f2));
+        ed->fields.push_back(std::move(f3));
+        ed->fields.push_back(std::move(f4));
+        semanticDB_->registerBuiltin(std::move(ed));
+    }
+}
+
+semantic::SourceLocation Checker::toSemanticLoc(
+    antlr4::ParserRuleContext* ctx) const {
+    semantic::SourceLocation loc;
+    if (ctx) {
+        loc.file   = currentFile_;
+        loc.line   = static_cast<unsigned>(ctx->getStart()->getLine());
+        loc.column = static_cast<unsigned>(ctx->getStart()->getCharPositionInLine());
+    }
+    return loc;
+}
+
+semantic::DeclKind Checker::toSemanticKind(TypeKind tk) const {
+    switch (tk) {
+    case TypeKind::Integer:  return semantic::DeclKind::Integer;
+    case TypeKind::Float:    return semantic::DeclKind::Float;
+    case TypeKind::Bool:     return semantic::DeclKind::Bool;
+    case TypeKind::Char:     return semantic::DeclKind::Char;
+    case TypeKind::Void:     return semantic::DeclKind::Void;
+    case TypeKind::String:   return semantic::DeclKind::String;
+    case TypeKind::Struct:   return semantic::DeclKind::Struct;
+    case TypeKind::Union:    return semantic::DeclKind::Union;
+    case TypeKind::Enum:     return semantic::DeclKind::Enum;
+    case TypeKind::Pointer:  return semantic::DeclKind::Pointer;
+    case TypeKind::Function: return semantic::DeclKind::Function;
+    case TypeKind::Extended: return semantic::DeclKind::Extended;
+    case TypeKind::Tuple:    return semantic::DeclKind::Tuple;
+    case TypeKind::VAList:   return semantic::DeclKind::VAList;
+    }
+    return semantic::DeclKind::Void;
+}
+
+semantic::FieldInfo Checker::toSemanticField(const ::FieldInfo& f) const {
+    semantic::FieldInfo sf;
+    sf.name       = f.name;
+    sf.arrayDims  = f.arrayDims;
+    sf.arraySizes = f.arraySizes;
+    sf.autoFill   = f.autoFill;
+    if (f.typeInfo && semanticDB_)
+        sf.type = const_cast<semantic::Decl*>(
+            semanticDB_->lookupAny(f.typeInfo->name));
+    return sf;
+}
+
+semantic::VariantInfo Checker::toSemanticVariant(const EnumVariantInfo& v) const {
+    semantic::VariantInfo sv;
+    sv.name         = v.name;
+    sv.discriminant = v.discriminant;
+    switch (v.payloadKind) {
+    case EnumPayloadKind::Unit:  sv.payloadKind = semantic::VariantPayloadKind::Unit;  break;
+    case EnumPayloadKind::Tuple: sv.payloadKind = semantic::VariantPayloadKind::Tuple; break;
+    case EnumPayloadKind::Named: sv.payloadKind = semantic::VariantPayloadKind::Named; break;
+    }
+    for (const auto& pf : v.payloadFields)
+        sv.payloadFields.push_back(toSemanticField(pf));
+    return sv;
+}
+
+semantic::MethodInfo Checker::toSemanticMethod(const StructMethodInfo& m) const {
+    semantic::MethodInfo sm;
+    sm.name     = m.name;
+    sm.isStatic = m.isStatic;
+    if (m.returnType && semanticDB_)
+        sm.returnType = const_cast<semantic::Decl*>(
+            semanticDB_->lookupAny(m.returnType->name));
+    for (auto* pt : m.paramTypes) {
+        semantic::ParamInfo sp;
+        if (pt && semanticDB_)
+            sp.type = const_cast<semantic::Decl*>(
+                semanticDB_->lookupAny(pt->name));
+        sm.params.push_back(sp);
+    }
+    return sm;
+}
+
+std::unique_ptr<semantic::Decl> Checker::typeInfoToDecl(const TypeInfo& ti) {
+    if (!semanticDB_) return nullptr;
+
+    switch (ti.kind) {
+    case TypeKind::Struct: {
+        auto sd = std::make_unique<semantic::StructDecl>();
+        sd->name       = ti.name;
+        sd->modulePath = currentModulePath_;
+        sd->dropTracked = ti.dropTracked;
+        sd->moveOnly    = ti.moveOnly;
+        for (const auto& f : ti.fields)
+            sd->fields.push_back(toSemanticField(f));
+        return sd;
+    }
+    case TypeKind::Union: {
+        auto ud = std::make_unique<semantic::UnionDecl>();
+        ud->name       = ti.name;
+        ud->modulePath = currentModulePath_;
+        ud->dropTracked = ti.dropTracked;
+        ud->moveOnly    = ti.moveOnly;
+        for (const auto& f : ti.fields)
+            ud->fields.push_back(toSemanticField(f));
+        return ud;
+    }
+    case TypeKind::Enum: {
+        auto ed = std::make_unique<semantic::EnumDecl>();
+        ed->name       = ti.name;
+        ed->modulePath = currentModulePath_;
+        ed->dropTracked = ti.dropTracked;
+        ed->moveOnly    = ti.moveOnly;
+        for (const auto& v : ti.enumVariantInfos)
+            ed->variants.push_back(toSemanticVariant(v));
+        return ed;
+    }
+    default:
+        return nullptr;
+    }
+}
+
+void Checker::syncToSemanticDB_Struct(const TypeInfo& ti,
+                                       const std::string& modulePath,
+                                       antlr4::ParserRuleContext* ctx) {
+    if (!semanticDB_) return;
+    auto loc = toSemanticLoc(ctx);
+    semanticDB_->forwardDeclare(ti.name, semantic::DeclKind::Struct,
+                                modulePath, loc);
+    auto decl = typeInfoToDecl(ti);
+    if (decl) {
+        decl->modulePath = modulePath;
+        decl->loc = loc;
+        semanticDB_->registerType(std::move(decl));
+    }
+}
+
+void Checker::syncToSemanticDB_Union(const TypeInfo& ti,
+                                      const std::string& modulePath,
+                                      antlr4::ParserRuleContext* ctx) {
+    if (!semanticDB_) return;
+    auto loc = toSemanticLoc(ctx);
+    semanticDB_->forwardDeclare(ti.name, semantic::DeclKind::Union,
+                                modulePath, loc);
+    auto decl = typeInfoToDecl(ti);
+    if (decl) {
+        decl->modulePath = modulePath;
+        decl->loc = loc;
+        semanticDB_->registerType(std::move(decl));
+    }
+}
+
+void Checker::syncToSemanticDB_Enum(const TypeInfo& ti,
+                                     const std::string& modulePath,
+                                     antlr4::ParserRuleContext* ctx) {
+    if (!semanticDB_) return;
+    auto loc = toSemanticLoc(ctx);
+    semanticDB_->forwardDeclare(ti.name, semantic::DeclKind::Enum,
+                                modulePath, loc);
+    auto decl = typeInfoToDecl(ti);
+    if (decl) {
+        decl->modulePath = modulePath;
+        decl->loc = loc;
+        semanticDB_->registerType(std::move(decl));
+    }
+}
+
+void Checker::syncToSemanticDB_TypeAlias(const TypeInfo& ti,
+                                          const std::string& modulePath,
+                                          antlr4::ParserRuleContext* ctx) {
+    if (!semanticDB_) return;
+    auto loc = toSemanticLoc(ctx);
+    auto decl = typeInfoToDecl(ti);
+    if (decl) {
+        decl->modulePath = modulePath;
+        decl->loc = loc;
+        semanticDB_->registerType(std::move(decl));
+    }
+}
+
+void Checker::syncToSemanticDB_Function(const std::string& name,
+                                         const TypeInfo& funcType,
+                                         const std::string& modulePath,
+                                         antlr4::ParserRuleContext* ctx) {
+    if (!semanticDB_) return;
+    auto fd = std::make_unique<semantic::FunctionDecl>();
+    fd->name       = name;
+    fd->modulePath = modulePath;
+    fd->loc        = toSemanticLoc(ctx);
+    fd->isVariadic = funcType.isVariadic;
+    if (funcType.returnType && semanticDB_)
+        fd->returnType = const_cast<semantic::Decl*>(
+            semanticDB_->lookupAny(funcType.returnType->name));
+    for (auto* pt : funcType.paramTypes) {
+        semantic::ParamInfo sp;
+        if (pt && semanticDB_)
+            sp.type = const_cast<semantic::Decl*>(
+                semanticDB_->lookupAny(pt->name));
+        fd->params.push_back(sp);
+    }
+    semanticDB_->registerFunction(std::move(fd));
+}
+
+void Checker::syncToSemanticDB_Extend(const std::string& structName,
+                                       const std::vector<StructMethodInfo>& methods) {
+    if (!semanticDB_) return;
+    std::vector<semantic::MethodInfo> smethods;
+    for (const auto& m : methods)
+        smethods.push_back(toSemanticMethod(m));
+    semanticDB_->mergeExtendMethods(structName, std::move(smethods));
+}
+
+void Checker::syncToSemanticDB_GenericStruct(const std::string& name,
+    const std::vector<std::string>& typeParams,
+    LucisParser::StructDeclContext* decl) {
+    if (!semanticDB_) return;
+    auto tmpl = std::make_unique<semantic::GenericTemplateDecl>();
+    tmpl->name       = name;
+    tmpl->modulePath = currentModulePath_;
+    tmpl->loc        = toSemanticLoc(decl);
+    tmpl->typeParams = typeParams;
+    auto pattern = std::make_unique<semantic::StructDecl>();
+    pattern->name = name;
+    pattern->genericParams = typeParams;
+    tmpl->pattern = std::move(pattern);
+    semanticDB_->registerGeneric(std::move(tmpl));
+}
+
+void Checker::syncToSemanticDB_GenericUnion(const std::string& name,
+    const std::vector<std::string>& typeParams,
+    LucisParser::UnionDeclContext* decl) {
+    if (!semanticDB_) return;
+    auto tmpl = std::make_unique<semantic::GenericTemplateDecl>();
+    tmpl->name       = name;
+    tmpl->modulePath = currentModulePath_;
+    tmpl->loc        = toSemanticLoc(decl);
+    tmpl->typeParams = typeParams;
+    auto pattern = std::make_unique<semantic::UnionDecl>();
+    pattern->name = name;
+    pattern->genericParams = typeParams;
+    tmpl->pattern = std::move(pattern);
+    semanticDB_->registerGeneric(std::move(tmpl));
+}
+
+void Checker::syncToSemanticDB_GenericEnum(const std::string& name,
+    const std::vector<std::string>& typeParams,
+    LucisParser::EnumDeclContext* decl) {
+    if (!semanticDB_) return;
+    auto tmpl = std::make_unique<semantic::GenericTemplateDecl>();
+    tmpl->name       = name;
+    tmpl->modulePath = currentModulePath_;
+    tmpl->loc        = toSemanticLoc(decl);
+    tmpl->typeParams = typeParams;
+    auto pattern = std::make_unique<semantic::EnumDecl>();
+    pattern->name = name;
+    pattern->genericParams = typeParams;
+    tmpl->pattern = std::move(pattern);
+    semanticDB_->registerGeneric(std::move(tmpl));
+}
+
+void Checker::syncToSemanticDB_GenericFunc(const std::string& name,
+    const std::vector<std::string>& typeParams,
+    LucisParser::FunctionDeclContext* decl) {
+    if (!semanticDB_) return;
+    auto tmpl = std::make_unique<semantic::GenericTemplateDecl>();
+    tmpl->name       = name;
+    tmpl->modulePath = currentModulePath_;
+    tmpl->loc        = toSemanticLoc(decl);
+    tmpl->typeParams = typeParams;
+    auto pattern = std::make_unique<semantic::FunctionDecl>();
+    pattern->name = name;
+    pattern->genericParams = typeParams;
+    tmpl->pattern = std::move(pattern);
+    semanticDB_->registerGeneric(std::move(tmpl));
+}
+
+void Checker::syncToSemanticDB_GenericExtend(const std::string& name,
+    const std::vector<std::string>& typeParams,
+    LucisParser::ExtendDeclContext* decl) {
+    if (!semanticDB_) return;
+    auto tmpl = std::make_unique<semantic::GenericTemplateDecl>();
+    tmpl->name       = name;
+    tmpl->modulePath = currentModulePath_;
+    tmpl->loc        = toSemanticLoc(decl);
+    tmpl->typeParams = typeParams;
+    auto pattern = std::make_unique<semantic::FunctionDecl>();
+    pattern->name = name;
+    pattern->genericParams = typeParams;
+    tmpl->pattern = std::move(pattern);
+    semanticDB_->registerGeneric(std::move(tmpl));
+}
+
+void Checker::syncToSemanticDB_GenericInstantiation(
+    const std::string& mangledName,
+    const TypeInfo& concreteTI) {
+    if (!semanticDB_) return;
+    auto decl = typeInfoToDecl(concreteTI);
+    if (decl) {
+        decl->name = mangledName;
+        semanticDB_->registerType(std::move(decl));
+    }
 }

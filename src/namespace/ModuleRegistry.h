@@ -14,6 +14,12 @@ struct ExportedSymbol {
     std::string modulePath;
     std::string sourceFile;
 
+    // Location of the declaration (line 1-based, column 0-based).
+    // Phase 4: replaces ParserRuleContext* for LSP navigation.
+    unsigned    line   = 0;
+    unsigned    column = 0;
+
+    // DEPRECATED (Phase 4): will be removed once Checker/IRGen use SemanticDB.
     antlr4::ParserRuleContext* decl = nullptr;
 };
 

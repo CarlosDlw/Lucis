@@ -16,6 +16,8 @@ void ModuleRegistry::registerFile(const std::string& modulePath,
             sym.name       = funcDecl->IDENTIFIER(0)->getText();
             sym.modulePath = modulePath;
             sym.sourceFile = filePath;
+            sym.line       = static_cast<unsigned>(funcDecl->getStart()->getLine());
+            sym.column     = static_cast<unsigned>(funcDecl->getStart()->getCharPositionInLine());
             sym.decl       = funcDecl;
             symbols.push_back(std::move(sym));
         }
@@ -25,6 +27,8 @@ void ModuleRegistry::registerFile(const std::string& modulePath,
             sym.name       = structDecl->IDENTIFIER()->getText();
             sym.modulePath = modulePath;
             sym.sourceFile = filePath;
+            sym.line       = static_cast<unsigned>(structDecl->getStart()->getLine());
+            sym.column     = static_cast<unsigned>(structDecl->getStart()->getCharPositionInLine());
             sym.decl       = structDecl;
             symbols.push_back(std::move(sym));
         }
@@ -34,6 +38,8 @@ void ModuleRegistry::registerFile(const std::string& modulePath,
             sym.name       = unionDecl->IDENTIFIER()->getText();
             sym.modulePath = modulePath;
             sym.sourceFile = filePath;
+            sym.line       = static_cast<unsigned>(unionDecl->getStart()->getLine());
+            sym.column     = static_cast<unsigned>(unionDecl->getStart()->getCharPositionInLine());
             sym.decl       = unionDecl;
             symbols.push_back(std::move(sym));
         }
@@ -43,6 +49,8 @@ void ModuleRegistry::registerFile(const std::string& modulePath,
             sym.name       = enumDecl->IDENTIFIER()->getText();
             sym.modulePath = modulePath;
             sym.sourceFile = filePath;
+            sym.line       = static_cast<unsigned>(enumDecl->getStart()->getLine());
+            sym.column     = static_cast<unsigned>(enumDecl->getStart()->getCharPositionInLine());
             sym.decl       = enumDecl;
             symbols.push_back(std::move(sym));
         }
@@ -52,6 +60,8 @@ void ModuleRegistry::registerFile(const std::string& modulePath,
             sym.name       = typeAlias->IDENTIFIER()->getText();
             sym.modulePath = modulePath;
             sym.sourceFile = filePath;
+            sym.line       = static_cast<unsigned>(typeAlias->getStart()->getLine());
+            sym.column     = static_cast<unsigned>(typeAlias->getStart()->getCharPositionInLine());
             sym.decl       = typeAlias;
             symbols.push_back(std::move(sym));
         }
@@ -61,6 +71,8 @@ void ModuleRegistry::registerFile(const std::string& modulePath,
             sym.name       = extDecl->IDENTIFIER()->getText();
             sym.modulePath = modulePath;
             sym.sourceFile = filePath;
+            sym.line       = static_cast<unsigned>(extDecl->getStart()->getLine());
+            sym.column     = static_cast<unsigned>(extDecl->getStart()->getCharPositionInLine());
             sym.decl       = extDecl;
             symbols.push_back(std::move(sym));
         }

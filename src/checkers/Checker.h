@@ -16,6 +16,7 @@
 #include "intrinsics/IntrinsicRegistry.h"
 #include "namespace/ModuleRegistry.h"
 #include "lsp/Diagnostic.h"
+#include "semantic/SemanticDB.h"
 
 class CBindings;
 
@@ -34,6 +35,10 @@ public:
 
     // Set C bindings from parsed #include headers.
     void setCBindings(const CBindings* bindings);
+
+    // Set semantic DB for Phase 1 parallel population (alongside TypeRegistry).
+    void setSemanticDB(semantic::SemanticDB* db) { semanticDB_ = db; }
+    semantic::SemanticDB* semanticDB() { return semanticDB_; }
 
 
 private:
@@ -241,6 +246,9 @@ private:
     std::string currentModulePath_;
     std::string currentFile_;
 
+    // Phase 1: SemanticDB populated in parallel with TypeRegistry
+    semantic::SemanticDB* semanticDB_ = nullptr;
+
     // User imports: symbol name → module path it was imported from
     std::unordered_map<std::string, std::string> userImports_;
 
@@ -367,4 +375,58 @@ private:
                              const TypeInfo* constraint,
                              const std::string& paramName,
                              antlr4::ParserRuleContext* ctx);
+
+    // ── Phase 1: SemanticDB parallel population helpers ──────────────
+
+    // Initialize builtins (primitives, extended types) in the SemanticDB.
+    void initSemanticDB();
+
+    // Phase 3: verify TypeRegistry and SemanticDB are consistent
+    void verifySemanticDBConsistency();
+
+    // Convert old TypeInfo → new semantic::Decl (with lookup in SemanticDB).
+    std::unique_ptr<semantic::Decl> typeInfoToDecl(const TypeInfo& ti);
+    semantic::SourceLocation toSemanticLoc(antlr4::ParserRuleContext* ctx) const;
+    semantic::DeclKind toSemanticKind(TypeKind tk) const;
+    semantic::FieldInfo toSemanticField(const ::FieldInfo& f) const;
+    semantic::VariantInfo toSemanticVariant(const EnumVariantInfo& v) const;
+    semantic::MethodInfo toSemanticMethod(const StructMethodInfo& m) const;
+
+    // Register into SemanticDB in parallel with existing TypeRegistry calls.
+    // Called at the end of each check*Decl / registerFunctionSignature.
+    void syncToSemanticDB_Struct(const TypeInfo& ti,
+                                 const std::string& modulePath,
+                                 antlr4::ParserRuleContext* ctx);
+    void syncToSemanticDB_Union(const TypeInfo& ti,
+                                const std::string& modulePath,
+                                antlr4::ParserRuleContext* ctx);
+    void syncToSemanticDB_Enum(const TypeInfo& ti,
+                               const std::string& modulePath,
+                               antlr4::ParserRuleContext* ctx);
+    void syncToSemanticDB_TypeAlias(const TypeInfo& ti,
+                                    const std::string& modulePath,
+                                    antlr4::ParserRuleContext* ctx);
+    void syncToSemanticDB_Function(const std::string& name,
+                                   const TypeInfo& funcType,
+                                   const std::string& modulePath,
+                                   antlr4::ParserRuleContext* ctx);
+    void syncToSemanticDB_Extend(const std::string& structName,
+                                 const std::vector<StructMethodInfo>& methods);
+    void syncToSemanticDB_GenericStruct(const std::string& name,
+                                        const std::vector<std::string>& typeParams,
+                                        LucisParser::StructDeclContext* decl);
+    void syncToSemanticDB_GenericUnion(const std::string& name,
+                                       const std::vector<std::string>& typeParams,
+                                       LucisParser::UnionDeclContext* decl);
+    void syncToSemanticDB_GenericEnum(const std::string& name,
+                                      const std::vector<std::string>& typeParams,
+                                      LucisParser::EnumDeclContext* decl);
+    void syncToSemanticDB_GenericFunc(const std::string& name,
+                                      const std::vector<std::string>& typeParams,
+                                      LucisParser::FunctionDeclContext* decl);
+    void syncToSemanticDB_GenericExtend(const std::string& name,
+                                        const std::vector<std::string>& typeParams,
+                                        LucisParser::ExtendDeclContext* decl);
+    void syncToSemanticDB_GenericInstantiation(const std::string& mangledName,
+                                               const TypeInfo& concreteTI);
 };

@@ -308,6 +308,10 @@ std::unique_ptr<PipelineResult> LucisPipeline::run(const Options& opts) {
 
     // ── Step 5: semantic check ──────────────────────────────────────────────
     progress(5, 5, "running semantic checker");
+
+    // Phase 1: create shared SemanticDB
+    result->semanticDB = std::make_unique<semantic::SemanticDB>();
+
     bool anyCheckError = false;
     size_t checkIdx = 0;
     for (auto& unit : result->units) {
@@ -317,6 +321,7 @@ std::unique_ptr<PipelineResult> LucisPipeline::run(const Options& opts) {
         Checker checker;
         checker.setModuleContext(result->registry.get(), unit.modulePath, unit.filePath);
         checker.setCBindings(result->cBindings.get());
+        checker.setSemanticDB(result->semanticDB.get());
         bool passed = checker.check(unit.parseResult.tree);
         for (auto& err : checker.errors())
             printErrorLine(unit.filePath + ": " + err);
@@ -325,6 +330,16 @@ std::unique_ptr<PipelineResult> LucisPipeline::run(const Options& opts) {
     if (anyCheckError) {
         result->hasErrors = true;
         return result;
+    }
+
+    // Phase 5: save SemanticDB cache for incremental builds
+    if (result->semanticDB) {
+        std::string cacheDir = result->buildDir + "/cache";
+        std::error_code ec;
+        fs::create_directories(cacheDir, ec);
+        if (!ec) {
+            result->semanticDB->save(cacheDir + "/semantic.db");
+        }
     }
 
     return result;

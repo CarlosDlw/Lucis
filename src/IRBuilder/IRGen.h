@@ -21,6 +21,7 @@
 #include "types/ExtendedTypeRegistry.h"
 #include "intrinsics/IntrinsicRegistry.h"
 #include "ffi/ABIInfo.h"
+#include "semantic/SemanticDB.h"
 
 class ModuleRegistry;
 class CBindings;
@@ -41,6 +42,9 @@ public:
 
     // Set C bindings from parsed #include headers.
     void setCBindings(const CBindings* bindings);
+
+    // Phase 2: set SemanticDB for authoritative type data (avoids re-walking AST)
+    void setSemanticDB(const semantic::SemanticDB* db) { semanticDB_ = db; }
 
     // ── Visitor overrides ───────────────────────────────────────────────────
     std::any visitProgram(LucisParser::ProgramContext* ctx)             override;
@@ -268,6 +272,9 @@ private:
     std::string currentModulePath_;
     std::string currentFile_;
 
+    // Phase 2: authoritative semantic database (populated by Checker)
+    const semantic::SemanticDB* semanticDB_ = nullptr;
+
     // Maps unmangled symbol name → mangled LLVM function name
     // Built during visitProgram to resolve calls efficiently.
     std::unordered_map<std::string, std::string> callTargetMap_;
@@ -423,6 +430,10 @@ private:
 
     // Helpers
     const TypeInfo*    resolveTypeInfo(LucisParser::TypeSpecContext* ctx);
+
+    // Phase 2: Sync a type from SemanticDB into the local TypeRegistry.
+    // Returns true if the type was successfully registered (or already exists).
+    bool syncTypeFromSemanticDB(const std::string& name);
     const TypeInfo*    resolveExprTypeInfo(LucisParser::ExpressionContext* ctx);
     unsigned           resolveExprArrayDims(LucisParser::ExpressionContext* ctx);
     bool               isPointerType(LucisParser::TypeSpecContext* ctx);
