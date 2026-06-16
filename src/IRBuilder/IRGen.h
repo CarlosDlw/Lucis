@@ -168,6 +168,7 @@ public:
     std::any visitTryExpr(LucisParser::TryExprContext* ctx)             override;
     std::any visitCatchUnwrapExpr(LucisParser::CatchUnwrapExprContext* ctx) override;
     std::any visitPropagateExpr(LucisParser::PropagateExprContext* ctx) override;
+    std::any visitMatchExpr(LucisParser::MatchExprContext* ctx)         override;
     std::any visitExtendDecl(LucisParser::ExtendDeclContext* ctx)        override;
     std::any visitDeferStmt(LucisParser::DeferStmtContext* ctx)           override;
     std::any visitNakedBlockStmt(LucisParser::NakedBlockStmtContext* ctx) override;

@@ -14124,6 +14124,17 @@ const TypeInfo* IRGen::resolveExprTypeInfo(LucisParser::ExpressionContext* ctx) 
     if (auto* te = dynamic_cast<LucisParser::TryExprContext*>(ctx))
         return resolveExprTypeInfo(te->expression(0));
 
+    // ── Match expression: type from first arm ────────────────────────
+    if (auto* me = dynamic_cast<LucisParser::MatchExprContext*>(ctx)) {
+        for (auto* arm : me->matchArm()) {
+            if (arm->block()) continue; // block body, skip
+            size_t idx = arm->IF() ? 1 : 0;
+            if (idx < arm->expression().size())
+                return resolveExprTypeInfo(arm->expression(idx));
+        }
+        return nullptr;
+    }
+
     // ── Propagate operator: expr? — success payload type ────────────
     if (auto* pe = dynamic_cast<LucisParser::PropagateExprContext*>(ctx)) {
         auto* sourceTI = resolveExprTypeInfo(pe->expression());
@@ -14509,6 +14520,12 @@ const TypeInfo* IRGen::resolveExprTypeInfo(LucisParser::ExpressionContext* ctx) 
                         return mIt->second.returnType;
             }
         }
+        return nullptr;
+    }
+
+    if (auto* ea = dynamic_cast<LucisParser::EnumAccessExprContext*>(ctx)) {
+        auto ids = ea->IDENTIFIER();
+        if (!ids.empty()) return typeRegistry_.lookup(ids[0]->getText());
         return nullptr;
     }
 
@@ -18882,6 +18899,150 @@ std::any IRGen::visitPropagateExpr(LucisParser::PropagateExprContext* ctx) {
     builder_->SetInsertPoint(mergeBB);
     auto* phi = builder_->CreatePHI(okPayloadTy, 1, "prop.value");
     phi->addIncoming(okPayloadVal, okEndBB);
+    return static_cast<llvm::Value*>(phi);
+}
+
+std::any IRGen::visitMatchExpr(LucisParser::MatchExprContext* ctx) {
+    auto* fn = currentFunction_;
+    auto* sourceVal = castValue(visit(ctx->expression()));
+    auto* sourceTI = resolveExprTypeInfo(ctx->expression());
+
+    if (!sourceTI || sourceTI->kind != TypeKind::Enum) {
+        std::cerr << "lucis: match requires an enum expression\n";
+        return static_cast<llvm::Value*>(llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
+    }
+
+    auto* enumLLTy = sourceTI->toLLVMType(*context_, module_->getDataLayout());
+    auto* i32Ty = llvm::Type::getInt32Ty(*context_);
+    bool isUnitEnum = (enumLLTy == i32Ty || enumLLTy->isIntegerTy()); // unit enum = just the tag
+
+    auto* tempAlloca = builder_->CreateAlloca(enumLLTy, nullptr, "match.tmp");
+    builder_->CreateStore(sourceVal, tempAlloca);
+
+    auto* mergeBB = llvm::BasicBlock::Create(*context_, "match.merge", fn);
+    llvm::Type* resultTy = nullptr;
+    std::vector<std::pair<llvm::Value*, llvm::BasicBlock*>> phiIncoming;
+
+    auto arms = ctx->matchArm();
+    for (size_t i = 0; i < arms.size(); i++) {
+        auto* arm = arms[i];
+        auto* pattern = arm->pattern();
+        bool isWildcard = pattern->WILDCARD() != nullptr;
+        bool isLast = (i + 1 == arms.size());
+
+        auto* armBB  = llvm::BasicBlock::Create(*context_, "match.arm" + std::to_string(i), fn);
+        auto* nextBB = isLast ? mergeBB
+            : llvm::BasicBlock::Create(*context_, "match.next" + std::to_string(i), fn);
+
+        // Save the block that does the comparison (for PHI undef entry)
+        auto* cmpBB = builder_->GetInsertBlock();
+
+        // Branch to armBB or nextBB based on tag match
+        if (isWildcard) {
+            builder_->CreateBr(armBB);
+        } else {
+            std::string variantName;
+            if (pattern->SCOPE() && pattern->IDENTIFIER().size() >= 2)
+                variantName = pattern->IDENTIFIER(1)->getText();
+            else if (!pattern->IDENTIFIER().empty())
+                variantName = pattern->IDENTIFIER(0)->getText();
+
+            unsigned disc = 0;
+            for (auto& v : sourceTI->enumVariantInfos)
+                if (v.name == variantName) { disc = v.discriminant; break; }
+
+            llvm::Value* tagVal;
+            if (isUnitEnum) {
+                tagVal = builder_->CreateLoad(i32Ty, tempAlloca, "match.tag");
+            } else {
+                auto* tagPtr = builder_->CreateStructGEP(enumLLTy, tempAlloca, 0, "match.tag.ptr");
+                tagVal = builder_->CreateLoad(i32Ty, tagPtr, "match.tag");
+            }
+            auto* matches = builder_->CreateICmpEQ(tagVal,
+                llvm::ConstantInt::get(i32Ty, disc));
+            builder_->CreateCondBr(matches, armBB, nextBB);
+        }
+
+        // Arm body
+        builder_->SetInsertPoint(armBB);
+
+        // Handle payload binding (only for non-unit enums with LPAREN)
+        if (!isWildcard && !isUnitEnum && pattern->LPAREN() && !pattern->IDENTIFIER().empty()) {
+            std::string bindName = pattern->IDENTIFIER().back()->getText();
+            if (bindName != "_") {
+                std::string variantName;
+                if (pattern->SCOPE() && pattern->IDENTIFIER().size() >= 2)
+                    variantName = pattern->IDENTIFIER(1)->getText();
+                else
+                    variantName = pattern->IDENTIFIER(0)->getText();
+
+                const EnumVariantInfo* vi = nullptr;
+                for (auto& v : sourceTI->enumVariantInfos)
+                    if (v.name == variantName) { vi = &v; break; }
+
+                if (vi && !vi->payloadFields.empty() && vi->payloadFields[0].typeInfo) {
+                    auto* payloadTy = vi->payloadFields[0].typeInfo->toLLVMType(*context_, module_->getDataLayout());
+                    auto* rawPtr = builder_->CreateStructGEP(enumLLTy, tempAlloca, 1, "match.payload");
+                    auto* castPtr = builder_->CreateBitCast(rawPtr, llvm::PointerType::getUnqual(*context_));
+                    auto* payloadVal = builder_->CreateLoad(payloadTy, castPtr, "match.bind");
+                    auto* alloca = builder_->CreateAlloca(payloadTy, nullptr, bindName);
+                    builder_->CreateStore(payloadVal, alloca);
+                    VarInfo bindVi;
+                    bindVi.alloca = alloca;
+                    bindVi.typeInfo = vi->payloadFields[0].typeInfo;
+                    bindVi.arrayDims = 0;
+                    bindVi.isParam = true;
+                    bindVi.isBorrowed = false;
+                    locals_[bindName] = bindVi;
+                }
+            }
+        }
+
+        // Emit body — prefer expression, fall back to block
+        llvm::Value* bodyVal = nullptr;
+        size_t bodyExprIdx = arm->IF() ? 1 : 0;
+        if (bodyExprIdx < arm->expression().size()) {
+            bodyVal = castValue(visit(arm->expression(bodyExprIdx)));
+        } else if (arm->block()) {
+            for (auto* stmt : arm->block()->statement())
+                visit(stmt);
+        }
+        if (!resultTy && bodyVal) resultTy = bodyVal->getType();
+        auto* armEndBB = builder_->GetInsertBlock();
+        if (!armEndBB->getTerminator()) {
+            if (!bodyVal) bodyVal = llvm::UndefValue::get(i32Ty);
+            builder_->CreateBr(mergeBB);
+        }
+        if (bodyVal) {
+            phiIncoming.push_back({bodyVal, armEndBB});
+        }
+
+        // Clean up binding
+        if (!isWildcard && !isUnitEnum && pattern->LPAREN() && !pattern->IDENTIFIER().empty()) {
+            std::string bindName = pattern->IDENTIFIER().back()->getText();
+            if (bindName != "_") locals_.erase(bindName);
+        }
+
+        // For last non-wildcard arm, failure path goes directly to merge → needs PHI entry
+        if (isLast && !isWildcard) {
+            if (!resultTy) resultTy = i32Ty;
+            phiIncoming.push_back({llvm::UndefValue::get(resultTy), cmpBB});
+        } else if (!isLast || isWildcard) {
+            builder_->SetInsertPoint(nextBB);
+        }
+    }
+
+    // PHI merge
+    builder_->SetInsertPoint(mergeBB);
+    if (phiIncoming.empty())
+        return static_cast<llvm::Value*>(llvm::UndefValue::get(i32Ty));
+
+    if (!resultTy) resultTy = phiIncoming[0].first->getType();
+    auto* phi = builder_->CreatePHI(resultTy, phiIncoming.size(), "match.result");
+    for (auto& [val, bb] : phiIncoming) {
+        auto* coerced = coerceValueToType(val, resultTy);
+        phi->addIncoming(coerced, bb);
+    }
     return static_cast<llvm::Value*>(phi);
 }
 
