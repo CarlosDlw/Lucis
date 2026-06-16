@@ -1447,10 +1447,13 @@ public:
   public:
     MatchArmContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
-    PatternContext *pattern();
+    std::vector<PatternContext *> pattern();
+    PatternContext* pattern(size_t i);
     antlr4::tree::TerminalNode *ARROW();
     std::vector<ExpressionContext *> expression();
     ExpressionContext* expression(size_t i);
+    std::vector<antlr4::tree::TerminalNode *> PIPE();
+    antlr4::tree::TerminalNode* PIPE(size_t i);
     antlr4::tree::TerminalNode *IF();
     BlockContext *block();
 

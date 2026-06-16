@@ -2226,14 +2226,21 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
         const TypeInfo* resultType = nullptr;
         for (size_t i = 0; i < me->matchArm().size(); i++) {
             auto* arm = me->matchArm(i);
-            auto* pattern = arm->pattern();
+
+            // Or-patterns: process each sub-pattern, share same body
+            bool armHasWildcard = false;
+            std::string armBindName;
+            for (size_t pi = 0; pi < arm->pattern().size(); pi++) {
+            auto* pattern = arm->pattern(pi);
 
             // Resolve pattern: find matching variant
             const EnumVariantInfo* matchedVariant = nullptr;
             std::string bindName;
             std::string variantName;
+            bool isWildcard = pattern->WILDCARD() != nullptr;
+            if (isWildcard) armHasWildcard = true;
 
-            if (pattern->WILDCARD()) {
+            if (isWildcard) {
                 // _ wildcard — matches any remaining variant
                 // still need to resolve body type below
             } else if (!pattern->IDENTIFIER().empty()) {
@@ -2273,10 +2280,12 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
                             return nullptr;
                         }
                         auto* payloadType = matchedVariant->payloadFields[0].typeInfo;
+                        armBindName = bindName;
                         locals_[bindName] = {payloadType, 0, true, true, nullptr};
                     }
                 }
             }
+            } // end or-pattern for loop
 
             // Resolve guard condition if present
             if (arm->IF()) {
@@ -2309,23 +2318,26 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
             }
 
             // Clean up binding from scope
-            if (!bindName.empty() && bindName != "_") {
-                locals_.erase(bindName);
+            if (!armBindName.empty() && armBindName != "_") {
+                locals_.erase(armBindName);
             }
         }
 
         // Exhaustiveness: check all variants are covered (unless wildcard present)
         bool hasWildcard = false;
-        for (size_t i = 0; i < me->matchArm().size(); i++) {
-            if (me->matchArm(i)->pattern()->WILDCARD()) {
-                hasWildcard = true; break;
+        for (size_t i = 0; i < me->matchArm().size() && !hasWildcard; i++) {
+            for (size_t pi = 0; pi < me->matchArm(i)->pattern().size(); pi++) {
+                if (me->matchArm(i)->pattern(pi)->WILDCARD()) {
+                    hasWildcard = true; break;
+                }
             }
         }
         if (!hasWildcard && !matchedType->enumVariantInfos.empty()) {
             // Collect covered variants
             std::unordered_set<std::string> covered;
             for (size_t i = 0; i < me->matchArm().size(); i++) {
-                auto* p = me->matchArm(i)->pattern();
+                for (size_t pi = 0; pi < me->matchArm(i)->pattern().size(); pi++) {
+                auto* p = me->matchArm(i)->pattern(pi);
                 if (!p->IDENTIFIER().empty()) {
                     std::string vname;
                     if (p->SCOPE() && p->IDENTIFIER().size() >= 2)
@@ -2335,6 +2347,7 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
                     if (!vname.empty()) covered.insert(vname);
                 }
             }
+            } // inner or-pattern loop
             // Find missing variants
             std::string missing;
             for (auto& v : matchedType->enumVariantInfos) {

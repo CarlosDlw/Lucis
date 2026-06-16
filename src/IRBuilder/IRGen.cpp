@@ -18926,21 +18926,15 @@ std::any IRGen::visitMatchExpr(LucisParser::MatchExprContext* ctx) {
     auto arms = ctx->matchArm();
     for (size_t i = 0; i < arms.size(); i++) {
         auto* arm = arms[i];
-        auto* pattern = arm->pattern();
-        bool isWildcard = pattern->WILDCARD() != nullptr;
         bool isLast = (i + 1 == arms.size());
 
-        auto* armBB  = llvm::BasicBlock::Create(*context_, "match.arm" + std::to_string(i), fn);
-        auto* nextBB = isLast ? mergeBB
-            : llvm::BasicBlock::Create(*context_, "match.next" + std::to_string(i), fn);
+        // Or-patterns: arm matches if ANY pattern matches
+        bool hasWildcard = false;
+        llvm::Value* armMatches = nullptr;
+        for (size_t pi = 0; pi < arm->pattern().size(); pi++) {
+            auto* pattern = arm->pattern(pi);
+            if (pattern->WILDCARD()) { hasWildcard = true; break; }
 
-        // Save the block that does the comparison (for PHI undef entry)
-        auto* cmpBB = builder_->GetInsertBlock();
-
-        // Branch to armBB or nextBB based on tag match
-        if (isWildcard) {
-            builder_->CreateBr(armBB);
-        } else {
             std::string variantName;
             if (pattern->SCOPE() && pattern->IDENTIFIER().size() >= 2)
                 variantName = pattern->IDENTIFIER(1)->getText();
@@ -18952,29 +18946,49 @@ std::any IRGen::visitMatchExpr(LucisParser::MatchExprContext* ctx) {
                 if (v.name == variantName) { disc = v.discriminant; break; }
 
             llvm::Value* tagVal;
-            if (isUnitEnum) {
+            if (isUnitEnum)
                 tagVal = builder_->CreateLoad(i32Ty, tempAlloca, "match.tag");
-            } else {
+            else {
                 auto* tagPtr = builder_->CreateStructGEP(enumLLTy, tempAlloca, 0, "match.tag.ptr");
                 tagVal = builder_->CreateLoad(i32Ty, tagPtr, "match.tag");
             }
-            auto* matches = builder_->CreateICmpEQ(tagVal,
+            auto* patMatch = builder_->CreateICmpEQ(tagVal,
                 llvm::ConstantInt::get(i32Ty, disc));
-            builder_->CreateCondBr(matches, armBB, nextBB);
+            if (armMatches)
+                armMatches = builder_->CreateOr(armMatches, patMatch);
+            else
+                armMatches = patMatch;
+        }
+
+        auto* armBB  = llvm::BasicBlock::Create(*context_, "match.arm" + std::to_string(i), fn);
+        auto* nextBB = isLast ? mergeBB
+            : llvm::BasicBlock::Create(*context_, "match.next" + std::to_string(i), fn);
+
+        auto* cmpBB = builder_->GetInsertBlock();
+
+        if (hasWildcard || !armMatches) {
+            builder_->CreateBr(armBB);
+        } else {
+            builder_->CreateCondBr(armMatches, armBB, nextBB);
         }
 
         // Arm body
         builder_->SetInsertPoint(armBB);
 
-        // Handle payload binding (only for non-unit enums with LPAREN)
-        if (!isWildcard && !isUnitEnum && pattern->LPAREN() && !pattern->IDENTIFIER().empty()) {
-            std::string bindName = pattern->IDENTIFIER().back()->getText();
+        // Handle payload binding (only for non-unit enums with LPAREN, use first non-wildcard pattern)
+        LucisParser::PatternContext* bindPattern = nullptr;
+        for (size_t pi = 0; pi < arm->pattern().size(); pi++) {
+            auto* p = arm->pattern(pi);
+            if (!p->WILDCARD() && p->LPAREN()) { bindPattern = p; break; }
+        }
+        if (!hasWildcard && !isUnitEnum && bindPattern && !bindPattern->IDENTIFIER().empty()) {
+            std::string bindName = bindPattern->IDENTIFIER().back()->getText();
             if (bindName != "_") {
                 std::string variantName;
-                if (pattern->SCOPE() && pattern->IDENTIFIER().size() >= 2)
-                    variantName = pattern->IDENTIFIER(1)->getText();
+                if (bindPattern->SCOPE() && bindPattern->IDENTIFIER().size() >= 2)
+                    variantName = bindPattern->IDENTIFIER(1)->getText();
                 else
-                    variantName = pattern->IDENTIFIER(0)->getText();
+                    variantName = bindPattern->IDENTIFIER(0)->getText();
 
                 const EnumVariantInfo* vi = nullptr;
                 for (auto& v : sourceTI->enumVariantInfos)
@@ -19018,16 +19032,16 @@ std::any IRGen::visitMatchExpr(LucisParser::MatchExprContext* ctx) {
         }
 
         // Clean up binding
-        if (!isWildcard && !isUnitEnum && pattern->LPAREN() && !pattern->IDENTIFIER().empty()) {
-            std::string bindName = pattern->IDENTIFIER().back()->getText();
+        if (!hasWildcard && !isUnitEnum && bindPattern && bindPattern->LPAREN() && !bindPattern->IDENTIFIER().empty()) {
+            std::string bindName = bindPattern->IDENTIFIER().back()->getText();
             if (bindName != "_") locals_.erase(bindName);
         }
 
         // For last non-wildcard arm, failure path goes directly to merge → needs PHI entry
-        if (isLast && !isWildcard) {
+        if (isLast && !hasWildcard) {
             if (!resultTy) resultTy = i32Ty;
             phiIncoming.push_back({llvm::UndefValue::get(resultTy), cmpBB});
-        } else if (!isLast || isWildcard) {
+        } else if (!isLast || hasWildcard) {
             builder_->SetInsertPoint(nextBB);
         }
     }

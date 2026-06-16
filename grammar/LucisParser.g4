@@ -393,10 +393,10 @@ defaultClause
     : DEFAULT block
     ;
 
-// match arm: pattern (if cond)? -> body
+// match arm: pattern | pattern | ... (if cond)? -> body
 matchArm
-    : pattern (IF expression)? ARROW expression
-    | pattern (IF expression)? ARROW block
+    : pattern (PIPE pattern)* (IF expression)? ARROW expression
+    | pattern (PIPE pattern)* (IF expression)? ARROW block
     ;
 
 // Patterns for match arms
