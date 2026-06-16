@@ -1,0 +1,145 @@
+
+use std::test::{ assertEqual, assertTrue };
+use std::log::println;
+
+// ── #[error] attribute for custom variant names ─────────────────────────────
+
+enum Status<T> {
+    #[error]
+    Fault(Error),
+    Good(T)
+}
+
+fn succeed() Status<int32> { ret Status<int32>::Good(42); }
+fn fail() Status<int32> { ret Status<int32>::Fault(Error { message: "fail" }); }
+
+fn processOk() Status<int32> {
+    auto v = succeed() ?;
+    ret Status<int32>::Good(v);
+}
+
+fn processErr() Status<int32> {
+    auto v = fail() ?;
+    ret Status<int32>::Good(v);
+}
+
+fn testAttrError() int32 {
+    auto val = succeed() catch { ret 1; };
+    assertEqual(val, 42);
+
+    fail() catch {
+        assertEqual(it.message, "fail");
+        ret 0;
+    };
+    ret 1;
+}
+
+fn testAttrErrorPropagate() int32 {
+    auto r2 = processOk() catch { ret 1; };
+    assertEqual(r2, 42);
+
+    processErr() catch {
+        assertEqual(it.message, "fail");
+        ret 0;
+    };
+    ret 1;
+}
+
+// ── ? in void functions ─────────────────────────────────────────────────────
+
+enum MaybeError { Ok, Err(Error) }
+
+fn fallibleOk() MaybeError { ret MaybeError::Ok; }
+fn fallibleErr() MaybeError { ret MaybeError::Err(Error { message: "void err" }); }
+
+fn innerVoidPropagate(*bool reached) void {
+    fallibleErr() ?;
+    *reached = true;
+}
+
+fn testVoidPropagate() void {
+    fallibleOk() ?;
+
+    auto reached = false;
+    innerVoidPropagate(&reached);
+    assertTrue(!reached);
+}
+
+// ── Compatible enums: same error payload, different names ───────────────────
+
+enum MyRes<T> { Success(T), Problem(Error) }
+
+fn computeOk() MyRes<int32> { ret MyRes<int32>::Success(10); }
+fn computeErr() MyRes<int32> { ret MyRes<int32>::Problem(Error { message: "compat" }); }
+
+fn outerOk() MyRes<int32> {
+    auto a = computeOk() ?;
+    ret MyRes<int32>::Success(a + 1);
+}
+
+fn testCompatibleEnums() int32 {
+    auto r1 = outerOk() catch { ret 1; };
+    assertEqual(r1, 11);
+
+    computeErr() catch {
+        assertEqual(it.message, "compat");
+        ret 0;
+    };
+    ret 1;
+}
+
+// ── ? context block ─────────────────────────────────────────────────────────
+
+enum Res<T> { Ok(T), Err(Error) }
+
+fn loadConfig() Res<int32> { ret Res<int32>::Err(Error { message: "no config" }); }
+
+fn withContext(*bool flag) Res<int32> {
+    auto val = loadConfig() ? {
+        *flag = true;
+    };
+    ret Res<int32>::Ok(val);
+}
+
+fn testContextBlock() int32 {
+    auto flag = false;
+    auto r = withContext(&flag) catch {
+        assertTrue(flag);   // context block ran
+        ret 0;              // test passed: error was propagated
+    };
+    assertEqual(r, 0); // should not reach: withContext always fails
+    ret 1;
+}
+
+// ── try expr or fallback ────────────────────────────────────────────────────
+
+fn throwing() int32 {
+    throw Error { message: "failed" };
+    ret 42;
+}
+fn safeFn() int32 { ret 99; }
+
+fn testTryOrFallback() int32 {
+    auto x = try throwing() or -1;
+    assertEqual(x, -1);
+
+    auto y = try safeFn() or -1;
+    assertEqual(y, 99);
+    ret 0;
+}
+
+// ── Runner ───────────────────────────────────────────────────────────────────
+
+fn testErrorHandlingFeatures() int32 {
+    println("[Testing error handling features...]");
+
+    assertEqual(testAttrError(), 0);
+    assertEqual(testAttrErrorPropagate(), 0);
+    testVoidPropagate();
+    assertEqual(testCompatibleEnums(), 0);
+    assertEqual(testContextBlock(), 0);
+    assertEqual(testTryOrFallback(), 0);
+
+    println("✔ error handling features tests passed");
+    ret 0;
+}

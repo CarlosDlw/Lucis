@@ -15,6 +15,7 @@ use tests::enum_generic_structs::testEnumGenericAndStructField;
 use tests::enum_payload_is::testEnumPayloadAndIs;
 use tests::enum_unit_switch::testEnumUnitAndSwitch;
 use tests::error_handling_custom_types::testErrorHandlingCustomTypes;
+use tests::error_handling_features::testErrorHandlingFeatures;
 use tests::expressions_full::testExpressionsFull;
 use tests::float_literal_formats::testFloatLiteralFormats;
 use tests::float_methods_extra::testFloatMethodsExtra;
@@ -91,6 +92,7 @@ fn main() int32 {
     testStructsPointers();
     testStructsMethodsAndExtend();
     testErrorHandlingCustomTypes();
+    testErrorHandlingFeatures();
     testPropagateOperator();
     testVecPointers();
     testSysMemory();
