@@ -2686,6 +2686,60 @@ void CompletionProvider::addImportedSymbols(std::vector<CompletionItem> &items,
       auto registryPath = ModuleRegistry::usePathToModulePath(modulePath);
       auto *sym = project->registry().findSymbol(registryPath, symName);
 
+      // If not in project registry, try on-demand parse of stdlib module
+      if (!sym) {
+        static const std::vector<std::string> stdlibDirs3 = {
+#ifdef LUCIS_STDLIB_DIR
+            LUCIS_STDLIB_DIR,
+#endif
+            "/usr/local/share/lucis/stdlib/",
+            "/usr/share/lucis/stdlib/",
+        };
+        for (auto& dir : stdlibDirs3) {
+          auto candidate = fs::path(dir) / (registryPath + ".lc");
+          std::error_code ec;
+          if (!fs::exists(candidate, ec) || ec) continue;
+          auto parseResult = Parser::parse(candidate.string());
+          if (!parseResult.tree) continue;
+          // Extract symbols directly from the parse tree
+          for (auto* tld : parseResult.tree->topLevelDecl()) {
+            if (auto* fd = tld->functionDecl()) {
+              if (!fd->IDENTIFIER().empty() && safeText(fd->IDENTIFIER(0)) == symName) {
+                CompletionItem ci; ci.label = symName;
+                ci.kind = CompletionKind::Function; ci.detail = "function";
+                items.push_back(std::move(ci)); return;
+              }
+            } else if (auto* sd = tld->structDecl()) {
+              if (safeText(sd->IDENTIFIER()) == symName) {
+                CompletionItem ci; ci.label = symName;
+                ci.kind = CompletionKind::Struct; ci.detail = "struct";
+                items.push_back(std::move(ci)); return;
+              }
+            } else if (auto* ed = tld->enumDecl()) {
+              if (safeText(ed->IDENTIFIER()) == symName) {
+                CompletionItem ci; ci.label = symName;
+                ci.kind = CompletionKind::Enum; ci.detail = "enum";
+                items.push_back(std::move(ci)); return;
+              }
+            } else if (auto* ud = tld->unionDecl()) {
+              if (safeText(ud->IDENTIFIER()) == symName) {
+                CompletionItem ci; ci.label = symName;
+                ci.kind = CompletionKind::Struct; ci.detail = "union";
+                items.push_back(std::move(ci)); return;
+              }
+            } else if (auto* ta = tld->typeAliasDecl()) {
+              if (safeText(ta->IDENTIFIER()) == symName) {
+                CompletionItem ci; ci.label = symName;
+                ci.kind = CompletionKind::Class; ci.detail = "type alias";
+                items.push_back(std::move(ci)); return;
+              }
+            }
+          }
+          break;
+        }
+        return; // symbol not found in stdlib either
+      }
+
       if (!sym) {
         // Fallback: check stdlib builtins for std:: modules
         if (modulePath.rfind("std::", 0) == 0) {
@@ -3834,7 +3888,7 @@ void CompletionProvider::addUseCompletions(std::vector<CompletionItem> &items,
     auto registryPath = ModuleRegistry::usePathToModulePath(modulePath);
     auto syms = project->registry().getModuleSymbols(registryPath);
 
-    // Fallback: if not in project registry, try stdlib
+    // Fallback: if not in project registry, try parsing stdlib directly
     if (syms.empty()) {
       static const std::vector<std::string> stdlibDirs2 = {
 #ifdef LUCIS_STDLIB_DIR
@@ -3849,11 +3903,37 @@ void CompletionProvider::addUseCompletions(std::vector<CompletionItem> &items,
         if (!fs::exists(candidate, ec) || ec) continue;
         auto parseResult = Parser::parse(candidate.string());
         if (!parseResult.tree) continue;
-        // Register temporarily so getModuleSymbols works
-        auto* modReg = const_cast<ModuleRegistry*>(&project->registry());
-        modReg->registerFile(registryPath, candidate.string(), parseResult.tree);
-        syms = project->registry().getModuleSymbols(registryPath);
-        break;
+        // Extract symbols directly from parse tree (avoids dangling decl pointers)
+        for (auto* tld : parseResult.tree->topLevelDecl()) {
+          std::string name;
+          int kind = -1; // 0=fn, 1=struct, 2=enum, 3=union, 4=typealias
+          if (auto* fd = tld->functionDecl()) {
+            if (!fd->IDENTIFIER().empty()) name = safeText(fd->IDENTIFIER(0)); kind = 0;
+          } else if (auto* sd = tld->structDecl()) {
+            name = safeText(sd->IDENTIFIER()); kind = 1;
+          } else if (auto* ed = tld->enumDecl()) {
+            name = safeText(ed->IDENTIFIER()); kind = 2;
+          } else if (auto* ud = tld->unionDecl()) {
+            name = safeText(ud->IDENTIFIER()); kind = 3;
+          } else if (auto* ta = tld->typeAliasDecl()) {
+            name = safeText(ta->IDENTIFIER()); kind = 4;
+          } else if (auto* ext = tld->extendDecl()) {
+            continue; // skip extend blocks in completion
+          }
+          if (name.empty() || !matchesPrefix(name, prefix)) continue;
+          CompletionItem ci;
+          ci.label = name;
+          switch (kind) {
+          case 0: ci.kind = CompletionKind::Function; ci.detail = "function"; break;
+          case 1: ci.kind = CompletionKind::Struct;   ci.detail = "struct";   break;
+          case 2: ci.kind = CompletionKind::Enum;     ci.detail = "enum";     break;
+          case 3: ci.kind = CompletionKind::Struct;   ci.detail = "union";    break;
+          case 4: ci.kind = CompletionKind::Class;    ci.detail = "type alias"; break;
+          default: continue;
+          }
+          items.push_back(std::move(ci));
+        }
+        return;
       }
     }
 
