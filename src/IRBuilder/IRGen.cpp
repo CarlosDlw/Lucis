@@ -18964,23 +18964,69 @@ std::any IRGen::visitMatchExpr(LucisParser::MatchExprContext* ctx) {
         auto* nextBB = isLast ? mergeBB
             : llvm::BasicBlock::Create(*context_, "match.next" + std::to_string(i), fn);
 
+        // Guard: if present, create intermediate block for condition check
+        auto* guardBB = arm->IF()
+            ? llvm::BasicBlock::Create(*context_, "match.guard" + std::to_string(i), fn)
+            : armBB;
+
         auto* cmpBB = builder_->GetInsertBlock();
 
         if (hasWildcard || !armMatches) {
-            builder_->CreateBr(armBB);
+            builder_->CreateBr(guardBB);
         } else {
-            builder_->CreateCondBr(armMatches, armBB, nextBB);
+            builder_->CreateCondBr(armMatches, guardBB, nextBB);
+        }
+
+        // Set up payload binding BEFORE guard check (so guard can reference it)
+        LucisParser::PatternContext* bindPattern = nullptr;
+        for (size_t pi = 0; pi < arm->pattern().size(); pi++) {
+            auto* p = arm->pattern(pi);
+            if (!p->WILDCARD() && p->LPAREN()) { bindPattern = p; break; }
+        }
+
+        // Guard check (or arm body if no guard)
+        if (arm->IF()) {
+            builder_->SetInsertPoint(guardBB);
+            // Set up binding so guard expression can use it
+            if (!hasWildcard && !isUnitEnum && bindPattern && !bindPattern->IDENTIFIER().empty()) {
+                std::string bindName = bindPattern->IDENTIFIER().back()->getText();
+                if (bindName != "_") {
+                    std::string variantName;
+                    if (bindPattern->SCOPE() && bindPattern->IDENTIFIER().size() >= 2)
+                        variantName = bindPattern->IDENTIFIER(1)->getText();
+                    else
+                        variantName = bindPattern->IDENTIFIER(0)->getText();
+                    const EnumVariantInfo* vi = nullptr;
+                    for (auto& v : sourceTI->enumVariantInfos)
+                        if (v.name == variantName) { vi = &v; break; }
+                    if (vi && !vi->payloadFields.empty() && vi->payloadFields[0].typeInfo) {
+                        auto* payloadTy = vi->payloadFields[0].typeInfo->toLLVMType(*context_, module_->getDataLayout());
+                        auto* rawPtr = builder_->CreateStructGEP(enumLLTy, tempAlloca, 1, "match.payload");
+                        auto* castPtr = builder_->CreateBitCast(rawPtr, llvm::PointerType::getUnqual(*context_));
+                        auto* payloadVal = builder_->CreateLoad(payloadTy, castPtr, "match.bind");
+                        auto* alloca = builder_->CreateAlloca(payloadTy, nullptr, bindName);
+                        builder_->CreateStore(payloadVal, alloca);
+                        VarInfo bindVi;
+                        bindVi.alloca = alloca;
+                        bindVi.typeInfo = vi->payloadFields[0].typeInfo;
+                        bindVi.arrayDims = 0;
+                        bindVi.isParam = true;
+                        bindVi.isBorrowed = false;
+                        locals_[bindName] = bindVi;
+                    }
+                }
+            }
+            auto* guardVal = castValue(visit(arm->expression(0)));
+            auto* guardOk = builder_->CreateICmpNE(guardVal,
+                llvm::ConstantInt::get(llvm::Type::getInt1Ty(*context_), 0));
+            builder_->CreateCondBr(guardOk, armBB, nextBB);
         }
 
         // Arm body
         builder_->SetInsertPoint(armBB);
 
         // Handle payload binding (only for non-unit enums with LPAREN, use first non-wildcard pattern)
-        LucisParser::PatternContext* bindPattern = nullptr;
-        for (size_t pi = 0; pi < arm->pattern().size(); pi++) {
-            auto* p = arm->pattern(pi);
-            if (!p->WILDCARD() && p->LPAREN()) { bindPattern = p; break; }
-        }
+        // (bindPattern already resolved above)
         if (!hasWildcard && !isUnitEnum && bindPattern && !bindPattern->IDENTIFIER().empty()) {
             std::string bindName = bindPattern->IDENTIFIER().back()->getText();
             if (bindName != "_") {
