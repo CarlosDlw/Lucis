@@ -221,6 +221,68 @@ static std::string inferIsBindingPayloadType(LucisParser::ExpressionContext *con
   return "";
 }
 
+// Resolve a type name through type aliases to find the underlying enum decl.
+// Handles both local and cross-file lookups.  Updates baseName/sourceArgs/sourceType
+// in-place when a type alias is resolved (e.g. DivideResult → Result<int32>).
+static LucisParser::EnumDeclContext *resolveEnumForCatch(
+    std::string &baseName,
+    std::vector<std::string> &sourceArgs,
+    std::string &sourceType,
+    LucisParser::ProgramContext *tree,
+    const FuncLookupCtx *flc) {
+  // 1) Try direct enum lookup
+  auto *ed = findEnumDeclForInference(baseName, flc);
+  if (ed) return ed;
+  if (tree) {
+    for (auto *tld : tree->topLevelDecl()) {
+      if (auto *e = tld->enumDecl();
+          e && e->IDENTIFIER() && safeText(e->IDENTIFIER()) == baseName)
+        return e;
+    }
+  }
+
+  // 2) Resolve through type aliases (local + cross-file)
+  LucisParser::TypeAliasDeclContext *alias = nullptr;
+  if (tree) {
+    for (auto *tld : tree->topLevelDecl()) {
+      if (auto *ta = tld->typeAliasDecl();
+          ta && safeText(ta->IDENTIFIER()) == baseName) {
+        alias = ta; break;
+      }
+    }
+  }
+  if (!alias && flc && flc->project && flc->project->isValid()) {
+    for (auto &ns : flc->project->registry().allModules()) {
+      auto *sym = flc->project->registry().findSymbol(ns, baseName);
+      if (!sym || sym->kind != ExportedSymbol::TypeAlias) continue;
+      alias = dynamic_cast<LucisParser::TypeAliasDeclContext *>(sym->decl);
+      if (alias) break;
+    }
+  }
+  if (!alias || !alias->typeSpec()) return nullptr;
+
+  // Parse the aliased type: "Result<int32>"
+  auto aliased = safeText(alias->typeSpec());
+  auto newBase = aliased;
+  sourceArgs.clear();
+  parseGenericInstance(aliased, newBase, sourceArgs);
+
+  // 3) Look up the real enum
+  ed = findEnumDeclForInference(newBase, flc);
+  if (!ed && tree) {
+    for (auto *tld : tree->topLevelDecl()) {
+      if (auto *e = tld->enumDecl();
+          e && e->IDENTIFIER() && safeText(e->IDENTIFIER()) == newBase)
+        return e;
+    }
+  }
+  if (ed) {
+    sourceType = aliased;
+    baseName = newBase;
+  }
+  return ed;
+}
+
 static std::string inferCatchUnwrapSuccessType(
     LucisParser::ExpressionContext *sourceExpr, LucisParser::ProgramContext *tree,
     const std::unordered_map<std::string, CompletionProvider::LocalVar> &locals,
@@ -233,20 +295,11 @@ static std::string inferCatchUnwrapSuccessType(
     return "";
 
   auto baseName = enumTypeName;
-  auto lt = baseName.find('<');
-  if (lt != std::string::npos)
-    baseName = baseName.substr(0, lt);
+  std::vector<std::string> sourceArgs;
+  parseGenericInstance(enumTypeName, baseName, sourceArgs);
 
-  auto *enumDecl = findEnumDeclForInference(baseName, flc);
-  if (!enumDecl && tree) {
-    for (auto *tld : tree->topLevelDecl()) {
-      if (auto *ed = tld->enumDecl();
-          ed && ed->IDENTIFIER() && safeText(ed->IDENTIFIER()) == baseName) {
-        enumDecl = ed;
-        break;
-      }
-    }
-  }
+  auto *enumDecl = resolveEnumForCatch(baseName, sourceArgs,
+                                        enumTypeName, tree, flc);
   if (!enumDecl)
     return "";
 
@@ -296,20 +349,11 @@ static std::string inferCatchUnwrapItType(
   if (enumTypeName.empty()) return "";
 
   auto baseName = enumTypeName;
-  auto lt = baseName.find('<');
-  if (lt != std::string::npos)
-    baseName = baseName.substr(0, lt);
+  std::vector<std::string> sourceArgs;
+  parseGenericInstance(enumTypeName, baseName, sourceArgs);
 
-  auto *enumDecl = findEnumDeclForInference(baseName, flc);
-  if (!enumDecl && tree) {
-    for (auto *tld : tree->topLevelDecl()) {
-      if (auto *ed = tld->enumDecl();
-          ed && ed->IDENTIFIER() && safeText(ed->IDENTIFIER()) == baseName) {
-        enumDecl = ed;
-        break;
-      }
-    }
-  }
+  auto *enumDecl = resolveEnumForCatch(baseName, sourceArgs,
+                                        enumTypeName, tree, flc);
   if (!enumDecl) return "";
 
   std::unordered_map<std::string, std::string> subst;
