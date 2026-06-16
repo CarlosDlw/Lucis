@@ -18558,6 +18558,11 @@ std::any IRGen::visitThrowStmt(LucisParser::ThrowStmtContext* ctx) {
     auto* errAlloca = builder_->CreateAlloca(errorTy, nullptr, "throw_err");
     builder_->CreateStore(errorVal, errAlloca);
 
+    // Phase 1: emit deferred cleanups and auto-drops before throw.
+    // The throw uses longjmp so normal scope exit does not run.
+    emitAllCleanups();
+    deferStack_.clear();  // prevent double-emission on scope exit after catch
+
     auto throwFn = declareBuiltin("lucis_eh_throw", voidTy, {ptrTy});
     builder_->CreateCall(throwFn, {errAlloca});
 
