@@ -3833,6 +3833,30 @@ void CompletionProvider::addUseCompletions(std::vector<CompletionItem> &items,
   if (project && project->isValid()) {
     auto registryPath = ModuleRegistry::usePathToModulePath(modulePath);
     auto syms = project->registry().getModuleSymbols(registryPath);
+
+    // Fallback: if not in project registry, try stdlib
+    if (syms.empty()) {
+      static const std::vector<std::string> stdlibDirs2 = {
+#ifdef LUCIS_STDLIB_DIR
+          LUCIS_STDLIB_DIR,
+#endif
+          "/usr/local/share/lucis/stdlib/",
+          "/usr/share/lucis/stdlib/",
+      };
+      for (auto& dir : stdlibDirs2) {
+        auto candidate = fs::path(dir) / (registryPath + ".lc");
+        std::error_code ec;
+        if (!fs::exists(candidate, ec) || ec) continue;
+        auto parseResult = Parser::parse(candidate.string());
+        if (!parseResult.tree) continue;
+        // Register temporarily so getModuleSymbols works
+        auto* modReg = const_cast<ModuleRegistry*>(&project->registry());
+        modReg->registerFile(registryPath, candidate.string(), parseResult.tree);
+        syms = project->registry().getModuleSymbols(registryPath);
+        break;
+      }
+    }
+
     for (auto *sym : syms) {
       if (!matchesPrefix(sym->name, prefix))
         continue;
