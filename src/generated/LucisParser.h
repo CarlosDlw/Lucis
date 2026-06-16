@@ -1719,6 +1719,7 @@ public:
 
     ExpressionContext *expression();
     antlr4::tree::TerminalNode *QUESTION();
+    BlockContext *block();
 
     virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
   };

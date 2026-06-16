@@ -18815,8 +18815,15 @@ std::any IRGen::visitPropagateExpr(LucisParser::PropagateExprContext* ctx) {
                     : llvm::BasicBlock::Create(*context_, "prop.merge", fn);
     builder_->CreateCondBr(isErr, errBB, okBB);
 
+    // Phase 5: optional context block executes on error path before propagation
+    auto* ctxBlock = ctx->block();
+
     // Error path
     builder_->SetInsertPoint(errBB);
+    if (ctxBlock) {
+        for (auto* stmt : ctxBlock->statement())
+            visit(stmt);
+    }
     if (isVoidReturn) {
         emitAllCleanups();
         builder_->CreateRetVoid();

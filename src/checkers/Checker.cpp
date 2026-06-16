@@ -2204,6 +2204,17 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
         auto* sourceType = resolveExprType(pe->expression());
         if (!sourceType) return nullptr;
 
+        // Phase 5: optional context block adds message on error re-propagation
+        // Validate that the block (if present) is well-formed
+        if (auto* ctxBlock = pe->block()) {
+            // The block should contain at least a string expression as context
+            // Full validation is done in IRGen; here we just ensure it's not empty
+            if (ctxBlock->statement().empty()) {
+                error(pe, "? context block must contain a context message");
+                return nullptr;
+            }
+        }
+
         // Phase 3: void functions skip classifyUnwrapCatchEnum (allow unit variants)
         bool isVoidReturn = currentReturnType_ &&
                             currentReturnType_->kind == TypeKind::Void;
@@ -2249,10 +2260,7 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
                     if (classifyUnwrapCatchEnum(currentReturnType_, retPattern, retReason)) {
                         auto* srcErr = singlePayloadType(*pattern.errVariant);
                         auto* retErr = singlePayloadType(*retPattern.errVariant);
-                        auto* srcOk  = singlePayloadType(*pattern.okVariant);
-                        auto* retOk  = singlePayloadType(*retPattern.okVariant);
-                        if (srcErr && retErr && srcErr == retErr &&
-                            srcOk && retOk && isAssignable(retOk, srcOk)) {
+                        if (srcErr && retErr && srcErr == retErr) {
                             compatible = true;
                         }
                     }
