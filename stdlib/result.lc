@@ -1,0 +1,38 @@
+// Standard result and option types for Lucis.
+// Usage: use result::{ Result, Option };
+
+// ── Result<T> ───────────────────────────────────────────────────────────────
+// The standard success-or-error type. Works with ? and catch.
+//
+//   fn divide(int32 a, int32 b) Result<int32> {
+//       if b == 0 { ret Result<int32>::Err(Error { message: "div0" }); }
+//       ret Result<int32>::Ok(a / b);
+//   }
+//
+//   auto val = divide(10, 2) ?;       // unwrap or propagate
+//   auto val = divide(10, 0) catch {  // handle inline
+//       println(it.message);
+//       ret 0;
+//   };
+
+enum Result<T> {
+    Ok(T),
+    Err(Error),
+}
+
+// ── Option<T> ───────────────────────────────────────────────────────────────
+// An optional value: Some(value) or Nothing.
+// Note: Not designed for ?/catch — use explicit matching or 'or' patterns.
+// Nothing is unit (no payload) to distinguish from Error-carrying Result.
+//
+//   fn find(int32[] arr, int32 target) Option<int32> {
+//       for arr {
+//           if it == target { ret Option<int32>::Some(it); }
+//       }
+//       ret Option<int32>::Nothing;
+//   }
+
+enum Option<T> {
+    Some(T),
+    Nothing,
+}
