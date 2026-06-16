@@ -4422,6 +4422,20 @@ static std::string inferExprTypeName(
         return outType;
     }
 
+    // Generic static method call: Result<int32>::Ok(42) -> "Result<int32>"
+    if (auto* gsmc = dynamic_cast<LucisParser::GenericStaticMethodCallExprContext*>(expr)) {
+        auto ids = gsmc->IDENTIFIER();
+        if (ids.empty()) return "";
+        std::string outType = ids[0]->getText() + "<";
+        auto args = gsmc->typeSpec();
+        for (size_t i = 0; i < args.size(); i++) {
+            if (i > 0) outType += ",";
+            outType += args[i]->getText();
+        }
+        outType += ">";
+        return outType;
+    }
+
     // Static method call: Type::method(...) → look up return type from extend blocks
     if (auto* smc = dynamic_cast<LucisParser::StaticMethodCallExprContext*>(expr)) {
         auto ids = smc->IDENTIFIER();
@@ -4748,13 +4762,40 @@ static std::string inferExprTypeName(
     if (auto* te = dynamic_cast<LucisParser::TryExprContext*>(expr))
         return inferExprTypeName(te->expression(0), locals, flc);
 
-    // ── Match expression: match expr { ... } — type from first arm ────
+    // ── Match expression: match expr { ... } — type from enum ─────────
     if (auto* me = dynamic_cast<LucisParser::MatchExprContext*>(expr)) {
-        for (auto* arm : me->matchArm()) {
-            if (arm->block()) continue;
-            size_t idx = arm->IF() ? 1 : 0;
-            if (idx < arm->expression().size())
-                return inferExprTypeName(arm->expression(idx), locals, flc);
+        auto matchedType = inferExprTypeName(me->expression(), locals, flc);
+        if (!matchedType.empty() && flc) {
+            std::string baseName = matchedType;
+            std::vector<std::string> sourceArgs;
+            parseGenericInstance(matchedType, baseName, sourceArgs);
+            auto* ed = findEnumDeclForInference(baseName, flc);
+            if (!ed && flc->tree) {
+                for (auto* tld : flc->tree->topLevelDecl()) {
+                    if (auto* e = tld->enumDecl();
+                        e && e->IDENTIFIER() && safeText(e->IDENTIFIER()) == baseName)
+                        { ed = e; break; }
+                }
+            }
+            if (ed) {
+                // Return first non-error variant's payload type
+                for (auto* variant : ed->enumVariant()) {
+                    if (!variant || variant->typeSpec().empty()) continue;
+                    auto payloadType = safeText(variant->typeSpec(0));
+                    if (payloadType != "Error") {
+                        if (!sourceArgs.empty() && ed->typeParamList()) {
+                            std::unordered_map<std::string, std::string> subst;
+                            auto tps = ed->typeParamList()->typeParam();
+                            for (size_t i = 0; i < std::min(tps.size(), sourceArgs.size()); i++) {
+                                auto ids = tps[i]->IDENTIFIER();
+                                if (!ids.empty()) subst[ids[0]->getText()] = sourceArgs[i];
+                            }
+                            payloadType = substituteTypeParams(payloadType, subst);
+                        }
+                        return payloadType;
+                    }
+                }
+            }
         }
         return "";
     }
