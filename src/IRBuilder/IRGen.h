@@ -318,6 +318,9 @@ private:
     std::unordered_map<std::string, const TypeInfo*> fnReturnTypes_;
     std::unordered_map<std::string, unsigned> fnReturnArrayDims_;
 
+    // Current function's return type (for ? propagation between compatible enums)
+    const TypeInfo* currentFnReturnType_ = nullptr;
+
     // Pending payload binding from `expr is EnumType::Variant(name)` expressions.
     // Set by visitIsExpr when a binding identifier is present; consumed by
     // visitIfStmt before emitting the true-branch body so the binding is

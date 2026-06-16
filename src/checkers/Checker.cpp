@@ -2209,12 +2209,31 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
             error(pe, reason);
             return nullptr;
         }
-        // '?' requires the function return type to match the source enum type
+        // '?' requires the function return type to match or be compatible
         if (currentReturnType_ && currentReturnType_ != sourceType) {
-            error(pe, "cannot use '?' propagate: function return type '" +
-                       currentReturnType_->name + "' does not match enum type '" +
-                       sourceType->name + "'");
-            return nullptr;
+            // Check if enums are compatible (same error payload, assignable success)
+            bool compatible = false;
+            if (currentReturnType_->kind == TypeKind::Enum &&
+                sourceType->kind == TypeKind::Enum) {
+                UnwrapCatchPatternInfo retPattern;
+                std::string retReason;
+                if (classifyUnwrapCatchEnum(currentReturnType_, retPattern, retReason)) {
+                    auto* srcErr = singlePayloadType(*pattern.errVariant);
+                    auto* retErr = singlePayloadType(*retPattern.errVariant);
+                    auto* srcOk  = singlePayloadType(*pattern.okVariant);
+                    auto* retOk  = singlePayloadType(*retPattern.okVariant);
+                    if (srcErr && retErr && srcErr == retErr &&
+                        srcOk && retOk && isAssignable(retOk, srcOk)) {
+                        compatible = true;
+                    }
+                }
+            }
+            if (!compatible) {
+                error(pe, "cannot use '?': function return type '" +
+                           currentReturnType_->name + "' is not compatible with '" +
+                           sourceType->name + "'");
+                return nullptr;
+            }
         }
         return singlePayloadType(*pattern.okVariant);
     }

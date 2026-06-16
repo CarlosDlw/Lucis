@@ -1240,6 +1240,7 @@ std::any IRGen::visitFunctionDecl(LucisParser::FunctionDeclContext* ctx) {
     }
 
     currentFunction_ = func;
+    currentFnReturnType_ = retInfo;
     locals_.clear(); // each function has its own scope
     variadicParams_.clear();
     deferStack_.clear();
@@ -18746,6 +18747,20 @@ std::any IRGen::visitPropagateExpr(LucisParser::PropagateExprContext* ctx) {
         return static_cast<llvm::Value*>(llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
     }
 
+    // Phase 2: when source enum differs from function return enum, use the
+    // return enum's variant info when constructing the error-path ret value.
+    const TypeInfo* retEnumTI = sourceTI;
+    const UnwrapCatchPatternInfo* retPattern = &pattern;
+    UnwrapCatchPatternInfo retPatternStorage;
+    if (currentFnReturnType_ && currentFnReturnType_ != sourceTI &&
+        currentFnReturnType_->kind == TypeKind::Enum) {
+        std::string retReason;
+        if (classifyUnwrapCatchEnum(currentFnReturnType_, retPatternStorage, retReason)) {
+            retEnumTI = currentFnReturnType_;
+            retPattern = &retPatternStorage;
+        }
+    }
+
     auto* enumLLTy = sourceTI->toLLVMType(*context_, module_->getDataLayout());
     auto* okPayloadTy = getEnumVariantPayloadType(*pattern.okVariant);
     auto* errPayloadTy = getEnumVariantPayloadType(*pattern.errVariant);
@@ -18780,7 +18795,7 @@ std::any IRGen::visitPropagateExpr(LucisParser::PropagateExprContext* ctx) {
 
     // Build the full enum value from the error variant tag + payload
     std::vector<llvm::Value*> payloads = {errPayloadVal};
-    auto* errEnumVal = buildEnumVariantValue(sourceTI, *pattern.errVariant, payloads);
+    auto* errEnumVal = buildEnumVariantValue(retEnumTI, *retPattern->errVariant, payloads);
     emitAllCleanups();
     builder_->CreateRet(errEnumVal);
 
