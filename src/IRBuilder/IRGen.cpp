@@ -14120,6 +14120,16 @@ const TypeInfo* IRGen::resolveExprTypeInfo(LucisParser::ExpressionContext* ctx) 
     if (auto* tern = dynamic_cast<LucisParser::TernaryExprContext*>(ctx))
         return resolveExprTypeInfo(tern->expression(1));
 
+    // ── Propagate operator: expr? — success payload type ────────────
+    if (auto* pe = dynamic_cast<LucisParser::PropagateExprContext*>(ctx)) {
+        auto* sourceTI = resolveExprTypeInfo(pe->expression());
+        UnwrapCatchPatternInfo pattern;
+        std::string reason;
+        if (!classifyUnwrapCatchEnum(sourceTI, pattern, reason))
+            return nullptr;
+        return singlePayloadType(*pattern.okVariant);
+    }
+
     // ── Catch unwrap expression: expr catch { ... } ─────────────────
     if (auto* cu = dynamic_cast<LucisParser::CatchUnwrapExprContext*>(ctx)) {
         auto* sourceTI = resolveExprTypeInfo(cu->expression());
