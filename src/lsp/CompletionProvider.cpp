@@ -2830,6 +2830,21 @@ void CompletionProvider::addEnumWildcardVariants(std::vector<CompletionItem>& it
         };
 
         auto* ed = findEnumDecl(tree, baseName);
+        if (!ed) {
+            // Resolve through type aliases: type Foo = EnumType<T> → EnumType
+            for (auto* tld : tree->topLevelDecl()) {
+                if (auto* ta = tld->typeAliasDecl()) {
+                    if (safeText(ta->IDENTIFIER()) == baseName) {
+                        auto aliased = safeText(ta->typeSpec());
+                        auto base = aliased;
+                        auto lt = base.find('<');
+                        if (lt != std::string::npos) base = base.substr(0, lt);
+                        ed = findEnumDecl(tree, base);
+                        if (ed) break;
+                    }
+                }
+            }
+        }
         if (ed) {
             addVariants(ed);
             return;
@@ -3797,8 +3812,43 @@ void CompletionProvider::addEnumVariants(std::vector<CompletionItem> &items,
                                          const CBindings &bindings,
                                          const ProjectContext *project,
                                          const std::string &prefix) {
+  // Resolve enum name through type aliases (local + cross-file).
+  // e.g. type DivideResult = Result<int32> → "Result"
+  auto resolveEnumAlias = [&](const std::string& name) -> std::string {
+    // Local type alias
+    for (auto* tld : tree->topLevelDecl()) {
+      if (auto* ta = tld->typeAliasDecl()) {
+        if (safeText(ta->IDENTIFIER()) == name) {
+          auto aliased = safeText(ta->typeSpec());
+          auto base = aliased;
+          auto lt = base.find('<');
+          if (lt != std::string::npos) base = base.substr(0, lt);
+          return base;
+        }
+      }
+    }
+    // Cross-file type alias
+    if (project && project->isValid()) {
+      for (auto& ns : project->registry().allModules()) {
+        auto* sym = project->registry().findSymbol(ns, name);
+        if (!sym || sym->kind != ExportedSymbol::TypeAlias) continue;
+        auto* ta = dynamic_cast<LucisParser::TypeAliasDeclContext*>(sym->decl);
+        if (!ta || !ta->typeSpec()) continue;
+        auto aliased = safeText(ta->typeSpec());
+        auto base = aliased;
+        auto lt = base.find('<');
+        if (lt != std::string::npos) base = base.substr(0, lt);
+        return base;
+      }
+    }
+    return "";
+  };
+  std::string realEnumName = enumName;
+  auto resolved = resolveEnumAlias(enumName);
+  if (!resolved.empty()) realEnumName = resolved;
+
   // Same-file enum
-  auto *ed = findEnumDecl(tree, enumName);
+  auto *ed = findEnumDecl(tree, realEnumName);
   if (ed) {
     for (auto *variant : ed->enumVariant()) {
       auto *v = variant->IDENTIFIER();
@@ -3818,7 +3868,7 @@ void CompletionProvider::addEnumVariants(std::vector<CompletionItem> &items,
   // Cross-file enum
   if (project && project->isValid()) {
     for (auto &ns : project->registry().allModules()) {
-      auto *sym = project->registry().findSymbol(ns, enumName);
+      auto *sym = project->registry().findSymbol(ns, realEnumName);
       if (!sym || sym->kind != ExportedSymbol::Enum)
         continue;
       auto *decl = dynamic_cast<LucisParser::EnumDeclContext *>(sym->decl);
