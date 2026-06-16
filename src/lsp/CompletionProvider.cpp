@@ -1223,6 +1223,18 @@ static std::string inferExprTypeName(
   // ── Try expression: try expr or fallback — same type as inner ─────
   if (auto* te = dynamic_cast<LucisParser::TryExprContext*>(expr))
     return inferExprTypeName(te->expression(0), locals, flc);
+
+  // ── Match expression: match expr { ... } — type from first arm ────
+  if (auto* me = dynamic_cast<LucisParser::MatchExprContext*>(expr)) {
+    for (auto* arm : me->matchArm()) {
+      if (arm->block()) continue;
+      size_t idx = arm->IF() ? 1 : 0;
+      if (idx < arm->expression().size())
+        return inferExprTypeName(arm->expression(idx), locals, flc);
+    }
+    return "";
+  }
+
   if (auto *arr = dynamic_cast<LucisParser::ArrayLitExprContext *>(expr)) {
     auto elems = arr->expression();
     if (!elems.empty()) {
@@ -4412,7 +4424,7 @@ void CompletionProvider::addKeywords(std::vector<CompletionItem> &items,
       "fn",     "struct", "enum",      "union",  "extend",   "type",
       "extern", "use",    "namespace", "try",    "catch",    "finally",
        "throw",  "spawn",  "await",     "lock",   "defer",    "as",
-       "or",     "is",     "in",     "sizeof",    "typeof", "true",     "false",
+       "match",  "or",     "is",     "in",     "sizeof",    "typeof", "true",     "false",
       "null",   "return"};
 
   for (auto *kw : keywords) {

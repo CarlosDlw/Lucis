@@ -4748,6 +4748,17 @@ static std::string inferExprTypeName(
     if (auto* te = dynamic_cast<LucisParser::TryExprContext*>(expr))
         return inferExprTypeName(te->expression(0), locals, flc);
 
+    // ── Match expression: match expr { ... } — type from first arm ────
+    if (auto* me = dynamic_cast<LucisParser::MatchExprContext*>(expr)) {
+        for (auto* arm : me->matchArm()) {
+            if (arm->block()) continue;
+            size_t idx = arm->IF() ? 1 : 0;
+            if (idx < arm->expression().size())
+                return inferExprTypeName(arm->expression(idx), locals, flc);
+        }
+        return "";
+    }
+
     // Array literal: [expr, ...] → infer element type, prepend []
     if (auto* arr = dynamic_cast<LucisParser::ArrayLitExprContext*>(expr)) {
         auto elems = arr->expression();
