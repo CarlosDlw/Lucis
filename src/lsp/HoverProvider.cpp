@@ -4702,6 +4702,39 @@ static std::string inferExprTypeName(
         return successType;
     }
 
+    // ── Propagate operator: expr? — success payload type ──────────────
+    if (auto* pe = dynamic_cast<LucisParser::PropagateExprContext*>(expr)) {
+        auto sourceType = inferExprTypeName(pe->expression(), locals, flc);
+        if (sourceType.empty() || !flc) return "";
+        std::string baseName = sourceType;
+        std::vector<std::string> sourceArgs;
+        parseGenericInstance(sourceType, baseName, sourceArgs);
+        auto* enumDecl = resolveEnumForCatch(baseName, sourceArgs,
+                                              sourceType, flc->tree, flc);
+        if (!enumDecl) return "";
+        // Return the non-error variant's payload type
+        std::unordered_map<std::string, std::string> subst;
+        if (enumDecl->typeParamList() && !sourceArgs.empty()) {
+            auto tps = enumDecl->typeParamList()->typeParam();
+            for (size_t i = 0; i < std::min(tps.size(), sourceArgs.size()); i++) {
+                auto ids = tps[i]->IDENTIFIER();
+                if (!ids.empty()) subst[ids[0]->getText()] = sourceArgs[i];
+            }
+        }
+        for (auto* variant : enumDecl->enumVariant()) {
+            if (!variant || variant->typeSpec().size() != 1) continue;
+            auto payloadType = variant->typeSpec(0)->getText();
+            payloadType = substituteTypeParams(payloadType, subst);
+            if (payloadType != "Error")
+                return payloadType;
+        }
+        return "";
+    }
+
+    // ── Try expression: try expr or fallback — same type as inner ─────
+    if (auto* te = dynamic_cast<LucisParser::TryExprContext*>(expr))
+        return inferExprTypeName(te->expression(0), locals, flc);
+
     // Array literal: [expr, ...] → infer element type, prepend []
     if (auto* arr = dynamic_cast<LucisParser::ArrayLitExprContext*>(expr)) {
         auto elems = arr->expression();
@@ -5391,6 +5424,7 @@ std::string HoverProvider::formatEnumDecl(LucisParser::EnumDeclContext* decl) {
     auto variants = decl->enumVariant();
     for (size_t i = 0; i < variants.size(); i++) {
         auto* v = variants[i];
+        if (v->ATTR_ERROR()) ss << "    #[error]\n";
         ss << "    " << safeText(v->IDENTIFIER());
         if (v->LPAREN()) {
             ss << "(";

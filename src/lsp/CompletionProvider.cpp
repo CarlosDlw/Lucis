@@ -1213,6 +1213,16 @@ static std::string inferExprTypeName(
       return inferred;
     return "";
   }
+  // ── Propagate operator: expr? — success payload type ──────────────
+  if (auto* pe = dynamic_cast<LucisParser::PropagateExprContext*>(expr)) {
+    auto* tree = flc ? flc->tree : nullptr;
+    auto inferred = inferCatchUnwrapSuccessType(pe->expression(), tree, locals, flc);
+    if (!inferred.empty()) return inferred;
+    return "";
+  }
+  // ── Try expression: try expr or fallback — same type as inner ─────
+  if (auto* te = dynamic_cast<LucisParser::TryExprContext*>(expr))
+    return inferExprTypeName(te->expression(0), locals, flc);
   if (auto *arr = dynamic_cast<LucisParser::ArrayLitExprContext *>(expr)) {
     auto elems = arr->expression();
     if (!elems.empty()) {
@@ -3703,9 +3713,23 @@ void CompletionProvider::addUseCompletions(std::vector<CompletionItem> &items,
         ci.kind = CompletionKind::Module;
         ci.detail = "module";
         ci.insertText = topLevel + "::";
-        items.push_back(std::move(ci));
-      }
-    }
+    items.push_back(std::move(ci));
+  }
+
+  // #[error] attribute — marks an enum variant as the error variant
+  bool matchAttrError = (!prefix.empty() && prefix[0] == '#' &&
+                          matchesPrefix("[error]", prefix.substr(1))) ||
+                         matchesPrefix("#[error]", prefix);
+  if (matchAttrError) {
+    CompletionItem ci;
+    ci.label = "#[error]";
+    ci.kind = CompletionKind::Keyword;
+    ci.detail = "Marks enum variant as the error variant for ? and catch";
+    ci.insertText = "#[error]";
+    ci.filterText = "#[error]";
+    items.push_back(std::move(ci));
+  }
+}
     return;
   }
 
@@ -4246,8 +4270,8 @@ void CompletionProvider::addKeywords(std::vector<CompletionItem> &items,
       "switch", "case",   "default",   "break",  "continue", "ret",
       "fn",     "struct", "enum",      "union",  "extend",   "type",
       "extern", "use",    "namespace", "try",    "catch",    "finally",
-      "throw",  "spawn",  "await",     "lock",   "defer",    "as",
-      "is",     "in",     "sizeof",    "typeof", "true",     "false",
+       "throw",  "spawn",  "await",     "lock",   "defer",    "as",
+       "or",     "is",     "in",     "sizeof",    "typeof", "true",     "false",
       "null",   "return"};
 
   for (auto *kw : keywords) {
