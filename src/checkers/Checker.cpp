@@ -843,6 +843,16 @@ bool Checker::check(LucisParser::ProgramContext* tree) {
                 }
             }
         }
+        // Pre-register imported enums so type aliases referencing them resolve
+        for (auto& [symName, ns] : userImports_) {
+            auto* sym = moduleRegistry_->findSymbol(ns, symName);
+            if (!sym || sym->kind != ExportedSymbol::Enum) continue;
+            if (!typeRegistry_.lookup(sym->name) && !genericEnumTemplates_.count(sym->name)) {
+                auto* ed = static_cast<LucisParser::EnumDeclContext*>(sym->decl);
+                checkEnumDecl(ed);
+            }
+        }
+
         // Second pass: enums and type aliases (struct/union skeletons now available)
         for (auto* decl : tree->topLevelDecl()) {
             if (auto* ed = decl->enumDecl()) {
@@ -5332,6 +5342,7 @@ void Checker::checkTypeAliasDecl(LucisParser::TypeAliasDeclContext* decl) {
         // Register as a copy with the alias name
         TypeInfo ti = *baseTI;
         ti.name = name;
+        syncToSemanticDB_TypeAlias(ti, currentModulePath_, decl);
         typeRegistry_.registerType(std::move(ti));
     }
 }

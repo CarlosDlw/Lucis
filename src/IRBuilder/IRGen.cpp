@@ -1492,6 +1492,16 @@ void IRGen::registerCrossFileSymbols(LucisParser::ProgramContext* ctx) {
         }
     }
 
+    // Pre-register imported enums so local type aliases referencing them resolve
+    for (auto& [symName, sourceNs] : userImports_) {
+        auto* sym = moduleRegistry_->findSymbol(sourceNs, symName);
+        if (!sym || sym->kind != ExportedSymbol::Enum) continue;
+        if (!typeRegistry_.lookup(sym->name) && !genericEnumTemplates_.count(sym->name)) {
+            auto* enumCtx = dynamic_cast<LucisParser::EnumDeclContext*>(sym->decl);
+            if (enumCtx) visitEnumDecl(enumCtx);
+        }
+    }
+
     // Pre-register local enums/aliases and struct/union skeletons first so
     // external same-namespace declarations can resolve current-file type names.
     if (ctx) {
@@ -8661,6 +8671,8 @@ std::any IRGen::visitStaticMethodCallExpr(
             argTypes.push_back(resolveExprTypeInfo(argExpr));
     }
 
+    if (!typeRegistry_.lookup(structName))
+        syncTypeFromSemanticDB(structName);
     if (auto* enumType = typeRegistry_.lookup(structName);
         enumType && enumType->kind == TypeKind::Enum) {
         const EnumVariantInfo* variantInfo = nullptr;
@@ -14446,6 +14458,8 @@ const TypeInfo* IRGen::resolveExprTypeInfo(LucisParser::ExpressionContext* ctx) 
         auto structName = ids[0]->getText();
         auto methodName = ids[1]->getText();
 
+        if (!typeRegistry_.lookup(structName))
+            syncTypeFromSemanticDB(structName);
         if (auto* enumType = typeRegistry_.lookup(structName);
             enumType && enumType->kind == TypeKind::Enum) {
             return enumType;
