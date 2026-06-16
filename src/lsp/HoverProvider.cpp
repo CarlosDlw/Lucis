@@ -1627,6 +1627,37 @@ std::optional<HoverResult> HoverProvider::walkExprForHover(
         return std::nullopt;
     }
 
+    // ── Positional struct literal: Type { expr, ... } ─────────────────
+    if (auto* spi = dynamic_cast<LucisParser::StructPosInitExprContext*>(expr)) {
+        if (spi->IDENTIFIER() && spi->IDENTIFIER()->getSymbol() == hoveredToken) {
+            return hoverIdent(spi->IDENTIFIER()->getText(), hoveredToken, tree,
+                               bindings, cursorLine, project);
+        }
+        for (auto* e : spi->expression()) {
+            auto r = walkExprForHover(e, hoveredToken, tokenText,
+                                       tree, bindings, cursorLine, project);
+            if (r) return r;
+        }
+        return std::nullopt;
+    }
+
+    // ── Qualified positional: mod::Type { expr, ... } ────────────────
+    if (auto* qpi = dynamic_cast<LucisParser::QualifiedStructPosInitExprContext*>(expr)) {
+        auto ids = qpi->IDENTIFIER();
+        for (size_t i = 0; i < ids.size(); i++) {
+            if (ids[i]->getSymbol() == hoveredToken) {
+                return hoverIdent(ids[i]->getText(), hoveredToken, tree,
+                                   bindings, cursorLine, project);
+            }
+        }
+        for (auto* e : qpi->expression()) {
+            auto r = walkExprForHover(e, hoveredToken, tokenText,
+                                       tree, bindings, cursorLine, project);
+            if (r) return r;
+        }
+        return std::nullopt;
+    }
+
     // ── Struct literal: Type { field: expr, ... } ────────────────────
     if (auto* sl = dynamic_cast<LucisParser::StructLitExprContext*>(expr)) {
         auto ids = sl->IDENTIFIER();
@@ -1825,6 +1856,32 @@ std::optional<HoverResult> HoverProvider::walkExprForHover(
                                            tree, bindings, cursorLine, project);
                 if (r) return r;
             }
+        }
+        return std::nullopt;
+    }
+
+    // ── Qualified named struct literal: mod::Type { field: val } ─────
+    if (auto* qni = dynamic_cast<LucisParser::QualifiedStructNamedInitExprContext*>(expr)) {
+        auto ids = qni->IDENTIFIER();
+        for (size_t i = 0; i < ids.size(); i++) {
+            if (ids[i]->getSymbol() == hoveredToken) {
+                return hoverIdent(ids[i]->getText(), hoveredToken, tree,
+                                   bindings, cursorLine, project);
+            }
+        }
+        return std::nullopt;
+    }
+
+    // ── Generic positional struct: Node<int32> { val } ──────────────
+    if (auto* gpi = dynamic_cast<LucisParser::GenericStructPosInitExprContext*>(expr)) {
+        if (gpi->IDENTIFIER() && gpi->IDENTIFIER()->getSymbol() == hoveredToken) {
+            return hoverIdent(gpi->IDENTIFIER()->getText(), hoveredToken, tree, bindings,
+                               cursorLine, project);
+        }
+        for (auto* e : gpi->expression()) {
+            auto r = walkExprForHover(e, hoveredToken, tokenText,
+                                       tree, bindings, cursorLine, project);
+            if (r) return r;
         }
         return std::nullopt;
     }
@@ -4925,9 +4982,46 @@ static std::string inferExprTypeName(
     }
 
     // Struct literal: Point { x: 10, y: 20 } → "Point"
+    // Positional struct/union init: Person { "Carlos" }
+    if (auto* spi = dynamic_cast<LucisParser::StructPosInitExprContext*>(expr)) {
+        if (spi->IDENTIFIER()) return spi->IDENTIFIER()->getText();
+        return "";
+    }
+
+    // Qualified positional init: mod::Person { "Carlos" }
+    if (auto* qpi = dynamic_cast<LucisParser::QualifiedStructPosInitExprContext*>(expr)) {
+        auto ids = qpi->IDENTIFIER();
+        if (ids.size() >= 2) return ids[0]->getText();
+        return "";
+    }
+
+    // Named struct/union init: Person { name: "Carlos" }
     if (auto* sl = dynamic_cast<LucisParser::StructLitExprContext*>(expr)) {
         auto ids = sl->IDENTIFIER();
         if (!ids.empty()) return ids[0]->getText();
+        return "";
+    }
+
+    // Qualified named init: mod::Person { name: "Carlos" }
+    if (auto* qni = dynamic_cast<LucisParser::QualifiedStructNamedInitExprContext*>(expr)) {
+        auto ids = qni->IDENTIFIER();
+        if (ids.size() >= 2) return ids[0]->getText();
+        return "";
+    }
+
+    // Generic positional init: Result<int32> { 42 }
+    if (auto* gpi = dynamic_cast<LucisParser::GenericStructPosInitExprContext*>(expr)) {
+        if (gpi->IDENTIFIER()) {
+            std::string base = gpi->IDENTIFIER()->getText();
+            std::string outType = base + "<";
+            auto args = gpi->typeSpec();
+            for (size_t i = 0; i < args.size(); i++) {
+                if (i > 0) outType += ",";
+                outType += args[i]->getText();
+            }
+            outType += ">";
+            return outType;
+        }
         return "";
     }
 

@@ -997,9 +997,6 @@ static std::string inferExprTypeName(
         }
       }
 
-      // Fall through to extend method lookup
-        typeName = typeName.substr(lastScope + 2);
-
       std::string methodName = ids.back()->getText();
 
       if (ImportResolver::isStdModule(ownerPath) && flc && flc->builtinReg) {
@@ -1336,11 +1333,47 @@ static std::string inferExprTypeName(
     return "";
   }
 
+  // Positional struct/union init: Person { "Carlos" }
+  if (auto *spi = dynamic_cast<LucisParser::StructPosInitExprContext *>(expr)) {
+    if (spi->IDENTIFIER()) return spi->IDENTIFIER()->getText();
+    return "";
+  }
+
+  // Qualified positional init: mod::Person { "Carlos" }
+  if (auto *qpi = dynamic_cast<LucisParser::QualifiedStructPosInitExprContext *>(expr)) {
+    auto ids = qpi->IDENTIFIER();
+    if (ids.size() >= 2) return ids[0]->getText();
+    return "";
+  }
+
   // Struct literal: Point { x: 10, y: 20 } → "Point"
   if (auto *sl = dynamic_cast<LucisParser::StructLitExprContext *>(expr)) {
     auto ids = sl->IDENTIFIER();
     if (!ids.empty())
       return ids[0]->getText();
+    return "";
+  }
+
+  // Qualified named init: mod::Person { name: "Carlos" }
+  if (auto *qni = dynamic_cast<LucisParser::QualifiedStructNamedInitExprContext *>(expr)) {
+    auto ids = qni->IDENTIFIER();
+    if (ids.size() >= 2) return ids[0]->getText();
+    return "";
+  }
+
+  // Generic positional init: Result<int32> { 42 }
+  if (auto *gpi = dynamic_cast<LucisParser::GenericStructPosInitExprContext *>(expr)) {
+    if (gpi->IDENTIFIER()) {
+      std::string base = gpi->IDENTIFIER()->getText();
+      std::string outType = base + "<";
+      auto args = gpi->typeSpec();
+      for (size_t i = 0; i < args.size(); i++) {
+        if (i > 0) outType += ",";
+        outType += args[i]->getText();
+      }
+      outType += ">";
+      return outType;
+    }
     return "";
   }
 
