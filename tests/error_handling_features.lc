@@ -115,7 +115,6 @@ fn testContextBlock() int32 {
 
 fn throwing() int32 {
     throw Error { message: "failed" };
-    ret 42;
 }
 fn safeFn() int32 { ret 99; }
 
