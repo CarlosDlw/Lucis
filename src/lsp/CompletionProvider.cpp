@@ -3847,6 +3847,13 @@ void CompletionProvider::addEnumVariants(std::vector<CompletionItem> &items,
   auto resolved = resolveEnumAlias(enumName);
   if (!resolved.empty()) realEnumName = resolved;
 
+  // Strip generic type arguments: Result<int32> → Result
+  {
+    auto lt = realEnumName.find('<');
+    if (lt != std::string::npos)
+      realEnumName = realEnumName.substr(0, lt);
+  }
+
   // Same-file enum
   auto *ed = findEnumDecl(tree, realEnumName);
   if (ed) {
