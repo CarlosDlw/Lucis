@@ -24,6 +24,9 @@ public:
     const ModuleRegistry& registry() const { return registry_; }
     const CBindings& cBindings() const { return cBindings_; }
 
+    // Keep a parsed source unit alive (prevents dangling AST pointers).
+    void keepAlive(ParseResult pr) { keptUnits_.push_back(std::move(pr)); }
+
     // Returns the module path for the given source file (relative to project root).
     std::string modulePathFor(const std::string& filePath) const;
 
@@ -54,6 +57,7 @@ private:
         ParseResult   parseResult;
     };
     std::vector<SourceUnit> units_;
+    std::vector<ParseResult> keptUnits_; // Phase 8: on-demand parsed stdlib modules
 
     // Map: filePath → module path
     std::unordered_map<std::string, std::string> fileModulePaths_;
