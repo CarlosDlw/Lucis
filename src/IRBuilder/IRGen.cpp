@@ -1623,8 +1623,11 @@ void IRGen::registerCrossFileSymbols(LucisParser::ProgramContext* ctx) {
                 visitEnumDecl(enumCtx);
         } else if (sym->kind == ExportedSymbol::TypeAlias) {
             auto* aliasCtx = dynamic_cast<LucisParser::TypeAliasDeclContext*>(sym->decl);
-            if (aliasCtx && !typeRegistry_.lookup(sym->name))
+            if (aliasCtx && !typeRegistry_.lookup(sym->name)) {
+                ensureTypeDependencyFromSpec(
+                    ensureTypeDependencyFromSpec, aliasCtx->typeSpec(), currentModulePath_);
                 visitTypeAliasDecl(aliasCtx);
+            }
         }
     }
 
@@ -1660,8 +1663,11 @@ void IRGen::registerCrossFileSymbols(LucisParser::ProgramContext* ctx) {
                 visitEnumDecl(enumCtx);
         } else if (sym->kind == ExportedSymbol::TypeAlias) {
             auto* aliasCtx = dynamic_cast<LucisParser::TypeAliasDeclContext*>(sym->decl);
-            if (aliasCtx && !typeRegistry_.lookup(sym->name))
+            if (aliasCtx && !typeRegistry_.lookup(sym->name)) {
+                ensureTypeDependencyFromSpec(
+                    ensureTypeDependencyFromSpec, aliasCtx->typeSpec(), sourceNs);
                 visitTypeAliasDecl(aliasCtx);
+            }
         }
     }
 
