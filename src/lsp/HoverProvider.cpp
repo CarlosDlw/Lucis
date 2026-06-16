@@ -40,6 +40,10 @@ static std::string inferExprTypeName(
         const std::unordered_map<std::string, HoverProvider::LocalVar>& locals,
         const FuncLookupCtx* flc);
 
+static LucisParser::EnumDeclContext* findEnumDeclForInference(
+    const std::string& name,
+    const FuncLookupCtx* flc);
+
 static std::string trimCopy(const std::string& s);
 static std::vector<std::string> splitTopLevelComma(const std::string& s);
 static bool parseGenericInstance(const std::string& t,
@@ -1150,6 +1154,107 @@ std::optional<HoverResult> HoverProvider::walkExprForHover(
         size_t cursorLine,
         const ProjectContext* project) {
     if (!expr || !containsToken(expr, hoveredToken)) return std::nullopt;
+
+    // ── Match expression: hover on variant names in patterns ─────────
+    if (auto* me = dynamic_cast<LucisParser::MatchExprContext*>(expr)) {
+        // Collect locals for type inference of the matched expression
+        std::unordered_map<std::string, LocalVar> matchLocals;
+        FuncLookupCtx matchFlc;
+        matchFlc.tree = tree;
+        matchFlc.bindings = &bindings;
+        matchFlc.builtinReg = &builtinRegistry_;
+        matchFlc.intrinsicReg = &intrinsicRegistry_;
+        matchFlc.extTypeReg = &extTypeRegistry_;
+        matchFlc.methodReg = &methodRegistry_;
+        matchFlc.project = project;
+        auto* matchFunc = findEnclosingFunction(tree, cursorLine);
+        if (matchFunc)
+            matchLocals = collectLocals(matchFunc, cursorLine, tree, &bindings, project);
+
+        for (auto* arm : me->matchArm()) {
+            for (size_t pi = 0; pi < arm->pattern().size(); pi++) {
+                auto* p = arm->pattern(pi);
+                auto ids = p->IDENTIFIER();
+                // Qualified pattern: Result::Ok → hover on "Ok"
+                if (p->SCOPE() && ids.size() >= 2 && ids[1]->getSymbol() == hoveredToken) {
+                    std::string enumName = ids[0]->getText();
+                    return hoverIdent(enumName, hoveredToken, tree, bindings, cursorLine, project);
+                }
+                // Short pattern: Ok(v) → hover on "Ok"
+                if (!p->SCOPE() && !p->literalPattern() && !p->WILDCARD()
+                    && ids.size() >= 1 && ids[0]->getSymbol() == hoveredToken) {
+                    auto matchedType = inferExprTypeName(me->expression(), matchLocals, &matchFlc);
+                    std::string baseName = matchedType;
+                    auto lt = baseName.find('<');
+                    if (lt != std::string::npos) baseName = baseName.substr(0, lt);
+                    if (!baseName.empty()) {
+                        std::string md = "```lucis\n(variant) " + baseName
+                                       + "::" + ids[0]->getText() + "\n```";
+                        return makeResult(hoveredToken, md);
+                    }
+                }
+                // Binding identifier: Ok(val) → hover on "val"
+                if (p->LPAREN() && !ids.empty()) {
+                    auto* bindId = ids.back();
+                    if (bindId->getSymbol() == hoveredToken && bindId->getText() != "_") {
+                        auto matchedType = inferExprTypeName(me->expression(), matchLocals, &matchFlc);
+                        std::string baseName = matchedType;
+                        auto lt2 = baseName.find('<');
+                        if (lt2 != std::string::npos) baseName = baseName.substr(0, lt2);
+                        std::string bindType;
+                        if (!baseName.empty()) {
+                            std::string vname;
+                            if (p->SCOPE() && ids.size() >= 2)
+                                vname = ids[1]->getText();
+                            else
+                                vname = ids[0]->getText();
+                            auto* ed = findEnumDeclForInference(baseName, &matchFlc);
+                            if (ed) {
+                                for (auto* v : ed->enumVariant()) {
+                                    if (safeText(v->IDENTIFIER()) == vname && !v->typeSpec().empty()) {
+                                        bindType = typeSpecToString(v->typeSpec(0));
+                                        if (matchedType.find('<') != std::string::npos && ed->typeParamList()) {
+                                            std::string base;
+                                            std::vector<std::string> args;
+                                            if (parseGenericInstance(matchedType, base, args)) {
+                                                auto tps = ed->typeParamList()->typeParam();
+                                                std::unordered_map<std::string, std::string> subst;
+                                                for (size_t i = 0; i < std::min(args.size(), tps.size()); i++) {
+                                                    auto tids = tps[i]->IDENTIFIER();
+                                                    if (!tids.empty()) subst[tids[0]->getText()] = args[i];
+                                                }
+                                                bindType = substituteTypeParams(bindType, subst);
+                                            }
+                                        }
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                        if (bindType.empty()) bindType = "auto";
+                        std::string md = "```lucis\n(variable) " + bindType + " "
+                                       + bindId->getText() + "\n```";
+                        return makeResult(hoveredToken, md);
+                    }
+                }
+            }
+            // Recurse into arm body (block or expression)
+            if (arm->block()) {
+                auto r = walkBlockForHover(arm->block(), hoveredToken, tokenText,
+                                            tree, bindings, cursorLine, project);
+                if (r) return r;
+            } else {
+                auto exprs = arm->expression();
+                auto* bodyExpr = exprs.empty() ? nullptr : exprs.back();
+                if (bodyExpr) {
+                    auto r = walkExprForHover(bodyExpr, hoveredToken, tokenText,
+                                              tree, bindings, cursorLine, project);
+                    if (r) return r;
+                }
+            }
+        }
+        return std::nullopt;
+    }
 
     // ── Method call: expr.method(args) ──────────────────────────────
     if (auto* mc = dynamic_cast<LucisParser::MethodCallExprContext*>(expr)) {
@@ -4436,7 +4541,7 @@ static std::string inferExprTypeName(
         return outType;
     }
 
-    // Static method call: Type::method(...) → look up return type from extend blocks
+    // Static method call: Type::method(...) → return enum type or method type
     if (auto* smc = dynamic_cast<LucisParser::StaticMethodCallExprContext*>(expr)) {
         auto ids = smc->IDENTIFIER();
         if (ids.size() >= 2) {
@@ -4450,6 +4555,21 @@ static std::string inferExprTypeName(
             auto lastScope = typeName.rfind("::");
             if (lastScope != std::string::npos)
                 typeName = typeName.substr(lastScope + 2);
+
+            // Check if owner is an enum type (e.g. Result::Ok(42))
+            if (flc && flc->tree) {
+                for (auto* tld : flc->tree->topLevelDecl()) {
+                    if (auto* e = tld->enumDecl();
+                        e && e->IDENTIFIER() && safeText(e->IDENTIFIER()) == typeName)
+                        return typeName;
+                }
+            }
+            if (flc && flc->project && flc->project->isValid()) {
+                for (auto& ns : flc->project->registry().allModules()) {
+                    auto* sym = flc->project->registry().findSymbol(ns, typeName);
+                    if (sym && sym->kind == ExportedSymbol::Enum) return typeName;
+                }
+            }
 
             std::string methodName = ids.back()->getText();
 
@@ -4762,38 +4882,32 @@ static std::string inferExprTypeName(
     if (auto* te = dynamic_cast<LucisParser::TryExprContext*>(expr))
         return inferExprTypeName(te->expression(0), locals, flc);
 
-    // ── Match expression: match expr { ... } — type from enum ─────────
+    // ── Match expression: match expr { ... } — type from arm bodies ───
     if (auto* me = dynamic_cast<LucisParser::MatchExprContext*>(expr)) {
-        auto matchedType = inferExprTypeName(me->expression(), locals, flc);
-        if (!matchedType.empty() && flc) {
-            std::string baseName = matchedType;
-            std::vector<std::string> sourceArgs;
-            parseGenericInstance(matchedType, baseName, sourceArgs);
-            auto* ed = findEnumDeclForInference(baseName, flc);
-            if (!ed && flc->tree) {
-                for (auto* tld : flc->tree->topLevelDecl()) {
-                    if (auto* e = tld->enumDecl();
-                        e && e->IDENTIFIER() && safeText(e->IDENTIFIER()) == baseName)
-                        { ed = e; break; }
-                }
-            }
-            if (ed) {
-                // Return first non-error variant's payload type
-                for (auto* variant : ed->enumVariant()) {
-                    if (!variant || variant->typeSpec().empty()) continue;
-                    auto payloadType = safeText(variant->typeSpec(0));
-                    if (payloadType != "Error") {
-                        if (!sourceArgs.empty() && ed->typeParamList()) {
-                            std::unordered_map<std::string, std::string> subst;
-                            auto tps = ed->typeParamList()->typeParam();
-                            for (size_t i = 0; i < std::min(tps.size(), sourceArgs.size()); i++) {
-                                auto ids = tps[i]->IDENTIFIER();
-                                if (!ids.empty()) subst[ids[0]->getText()] = sourceArgs[i];
-                            }
-                            payloadType = substituteTypeParams(payloadType, subst);
+        // Infer type from first arm's body
+        for (auto* arm : me->matchArm()) {
+            if (arm->block()) {
+                // Block arm: type from last statement
+                auto stmts = arm->block()->statement();
+                if (!stmts.empty()) {
+                    auto* lastStmt = stmts.back();
+                    if (auto* exprS = lastStmt->exprStmt()) {
+                        auto t = inferExprTypeName(exprS->expression(), locals, flc);
+                        if (!t.empty() && t != "void") return t;
+                    } else if (auto* ret = lastStmt->returnStmt()) {
+                        if (ret->expression()) {
+                            auto t = inferExprTypeName(ret->expression(), locals, flc);
+                            if (!t.empty() && t != "void") return t;
                         }
-                        return payloadType;
                     }
+                }
+            } else {
+                // Expression arm
+                auto armExprs = arm->expression();
+                size_t bodyIdx = arm->IF() ? 1 : 0;
+                if (bodyIdx < armExprs.size()) {
+                    auto t = inferExprTypeName(armExprs[bodyIdx], locals, flc);
+                    if (!t.empty() && t != "void") return t;
                 }
             }
         }
@@ -5158,15 +5272,31 @@ static void collectLocalsFromStmts(
                     std::string baseName = matchedType;
                     auto lt = baseName.find('<');
                     if (lt != std::string::npos) baseName = baseName.substr(0, lt);
-                    LucisParser::EnumDeclContext* ed = nullptr;
-                    for (auto* tld : flc->tree->topLevelDecl()) {
-                        if (auto* e = tld->enumDecl();
-                            e && e->IDENTIFIER() && safeText(e->IDENTIFIER()) == baseName)
-                            { ed = e; break; }
-                    }
+                    auto* ed = findEnumDeclForInference(baseName, flc);
                     if (ed) {
                         for (auto* arm : me->matchArm()) {
+                            bool inArm = false;
                             if (arm->block() && cursorInsideNode(arm->block(), beforeLine)) {
+                                inArm = true;
+                            } else if (!arm->block()) {
+                                auto armExprs = arm->expression();
+                                auto* bodyExpr = armExprs.empty() ? nullptr : armExprs.back();
+                                if (bodyExpr && cursorInsideNode(bodyExpr, beforeLine))
+                                    inArm = true;
+                            }
+                            if (inArm) {
+                                std::unordered_map<std::string, std::string> subst;
+                                if (!matchedType.empty() && ed->typeParamList()) {
+                                    std::string base;
+                                    std::vector<std::string> args;
+                                    if (parseGenericInstance(matchedType, base, args)) {
+                                        auto tps = ed->typeParamList()->typeParam();
+                                        for (size_t i = 0; i < std::min(tps.size(), args.size()); i++) {
+                                            auto tids = tps[i]->IDENTIFIER();
+                                            if (!tids.empty()) subst[tids[0]->getText()] = args[i];
+                                        }
+                                    }
+                                }
                                 for (size_t pi = 0; pi < arm->pattern().size(); pi++) {
                                     auto* p = arm->pattern(pi);
                                     if (p->LPAREN() && p->IDENTIFIER().size() >= 1) {
@@ -5179,14 +5309,18 @@ static void collectLocalsFromStmts(
                                                 vname = p->IDENTIFIER(0)->getText();
                                             for (auto* v : ed->enumVariant()) {
                                                 if (safeText(v->IDENTIFIER()) == vname && !v->typeSpec().empty()) {
-                                                    out[bindName] = {safeText(v->typeSpec(0)), 0};
+                                                    std::string payloadType = safeText(v->typeSpec(0));
+                                                    if (!subst.empty())
+                                                        payloadType = substituteTypeParams(payloadType, subst);
+                                                    out[bindName] = {payloadType, 0};
                                                     break;
                                                 }
                                             }
                                         }
                                     }
                                 }
-                                collectLocalsFromBlock(arm->block(), beforeLine, out, flc);
+                                if (arm->block())
+                                    collectLocalsFromBlock(arm->block(), beforeLine, out, flc);
                                 break;
                             }
                         }

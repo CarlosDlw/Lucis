@@ -120,6 +120,7 @@ private:
         unsigned    derefDepth = 0;   // for dot: number of explicit unary * before receiver
         std::vector<std::string> methodChain; // for dot: chained members (fields/methods), e.g. {"message", "len"}
         bool closingCharPresent = false; // for IncludeHeader: '>' or '"' already exists after cursor
+        std::string matchedVar;           // for match body: the variable being matched (e.g. "r")
     };
 
     // Analyze the source text around the cursor to determine context.
@@ -133,7 +134,8 @@ private:
     void addLocals(std::vector<CompletionItem>& items,
                    LucisParser::ProgramContext* tree, size_t cursorLine,
                    const CBindings& bindings,
-                   const std::string& prefix);
+                   const std::string& prefix,
+                   const ProjectContext* project = nullptr);
 
     // Add same-file top-level declarations (functions, structs, enums, etc).
     void addLocalDecls(std::vector<CompletionItem>& items,
@@ -158,7 +160,8 @@ private:
                                 LucisParser::ProgramContext* tree,
                                 size_t cursorLine,
                                 const std::string& prefix,
-                                const ProjectContext* project);
+                                const ProjectContext* project,
+                                const std::string& source);
 
     // Add cross-file symbols from the project registry.
     void addProjectSymbols(std::vector<CompletionItem>& items,

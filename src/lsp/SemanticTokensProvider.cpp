@@ -438,6 +438,18 @@ static void walkTree(IdentMap& map, antlr4::tree::ParseTree* node) {
         }
     }
 
+    // ── match arm patterns: Ok and Ok(v) — variant names ──
+    else if (auto* ctx = dynamic_cast<LucisParser::PatternContext*>(node)) {
+        auto ids = ctx->IDENTIFIER();
+        if (ctx->SCOPE() && ids.size() >= 2) {
+            classifyIdent(map, ids[0], SemanticTokenType::Enum);
+            classifyIdent(map, ids[1], SemanticTokenType::EnumMember);
+        } else if (!ctx->SCOPE() && ids.size() >= 1 && !ctx->LT()) {
+            // Bare variant name (e.g. Ok in pattern)
+            classifyIdent(map, ids[0], SemanticTokenType::EnumMember);
+        }
+    }
+
     // ── qualified struct/enum init lexpr ──
     else if (auto* ctx = dynamic_cast<LucisParser::QualifiedStructPosInitExprContext*>(node)) {
         auto ids = ctx->IDENTIFIER();

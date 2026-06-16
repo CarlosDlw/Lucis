@@ -965,8 +965,7 @@ static std::string inferExprTypeName(
     outType += ">";
     return outType;
   }
-  // Static method call: Type::method(...) → look up return type from extend
-  // blocks
+  // Static method call: Type::method(...) → return enum type or method type
   if (auto *smc =
           dynamic_cast<LucisParser::StaticMethodCallExprContext *>(expr)) {
     auto ids = smc->IDENTIFIER();
@@ -978,9 +977,27 @@ static std::string inferExprTypeName(
         ownerPath += ids[i]->getText();
       }
 
-      std::string typeName = ownerPath;
+      // Check if owner is an enum type (e.g. Result::Ok(42))
+      auto typeName = ownerPath;
       auto lastScope = typeName.rfind("::");
       if (lastScope != std::string::npos)
+        typeName = typeName.substr(lastScope + 2);
+      if (flc && flc->tree) {
+        for (auto* tld : flc->tree->topLevelDecl()) {
+          if (auto* e = tld->enumDecl();
+              e && e->IDENTIFIER() && safeText(e->IDENTIFIER()) == typeName)
+            return typeName;
+        }
+      }
+      // Cross-file enum check
+      if (flc && flc->project && flc->project->isValid()) {
+        for (auto& ns : flc->project->registry().allModules()) {
+          auto* sym = flc->project->registry().findSymbol(ns, typeName);
+          if (sym && sym->kind == ExportedSymbol::Enum) return typeName;
+        }
+      }
+
+      // Fall through to extend method lookup
         typeName = typeName.substr(lastScope + 2);
 
       std::string methodName = ids.back()->getText();
@@ -1386,15 +1403,31 @@ static void collectLocalsFromStmts(
           std::string baseName = matchedType;
           auto lt = baseName.find('<');
           if (lt != std::string::npos) baseName = baseName.substr(0, lt);
-          LucisParser::EnumDeclContext* ed = nullptr;
-          for (auto* tld : flc->tree->topLevelDecl()) {
-            if (auto* e = tld->enumDecl();
-                e && e->IDENTIFIER() && safeText(e->IDENTIFIER()) == baseName)
-              { ed = e; break; }
-          }
+          auto* ed = findEnumDeclForInference(baseName, flc);
           if (ed) {
             for (auto* arm : me->matchArm()) {
+              bool inArm = false;
               if (arm->block() && cursorInsideNode(arm->block(), beforeLine)) {
+                inArm = true;
+              } else if (!arm->block()) {
+                auto armExprs = arm->expression();
+                auto* bodyExpr = armExprs.empty() ? nullptr : armExprs.back();
+                if (bodyExpr && cursorInsideNode(bodyExpr, beforeLine))
+                  inArm = true;
+              }
+              if (inArm) {
+                std::unordered_map<std::string, std::string> subst;
+                if (!matchedType.empty() && ed->typeParamList()) {
+                  std::string base;
+                  std::vector<std::string> args;
+                  if (parseGenericInstance(matchedType, base, args)) {
+                    auto tps = ed->typeParamList()->typeParam();
+                    for (size_t i = 0; i < std::min(tps.size(), args.size()); i++) {
+                      auto tids = tps[i]->IDENTIFIER();
+                      if (!tids.empty()) subst[tids[0]->getText()] = args[i];
+                    }
+                  }
+                }
                 for (size_t pi = 0; pi < arm->pattern().size(); pi++) {
                   auto* p = arm->pattern(pi);
                   if (p->LPAREN() && p->IDENTIFIER().size() >= 1) {
@@ -1407,14 +1440,18 @@ static void collectLocalsFromStmts(
                         vname = p->IDENTIFIER(0)->getText();
                       for (auto* v : ed->enumVariant()) {
                         if (safeText(v->IDENTIFIER()) == vname && !v->typeSpec().empty()) {
-                          out[bindName] = {safeText(v->typeSpec(0)), 0};
+                          std::string payloadType = safeText(v->typeSpec(0));
+                          if (!subst.empty())
+                            payloadType = substituteTypeParams(payloadType, subst);
+                          out[bindName] = {payloadType, 0};
                           break;
                         }
                       }
                     }
                   }
                 }
-                collectLocalsFromBlock(arm->block(), beforeLine, out, flc);
+                if (arm->block())
+                  collectLocalsFromBlock(arm->block(), beforeLine, out, flc);
                 break;
               }
             }
@@ -1901,12 +1938,16 @@ CompletionProvider::complete(const std::string &source, size_t line, size_t col,
     break;
   }
   case CompletionContext::General: {
-    addLocals(items, parsed->tree, line, *cBindingsPtr, req.prefix);
+    // Match body context: only show enum variants
+    if (!req.matchedVar.empty()) {
+      addMatchArmCompletions(items, parsed->tree, line, req.prefix, project, source);
+      break;
+    }
+    addLocals(items, parsed->tree, line, *cBindingsPtr, req.prefix, project);
     addLocalDecls(items, parsed->tree, req.prefix);
     addProjectSymbols(items, project, filePath, req.prefix);
     addImportedSymbols(items, parsed->tree, project, req.prefix);
     addEnumWildcardVariants(items, parsed->tree, project, req.prefix, line);
-    addMatchArmCompletions(items, parsed->tree, line, req.prefix, project);
     addGlobalBuiltins(items, req.prefix);
     addCSymbols(items, *cBindingsPtr, req.prefix);
     addKeywords(items, req.prefix);
@@ -2468,6 +2509,78 @@ CompletionProvider::analyzeContext(const std::string &source, size_t line,
     }
   }
 
+  // Detect match body context: scan source backwards from cursor for "match <var> {"
+  {
+    std::istringstream ss(source);
+    std::vector<std::string> lines;
+    std::string ln;
+    while (std::getline(ss, ln)) lines.push_back(ln);
+    if (line < lines.size()) {
+      // Check if cursor is in an expression arm (after "->" without "{")
+      std::string currentLine = lines[line];
+      std::string beforeCursor = currentLine.substr(0, col);
+      auto arrowPos = beforeCursor.rfind("->");
+      if (arrowPos != std::string::npos) {
+        std::string afterArrow = beforeCursor.substr(arrowPos + 2);
+        // If no "{" after "->", we're in an expression arm - don't set matchedVar
+        if (afterArrow.find('{') == std::string::npos) {
+          goto context_done;
+        }
+      }
+
+      int depth = 0;
+      for (int i = static_cast<int>(line); i >= 0; --i) {
+        for (size_t j = 0; j < lines[i].size(); ++j) {
+          if (lines[i][j] == '}') ++depth;
+          else if (lines[i][j] == '{') {
+            if (depth > 0) { --depth; continue; }
+            // Check if this brace belongs to a match arm body (preceded by "->")
+            std::string before = lines[i].substr(0, j);
+            if (before.find("->") != std::string::npos) {
+              // This is an arm body block, skip it
+              ++depth;
+              continue;
+            }
+            // Check previous line too (multi-line arm: "Ok(v) ->\n{")
+            if (i > 0) {
+              std::string prevLine = lines[i-1];
+              size_t ws2 = prevLine.find_last_not_of(" \t\r\n");
+              if (ws2 != std::string::npos && prevLine[ws2] == '>'
+                  && ws2 > 0 && prevLine[ws2-1] == '-') {
+                ++depth;
+                continue;
+              }
+            }
+            // Found opening brace at depth 0 — check if preceded by "match"
+            if (i > 0) before = lines[i-1] + " " + before;
+            auto mp = before.rfind("match");
+            if (mp != std::string::npos) {
+              // Extract identifier after "match"
+              std::string after = before.substr(mp + 5); // len("match")
+              size_t s2 = after.find_first_not_of(" \t\r\n");
+              if (s2 != std::string::npos) {
+                after = after.substr(s2);
+                // Extract simple identifier
+                std::string varName;
+                for (char c : after) {
+                  if (std::isalnum(static_cast<unsigned char>(c)) || c == '_')
+                    varName += c;
+                  else break;
+                }
+                if (!varName.empty()) {
+                  req.matchedVar = varName;
+                  goto context_done;
+                }
+              }
+            }
+            goto context_done;
+          }
+        }
+      }
+    }
+  }
+context_done:
+
   // General completion: extract prefix
   {
     size_t pos = col;
@@ -2487,11 +2600,12 @@ CompletionProvider::analyzeContext(const std::string &source, size_t line,
 void CompletionProvider::addLocals(std::vector<CompletionItem> &items,
                                    LucisParser::ProgramContext *tree,
                                    size_t cursorLine, const CBindings &bindings,
-                                   const std::string &prefix) {
+                                   const std::string &prefix,
+                                   const ProjectContext *project) {
   // Check if inside a function
   auto *func = findEnclosingFunction(tree, cursorLine);
   if (func) {
-    auto locals = collectLocals(func, cursorLine, tree, &bindings);
+    auto locals = collectLocals(func, cursorLine, tree, &bindings, project);
     for (auto &[name, var] : locals) {
       if (!matchesPrefix(name, prefix))
         continue;
@@ -4516,81 +4630,109 @@ void CompletionProvider::addTypeNames(std::vector<CompletionItem> &items,
 void CompletionProvider::addMatchArmCompletions(
     std::vector<CompletionItem>& items,
     LucisParser::ProgramContext* tree, size_t cursorLine,
-    const std::string& prefix, const ProjectContext* project) {
+    const std::string& prefix, const ProjectContext* project,
+    const std::string& source) {
   if (!tree) return;
 
-  // Walk the tree to find if cursor is inside a match expression
-  std::function<bool(antlr4::ParserRuleContext*)> walkForMatch =
-    [&](antlr4::ParserRuleContext* ctx) -> bool {
-      if (!ctx) return false;
-      if (auto* me = dynamic_cast<LucisParser::MatchExprContext*>(ctx)) {
-        auto* start = me->getStart();
-        auto* stop  = me->getStop();
-        if (!start || !stop) return false;
-        size_t startLine = start->getLine() - 1;
-        size_t stopLine  = stop->getLine() - 1;
-        if (cursorLine < startLine || cursorLine > stopLine) return false;
+  // Parse source into lines for scanning
+  std::istringstream ss(source);
+  std::vector<std::string> lines;
+  std::string ln;
+  while (std::getline(ss, ln)) lines.push_back(ln);
+  if (cursorLine >= lines.size()) return;
 
-        auto* matchedExpr = me->expression();
-        if (!matchedExpr) return false;
+  // Check if cursor is in an expression arm (after "->" without "{")
+  std::string currentLine = lines[cursorLine];
+  auto arrowPos = currentLine.rfind("->");
+  if (arrowPos != std::string::npos) {
+    std::string afterArrow = currentLine.substr(arrowPos + 2);
+    // If no "{" after "->", we're in an expression arm - don't suggest variants
+    if (afterArrow.find('{') == std::string::npos) {
+      return;
+    }
+  }
 
-        // Collect actual locals from enclosing scope so variables resolve
-        std::unordered_map<std::string, LocalVar> locals;
-        auto* func = findEnclosingFunction(tree, cursorLine);
-        if (func) {
-            locals = collectLocals(func, cursorLine, tree, nullptr, project);
+  // Find the matched variable by scanning backwards for "match <var> {"
+  int depth = 0;
+  std::string varName;
+  for (int i = static_cast<int>(cursorLine); i >= 0; --i) {
+    for (size_t j = 0; j < lines[i].size(); ++j) {
+      if (lines[i][j] == '}') ++depth;
+      else if (lines[i][j] == '{') {
+        if (depth > 0) { --depth; continue; }
+        std::string before = lines[i].substr(0, j);
+        // Skip arm body blocks (preceded by "->")
+        if (before.find("->") != std::string::npos) {
+          ++depth;
+          continue;
         }
-        FuncLookupCtx flc;
-        flc.tree = tree;
-        flc.project = project;
-        auto enumTypeName = inferExprTypeName(matchedExpr, locals, &flc);
-        if (enumTypeName.empty()) return false;
-
-        std::string baseName = enumTypeName;
-        auto lt = baseName.find('<');
-        if (lt != std::string::npos) baseName = baseName.substr(0, lt);
-
-        LucisParser::EnumDeclContext* ed = nullptr;
-        for (auto* tld : tree->topLevelDecl()) {
-          if (auto* e = tld->enumDecl();
-              e && e->IDENTIFIER() && safeText(e->IDENTIFIER()) == baseName)
-            { ed = e; break; }
-        }
-        if (!ed && project && project->isValid()) {
-          for (auto& ns : project->registry().allModules()) {
-            auto* sym = project->registry().findSymbol(ns, baseName);
-            if (!sym || sym->kind != ExportedSymbol::Enum) continue;
-            ed = dynamic_cast<LucisParser::EnumDeclContext*>(sym->decl);
-            if (ed) break;
+        if (i > 0) {
+          std::string prevLine = lines[i-1];
+          size_t ws2 = prevLine.find_last_not_of(" \t\r\n");
+          if (ws2 != std::string::npos && prevLine[ws2] == '>'
+              && ws2 > 0 && prevLine[ws2-1] == '-') {
+            ++depth;
+            continue;
           }
         }
-        if (!ed) return false;
-
-        for (auto* variant : ed->enumVariant()) {
-          auto* vId = variant->IDENTIFIER();
-          if (!vId) continue;
-          if (!matchesPrefix(vId->getText(), prefix)) continue;
-          CompletionItem ci;
-          ci.label = vId->getText();
-          ci.kind = CompletionKind::EnumMember;
-          ci.detail = baseName + "::" + vId->getText();
-          if (variant->LPAREN()) {
-            ci.insertText = vId->getText() + "(${1:_})";
-            ci.insertTextFormat = InsertTextFormat::Snippet;
+        if (i > 0) before = lines[i-1] + " " + before;
+        auto mp = before.rfind("match");
+        if (mp != std::string::npos) {
+          std::string after = before.substr(mp + 5);
+          size_t s2 = after.find_first_not_of(" \t\r\n");
+          if (s2 != std::string::npos) {
+            after = after.substr(s2);
+            for (char c : after) {
+              if (std::isalnum(static_cast<unsigned char>(c)) || c == '_')
+                varName += c;
+              else break;
+            }
           }
-          items.push_back(std::move(ci));
         }
-        return true;
+        goto found;
       }
-      for (auto* child : ctx->children) {
-        if (auto* prc = dynamic_cast<antlr4::ParserRuleContext*>(child)) {
-          if (walkForMatch(prc)) return true;
-        }
-      }
-      return false;
-    };
+    }
+  }
+  return;
 
-  walkForMatch(tree);
+found:
+  if (varName.empty()) return;
+
+  // Resolve variable type
+  std::string typeName = inferVarType(varName, tree, cursorLine, nullptr, project);
+  if (typeName.empty()) return;
+
+  std::string baseName = typeName;
+  auto lt = baseName.find('<');
+  if (lt != std::string::npos) baseName = baseName.substr(0, lt);
+
+  // Find enum declaration
+  LucisParser::EnumDeclContext* ed = findEnumDecl(tree, baseName);
+  if (!ed && project && project->isValid()) {
+    for (auto& ns : project->registry().allModules()) {
+      auto* sym = project->registry().findSymbol(ns, baseName);
+      if (!sym || sym->kind != ExportedSymbol::Enum) continue;
+      ed = dynamic_cast<LucisParser::EnumDeclContext*>(sym->decl);
+      if (ed) break;
+    }
+  }
+  if (!ed) return;
+
+  // Push variants
+  for (auto* variant : ed->enumVariant()) {
+    auto* vId = variant->IDENTIFIER();
+    if (!vId) continue;
+    if (!matchesPrefix(vId->getText(), prefix)) continue;
+    CompletionItem ci;
+    ci.label = vId->getText();
+    ci.kind = CompletionKind::EnumMember;
+    ci.detail = baseName + "::" + vId->getText();
+    if (variant->LPAREN()) {
+      ci.insertText = vId->getText() + "(${1:_})";
+      ci.insertTextFormat = InsertTextFormat::Snippet;
+    }
+    items.push_back(std::move(ci));
+  }
 }
 
 void CompletionProvider::addKeywords(std::vector<CompletionItem> &items,

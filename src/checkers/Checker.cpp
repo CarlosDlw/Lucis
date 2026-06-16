@@ -2217,7 +2217,30 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
         auto* matchedType = resolveExprType(me->expression());
         if (!matchedType) return nullptr;
 
-        if (matchedType->kind != TypeKind::Enum) {
+        // Check if this is a literal match (patterns are literals, not enum variants)
+        bool hasLiteralPattern = false;
+        bool hasEnumPattern = false;
+        for (auto* arm : me->matchArm()) {
+            for (auto* pattern : arm->pattern()) {
+                if (pattern->literalPattern()) hasLiteralPattern = true;
+                if (!pattern->IDENTIFIER().empty()) hasEnumPattern = true;
+            }
+        }
+
+        // Validate matched type based on pattern types
+        if (hasLiteralPattern && !hasEnumPattern) {
+            // Literal match: must be int, float, string, bool, or char
+            bool validType = matchedType->kind == TypeKind::Integer ||
+                            matchedType->kind == TypeKind::Float ||
+                            matchedType->kind == TypeKind::String ||
+                            matchedType->kind == TypeKind::Bool ||
+                            matchedType->kind == TypeKind::Char;
+            if (!validType) {
+                error(me, "match with literal patterns requires int, float, string, bool, or char, got '" +
+                           matchedType->name + "'");
+                return nullptr;
+            }
+        } else if (matchedType->kind != TypeKind::Enum) {
             error(me, "match requires an enum expression, got '" +
                        matchedType->name + "'");
             return nullptr;
@@ -2233,16 +2256,40 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
             for (size_t pi = 0; pi < arm->pattern().size(); pi++) {
             auto* pattern = arm->pattern(pi);
 
-            // Resolve pattern: find matching variant
+            // Resolve pattern: find matching variant or literal
             const EnumVariantInfo* matchedVariant = nullptr;
             std::string bindName;
             std::string variantName;
             bool isWildcard = pattern->WILDCARD() != nullptr;
+            bool isLiteral = pattern->literalPattern() != nullptr;
             if (isWildcard) armHasWildcard = true;
 
             if (isWildcard) {
-                // _ wildcard — matches any remaining variant
+                // _ wildcard — matches any remaining variant/value
                 // still need to resolve body type below
+            } else if (isLiteral) {
+                // Literal pattern: validate type compatibility
+                auto* lit = pattern->literalPattern();
+                const TypeInfo* litType = nullptr;
+                if (lit->INT_LIT() || lit->HEX_LIT() || lit->OCT_LIT() || lit->BIN_LIT()) {
+                    litType = typeRegistry_.lookup("int32");
+                } else if (lit->FLOAT_LIT()) {
+                    litType = typeRegistry_.lookup("float64");
+                } else if (lit->STR_LIT() || lit->C_STR_LIT()) {
+                    litType = typeRegistry_.lookup("string");
+                } else if (lit->BOOL_LIT()) {
+                    litType = typeRegistry_.lookup("bool");
+                } else if (lit->CHAR_LIT()) {
+                    litType = typeRegistry_.lookup("char");
+                } else if (lit->NULL_LIT()) {
+                    litType = typeRegistry_.lookup("null");
+                }
+                if (litType && !isAssignable(matchedType, litType)) {
+                    error(pattern, "literal type '" + litType->name +
+                                   "' is not compatible with matched type '" +
+                                   matchedType->name + "'");
+                    return nullptr;
+                }
             } else if (!pattern->IDENTIFIER().empty()) {
                 if (pattern->SCOPE() && pattern->IDENTIFIER().size() >= 2) {
                     variantName = pattern->IDENTIFIER(1)->getText();
@@ -2300,7 +2347,25 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
             const TypeInfo* bodyType = nullptr;
             if (arm->block()) {
                 checkBlock(arm->block(), currentReturnType_);
-                bodyType = typeRegistry_.lookup("void");
+                // Infer type from last statement (or return statement)
+                auto* block = arm->block();
+                auto stmts = block->statement();
+                if (!stmts.empty()) {
+                    auto* lastStmt = stmts.back();
+                    if (auto* exprS = lastStmt->exprStmt()) {
+                        bodyType = resolveExprType(exprS->expression());
+                    } else if (auto* ret = lastStmt->returnStmt()) {
+                        if (ret->expression()) {
+                            bodyType = resolveExprType(ret->expression());
+                        } else {
+                            bodyType = typeRegistry_.lookup("void");
+                        }
+                    } else {
+                        bodyType = typeRegistry_.lookup("void");
+                    }
+                } else {
+                    bodyType = typeRegistry_.lookup("void");
+                }
             } else {
                 size_t bodyExprIdx = arm->IF() ? 1 : 0;
                 bodyType = resolveExprType(arm->expression(bodyExprIdx));
@@ -2324,6 +2389,7 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
         }
 
         // Exhaustiveness: check all variants are covered (unless wildcard present)
+        // Skip exhaustiveness check for literal patterns (they are not exhaustive by nature)
         bool hasWildcard = false;
         for (size_t i = 0; i < me->matchArm().size() && !hasWildcard; i++) {
             for (size_t pi = 0; pi < me->matchArm(i)->pattern().size(); pi++) {
@@ -2332,7 +2398,7 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
                 }
             }
         }
-        if (!hasWildcard && !matchedType->enumVariantInfos.empty()) {
+        if (!hasWildcard && !hasLiteralPattern && !matchedType->enumVariantInfos.empty()) {
             // Collect covered variants
             std::unordered_set<std::string> covered;
             for (size_t i = 0; i < me->matchArm().size(); i++) {

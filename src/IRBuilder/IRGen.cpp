@@ -18907,16 +18907,45 @@ std::any IRGen::visitMatchExpr(LucisParser::MatchExprContext* ctx) {
     auto* sourceVal = castValue(visit(ctx->expression()));
     auto* sourceTI = resolveExprTypeInfo(ctx->expression());
 
-    if (!sourceTI || sourceTI->kind != TypeKind::Enum) {
+    if (!sourceTI) {
+        std::cerr << "lucis: match requires a typed expression\n";
+        return static_cast<llvm::Value*>(llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
+    }
+
+    // Check if this is a literal match (has literal patterns)
+    bool hasLiteralPattern = false;
+    for (auto* arm : ctx->matchArm()) {
+        for (auto* pattern : arm->pattern()) {
+            if (pattern->literalPattern()) {
+                hasLiteralPattern = true;
+                break;
+            }
+        }
+        if (hasLiteralPattern) break;
+    }
+
+    // Validate type based on pattern type
+    if (hasLiteralPattern) {
+        bool validType = sourceTI->kind == TypeKind::Integer ||
+                        sourceTI->kind == TypeKind::Float ||
+                        sourceTI->kind == TypeKind::String ||
+                        sourceTI->kind == TypeKind::Bool ||
+                        sourceTI->kind == TypeKind::Char;
+        if (!validType) {
+            std::cerr << "lucis: match with literal patterns requires int, float, string, bool, or char\n";
+            return static_cast<llvm::Value*>(llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
+        }
+    } else if (sourceTI->kind != TypeKind::Enum) {
         std::cerr << "lucis: match requires an enum expression\n";
         return static_cast<llvm::Value*>(llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
     }
 
-    auto* enumLLTy = sourceTI->toLLVMType(*context_, module_->getDataLayout());
+    auto* sourceLLTy = sourceTI->toLLVMType(*context_, module_->getDataLayout());
     auto* i32Ty = llvm::Type::getInt32Ty(*context_);
-    bool isUnitEnum = (enumLLTy == i32Ty || enumLLTy->isIntegerTy()); // unit enum = just the tag
+    bool isUnitEnum = (sourceTI->kind == TypeKind::Enum && 
+                       (sourceLLTy == i32Ty || sourceLLTy->isIntegerTy()));
 
-    auto* tempAlloca = builder_->CreateAlloca(enumLLTy, nullptr, "match.tmp");
+    auto* tempAlloca = builder_->CreateAlloca(sourceLLTy, nullptr, "match.tmp");
     builder_->CreateStore(sourceVal, tempAlloca);
 
     auto* mergeBB = llvm::BasicBlock::Create(*context_, "match.merge", fn);
@@ -18935,6 +18964,96 @@ std::any IRGen::visitMatchExpr(LucisParser::MatchExprContext* ctx) {
             auto* pattern = arm->pattern(pi);
             if (pattern->WILDCARD()) { hasWildcard = true; break; }
 
+            // Handle literal patterns
+            if (auto* lit = pattern->literalPattern()) {
+                llvm::Value* litVal = nullptr;
+                llvm::Value* cmpVal = nullptr;
+
+                if (lit->INT_LIT() || lit->HEX_LIT() || lit->OCT_LIT() || lit->BIN_LIT()) {
+                    std::string litText = lit->getText();
+                    int64_t intVal = 0;
+                    if (litText.size() > 2 && litText[0] == '0' && (litText[1] == 'x' || litText[1] == 'X')) {
+                        intVal = std::stoll(litText, nullptr, 16);
+                    } else if (litText.size() > 2 && litText[0] == '0' && (litText[1] == 'o' || litText[1] == 'O')) {
+                        intVal = std::stoll(litText.substr(2), nullptr, 8);
+                    } else if (litText.size() > 2 && litText[0] == '0' && (litText[1] == 'b' || litText[1] == 'B')) {
+                        intVal = std::stoll(litText.substr(2), nullptr, 2);
+                    } else {
+                        intVal = std::stoll(litText);
+                    }
+                    auto* sourceLLTy = sourceTI->toLLVMType(*context_, module_->getDataLayout());
+                    litVal = llvm::ConstantInt::get(sourceLLTy, intVal);
+                    cmpVal = builder_->CreateLoad(sourceLLTy, tempAlloca, "match.val");
+                    auto* patMatch = builder_->CreateICmpEQ(cmpVal, litVal);
+                    if (armMatches)
+                        armMatches = builder_->CreateOr(armMatches, patMatch);
+                    else
+                        armMatches = patMatch;
+                } else if (lit->FLOAT_LIT()) {
+                    double floatVal = std::stod(lit->getText());
+                    auto* sourceLLTy = sourceTI->toLLVMType(*context_, module_->getDataLayout());
+                    litVal = llvm::ConstantFP::get(sourceLLTy, floatVal);
+                    cmpVal = builder_->CreateLoad(sourceLLTy, tempAlloca, "match.val");
+                    auto* patMatch = builder_->CreateFCmpOEQ(cmpVal, litVal);
+                    if (armMatches)
+                        armMatches = builder_->CreateOr(armMatches, patMatch);
+                    else
+                        armMatches = patMatch;
+                } else if (lit->BOOL_LIT()) {
+                    bool boolVal = (lit->getText() == "true");
+                    litVal = llvm::ConstantInt::get(llvm::Type::getInt1Ty(*context_), boolVal);
+                    cmpVal = builder_->CreateLoad(llvm::Type::getInt1Ty(*context_), tempAlloca, "match.val");
+                    auto* patMatch = builder_->CreateICmpEQ(cmpVal, litVal);
+                    if (armMatches)
+                        armMatches = builder_->CreateOr(armMatches, patMatch);
+                    else
+                        armMatches = patMatch;
+                } else if (lit->CHAR_LIT()) {
+                    std::string charText = lit->getText();
+                    char charVal = charText.size() >= 3 ? charText[1] : '\0';
+                    litVal = llvm::ConstantInt::get(llvm::Type::getInt8Ty(*context_), charVal);
+                    cmpVal = builder_->CreateLoad(llvm::Type::getInt8Ty(*context_), tempAlloca, "match.val");
+                    auto* patMatch = builder_->CreateICmpEQ(cmpVal, litVal);
+                    if (armMatches)
+                        armMatches = builder_->CreateOr(armMatches, patMatch);
+                    else
+                        armMatches = patMatch;
+                } else if (lit->STR_LIT() || lit->C_STR_LIT()) {
+                    // String comparison using strcmp
+                    std::string strText = lit->getText();
+                    if (strText.size() >= 2) {
+                        strText = strText.substr(1, strText.size() - 2); // Remove quotes
+                    }
+                    auto* strConst = builder_->CreateGlobalStringPtr(strText, "match.str");
+                    auto* sourceLLTy = sourceTI->toLLVMType(*context_, module_->getDataLayout());
+                    auto* matchVal = builder_->CreateLoad(sourceLLTy, tempAlloca, "match.val");
+                    // Extract pointer from {ptr, i64} string struct
+                    llvm::Value* strPtr = matchVal;
+                    if (sourceLLTy->isStructTy()) {
+                        strPtr = builder_->CreateExtractValue(matchVal, 0, "match.str.ptr");
+                    }
+                    auto* ptrTy = llvm::PointerType::getUnqual(*context_);
+                    auto strcmpCallee = module_->getOrInsertFunction("strcmp",
+                        llvm::FunctionType::get(i32Ty, {ptrTy, ptrTy}, false));
+                    auto* cmpResult = builder_->CreateCall(strcmpCallee, {strPtr, strConst});
+                    auto* patMatch = builder_->CreateICmpEQ(cmpResult, llvm::ConstantInt::get(i32Ty, 0));
+                    if (armMatches)
+                        armMatches = builder_->CreateOr(armMatches, patMatch);
+                    else
+                        armMatches = patMatch;
+                } else if (lit->NULL_LIT()) {
+                    auto* ptrTy = sourceTI->toLLVMType(*context_, module_->getDataLayout());
+                    litVal = llvm::ConstantPointerNull::get(llvm::cast<llvm::PointerType>(ptrTy));
+                    cmpVal = builder_->CreateLoad(ptrTy, tempAlloca, "match.val");
+                    auto* patMatch = builder_->CreateICmpEQ(cmpVal, litVal);
+                    if (armMatches)
+                        armMatches = builder_->CreateOr(armMatches, patMatch);
+                    else
+                        armMatches = patMatch;
+                }
+                continue;
+            }
+
             std::string variantName;
             if (pattern->SCOPE() && pattern->IDENTIFIER().size() >= 2)
                 variantName = pattern->IDENTIFIER(1)->getText();
@@ -18949,7 +19068,7 @@ std::any IRGen::visitMatchExpr(LucisParser::MatchExprContext* ctx) {
             if (isUnitEnum)
                 tagVal = builder_->CreateLoad(i32Ty, tempAlloca, "match.tag");
             else {
-                auto* tagPtr = builder_->CreateStructGEP(enumLLTy, tempAlloca, 0, "match.tag.ptr");
+                auto* tagPtr = builder_->CreateStructGEP(sourceLLTy, tempAlloca, 0, "match.tag.ptr");
                 tagVal = builder_->CreateLoad(i32Ty, tagPtr, "match.tag");
             }
             auto* patMatch = builder_->CreateICmpEQ(tagVal,
@@ -19001,7 +19120,7 @@ std::any IRGen::visitMatchExpr(LucisParser::MatchExprContext* ctx) {
                         if (v.name == variantName) { vi = &v; break; }
                     if (vi && !vi->payloadFields.empty() && vi->payloadFields[0].typeInfo) {
                         auto* payloadTy = vi->payloadFields[0].typeInfo->toLLVMType(*context_, module_->getDataLayout());
-                        auto* rawPtr = builder_->CreateStructGEP(enumLLTy, tempAlloca, 1, "match.payload");
+                        auto* rawPtr = builder_->CreateStructGEP(sourceLLTy, tempAlloca, 1, "match.payload");
                         auto* castPtr = builder_->CreateBitCast(rawPtr, llvm::PointerType::getUnqual(*context_));
                         auto* payloadVal = builder_->CreateLoad(payloadTy, castPtr, "match.bind");
                         auto* alloca = builder_->CreateAlloca(payloadTy, nullptr, bindName);
@@ -19042,7 +19161,7 @@ std::any IRGen::visitMatchExpr(LucisParser::MatchExprContext* ctx) {
 
                 if (vi && !vi->payloadFields.empty() && vi->payloadFields[0].typeInfo) {
                     auto* payloadTy = vi->payloadFields[0].typeInfo->toLLVMType(*context_, module_->getDataLayout());
-                    auto* rawPtr = builder_->CreateStructGEP(enumLLTy, tempAlloca, 1, "match.payload");
+                    auto* rawPtr = builder_->CreateStructGEP(sourceLLTy, tempAlloca, 1, "match.payload");
                     auto* castPtr = builder_->CreateBitCast(rawPtr, llvm::PointerType::getUnqual(*context_));
                     auto* payloadVal = builder_->CreateLoad(payloadTy, castPtr, "match.bind");
                     auto* alloca = builder_->CreateAlloca(payloadTy, nullptr, bindName);
@@ -19064,8 +19183,25 @@ std::any IRGen::visitMatchExpr(LucisParser::MatchExprContext* ctx) {
         if (bodyExprIdx < arm->expression().size()) {
             bodyVal = castValue(visit(arm->expression(bodyExprIdx)));
         } else if (arm->block()) {
-            for (auto* stmt : arm->block()->statement())
-                visit(stmt);
+            auto stmts = arm->block()->statement();
+            for (size_t si = 0; si < stmts.size(); si++) {
+                auto* stmt = stmts[si];
+                // For the last statement, try to capture its value if it's an expression
+                if (si + 1 == stmts.size()) {
+                    if (auto* exprS = stmt->exprStmt()) {
+                        bodyVal = castValue(visit(exprS->expression()));
+                    } else if (auto* ret = stmt->returnStmt()) {
+                        if (ret->expression()) {
+                            bodyVal = castValue(visit(ret->expression()));
+                        }
+                        visit(stmt); // Still visit to emit the return
+                    } else {
+                        visit(stmt);
+                    }
+                } else {
+                    visit(stmt);
+                }
+            }
         }
         if (!resultTy && bodyVal) resultTy = bodyVal->getType();
         auto* armEndBB = builder_->GetInsertBlock();
