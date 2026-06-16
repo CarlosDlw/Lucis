@@ -157,6 +157,12 @@ public:
 
     virtual std::any visitDefaultClause(LucisParser::DefaultClauseContext *context) = 0;
 
+    virtual std::any visitMatchArm(LucisParser::MatchArmContext *context) = 0;
+
+    virtual std::any visitPattern(LucisParser::PatternContext *context) = 0;
+
+    virtual std::any visitLiteralPattern(LucisParser::LiteralPatternContext *context) = 0;
+
     virtual std::any visitStructPosInitExpr(LucisParser::StructPosInitExprContext *context) = 0;
 
     virtual std::any visitSuffixedOctLitExpr(LucisParser::SuffixedOctLitExprContext *context) = 0;
@@ -254,6 +260,8 @@ public:
     virtual std::any visitGenericFnCallExpr(LucisParser::GenericFnCallExprContext *context) = 0;
 
     virtual std::any visitGenericEnumAccessExpr(LucisParser::GenericEnumAccessExprContext *context) = 0;
+
+    virtual std::any visitMatchExpr(LucisParser::MatchExprContext *context) = 0;
 
     virtual std::any visitEnumAccessExpr(LucisParser::EnumAccessExprContext *context) = 0;
 

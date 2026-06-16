@@ -34,6 +34,7 @@ CATCH     : 'catch';
 FINALLY   : 'finally';
 THROW     : 'throw';
 DEFER     : 'defer';
+MATCH     : 'match';
 OR        : 'or';
 EXTERN    : 'extern';
 AUTO      : 'auto';
@@ -119,6 +120,8 @@ CHAR_LIT  : '\'' ( CHAR_ESC | ~['\\r\n] ) '\'';
 
 // Identifier
 ATTR_ERROR : '#[error]' ;
+
+WILDCARD : '_' ;
 
 IDENTIFIER: [a-zA-Z_][a-zA-Z0-9_]*;
 

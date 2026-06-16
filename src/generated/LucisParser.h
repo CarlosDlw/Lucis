@@ -17,27 +17,27 @@ public:
     FOR = 15, IN = 16, LOOP = 17, WHILE = 18, DO = 19, BREAK = 20, CONTINUE = 21, 
     SWITCH = 22, CASE = 23, DEFAULT = 24, SPAWN = 25, AWAIT = 26, LOCK = 27, 
     EXTEND = 28, TRY = 29, CATCH = 30, FINALLY = 31, THROW = 32, DEFER = 33, 
-    OR = 34, EXTERN = 35, AUTO = 36, VEC = 37, MAP = 38, SET = 39, TUPLE = 40, 
-    ARROW = 41, INCLUDE_SYS = 42, INCLUDE_LOCAL = 43, INLINE_BLOCK = 44, 
-    SCOPE_BLOCK = 45, NULLCOAL = 46, SPREAD = 47, RANGE_INCL = 48, RANGE = 49, 
-    INT1 = 50, INT8 = 51, INT16 = 52, INT32 = 53, INT64 = 54, INT128 = 55, 
-    INTINF = 56, ISIZE = 57, UINT1 = 58, UINT8 = 59, UINT16 = 60, UINT32 = 61, 
-    UINT64 = 62, UINT128 = 63, USIZE = 64, FLOAT32 = 65, FLOAT64 = 66, FLOAT80 = 67, 
-    FLOAT128 = 68, DOUBLE = 69, BOOL = 70, CHAR = 71, VOID = 72, STRING = 73, 
-    CSTRING = 74, SUFFIXED_HEX = 75, SUFFIXED_OCT = 76, SUFFIXED_BIN = 77, 
-    SUFFIXED_INT = 78, SUFFIXED_INT_FLOAT = 79, SUFFIXED_FLOAT = 80, SUFFIXED_FLOAT_INT = 81, 
-    SUFFIXED_DOT_FLOAT = 82, HEX_LIT = 83, OCT_LIT = 84, BIN_LIT = 85, INT_LIT = 86, 
-    FLOAT_LIT = 87, BOOL_LIT = 88, C_STR_LIT = 89, STR_LIT = 90, CHAR_LIT = 91, 
-    ATTR_ERROR = 92, IDENTIFIER = 93, PLUS_ASSIGN = 94, MINUS_ASSIGN = 95, 
-    STAR_ASSIGN = 96, SLASH_ASSIGN = 97, PERCENT_ASSIGN = 98, AMP_ASSIGN = 99, 
-    PIPE_ASSIGN = 100, CARET_ASSIGN = 101, LSHIFT_ASSIGN = 102, RSHIFT_ASSIGN = 103, 
-    SEMI = 104, COLON = 105, SCOPE = 106, COMMA = 107, DOT = 108, ASSIGN = 109, 
-    LPAREN = 110, RPAREN = 111, LBRACE = 112, RBRACE = 113, LBRACKET = 114, 
-    RBRACKET = 115, STAR = 116, AMPERSAND = 117, MINUS = 118, PLUS = 119, 
-    SLASH = 120, PERCENT = 121, EQ = 122, NEQ = 123, LTE = 124, GTE = 125, 
-    LT = 126, GT = 127, LAND = 128, LOR = 129, NOT = 130, INCR = 131, DECR = 132, 
-    LSHIFT = 133, PIPE = 134, CARET = 135, TILDE = 136, QUESTION = 137, 
-    WS = 138, LINE_COMMENT = 139, BLOCK_COMMENT = 140
+    MATCH = 34, OR = 35, EXTERN = 36, AUTO = 37, VEC = 38, MAP = 39, SET = 40, 
+    TUPLE = 41, ARROW = 42, INCLUDE_SYS = 43, INCLUDE_LOCAL = 44, INLINE_BLOCK = 45, 
+    SCOPE_BLOCK = 46, NULLCOAL = 47, SPREAD = 48, RANGE_INCL = 49, RANGE = 50, 
+    INT1 = 51, INT8 = 52, INT16 = 53, INT32 = 54, INT64 = 55, INT128 = 56, 
+    INTINF = 57, ISIZE = 58, UINT1 = 59, UINT8 = 60, UINT16 = 61, UINT32 = 62, 
+    UINT64 = 63, UINT128 = 64, USIZE = 65, FLOAT32 = 66, FLOAT64 = 67, FLOAT80 = 68, 
+    FLOAT128 = 69, DOUBLE = 70, BOOL = 71, CHAR = 72, VOID = 73, STRING = 74, 
+    CSTRING = 75, SUFFIXED_HEX = 76, SUFFIXED_OCT = 77, SUFFIXED_BIN = 78, 
+    SUFFIXED_INT = 79, SUFFIXED_INT_FLOAT = 80, SUFFIXED_FLOAT = 81, SUFFIXED_FLOAT_INT = 82, 
+    SUFFIXED_DOT_FLOAT = 83, HEX_LIT = 84, OCT_LIT = 85, BIN_LIT = 86, INT_LIT = 87, 
+    FLOAT_LIT = 88, BOOL_LIT = 89, C_STR_LIT = 90, STR_LIT = 91, CHAR_LIT = 92, 
+    ATTR_ERROR = 93, WILDCARD = 94, IDENTIFIER = 95, PLUS_ASSIGN = 96, MINUS_ASSIGN = 97, 
+    STAR_ASSIGN = 98, SLASH_ASSIGN = 99, PERCENT_ASSIGN = 100, AMP_ASSIGN = 101, 
+    PIPE_ASSIGN = 102, CARET_ASSIGN = 103, LSHIFT_ASSIGN = 104, RSHIFT_ASSIGN = 105, 
+    SEMI = 106, COLON = 107, SCOPE = 108, COMMA = 109, DOT = 110, ASSIGN = 111, 
+    LPAREN = 112, RPAREN = 113, LBRACE = 114, RBRACE = 115, LBRACKET = 116, 
+    RBRACKET = 117, STAR = 118, AMPERSAND = 119, MINUS = 120, PLUS = 121, 
+    SLASH = 122, PERCENT = 123, EQ = 124, NEQ = 125, LTE = 126, GTE = 127, 
+    LT = 128, GT = 129, LAND = 130, LOR = 131, NOT = 132, INCR = 133, DECR = 134, 
+    LSHIFT = 135, PIPE = 136, CARET = 137, TILDE = 138, QUESTION = 139, 
+    WS = 140, LINE_COMMENT = 141, BLOCK_COMMENT = 142
   };
 
   enum {
@@ -59,7 +59,8 @@ public:
     RuleContinueStmt = 53, RuleLoopStmt = 54, RuleWhileStmt = 55, RuleDoWhileStmt = 56, 
     RuleLockStmt = 57, RuleTryCatchStmt = 58, RuleCatchClause = 59, RuleFinallyClause = 60, 
     RuleThrowStmt = 61, RuleSwitchStmt = 62, RuleCaseClause = 63, RuleDefaultClause = 64, 
-    RuleExpression = 65, RuleTypeSpec = 66, RuleFnTypeSpec = 67, RulePrimitiveType = 68
+    RuleMatchArm = 65, RulePattern = 66, RuleLiteralPattern = 67, RuleExpression = 68, 
+    RuleTypeSpec = 69, RuleFnTypeSpec = 70, RulePrimitiveType = 71
   };
 
   explicit LucisParser(antlr4::TokenStream *input);
@@ -144,6 +145,9 @@ public:
   class SwitchStmtContext;
   class CaseClauseContext;
   class DefaultClauseContext;
+  class MatchArmContext;
+  class PatternContext;
+  class LiteralPatternContext;
   class ExpressionContext;
   class TypeSpecContext;
   class FnTypeSpecContext;
@@ -1439,6 +1443,71 @@ public:
 
   DefaultClauseContext* defaultClause();
 
+  class  MatchArmContext : public antlr4::ParserRuleContext {
+  public:
+    MatchArmContext(antlr4::ParserRuleContext *parent, size_t invokingState);
+    virtual size_t getRuleIndex() const override;
+    PatternContext *pattern();
+    antlr4::tree::TerminalNode *ARROW();
+    std::vector<ExpressionContext *> expression();
+    ExpressionContext* expression(size_t i);
+    antlr4::tree::TerminalNode *IF();
+    BlockContext *block();
+
+
+    virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+   
+  };
+
+  MatchArmContext* matchArm();
+
+  class  PatternContext : public antlr4::ParserRuleContext {
+  public:
+    PatternContext(antlr4::ParserRuleContext *parent, size_t invokingState);
+    virtual size_t getRuleIndex() const override;
+    std::vector<antlr4::tree::TerminalNode *> IDENTIFIER();
+    antlr4::tree::TerminalNode* IDENTIFIER(size_t i);
+    antlr4::tree::TerminalNode *SCOPE();
+    antlr4::tree::TerminalNode *LT();
+    std::vector<TypeSpecContext *> typeSpec();
+    TypeSpecContext* typeSpec(size_t i);
+    antlr4::tree::TerminalNode *GT();
+    antlr4::tree::TerminalNode *LPAREN();
+    antlr4::tree::TerminalNode *RPAREN();
+    antlr4::tree::TerminalNode *WILDCARD();
+    std::vector<antlr4::tree::TerminalNode *> COMMA();
+    antlr4::tree::TerminalNode* COMMA(size_t i);
+    LiteralPatternContext *literalPattern();
+
+
+    virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+   
+  };
+
+  PatternContext* pattern();
+
+  class  LiteralPatternContext : public antlr4::ParserRuleContext {
+  public:
+    LiteralPatternContext(antlr4::ParserRuleContext *parent, size_t invokingState);
+    virtual size_t getRuleIndex() const override;
+    antlr4::tree::TerminalNode *INT_LIT();
+    antlr4::tree::TerminalNode *HEX_LIT();
+    antlr4::tree::TerminalNode *OCT_LIT();
+    antlr4::tree::TerminalNode *BIN_LIT();
+    antlr4::tree::TerminalNode *FLOAT_LIT();
+    antlr4::tree::TerminalNode *STR_LIT();
+    antlr4::tree::TerminalNode *C_STR_LIT();
+    antlr4::tree::TerminalNode *CHAR_LIT();
+    antlr4::tree::TerminalNode *NULL_LIT();
+    antlr4::tree::TerminalNode *BOOL_LIT();
+
+
+    virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+   
+  };
+
+  LiteralPatternContext* literalPattern();
+
   class  ExpressionContext : public antlr4::ParserRuleContext {
   public:
     ExpressionContext(antlr4::ParserRuleContext *parent, size_t invokingState);
@@ -2041,6 +2110,22 @@ public:
     TypeSpecContext* typeSpec(size_t i);
     antlr4::tree::TerminalNode *GT();
     antlr4::tree::TerminalNode *SCOPE();
+    std::vector<antlr4::tree::TerminalNode *> COMMA();
+    antlr4::tree::TerminalNode* COMMA(size_t i);
+
+    virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+  };
+
+  class  MatchExprContext : public ExpressionContext {
+  public:
+    MatchExprContext(ExpressionContext *ctx);
+
+    antlr4::tree::TerminalNode *MATCH();
+    ExpressionContext *expression();
+    antlr4::tree::TerminalNode *LBRACE();
+    std::vector<MatchArmContext *> matchArm();
+    MatchArmContext* matchArm(size_t i);
+    antlr4::tree::TerminalNode *RBRACE();
     std::vector<antlr4::tree::TerminalNode *> COMMA();
     antlr4::tree::TerminalNode* COMMA(size_t i);
 

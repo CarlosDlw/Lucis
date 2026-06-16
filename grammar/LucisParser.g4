@@ -393,6 +393,33 @@ defaultClause
     : DEFAULT block
     ;
 
+// match arm: pattern (if cond)? -> body
+matchArm
+    : pattern (IF expression)? ARROW expression
+    | pattern (IF expression)? ARROW block
+    ;
+
+// Patterns for match arms
+pattern
+    : IDENTIFIER (LT typeSpec (COMMA typeSpec)* GT)? SCOPE IDENTIFIER (LPAREN (IDENTIFIER | WILDCARD) RPAREN)?  // Type<T>::Variant or Type<T>::Variant(binding)
+    | IDENTIFIER (LT typeSpec (COMMA typeSpec)* GT)? (LPAREN (IDENTIFIER | WILDCARD) RPAREN)?                   // Type or Type<T> or Type(binding)
+    | WILDCARD                                                                                      // _ wildcard
+    | literalPattern                                                                                 // 42, "hello", true
+    ;
+
+literalPattern
+    : INT_LIT
+    | HEX_LIT
+    | OCT_LIT
+    | BIN_LIT
+    | FLOAT_LIT
+    | STR_LIT
+    | C_STR_LIT
+    | CHAR_LIT
+    | NULL_LIT
+    | BOOL_LIT
+    ;
+
 // Expressions (labeled alternatives for clean visitor dispatch)
 // Order defines precedence: earlier = higher precedence for binary/suffix ops
 expression
@@ -482,6 +509,8 @@ expression
     | TRY expression OR expression                               # tryExpr
     // Try expression (wraps sub-expression in setjmp/longjmp)
     | TRY expression                                           # tryExpr
+    // Match expression: match expr { pattern -> body, ... }
+    | MATCH expression LBRACE matchArm (COMMA matchArm)* COMMA? RBRACE  # matchExpr
     // Atoms
     | LPAREN expression COMMA expression (COMMA expression)* RPAREN  # tupleLitExpr
     | LPAREN expression RPAREN                                 # parenExpr

@@ -291,6 +291,18 @@ public:
     return visitChildren(ctx);
   }
 
+  virtual std::any visitMatchArm(LucisParser::MatchArmContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual std::any visitPattern(LucisParser::PatternContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual std::any visitLiteralPattern(LucisParser::LiteralPatternContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
   virtual std::any visitStructPosInitExpr(LucisParser::StructPosInitExprContext *ctx) override {
     return visitChildren(ctx);
   }
@@ -484,6 +496,10 @@ public:
   }
 
   virtual std::any visitGenericEnumAccessExpr(LucisParser::GenericEnumAccessExprContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual std::any visitMatchExpr(LucisParser::MatchExprContext *ctx) override {
     return visitChildren(ctx);
   }
 
