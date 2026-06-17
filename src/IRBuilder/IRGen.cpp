@@ -14626,6 +14626,18 @@ const TypeInfo* IRGen::resolveExprTypeInfo(LucisParser::ExpressionContext* ctx) 
     // ── Static method call: Struct::method(args) ────────────────────
     if (auto* smc = dynamic_cast<LucisParser::StaticMethodCallExprContext*>(ctx)) {
         auto ids = smc->IDENTIFIER();
+        {
+            std::vector<std::string> idTexts;
+            for (auto* id : ids) idTexts.push_back(id->getText());
+            if (IntrinsicRegistry::isIntrinsicPrefix(idTexts[0])) {
+                std::string ns, funcName;
+                IntrinsicRegistry::parseIntrinsicPath(idTexts, ns, funcName);
+                auto* intrinsic = intrinsicRegistry_.lookup(ns, funcName);
+                if (intrinsic && intrinsic->returnType != "_any"
+                    && intrinsic->returnType != "_self")
+                    return typeRegistry_.lookup(intrinsic->returnType);
+            }
+        }
         auto structName = ids[0]->getText();
         auto methodName = ids[1]->getText();
 
