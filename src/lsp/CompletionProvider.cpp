@@ -1261,9 +1261,13 @@ static std::string inferExprTypeName(
     if (!inferred.empty()) return inferred;
     return "";
   }
-  // ── Try expression: try expr or fallback — same type as inner ─────
-  if (auto* te = dynamic_cast<LucisParser::TryExprContext*>(expr))
+  // ── Try expression: try expr or fallback — unwrap Ok payload ──────
+  if (auto* te = dynamic_cast<LucisParser::TryExprContext*>(expr)) {
+    auto* tree = flc ? flc->tree : nullptr;
+    auto inferred = inferCatchUnwrapSuccessType(te->expression(0), tree, locals, flc);
+    if (!inferred.empty()) return inferred;
     return inferExprTypeName(te->expression(0), locals, flc);
+  }
 
   // ── Match expression: match expr { ... } — type from enum ─────────
   if (auto* me = dynamic_cast<LucisParser::MatchExprContext*>(expr)) {

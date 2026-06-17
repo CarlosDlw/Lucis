@@ -4935,9 +4935,33 @@ static std::string inferExprTypeName(
         return "";
     }
 
-    // ── Try expression: try expr or fallback — same type as inner ─────
-    if (auto* te = dynamic_cast<LucisParser::TryExprContext*>(expr))
-        return inferExprTypeName(te->expression(0), locals, flc);
+    // ── Try expression: try expr or fallback — unwrap Ok payload ──────
+    if (auto* te = dynamic_cast<LucisParser::TryExprContext*>(expr)) {
+        auto sourceType = inferExprTypeName(te->expression(0), locals, flc);
+        if (sourceType.empty() || !flc) return sourceType;
+        std::string baseName = sourceType;
+        std::vector<std::string> sourceArgs;
+        parseGenericInstance(sourceType, baseName, sourceArgs);
+        auto* enumDecl = resolveEnumForCatch(baseName, sourceArgs,
+                                                sourceType, flc->tree, flc);
+        if (!enumDecl) return sourceType;
+        std::unordered_map<std::string, std::string> subst;
+        if (enumDecl->typeParamList() && !sourceArgs.empty()) {
+            auto tps = enumDecl->typeParamList()->typeParam();
+            for (size_t i = 0; i < std::min(tps.size(), sourceArgs.size()); i++) {
+                auto ids = tps[i]->IDENTIFIER();
+                if (!ids.empty()) subst[ids[0]->getText()] = sourceArgs[i];
+            }
+        }
+        for (auto* variant : enumDecl->enumVariant()) {
+            if (!variant || variant->typeSpec().size() != 1) continue;
+            auto payloadType = variant->typeSpec(0)->getText();
+            payloadType = substituteTypeParams(payloadType, subst);
+            if (payloadType != "Error")
+                return payloadType;
+        }
+        return sourceType;
+    }
 
     // ── Match expression: match expr { ... } — type from arm bodies ───
     if (auto* me = dynamic_cast<LucisParser::MatchExprContext*>(expr)) {
