@@ -2217,7 +2217,10 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
     // ── Try expression (unwrap — same type as inner) ─────────────────
     if (auto* te = dynamic_cast<LucisParser::TryExprContext*>(expr)) {
         auto* innerType = resolveExprType(te->expression(0));
-        // If 'or fallback' is present, validate it matches the inner type
+        UnwrapCatchPatternInfo pattern;
+        std::string reason;
+        if (classifyUnwrapCatchEnum(innerType, pattern, reason))
+            innerType = singlePayloadType(*pattern.okVariant);
         if (te->OR() && te->expression().size() >= 2) {
             auto* fallbackType = resolveExprType(te->expression(1));
             if (fallbackType && innerType && !isAssignable(innerType, fallbackType)) {

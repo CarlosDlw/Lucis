@@ -14303,9 +14303,15 @@ const TypeInfo* IRGen::resolveExprTypeInfo(LucisParser::ExpressionContext* ctx) 
     if (auto* tern = dynamic_cast<LucisParser::TernaryExprContext*>(ctx))
         return resolveExprTypeInfo(tern->expression(1));
 
-    // ── Try expression: try expr — same type as inner ────────────────
-    if (auto* te = dynamic_cast<LucisParser::TryExprContext*>(ctx))
-        return resolveExprTypeInfo(te->expression(0));
+    // ── Try expression: try expr — unwrap Ok payload for Result enums ─
+    if (auto* te = dynamic_cast<LucisParser::TryExprContext*>(ctx)) {
+        auto* sourceTI = resolveExprTypeInfo(te->expression(0));
+        UnwrapCatchPatternInfo pattern;
+        std::string reason;
+        if (classifyUnwrapCatchEnum(sourceTI, pattern, reason))
+            return singlePayloadType(*pattern.okVariant);
+        return sourceTI;
+    }
 
     // ── Match expression: type from first arm ────────────────────────
     if (auto* me = dynamic_cast<LucisParser::MatchExprContext*>(ctx)) {
