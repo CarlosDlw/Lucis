@@ -4786,6 +4786,117 @@ std::any IRGen::visitCallStmt(LucisParser::CallStmtContext* ctx) {
         return {};
     }
 
+    // ── std::net — value-returning functions used as statements ──────────
+    {
+        auto* voidTy = llvm::Type::getVoidTy(*context_);
+        auto* i16Ty  = llvm::Type::getInt16Ty(*context_);
+        auto* i32Ty  = llvm::Type::getInt32Ty(*context_);
+        auto* i64Ty  = llvm::Type::getInt64Ty(*context_);
+        auto* ptrTy  = llvm::PointerType::getUnqual(*context_);
+        auto* usizeTy = module_->getDataLayout().getIntPtrType(*context_);
+        auto* strTy  = llvm::StructType::get(*context_, {ptrTy, usizeTy});
+
+        // tcpConnect/tcpListen/udpBind: (string, uint16) → int32
+        if (funcName == "tcpConnect" || funcName == "tcpListen" ||
+            funcName == "udpBind") {
+            std::vector<llvm::Value*> args;
+            if (auto* argList = ctx->argList())
+                for (auto* e : argList->expression())
+                    args.push_back(castValue(visit(e)));
+            if (!requireArgs(funcName, args, 2)) return {};
+            std::vector<llvm::Value*> callArgs;
+            callArgs.push_back(builder_->CreateExtractValue(args[0], 0));
+            callArgs.push_back(builder_->CreateExtractValue(args[0], 1));
+            auto* port = builder_->CreateIntCast(args[1], i16Ty, false);
+            callArgs.push_back(port);
+            std::string cName = "lucis_" + funcName;
+            auto callee = declareBuiltin(cName, i32Ty, {ptrTy, usizeTy, i16Ty});
+            builder_->CreateCall(callee, callArgs);
+            return {};
+        }
+        // tcpAccept: (int32) → int32
+        if (funcName == "tcpAccept") {
+            std::vector<llvm::Value*> args;
+            if (auto* argList = ctx->argList())
+                for (auto* e : argList->expression())
+                    args.push_back(castValue(visit(e)));
+            if (!requireArgs(funcName, args, 1)) return {};
+            auto* fd = builder_->CreateIntCast(args[0], i32Ty, true);
+            auto callee = declareBuiltin("lucis_tcpAccept", i32Ty, {i32Ty});
+            builder_->CreateCall(callee, {fd});
+            return {};
+        }
+        // tcpSend: (int32, string) → int64
+        if (funcName == "tcpSend") {
+            std::vector<llvm::Value*> args;
+            if (auto* argList = ctx->argList())
+                for (auto* e : argList->expression())
+                    args.push_back(castValue(visit(e)));
+            if (!requireArgs(funcName, args, 2)) return {};
+            auto* fd = builder_->CreateIntCast(args[0], i32Ty, true);
+            std::vector<llvm::Value*> callArgs;
+            callArgs.push_back(fd);
+            callArgs.push_back(builder_->CreateExtractValue(args[1], 0));
+            callArgs.push_back(builder_->CreateExtractValue(args[1], 1));
+            auto callee = declareBuiltin("lucis_tcpSend", i64Ty,
+                {i32Ty, ptrTy, usizeTy});
+            builder_->CreateCall(callee, callArgs);
+            return {};
+        }
+        // tcpRecv/udpRecvFrom: (int32, usize) → string
+        if (funcName == "tcpRecv" || funcName == "udpRecvFrom") {
+            std::vector<llvm::Value*> args;
+            if (auto* argList = ctx->argList())
+                for (auto* e : argList->expression())
+                    args.push_back(castValue(visit(e)));
+            if (!requireArgs(funcName, args, 2)) return {};
+            auto* fd = builder_->CreateIntCast(args[0], i32Ty, true);
+            auto* maxLen = args[1];
+            if (maxLen->getType() != usizeTy)
+                maxLen = builder_->CreateIntCast(maxLen, usizeTy, false);
+            std::string cName = "lucis_" + funcName;
+            auto callee = declareBuiltin(cName, strTy, {i32Ty, usizeTy});
+            builder_->CreateCall(callee, {fd, maxLen});
+            return {};
+        }
+        // udpSendTo: (int32, string, string, uint16) → int64
+        if (funcName == "udpSendTo") {
+            std::vector<llvm::Value*> args;
+            if (auto* argList = ctx->argList())
+                for (auto* e : argList->expression())
+                    args.push_back(castValue(visit(e)));
+            if (!requireArgs(funcName, args, 4)) return {};
+            auto* fd = builder_->CreateIntCast(args[0], i32Ty, true);
+            std::vector<llvm::Value*> callArgs;
+            callArgs.push_back(fd);
+            callArgs.push_back(builder_->CreateExtractValue(args[1], 0));
+            callArgs.push_back(builder_->CreateExtractValue(args[1], 1));
+            callArgs.push_back(builder_->CreateExtractValue(args[2], 0));
+            callArgs.push_back(builder_->CreateExtractValue(args[2], 1));
+            auto* port = builder_->CreateIntCast(args[3], i16Ty, false);
+            callArgs.push_back(port);
+            auto callee = declareBuiltin("lucis_udpSendTo", i64Ty,
+                {i32Ty, ptrTy, usizeTy, ptrTy, usizeTy, i16Ty});
+            builder_->CreateCall(callee, callArgs);
+            return {};
+        }
+        // resolve: (string) → string
+        if (funcName == "resolve") {
+            std::vector<llvm::Value*> args;
+            if (auto* argList = ctx->argList())
+                for (auto* e : argList->expression())
+                    args.push_back(castValue(visit(e)));
+            if (!requireArgs(funcName, args, 1)) return {};
+            std::vector<llvm::Value*> callArgs;
+            callArgs.push_back(builder_->CreateExtractValue(args[0], 0));
+            callArgs.push_back(builder_->CreateExtractValue(args[0], 1));
+            auto callee = declareBuiltin("lucis_netResolve", strTy,
+                {ptrTy, usizeTy});
+            builder_->CreateCall(callee, callArgs);
+            return {};
+        }
+    }
+
     // ── std::thread — yield: void ───────────────────────────────────────
     if (funcName == "yield") {
         auto callee = declareBuiltin("lucis_yield",

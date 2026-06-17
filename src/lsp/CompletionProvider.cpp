@@ -2993,7 +2993,6 @@ void CompletionProvider::addImportedSymbols(std::vector<CompletionItem> &items,
           }
           break;
         }
-        return; // symbol not found in stdlib either
       }
 
       if (!sym) {

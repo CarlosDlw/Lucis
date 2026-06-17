@@ -112,7 +112,7 @@ int64_t lucis_tcpSend(int32_t fd, const char* data, size_t dataLen) {
 }
 
 lucis_net_str_result lucis_tcpRecv(int32_t fd, size_t maxLen) {
-    char* buf = (char*)lucis_allocString(maxLen);
+    char* buf = (char*)lucis_allocString(maxLen + 1);
     if (!buf) return empty_str();
 
     ssize_t n = recv(fd, buf, maxLen, 0);
@@ -121,6 +121,7 @@ lucis_net_str_result lucis_tcpRecv(int32_t fd, size_t maxLen) {
         return empty_str();
     }
 
+    buf[n] = '\0';
     return make_str(buf, (size_t)n);
 }
 
@@ -177,7 +178,7 @@ int64_t lucis_udpSendTo(int32_t fd, const char* data, size_t dataLen,
 }
 
 lucis_net_str_result lucis_udpRecvFrom(int32_t fd, size_t maxLen) {
-    char* buf = (char*)lucis_allocString(maxLen);
+    char* buf = (char*)lucis_allocString(maxLen + 1);
     if (!buf) return empty_str();
 
     struct sockaddr_storage addr;
@@ -189,6 +190,7 @@ lucis_net_str_result lucis_udpRecvFrom(int32_t fd, size_t maxLen) {
         return empty_str();
     }
 
+    buf[n] = '\0';
     return make_str(buf, (size_t)n);
 }
 
@@ -234,8 +236,9 @@ lucis_net_str_result lucis_netResolve(const char* host, size_t hostLen) {
     if (!ip) return empty_str();
 
     size_t len = strlen(ip);
-    char* out = (char*)lucis_allocString(len);
+    char* out = (char*)lucis_allocString(len + 1);
     if (!out) return empty_str();
     memcpy(out, ip, len);
+    out[len] = '\0';
     return make_str(out, len);
 }
