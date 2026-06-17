@@ -13902,6 +13902,52 @@ const TypeInfo* IRGen::resolveTypeInfo(LucisParser::TypeSpecContext* ctx) {
             return instantiateGenericEnum(baseName, enumIt->second, resolvedArgs);
         }
 
+        // Lazy load: search module registry for a generic type not yet visited
+        if (moduleRegistry_) {
+            auto loadGenericType = [&](const ExportedSymbol* sym) -> const TypeInfo* {
+                if (!sym || !sym->decl) return nullptr;
+                if (sym->kind == ExportedSymbol::Enum) {
+                    visitEnumDecl(static_cast<LucisParser::EnumDeclContext*>(sym->decl));
+                } else if (sym->kind == ExportedSymbol::Struct) {
+                    visitStructDecl(static_cast<LucisParser::StructDeclContext*>(sym->decl));
+                } else if (sym->kind == ExportedSymbol::Union) {
+                    visitUnionDecl(static_cast<LucisParser::UnionDeclContext*>(sym->decl));
+                } else {
+                    return nullptr;
+                }
+                // Retry: the visit should have populated the template map
+                if (auto eIt = genericEnumTemplates_.find(baseName); eIt != genericEnumTemplates_.end())
+                    return instantiateGenericEnum(baseName, eIt->second, resolvedArgs);
+                if (auto sIt = genericStructTemplates_.find(baseName); sIt != genericStructTemplates_.end())
+                    return instantiateGenericStruct(baseName, sIt->second, resolvedArgs);
+                if (auto uIt = genericUnionTemplates_.find(baseName); uIt != genericUnionTemplates_.end())
+                    return instantiateGenericUnion(baseName, uIt->second, resolvedArgs);
+                return nullptr;
+            };
+
+            // Check current module namespace
+            if (auto* sym = moduleRegistry_->findSymbol(currentModulePath_, baseName)) {
+                if (auto* loaded = loadGenericType(sym))
+                    return loaded;
+            }
+
+            // Check all imported namespaces
+            for (const auto& [_, ns] : userImports_) {
+                if (auto* sym = moduleRegistry_->findSymbol(ns, baseName)) {
+                    if (auto* loaded = loadGenericType(sym))
+                        return loaded;
+                }
+            }
+
+            // Final fallback: scan all modules
+            for (auto& candidateNs : moduleRegistry_->allModules()) {
+                if (auto* sym = moduleRegistry_->findSymbol(candidateNs, baseName)) {
+                    if (auto* loaded = loadGenericType(sym))
+                        return loaded;
+                }
+            }
+        }
+
         // Built-in extended generics (Task, etc.)
         if (resolvedArgs.size() == 1) {
             auto* elemTI = resolvedArgs[0];
@@ -14015,6 +14061,15 @@ const TypeInfo* IRGen::resolveTypeInfo(LucisParser::TypeSpecContext* ctx) {
                             if (auto* loaded = typeRegistry_.lookup(name)) return loaded;
                         }
                     }
+                }
+            }
+
+            // Final fallback: scan all modules for the type (e.g. transitive type
+            // aliases not explicitly imported by the current file).
+            for (auto& candidateNs : moduleRegistry_->allModules()) {
+                if (auto* found = moduleRegistry_->findSymbol(candidateNs, name)) {
+                    loadSymbolType(found);
+                    if (auto* loaded = typeRegistry_.lookup(name)) return loaded;
                 }
             }
         }

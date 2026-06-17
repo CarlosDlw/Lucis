@@ -1016,6 +1016,15 @@ bool Checker::check(LucisParser::ProgramContext* tree) {
                     for (auto* field : ud->unionField())
                         self(self, field->typeSpec(), ns);
                     checkUnionDecl(ud);
+                    return;
+                }
+                if (depSym->kind == ExportedSymbol::TypeAlias && needsProc) {
+                    if (!seenDeps.insert(baseName).second) return;
+                    auto* ta = static_cast<LucisParser::TypeAliasDeclContext*>(depSym->decl);
+                    // Pre-resolve the underlying type before checking the alias
+                    self(self, ta->typeSpec(), ns);
+                    checkTypeAliasDecl(ta);
+                    return;
                 }
             };
 
