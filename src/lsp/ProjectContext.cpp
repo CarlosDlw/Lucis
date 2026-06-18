@@ -112,8 +112,18 @@ bool ProjectContext::build(const std::string& filePath) {
                 std::string chain;
                 for (auto& m : importChain) chain += m + " → ";
                 chain += logicalPath;
-                // Store the error for later retrieval
-                importErrors_.push_back("circular import detected: " + chain);
+                // Get position from the `use` statement
+                size_t errLine = 0, errCol = 0;
+                if (auto* start = use->getStart()) {
+                    errLine = start->getLine() > 0 ? start->getLine() - 1 : 0;
+                    errCol  = start->getCharPositionInLine();
+                }
+                importErrors_.push_back({
+                    "circular import detected: " + chain,
+                    curPath,
+                    errLine,
+                    errCol
+                });
                 return;
             }
 

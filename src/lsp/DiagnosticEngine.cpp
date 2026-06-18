@@ -163,5 +163,21 @@ std::vector<Diagnostic> DiagnosticEngine::run(const std::string& source,
         }
     }
 
+    // Step 3: Project-level errors (e.g. circular imports)
+    for (auto& ie : project->importErrors()) {
+        if (ie.filePath == filePath) {
+            Diagnostic d;
+            d.severity = Diagnostic::Error;
+            d.source = "lucis";
+            d.code = "circular-import";
+            d.message = ie.message;
+            d.line    = ie.line;
+            d.col     = ie.col;
+            d.endLine = ie.line;
+            d.endCol  = ie.col + 1;
+            result.push_back(std::move(d));
+        }
+    }
+
     return result;
 }

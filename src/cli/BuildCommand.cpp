@@ -198,6 +198,8 @@ int BuildCommand::run(const ArgParser& parser) {
     if (!pipeOpts.quiet)
         std::cerr << "lucis: [build] checking incremental cache\n";
 
+    // Saved linker flags from cache manifest for cached linking
+    std::vector<std::string> savedLinkerFlags;
     {
         std::ifstream manifest(cacheManifestPath);
         if (manifest) {
@@ -205,16 +207,48 @@ int BuildCommand::run(const ArgParser& parser) {
             bool allMatch = true;
             while (std::getline(manifest, line)) {
                 if (line.empty()) continue;
-                auto sep = line.find(' ');
-                if (sep == std::string::npos) { allMatch = false; break; }
-                auto filePath = line.substr(0, sep);
-                auto savedMtime = std::stoll(line.substr(sep + 1));
-                std::error_code ec;
-                auto currentMtime = fs::last_write_time(filePath, ec);
-                if (ec || std::chrono::duration_cast<std::chrono::seconds>(
-                        currentMtime.time_since_epoch()).count() != savedMtime) {
-                    allMatch = false;
-                    break;
+
+                if (line[0] == 'C' && line.size() > 2 && line[1] == ':') {
+                    // C:/path/to/file.c <mtime>
+                    auto content = line.substr(2);
+                    auto sep = content.find(' ');
+                    if (sep == std::string::npos) { allMatch = false; break; }
+                    auto filePath = content.substr(0, sep);
+                    auto savedMtime = std::stoll(content.substr(sep + 1));
+                    std::error_code ec;
+                    auto currentMtime = fs::last_write_time(filePath, ec);
+                    if (ec || std::chrono::duration_cast<std::chrono::seconds>(
+                            currentMtime.time_since_epoch()).count() != savedMtime) {
+                        allMatch = false;
+                        break;
+                    }
+                } else if (line[0] == '#') {
+                    // #linkerFlags -lz -lcurl
+                    if (line.rfind("#linkerFlags", 0) == 0) {
+                        savedLinkerFlags.clear();
+                        size_t pos = 12; // skip "#linkerFlags"
+                        while (pos < line.size()) {
+                            while (pos < line.size() && line[pos] == ' ') pos++;
+                            if (pos >= line.size()) break;
+                            size_t end = line.find(' ', pos);
+                            if (end == std::string::npos) end = line.size();
+                            savedLinkerFlags.push_back(line.substr(pos, end - pos));
+                            pos = end;
+                        }
+                    }
+                } else {
+                    // Regular source line: <path> <mtime>
+                    auto sep = line.find(' ');
+                    if (sep == std::string::npos) { allMatch = false; break; }
+                    auto filePath = line.substr(0, sep);
+                    auto savedMtime = std::stoll(line.substr(sep + 1));
+                    std::error_code ec;
+                    auto currentMtime = fs::last_write_time(filePath, ec);
+                    if (ec || std::chrono::duration_cast<std::chrono::seconds>(
+                            currentMtime.time_since_epoch()).count() != savedMtime) {
+                        allMatch = false;
+                        break;
+                    }
                 }
             }
             if (allMatch) {
@@ -255,6 +289,19 @@ int BuildCommand::run(const ArgParser& parser) {
                                 mtime.time_since_epoch()).count() << "\n";
                     }
                 }
+                for (auto& cSrc : pipeline->cSourceFiles) {
+                    std::error_code lec;
+                    auto mtime = fs::last_write_time(cSrc, lec);
+                    if (!lec) {
+                        manifest << "C:" << cSrc << " "
+                            << std::chrono::duration_cast<std::chrono::seconds>(
+                                mtime.time_since_epoch()).count() << "\n";
+                    }
+                }
+                manifest << "#linkerFlags";
+                for (auto& lf : pipeline->linkerFlags)
+                    manifest << " " << lf;
+                manifest << "\n";
             }
         }
     } else {
@@ -471,7 +518,7 @@ int BuildCommand::run(const ArgParser& parser) {
     if (!pipeOpts.quiet)
         std::cerr << "\nlucis: [build] --- linker output ---\n\n";
 
-    std::vector<std::string> finalLinkerFlags = buildCached ? std::vector<std::string>{} : pipeline->linkerFlags;
+    std::vector<std::string> finalLinkerFlags = buildCached ? savedLinkerFlags : pipeline->linkerFlags;
     if (useLTO)         finalLinkerFlags.push_back("-flto");
     if (useStatic)      finalLinkerFlags.push_back("-static");
     if (useShared)      finalLinkerFlags.push_back("-shared");
