@@ -2953,10 +2953,11 @@ void CompletionProvider::addImportedSymbols(std::vector<CompletionItem> &items,
           auto candidate = fs::path(dir) / (registryPath + ".lc");
           std::error_code ec;
           if (!fs::exists(candidate, ec) || ec) continue;
-          auto parseResult = Parser::parse(candidate.string());
-          if (!parseResult.tree) continue;
+          auto parseResult = project ? project->getStdlibParse(candidate.string()) : nullptr;
+          if (!parseResult) parseResult = std::make_shared<ParseResult>(Parser::parse(candidate.string()));
+          if (!parseResult->tree) continue;
           // Extract symbols directly from the parse tree
-          for (auto* tld : parseResult.tree->topLevelDecl()) {
+          for (auto* tld : parseResult->tree->topLevelDecl()) {
             if (auto* fd = tld->functionDecl()) {
               if (!fd->IDENTIFIER().empty() && safeText(fd->IDENTIFIER(0)) == symName) {
                 CompletionItem ci; ci.label = symName;
@@ -4142,10 +4143,11 @@ void CompletionProvider::addUseCompletions(std::vector<CompletionItem> &items,
         auto candidate = fs::path(dir) / (registryPath + ".lc");
         std::error_code ec;
         if (!fs::exists(candidate, ec) || ec) continue;
-        auto parseResult = Parser::parse(candidate.string());
-        if (!parseResult.tree) continue;
+        auto parseResult = project->getStdlibParse(candidate.string());
+        if (!parseResult) parseResult = std::make_shared<ParseResult>(Parser::parse(candidate.string()));
+        if (!parseResult->tree) continue;
         // Extract symbols directly from parse tree (avoids dangling decl pointers)
-        for (auto* tld : parseResult.tree->topLevelDecl()) {
+        for (auto* tld : parseResult->tree->topLevelDecl()) {
           std::string name;
           int kind = -1; // 0=fn, 1=struct, 2=enum, 3=union, 4=typealias
           if (auto* fd = tld->functionDecl()) {

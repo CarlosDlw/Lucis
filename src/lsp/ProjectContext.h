@@ -54,6 +54,10 @@ public:
     // Discover project root by walking up from the file path.
     static std::string findProjectRoot(const std::string& filePath);
 
+    // Parse a stdlib .lc file and cache the result persistently (across rebuilds).
+    // Returns nullptr if filePath is not inside any stdlib directory.
+    std::shared_ptr<ParseResult> getStdlibParse(const std::string& filePath) const;
+
 private:
     ModuleRegistry              registry_;
     CBindings                   cBindings_;
@@ -76,6 +80,9 @@ private:
 
     // Map: filePath → module path
     std::unordered_map<std::string, std::string> fileModulePaths_;
+
+    // Persistent cache of stdlib parse results (never invalidated within a session).
+    mutable std::unordered_map<std::string, std::shared_ptr<ParseResult>> stdlibCache_;
 
     // Resolve a use ident (e.g. "std::log") to a file path.
     std::string resolveUseToFile(const std::string& useIdent) const;

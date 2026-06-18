@@ -51,7 +51,11 @@ bool ProjectContext::build(const std::string& filePath) {
         SourceUnit unit;
         unit.filePath    = curPath;
         unit.modulePath  = modPath;
-        unit.parseResult = std::make_shared<ParseResult>(Parser::parse(curPath));
+
+        // Use persistent stdlib cache to avoid re-parsing stdlib on every rebuild.
+        unit.parseResult = getStdlibParse(curPath);
+        if (!unit.parseResult)
+            unit.parseResult = std::make_shared<ParseResult>(Parser::parse(curPath));
 
         if (!unit.parseResult->tree)
             continue;
@@ -177,6 +181,21 @@ std::string ProjectContext::modulePathFor(const std::string& filePath) const {
     } catch (...) {}
 
     return "";
+}
+
+std::shared_ptr<ParseResult> ProjectContext::getStdlibParse(const std::string& filePath) const {
+    auto it = stdlibCache_.find(filePath);
+    if (it != stdlibCache_.end()) return it->second;
+
+    bool isStdlib = false;
+    for (auto& dir : ImportResolver::stdlibSearchPaths()) {
+        if (filePath.rfind(dir, 0) == 0) { isStdlib = true; break; }
+    }
+    if (!isStdlib) return nullptr;
+
+    auto pr = std::make_shared<ParseResult>(Parser::parse(filePath));
+    if (pr->tree) stdlibCache_[filePath] = pr;
+    return pr;
 }
 
 // ═══════════════════════════════════════════════════════════════════════
