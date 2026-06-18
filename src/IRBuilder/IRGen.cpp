@@ -14820,6 +14820,17 @@ const TypeInfo* IRGen::resolveExprTypeInfo(LucisParser::ExpressionContext* ctx) 
                 if (mIt != smIt->second.end())
                     return mIt->second.returnType;
             }
+            // Function pointer field call
+            for (auto& f : recvTI->fields) {
+                if (f.name == methodName && f.typeInfo) {
+                    auto* fnTI = f.typeInfo;
+                    if (fnTI->kind == TypeKind::Pointer && fnTI->pointeeType &&
+                        fnTI->pointeeType->kind == TypeKind::Function)
+                        fnTI = fnTI->pointeeType;
+                    if (fnTI->kind == TypeKind::Function)
+                        return fnTI->returnType;
+                }
+            }
         }
 
         return nullptr;
@@ -16056,6 +16067,75 @@ IRGen::visitMethodCallExpr(LucisParser::MethodCallExprContext* ctx) {
                 auto* extResult = builder_->CreateCall(fn, callArgs, "method_result");
                 for (auto* e : extArgExprs) consumeExprIfOwnedLocal(e);
                 return static_cast<llvm::Value*>(extResult);
+            }
+        }
+
+        // ── Struct field function pointer call ─────────────────────────
+        for (auto& field : receiverTI->fields) {
+            if (field.name == methodName && field.typeInfo) {
+                auto* fieldTI = field.typeInfo;
+                if (fieldTI->kind == TypeKind::Pointer && fieldTI->pointeeType &&
+                    fieldTI->pointeeType->kind == TypeKind::Function)
+                    fieldTI = fieldTI->pointeeType;
+                if (fieldTI->kind != TypeKind::Function) continue;
+
+                // Get pointer to the struct instance
+                auto* structPtr = resolveMethodReceiverAddress(baseExpr);
+                llvm::Value* fnPtr = nullptr;
+                if (structPtr) {
+                    auto* structLLTy = llvm::StructType::getTypeByName(*context_,
+                        receiverTI->name);
+                    if (!structLLTy)
+                        structLLTy = static_cast<llvm::StructType*>(
+                            receiverTI->toLLVMType(*context_, module_->getDataLayout()));
+                    unsigned fIdx = static_cast<unsigned>(&field - &receiverTI->fields[0]);
+                    auto* fieldGEP = builder_->CreateStructGEP(structLLTy, structPtr,
+                        fIdx, methodName + "_gep");
+                    auto* ptrTy = llvm::PointerType::getUnqual(*context_);
+                    fnPtr = builder_->CreateLoad(ptrTy, fieldGEP, methodName + "_fnptr");
+                } else {
+                    auto* structVal = castValue(visit(baseExpr));
+                    unsigned fIdx = static_cast<unsigned>(&field - &receiverTI->fields[0]);
+                    fnPtr = builder_->CreateExtractValue(structVal, {fIdx},
+                        methodName + "_fnptr");
+                }
+
+                // Build LLVM function type from TypeInfo
+                auto* retLLVM = fieldTI->returnType->toLLVMType(*context_,
+                    module_->getDataLayout());
+                std::vector<llvm::Type*> paramLLVM;
+                for (auto* pti : fieldTI->paramTypes)
+                    paramLLVM.push_back(pti->toLLVMType(*context_,
+                        module_->getDataLayout()));
+                auto* fnType = llvm::FunctionType::get(retLLVM, paramLLVM,
+                    fieldTI->isVariadic);
+
+                // Collect arguments
+                std::vector<llvm::Value*> callArgs;
+                std::vector<LucisParser::ExpressionContext*> argExprs;
+                if (auto* argList = ctx->argList()) {
+                    argExprs = argList->expression();
+                    for (size_t i = 0; i < argExprs.size(); i++) {
+                        auto* argVal = castValue(visit(argExprs[i]));
+                        if (i < paramLLVM.size() && argVal->getType() != paramLLVM[i]) {
+                            if (argVal->getType()->isIntegerTy() && paramLLVM[i]->isIntegerTy())
+                                argVal = builder_->CreateIntCast(argVal, paramLLVM[i], true);
+                            else if (argVal->getType()->isFloatingPointTy() &&
+                                     paramLLVM[i]->isFloatingPointTy())
+                                argVal = builder_->CreateFPCast(argVal, paramLLVM[i]);
+                        }
+                        callArgs.push_back(argVal);
+                    }
+                }
+
+                auto* result = builder_->CreateCall(
+                    llvm::FunctionCallee(fnType, fnPtr), callArgs, "fncall");
+                for (auto* e : argExprs) consumeExprIfOwnedLocal(e);
+
+                if (retLLVM->isVoidTy())
+                    return static_cast<llvm::Value*>(
+                        llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
+                return static_cast<llvm::Value*>(result);
             }
         }
     }

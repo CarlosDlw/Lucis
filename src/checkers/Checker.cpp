@@ -3202,15 +3202,20 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
         } else if (receiverType->kind == TypeKind::Struct) {
             // Struct field function call: obj.callback(args)
             for (auto& field : receiverType->fields) {
-                if (field.name == methodName && field.typeInfo &&
-                    field.typeInfo->kind == TypeKind::Function) {
-                    if (argTypes.size() != field.typeInfo->paramTypes.size()) {
-                        error(expr, "function '" + methodName + "' expects " +
-                            std::to_string(field.typeInfo->paramTypes.size()) +
-                            " arguments " + formatParamTypes(field.typeInfo->paramTypes) +
-                            ", got " + std::to_string(argTypes.size()));
+                if (field.name == methodName && field.typeInfo) {
+                    auto* fnTI = field.typeInfo;
+                    if (fnTI->kind == TypeKind::Pointer && fnTI->pointeeType &&
+                        fnTI->pointeeType->kind == TypeKind::Function)
+                        fnTI = fnTI->pointeeType;
+                    if (fnTI->kind == TypeKind::Function) {
+                        if (argTypes.size() != fnTI->paramTypes.size()) {
+                            error(expr, "function '" + methodName + "' expects " +
+                                std::to_string(fnTI->paramTypes.size()) +
+                                " arguments " + formatParamTypes(fnTI->paramTypes) +
+                                ", got " + std::to_string(argTypes.size()));
+                        }
+                        return fnTI->returnType;
                     }
-                    return field.typeInfo->returnType;
                 }
             }
             // Struct method via `extend` block
