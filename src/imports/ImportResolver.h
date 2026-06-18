@@ -44,6 +44,9 @@ public:
     // Returns the standard library install path.
     static std::string stdlibPath();
 
+    // Returns all standard library search paths (env var, compile-time, system fallbacks).
+    static std::vector<std::string> stdlibSearchPaths();
+
 private:
     std::vector<ImportedSymbol>        imports_;
     std::unordered_set<std::string>    symbols_;  // fast lookup

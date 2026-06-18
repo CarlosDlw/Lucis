@@ -2948,13 +2948,7 @@ void CompletionProvider::addImportedSymbols(std::vector<CompletionItem> &items,
 
       // If not in project registry, try on-demand parse of stdlib module
       if (!sym) {
-        static const std::vector<std::string> stdlibDirs3 = {
-#ifdef LUCIS_STDLIB_DIR
-            LUCIS_STDLIB_DIR,
-#endif
-            "/usr/local/share/lucis/stdlib/",
-            "/usr/share/lucis/stdlib/",
-        };
+        static const std::vector<std::string> stdlibDirs3 = ImportResolver::stdlibSearchPaths();
         for (auto& dir : stdlibDirs3) {
           auto candidate = fs::path(dir) / (registryPath + ".lc");
           std::error_code ec;
@@ -4037,13 +4031,7 @@ void CompletionProvider::addUseCompletions(std::vector<CompletionItem> &items,
 
       // Also scan stdlib directory for top-level .lc modules
       {
-        static const std::vector<std::string> stdlibDirs = {
-#ifdef LUCIS_STDLIB_DIR
-            LUCIS_STDLIB_DIR,
-#endif
-            "/usr/local/share/lucis/stdlib/",
-            "/usr/share/lucis/stdlib/",
-        };
+        static const std::vector<std::string> stdlibDirs = ImportResolver::stdlibSearchPaths();
         std::unordered_set<std::string> seenStdlib;
         for (auto& dir : stdlibDirs) {
           std::error_code ec;
@@ -4149,13 +4137,7 @@ void CompletionProvider::addUseCompletions(std::vector<CompletionItem> &items,
 
     // Fallback: if not in project registry, try parsing stdlib directly
     if (syms.empty()) {
-      static const std::vector<std::string> stdlibDirs2 = {
-#ifdef LUCIS_STDLIB_DIR
-          LUCIS_STDLIB_DIR,
-#endif
-          "/usr/local/share/lucis/stdlib/",
-          "/usr/share/lucis/stdlib/",
-      };
+      static const std::vector<std::string> stdlibDirs2 = ImportResolver::stdlibSearchPaths();
       for (auto& dir : stdlibDirs2) {
         auto candidate = fs::path(dir) / (registryPath + ".lc");
         std::error_code ec;

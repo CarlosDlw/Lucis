@@ -185,13 +185,10 @@ std::unique_ptr<PipelineResult> LucisPipeline::run(const Options& opts) {
     result->buildDir = result->projectRoot + "/.lucis/build";
     fs::create_directories(result->buildDir);
 
-        // Build search directories: stdlib paths + LUCIS_STDLIB_DIR + system path
+        // Build search directories: stdlib paths + import resolver fallbacks
     std::vector<std::string> searchDirs = opts.stdlibPaths;
-#ifdef LUCIS_STDLIB_DIR
-    searchDirs.push_back(LUCIS_STDLIB_DIR);
-#endif
-    searchDirs.emplace_back("/usr/local/share/lucis/stdlib/");
-    searchDirs.emplace_back("/usr/share/lucis/stdlib/");
+    for (auto& p : ImportResolver::stdlibSearchPaths())
+        searchDirs.push_back(p);
 
     // ── Step 2: resolve imports transitively (BFS) ─────────────────────────
     progress(2, 5, "resolving import tree");

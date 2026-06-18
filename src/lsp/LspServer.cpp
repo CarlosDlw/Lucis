@@ -1,5 +1,6 @@
 #include "lsp/LspServer.h"
 #include "lsp/ProjectContext.h"
+#include "imports/ImportResolver.h"
 
 #include <filesystem>
 #include <fstream>
@@ -368,12 +369,7 @@ void LspServer::handleDidChange(const json& msg) {
                     // Only register if not already in project context
                     if (projectContext_.registry().hasModule(modulePath)) continue;
                     // Try stdlib paths
-                    for (auto& dir : std::vector<std::string>{
-#ifdef LUCIS_STDLIB_DIR
-                             LUCIS_STDLIB_DIR,
-#endif
-                             "/usr/local/share/lucis/stdlib/",
-                             "/usr/share/lucis/stdlib/"}) {
+                    for (auto& dir : ImportResolver::stdlibSearchPaths()) {
                         auto candidate = fs::path(dir) / (modulePath + ".lc");
                         std::error_code ec;
                         if (!fs::exists(candidate, ec) || ec) continue;

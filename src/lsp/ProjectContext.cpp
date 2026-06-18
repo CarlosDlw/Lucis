@@ -1,6 +1,7 @@
 #include "lsp/ProjectContext.h"
 #include "ffi/CHeaderResolver.h"
 #include "config/LucisConfig.h"
+#include "imports/ImportResolver.h"
 
 #include <filesystem>
 #include <deque>
@@ -31,11 +32,8 @@ bool ProjectContext::build(const std::string& filePath) {
     // Build search directories: project root + stdlib paths
     std::vector<std::string> searchDirs;
     searchDirs.push_back(projectRoot_);
-#ifdef LUCIS_STDLIB_DIR
-    searchDirs.push_back(LUCIS_STDLIB_DIR);
-#endif
-    searchDirs.emplace_back("/usr/local/share/lucis/stdlib/");
-    searchDirs.emplace_back("/usr/share/lucis/stdlib/");
+    for (auto& p : ImportResolver::stdlibSearchPaths())
+        searchDirs.push_back(p);
 
     // BFS import resolution starting from the given file
     std::unordered_set<std::string> visited;
@@ -229,11 +227,8 @@ std::string ProjectContext::resolveUseToFile(const std::string& useIdent) const 
     searchPaths.push_back(fs::path(projectRoot_));
     for (auto& sp : sourcePaths_)
         searchPaths.push_back(fs::path(projectRoot_) / sp);
-#ifdef LUCIS_STDLIB_DIR
-    searchPaths.push_back(fs::path(LUCIS_STDLIB_DIR));
-#endif
-    searchPaths.emplace_back("/usr/local/share/lucis/stdlib/");
-    searchPaths.emplace_back("/usr/share/lucis/stdlib/");
+    for (auto& p : ImportResolver::stdlibSearchPaths())
+        searchPaths.push_back(fs::path(p));
 
     for (auto& base : searchPaths) {
         auto candidate = base / (modPath + ".lc");

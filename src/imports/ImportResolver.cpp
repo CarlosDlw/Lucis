@@ -135,13 +135,20 @@ bool ImportResolver::isStdModule(const std::string& modulePath) {
 }
 
 std::string ImportResolver::stdlibPath() {
+    auto paths = stdlibSearchPaths();
+    return paths.empty() ? "/usr/local/share/lucis/stdlib" : paths.front();
+}
+
+std::vector<std::string> ImportResolver::stdlibSearchPaths() {
+    std::vector<std::string> paths;
     const char* env = std::getenv("LUCIS_STDLIB_DIR");
-    if (env) return env;
+    if (env) paths.push_back(env);
 #ifdef LUCIS_STDLIB_DIR
-    return LUCIS_STDLIB_DIR;
-#else
-    return "/usr/local/share/lucis/stdlib";
+    paths.push_back(LUCIS_STDLIB_DIR);
 #endif
+    paths.emplace_back("/usr/local/share/lucis/stdlib/");
+    paths.emplace_back("/usr/share/lucis/stdlib/");
+    return paths;
 }
 
 bool ImportResolver::moduleExportsSymbol(const std::string& modulePath,
