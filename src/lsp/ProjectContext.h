@@ -39,6 +39,9 @@ public:
     // Check if context is valid.
     bool isValid() const { return valid_; }
 
+    // Import errors (e.g. circular imports) detected during build.
+    const std::vector<std::string>& importErrors() const { return importErrors_; }
+
     // Discover project root by walking up from the file path.
     static std::string findProjectRoot(const std::string& filePath);
 
@@ -58,6 +61,9 @@ private:
     };
     std::vector<SourceUnit> units_;
     std::vector<ParseResult> keptUnits_; // Phase 8: on-demand parsed stdlib modules
+
+    // Import errors (circular imports, etc.)
+    std::vector<std::string> importErrors_;
 
     // Map: filePath → module path
     std::unordered_map<std::string, std::string> fileModulePaths_;

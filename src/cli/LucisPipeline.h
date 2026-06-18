@@ -47,8 +47,10 @@ public:
 
     static std::unique_ptr<PipelineResult> run(const Options& opts);
 
-private:
+    // Compute project root from input file by walking up directory tree.
     static std::string getProjectRoot(const std::string& inputFile);
+
+private:
     static std::string filePathToModulePath(const std::string& filePath,
                                              const std::string& projectRoot);
     static std::string resolveUseToFile(const std::string& useIdent,

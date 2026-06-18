@@ -39,14 +39,15 @@ bool ProjectContext::build(const std::string& filePath) {
 
     // BFS import resolution starting from the given file
     std::unordered_set<std::string> visited;
-    // Queue stores (filePath, logicalModulePath)
-    std::deque<std::pair<std::string, std::string>> queue;
+    // Queue stores (filePath, logicalModulePath, importChain)
+    // importChain tracks the path from entry to current module for cycle detection
     auto entryModPath = fs::relative(filePath, projectRoot_).replace_extension("").string();
-    queue.emplace_back(filePath, entryModPath);
+    std::deque<std::tuple<std::string, std::string, std::vector<std::string>>> queue;
+    queue.emplace_back(filePath, entryModPath, std::vector<std::string>{entryModPath});
     visited.insert(filePath);
 
     while (!queue.empty()) {
-        auto [curPath, modPath] = queue.front();
+        auto [curPath, modPath, importChain] = std::move(queue.front());
         queue.pop_front();
 
         SourceUnit unit;
@@ -102,9 +103,24 @@ bool ProjectContext::build(const std::string& filePath) {
                 return;
             }
             auto modFile = resolveUseToFile(usePath);
-            if (!modFile.empty() && visited.insert(modFile).second) {
-                auto logicalPath = ModuleRegistry::usePathToModulePath(usePath);
-                queue.emplace_back(modFile, logicalPath);
+            if (modFile.empty()) return;
+
+            auto logicalPath = ModuleRegistry::usePathToModulePath(usePath);
+
+            // Circular import detection: check if this module is already in the current chain
+            if (std::find(importChain.begin(), importChain.end(), logicalPath) != importChain.end()) {
+                std::string chain;
+                for (auto& m : importChain) chain += m + " → ";
+                chain += logicalPath;
+                // Store the error for later retrieval
+                importErrors_.push_back("circular import detected: " + chain);
+                return;
+            }
+
+            if (visited.insert(modFile).second) {
+                auto childChain = importChain;
+                childChain.push_back(logicalPath);
+                queue.emplace_back(modFile, logicalPath, std::move(childChain));
             }
         };
 

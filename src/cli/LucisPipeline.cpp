@@ -196,18 +196,22 @@ std::unique_ptr<PipelineResult> LucisPipeline::run(const Options& opts) {
     // ── Step 2: resolve imports transitively (BFS) ─────────────────────────
     progress(2, 5, "resolving import tree");
     std::unordered_set<std::string> visited;
-    // Queue stores (filePath, logicalModulePath)
+    // Queue stores (filePath, logicalModulePath, importChain)
     // For entry point: modulePath derived from file path
     // For use-resolved files: modulePath from usePath converted to "/" format
-    std::deque<std::pair<std::string, std::string>> queue;
-    queue.emplace_back(opts.inputFile, filePathToModulePath(opts.inputFile, result->projectRoot));
+    // importChain tracks the path from entry to current module for cycle detection
+    auto entryModPath = filePathToModulePath(opts.inputFile, result->projectRoot);
+    std::deque<std::tuple<std::string, std::string, std::vector<std::string>>> queue;
+    queue.emplace_back(opts.inputFile, entryModPath,
+        std::vector<std::string>{entryModPath});
     visited.insert(opts.inputFile);
 
     bool anyParseError = false;
+    bool anyCircularImport = false;
     size_t totalUnits = 0;
 
     while (!queue.empty()) {
-        auto [filePath, modulePath] = queue.front();
+        auto [filePath, modulePath, importChain] = std::move(queue.front());
         queue.pop_front();
 
         SourceUnit unit;
@@ -231,12 +235,32 @@ std::unique_ptr<PipelineResult> LucisPipeline::run(const Options& opts) {
         auto usePaths = extractUseModulePaths(unit.parseResult.tree);
         for (auto& usePath : usePaths) {
             auto modFile = resolveUseToFile(usePath, result->projectRoot, searchDirs, opts.sourcePaths);
-            if (!modFile.empty() && visited.insert(modFile).second) {
-                // Use the import path as the logical module path
-                auto logicalPath = ModuleRegistry::usePathToModulePath(usePath);
-                queue.emplace_back(modFile, logicalPath);
+            if (modFile.empty()) continue;
+
+            auto logicalPath = ModuleRegistry::usePathToModulePath(usePath);
+
+            // Circular import detection: check if this module is already in the current chain
+            if (std::find(importChain.begin(), importChain.end(), logicalPath) != importChain.end()) {
+                std::string chain;
+                for (auto& m : importChain) chain += m + " → ";
+                chain += logicalPath;
+                printErrorLine("circular import detected: " + chain);
+                anyCircularImport = true;
+                continue;
             }
+
+            if (visited.find(modFile) != visited.end()) continue;
+
+            visited.insert(modFile);
+            auto childChain = importChain;
+            childChain.push_back(logicalPath);
+            queue.emplace_back(modFile, logicalPath, std::move(childChain));
         }
+    }
+
+    if (anyCircularImport) {
+        result->hasErrors = true;
+        return result;
     }
 
     if (result->units.empty()) {
