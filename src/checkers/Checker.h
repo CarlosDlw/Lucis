@@ -40,7 +40,6 @@ public:
     void setSemanticDB(semantic::SemanticDB* db) { semanticDB_ = db; }
     semantic::SemanticDB* semanticDB() { return semanticDB_; }
 
-
 private:
     std::vector<std::string> errors_;
     std::vector<Diagnostic>  diagnostics_;
