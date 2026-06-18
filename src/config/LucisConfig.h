@@ -53,5 +53,10 @@ struct LucisConfig {
     static std::string findConfigPath(const std::string& dir);
     static bool createDefault(const std::string& dir, const std::string& name);
 
+    // Schema validation — returns error messages (empty = valid).
+    // errIsWarning=true means the field is allowed but unexpected.
+    struct ValidationMsg { std::string path; std::string message; };
+    static std::vector<ValidationMsg> validate(const std::string& yamlPath);
+
     bool save(const std::string& yamlPath) const;
 };

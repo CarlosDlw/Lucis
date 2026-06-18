@@ -30,6 +30,16 @@ static bool boolOrDefault(const YAML::Node& node, const std::string& key,
 std::optional<LucisConfig> LucisConfig::load(const std::string& yamlPath) {
     if (!fs::exists(yamlPath)) return std::nullopt;
 
+    // Run schema validation
+    auto valMsgs = validate(yamlPath);
+    bool hasError = false;
+    for (auto& v : valMsgs) {
+        if (v.message.rfind("missing required", 0) == 0) hasError = true;
+        std::string loc = v.path.empty() ? "" : v.path + ": ";
+        std::cerr << "[lucis-config] " << loc << v.message << "\n";
+    }
+    if (hasError) return std::nullopt;
+
     try {
         YAML::Node root = YAML::LoadFile(yamlPath);
 
@@ -90,6 +100,112 @@ std::optional<LucisConfig> LucisConfig::load(const std::string& yamlPath) {
                   << ": " << e.what() << "\n";
         return std::nullopt;
     }
+}
+
+// ── Schema validation ────────────────────────────────────────────────
+
+static bool yamlIsMap(const YAML::Node& n) {
+    return n.IsDefined() && n.IsMap();
+}
+
+static void checkUnknownKeys(const YAML::Node& node,
+                             const std::string& parentPath,
+                             const std::vector<std::string>& known,
+                             std::vector<LucisConfig::ValidationMsg>& out) {
+    if (!yamlIsMap(node)) return;
+    for (const auto& entry : node) {
+        auto key = entry.first.Scalar();
+        bool found = false;
+        for (auto& k : known) {
+            if (k == key) { found = true; break; }
+        }
+        if (!found) {
+            std::string fullPath = parentPath.empty() ? key : parentPath + "." + key;
+            out.push_back({fullPath, "unknown field"});
+        }
+    }
+}
+
+std::vector<LucisConfig::ValidationMsg>
+LucisConfig::validate(const std::string& yamlPath) {
+    std::vector<ValidationMsg> msgs;
+    if (!fs::exists(yamlPath)) {
+        msgs.push_back({"", "file not found: " + yamlPath});
+        return msgs;
+    }
+
+    YAML::Node root;
+    try {
+        root = YAML::LoadFile(yamlPath);
+    } catch (const std::exception& e) {
+        msgs.push_back({"", "YAML parse error: " + std::string(e.what())});
+        return msgs;
+    }
+
+    if (!yamlIsMap(root)) {
+        msgs.push_back({"", "root must be a mapping"});
+        return msgs;
+    }
+
+    // Required fields
+    if (!root["name"].IsDefined())
+        msgs.push_back({"name", "missing required field"});
+    else if (!root["name"].IsScalar())
+        msgs.push_back({"name", "expected scalar, got " + std::string(root["name"].IsSequence() ? "sequence" : root["name"].IsMap() ? "map" : "null")});
+
+    // Optional scalar fields
+    static const std::vector<std::string> optScalars = {
+        "version", "description", "binary", "out_dir"
+    };
+    for (auto& k : optScalars) {
+        if (root[k].IsDefined() && !root[k].IsScalar())
+            msgs.push_back({k, "expected scalar, got " + std::string(root[k].IsSequence() ? "sequence" : root[k].IsMap() ? "map" : "null")});
+    }
+
+    // Optional sequence fields
+    static const std::vector<std::string> optSeqs = {
+        "source", "exclude", "includes"
+    };
+    for (auto& k : optSeqs) {
+        if (root[k].IsDefined() && !root[k].IsSequence())
+            msgs.push_back({k, "expected sequence, got " + std::string(root[k].IsScalar() ? "scalar" : root[k].IsMap() ? "map" : "null")});
+    }
+
+    // Sub-map validations
+    if (yamlIsMap(root["build"])) {
+        if (root["build"]["opt_level"].IsDefined() && !root["build"]["opt_level"].IsScalar())
+            msgs.push_back({"build.opt_level", "expected scalar, got " + std::string(root["build"]["opt_level"].IsSequence() ? "sequence" : root["build"]["opt_level"].IsMap() ? "map" : "null")});
+        if (root["build"]["emits"].IsDefined() && !root["build"]["emits"].IsMap())
+            msgs.push_back({"build.emits", "expected map, got " + std::string(root["build"]["emits"].IsSequence() ? "sequence" : root["build"]["emits"].IsScalar() ? "scalar" : "null")});
+        // Check build sub-keys for unknown
+        static const std::vector<std::string> buildKeys = {
+            "opt_level", "lto", "static", "shared", "fpic", "quiet", "emits"
+        };
+        checkUnknownKeys(root["build"], "build", buildKeys, msgs);
+    }
+
+    if (yamlIsMap(root["run"])) {
+        static const std::vector<std::string> runKeys = {
+            "opt_level", "lto", "quiet", "clean", "args"
+        };
+        checkUnknownKeys(root["run"], "run", runKeys, msgs);
+    }
+
+    if (yamlIsMap(root["linker"])) {
+        static const std::vector<std::string> linkerKeys = {
+            "flags", "rpath", "libs", "lib_paths"
+        };
+        checkUnknownKeys(root["linker"], "linker", linkerKeys, msgs);
+    }
+
+    // Unknown top-level keys
+    static const std::vector<std::string> topKeys = {
+        "name", "version", "description", "binary", "out_dir",
+        "source", "exclude", "build", "run", "linker", "includes"
+    };
+    checkUnknownKeys(root, "", topKeys, msgs);
+
+    return msgs;
 }
 
 std::optional<LucisConfig> LucisConfig::findInDir(const std::string& dir) {
