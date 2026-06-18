@@ -6,7 +6,8 @@
 
 void ModuleRegistry::registerFile(const std::string& modulePath,
                                    const std::string& filePath,
-                                   LucisParser::ProgramContext* tree) {
+                                   LucisParser::ProgramContext* tree,
+                                   std::shared_ptr<ParseResult> anchor) {
     auto& symbols = modules_[modulePath];
 
     for (auto* topLevel : tree->topLevelDecl()) {
@@ -19,6 +20,7 @@ void ModuleRegistry::registerFile(const std::string& modulePath,
             sym.line       = static_cast<unsigned>(funcDecl->getStart()->getLine());
             sym.column     = static_cast<unsigned>(funcDecl->getStart()->getCharPositionInLine());
             sym.decl       = funcDecl;
+            sym.treeAnchor = anchor;
             symbols.push_back(std::move(sym));
         }
         else if (auto* structDecl = topLevel->structDecl()) {
@@ -30,6 +32,7 @@ void ModuleRegistry::registerFile(const std::string& modulePath,
             sym.line       = static_cast<unsigned>(structDecl->getStart()->getLine());
             sym.column     = static_cast<unsigned>(structDecl->getStart()->getCharPositionInLine());
             sym.decl       = structDecl;
+            sym.treeAnchor = anchor;
             symbols.push_back(std::move(sym));
         }
         else if (auto* unionDecl = topLevel->unionDecl()) {
@@ -41,6 +44,7 @@ void ModuleRegistry::registerFile(const std::string& modulePath,
             sym.line       = static_cast<unsigned>(unionDecl->getStart()->getLine());
             sym.column     = static_cast<unsigned>(unionDecl->getStart()->getCharPositionInLine());
             sym.decl       = unionDecl;
+            sym.treeAnchor = anchor;
             symbols.push_back(std::move(sym));
         }
         else if (auto* enumDecl = topLevel->enumDecl()) {
@@ -52,6 +56,7 @@ void ModuleRegistry::registerFile(const std::string& modulePath,
             sym.line       = static_cast<unsigned>(enumDecl->getStart()->getLine());
             sym.column     = static_cast<unsigned>(enumDecl->getStart()->getCharPositionInLine());
             sym.decl       = enumDecl;
+            sym.treeAnchor = anchor;
             symbols.push_back(std::move(sym));
         }
         else if (auto* typeAlias = topLevel->typeAliasDecl()) {
@@ -63,6 +68,7 @@ void ModuleRegistry::registerFile(const std::string& modulePath,
             sym.line       = static_cast<unsigned>(typeAlias->getStart()->getLine());
             sym.column     = static_cast<unsigned>(typeAlias->getStart()->getCharPositionInLine());
             sym.decl       = typeAlias;
+            sym.treeAnchor = anchor;
             symbols.push_back(std::move(sym));
         }
         else if (auto* extDecl = topLevel->extendDecl()) {
@@ -74,6 +80,7 @@ void ModuleRegistry::registerFile(const std::string& modulePath,
             sym.line       = static_cast<unsigned>(extDecl->getStart()->getLine());
             sym.column     = static_cast<unsigned>(extDecl->getStart()->getCharPositionInLine());
             sym.decl       = extDecl;
+            sym.treeAnchor = anchor;
             symbols.push_back(std::move(sym));
         }
     }

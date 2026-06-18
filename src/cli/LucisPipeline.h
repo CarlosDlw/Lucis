@@ -13,7 +13,7 @@
 struct SourceUnit {
     std::string filePath;
     std::string modulePath;
-    ParseResult parseResult;
+    std::shared_ptr<ParseResult> parseResult;
 };
 
 struct PipelineResult {

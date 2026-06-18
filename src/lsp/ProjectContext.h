@@ -25,7 +25,8 @@ public:
     const CBindings& cBindings() const { return cBindings_; }
 
     // Keep a parsed source unit alive (prevents dangling AST pointers).
-    void keepAlive(ParseResult pr) { keptUnits_.push_back(std::move(pr)); }
+    // DEPRECATED: ExportedSymbol::treeAnchor now keeps trees alive automatically.
+    void keepAlive(std::shared_ptr<ParseResult> pr) { keptUnits_.push_back(std::move(pr)); }
 
     // Returns the module path for the given source file (relative to project root).
     std::string modulePathFor(const std::string& filePath) const;
@@ -65,10 +66,10 @@ private:
     struct SourceUnit {
         std::string   filePath;
         std::string   modulePath;
-        ParseResult   parseResult;
+        std::shared_ptr<ParseResult> parseResult;
     };
     std::vector<SourceUnit> units_;
-    std::vector<ParseResult> keptUnits_; // Phase 8: on-demand parsed stdlib modules
+    std::vector<std::shared_ptr<ParseResult>> keptUnits_; // Phase 8: on-demand parsed stdlib modules
 
     // Import errors (circular imports, etc.)
     std::vector<ImportError> importErrors_;

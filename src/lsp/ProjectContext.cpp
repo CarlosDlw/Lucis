@@ -51,12 +51,12 @@ bool ProjectContext::build(const std::string& filePath) {
         SourceUnit unit;
         unit.filePath    = curPath;
         unit.modulePath  = modPath;
-        unit.parseResult = Parser::parse(curPath);
+        unit.parseResult = std::make_shared<ParseResult>(Parser::parse(curPath));
 
-        if (!unit.parseResult.tree)
+        if (!unit.parseResult->tree)
             continue;
 
-        registry_.registerFile(unit.modulePath, curPath, unit.parseResult.tree);
+        registry_.registerFile(unit.modulePath, curPath, unit.parseResult->tree, unit.parseResult);
         fileModulePaths_[curPath] = unit.modulePath;
         try {
             fileModulePaths_[fs::canonical(curPath).string()] = unit.modulePath;
@@ -64,7 +64,7 @@ bool ProjectContext::build(const std::string& filePath) {
 
         // Resolve C headers from this file
         std::vector<LucisParser::IncludeDeclContext*> includes;
-        for (auto* pre : unit.parseResult.tree->preambleDecl())
+        for (auto* pre : unit.parseResult->tree->preambleDecl())
             if (auto* inc = pre->includeDecl()) includes.push_back(inc);
         if (!includes.empty()) {
             CHeaderResolver resolver(cTypeReg_, cBindings_);
@@ -132,11 +132,11 @@ bool ProjectContext::build(const std::string& filePath) {
             }
         };
 
-        for (auto* pre : unit.parseResult.tree->preambleDecl()) {
+        for (auto* pre : unit.parseResult->tree->preambleDecl()) {
             if (auto* use = pre->useDecl())
                 enqueueUse(use);
         }
-        for (auto* top : unit.parseResult.tree->topLevelDecl()) {
+        for (auto* top : unit.parseResult->tree->topLevelDecl()) {
             if (auto* use = top->useDecl())
                 enqueueUse(use);
         }

@@ -373,12 +373,10 @@ void LspServer::handleDidChange(const json& msg) {
                         auto candidate = fs::path(dir) / (modulePath + ".lc");
                         std::error_code ec;
                         if (!fs::exists(candidate, ec) || ec) continue;
-                        auto pr = Parser::parse(candidate.string());
-                        if (!pr.tree) continue;
+                        auto pr = std::make_shared<ParseResult>(Parser::parse(candidate.string()));
+                        if (!pr->tree) continue;
                         auto* modReg = const_cast<ModuleRegistry*>(&projectContext_.registry());
-                        modReg->registerFile(modulePath, candidate.string(), pr.tree);
-                        // Keep parse tree alive by storing it
-                        projectContext_.keepAlive(std::move(pr));
+                        modReg->registerFile(modulePath, candidate.string(), pr->tree, pr);
                         break;
                     }
                 }

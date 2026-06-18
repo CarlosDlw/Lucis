@@ -1,10 +1,12 @@
 #pragma once
 
+#include <memory>
 #include <string>
 #include <vector>
 #include <unordered_map>
 
 #include "generated/LucisParser.h"
+#include "parser/Parser.h"
 
 struct ExportedSymbol {
     enum Kind { Function, Struct, Union, Enum, TypeAlias, ExtendBlock };
@@ -21,13 +23,17 @@ struct ExportedSymbol {
 
     // DEPRECATED (Phase 4): will be removed once Checker/IRGen use SemanticDB.
     antlr4::ParserRuleContext* decl = nullptr;
+
+    // Keeps the parse tree alive as long as this symbol exists.
+    std::shared_ptr<ParseResult> treeAnchor;
 };
 
 class ModuleRegistry {
 public:
     void registerFile(const std::string& modulePath,
                       const std::string& filePath,
-                      LucisParser::ProgramContext* tree);
+                      LucisParser::ProgramContext* tree,
+                      std::shared_ptr<ParseResult> anchor);
 
     std::vector<std::string> validate() const;
 

@@ -214,22 +214,22 @@ std::unique_ptr<PipelineResult> LucisPipeline::run(const Options& opts) {
         SourceUnit unit;
         unit.filePath    = filePath;
         unit.modulePath  = modulePath;
-        unit.parseResult = Parser::parse(filePath);
+        unit.parseResult = std::make_shared<ParseResult>(Parser::parse(filePath));
 
-        if (unit.parseResult.hasErrors) {
+        if (unit.parseResult->hasErrors) {
             printErrorLine("parse errors in '" + filePath + "'");
             anyParseError = true;
             continue;
         }
+
+        // Extract use declarations before moving unit into the vector
+        auto usePaths = extractUseModulePaths(unit.parseResult->tree);
 
         result->units.push_back(std::move(unit));
         totalUnits = result->units.size();
         if (!opts.quiet) {
             printUnitLine(stage, "parse", totalUnits, 0, filePath);
         }
-
-        // Extract use declarations and enqueue their module files
-        auto usePaths = extractUseModulePaths(unit.parseResult.tree);
         for (auto& usePath : usePaths) {
             auto modFile = resolveUseToFile(usePath, result->projectRoot, searchDirs, opts.sourcePaths);
             if (modFile.empty()) continue;
@@ -270,7 +270,7 @@ std::unique_ptr<PipelineResult> LucisPipeline::run(const Options& opts) {
     progress(3, 5, "building module registry");
     result->registry = std::make_unique<ModuleRegistry>();
     for (auto& unit : result->units)
-        result->registry->registerFile(unit.modulePath, unit.filePath, unit.parseResult.tree);
+        result->registry->registerFile(unit.modulePath, unit.filePath, unit.parseResult->tree, unit.parseResult);
     auto dupErrors = result->registry->validate();
     if (!dupErrors.empty()) {
         for (auto& err : dupErrors) printErrorLine(err);
@@ -285,7 +285,7 @@ std::unique_ptr<PipelineResult> LucisPipeline::run(const Options& opts) {
     {
         CHeaderResolver resolver(*result->cTypeReg, *result->cBindings, opts.includePaths);
         for (auto& unit : result->units) {
-            auto* tree = unit.parseResult.tree;
+            auto* tree = unit.parseResult->tree;
             for (auto* pre : tree->preambleDecl()) {
                 auto* incl = pre->includeDecl();
                 if (!incl) continue;
@@ -343,7 +343,7 @@ std::unique_ptr<PipelineResult> LucisPipeline::run(const Options& opts) {
         checker.setModuleContext(result->registry.get(), unit.modulePath, unit.filePath);
         checker.setCBindings(result->cBindings.get());
         checker.setSemanticDB(result->semanticDB.get());
-        bool passed = checker.check(unit.parseResult.tree);
+        bool passed = checker.check(unit.parseResult->tree);
         for (auto& err : checker.errors())
             printErrorLine(unit.filePath + ": " + err);
         if (!passed) anyCheckError = true;

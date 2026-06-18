@@ -363,7 +363,7 @@ int BuildCommand::run(const ArgParser& parser) {
             irGen.setModuleContext(pipeline->registry.get(), unit.modulePath, unit.filePath);
             irGen.setCBindings(pipeline->cBindings.get());
             irGen.setSemanticDB(pipeline->semanticDB.get());
-            auto irMod = irGen.generate(unit.parseResult.tree, unit.filePath);
+            auto irMod = irGen.generate(unit.parseResult->tree, unit.filePath);
             if (!irMod) {
                 std::cerr << "lucis: IR generation failed for '" << unit.filePath << "'\n";
                 anyIRError = true;
