@@ -1493,15 +1493,18 @@ std::optional<HoverResult> HoverProvider::walkExprForHover(
                 }
 
                 // Type/module: resolve only the first segment as type symbol.
+                // Try hoverIdent first (handles structs, enums, etc. via registry),
+                // then fall back to module alias resolution.
                 if (i == 0) {
+                    std::string typeName = ids[0]->getText();
+                    auto identResult = hoverIdent(typeName, hoveredToken, tree,
+                                                   bindings, cursorLine, project);
+                    if (identResult) return identResult;
                     if (auto modulePath = resolveImportedModuleAliasPath(hoveredToken, tree)) {
                         return makeResult(hoveredToken,
                             "```lucis\n(module) " + *modulePath + "\n```"
                         );
                     }
-                    std::string typeName = ids[0]->getText();
-                    return hoverIdent(typeName, hoveredToken, tree, bindings,
-                                      cursorLine, project);
                 }
             }
         }
@@ -1813,13 +1816,15 @@ std::optional<HoverResult> HoverProvider::walkExprForHover(
     if (auto* gsmc = dynamic_cast<LucisParser::GenericStaticMethodCallExprContext*>(expr)) {
         auto ids = gsmc->IDENTIFIER();
         if (ids.size() >= 1 && ids[0]->getSymbol() == hoveredToken) {
+            std::string typeName = ids[0]->getText();
+            auto identResult = hoverIdent(typeName, hoveredToken, tree,
+                                           bindings, cursorLine, project);
+            if (identResult) return identResult;
             if (auto modulePath = resolveImportedModuleAliasPath(hoveredToken, tree)) {
                 return makeResult(hoveredToken,
                     "```lucis\n(module) " + *modulePath + "\n```"
                 );
             }
-            return hoverIdent(ids[0]->getText(), hoveredToken, tree, bindings,
-                               cursorLine, project);
         }
         if (ids.size() >= 2 && ids[1]->getSymbol() == hoveredToken) {
             // Show the generic struct template name + method info
