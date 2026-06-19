@@ -68,6 +68,67 @@ std::string TypeInferrer::functionReturnType(LucisParser::TypeSpecContext* ts) {
     return safeText(specs.back());
 }
 
+static std::string extractBaseName(LucisParser::TypeSpecContext* ts) {
+    auto text = ts->getText();
+    auto pos = text.find('<');
+    if (pos != std::string::npos)
+        text.resize(pos);
+    while (!text.empty() && text.back() == ' ') text.pop_back();
+    return text;
+}
+
+LucisParser::EnumDeclContext* TypeInferrer::findEnum(
+    const std::string& name,
+    LucisParser::ProgramContext* tree,
+    const ProjectContext* project,
+    std::string* resolvedName) {
+
+    // 1) Direct enum lookup in same-file
+    if (tree) {
+        for (auto* tld : tree->topLevelDecl()) {
+            auto* ed = tld->enumDecl();
+            if (ed && ed->IDENTIFIER() && safeText(ed->IDENTIFIER()) == name) {
+                if (resolvedName) *resolvedName = name;
+                return ed;
+            }
+        }
+    }
+
+    // 2) Type alias resolution (local)
+    if (tree) {
+        for (auto* tld : tree->topLevelDecl()) {
+            auto* ta = tld->typeAliasDecl();
+            if (!ta || safeText(ta->IDENTIFIER()) != name) continue;
+            auto base = extractBaseName(ta->typeSpec());
+            // Recurse with the resolved base name
+            return findEnum(base, tree, project, resolvedName);
+        }
+    }
+
+    // 3) Cross-file via registry
+    if (project && project->isValid()) {
+        for (auto& ns : project->registry().allModules()) {
+            auto* sym = project->registry().findSymbol(ns, name);
+            if (!sym) continue;
+            if (sym->kind == ExportedSymbol::Enum) {
+                if (auto* ed = dynamic_cast<LucisParser::EnumDeclContext*>(sym->decl)) {
+                    if (resolvedName) *resolvedName = name;
+                    return ed;
+                }
+            }
+            // Resolve through cross-file type aliases
+            if (sym->kind == ExportedSymbol::TypeAlias) {
+                if (auto* ta = dynamic_cast<LucisParser::TypeAliasDeclContext*>(sym->decl)) {
+                    auto base = extractBaseName(ta->typeSpec());
+                    return findEnum(base, tree, project, resolvedName);
+                }
+            }
+        }
+    }
+
+    return nullptr;
+}
+
 std::string TypeInferrer::resolveMethodReturnTypeViaStructField(
     const std::string& receiverType,
     const std::string& methodName,

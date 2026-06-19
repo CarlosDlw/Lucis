@@ -863,12 +863,13 @@ std::optional<HoverResult> HoverProvider::hoverIdent(
         if (!ew) return std::nullopt;
         auto baseName = extractBaseTypeName(ew->typeSpec());
         if (baseName.empty()) return std::nullopt;
-        auto* ed = findEnumDecl(tree, baseName);
+        std::string resolvedEnumName;
+        auto* ed = TypeInferrer::findEnum(baseName, tree, project, &resolvedEnumName);
         if (!ed) return std::nullopt;
         for (auto* variant : ed->enumVariant()) {
             auto* v = variant->IDENTIFIER();
             if (v && v->getText() == name) {
-                std::string md = "```lucis\n(variant) " + baseName + "::" + name + "\n```";
+                std::string md = "```lucis\n(variant) " + resolvedEnumName + "::" + name + "\n```";
                 return makeResult(token, withDoc(md, ed->getStart()->getLine() - 1));
             }
         }

@@ -3169,37 +3169,24 @@ void CompletionProvider::addEnumWildcardVariants(std::vector<CompletionItem>& it
             }
         };
 
-        auto* ed = findEnumDecl(tree, baseName);
+        std::string resolvedEnumName;
+        auto* ed = TypeInferrer::findEnum(baseName, tree, project,
+                                           &resolvedEnumName);
         if (!ed) {
-            // Resolve through type aliases: type Foo = EnumType<T> → EnumType
-            for (auto* tld : tree->topLevelDecl()) {
-                if (auto* ta = tld->typeAliasDecl()) {
-                    if (safeText(ta->IDENTIFIER()) == baseName) {
-                        auto aliased = safeText(ta->typeSpec());
-                        auto base = aliased;
-                        auto lt = base.find('<');
-                        if (lt != std::string::npos) base = base.substr(0, lt);
-                        ed = findEnumDecl(tree, base);
-                        if (ed) break;
-                    }
+            // Fallback: try registry with raw baseName
+            if (project && project->isValid()) {
+                for (auto& ns : project->registry().allModules()) {
+                    auto* sym = project->registry().findSymbol(ns, baseName);
+                    if (!sym || sym->kind != ExportedSymbol::Enum) continue;
+                    auto* decl = dynamic_cast<LucisParser::EnumDeclContext*>(sym->decl);
+                    if (!decl) continue;
+                    addVariants(decl);
+                    return;
                 }
             }
-        }
-        if (ed) {
-            addVariants(ed);
             return;
         }
-
-        if (project && project->isValid()) {
-            for (auto& ns : project->registry().allModules()) {
-                auto* sym = project->registry().findSymbol(ns, baseName);
-                if (!sym || sym->kind != ExportedSymbol::Enum) continue;
-                auto* decl = dynamic_cast<LucisParser::EnumDeclContext*>(sym->decl);
-                if (!decl) continue;
-                addVariants(decl);
-                return;
-            }
-        }
+        addVariants(ed);
     };
 
     // Preamble-level use EnumType::*;
