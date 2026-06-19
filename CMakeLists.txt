@@ -279,6 +279,7 @@ set(SOURCES
     src/lsp/ParseCache.cpp
     src/lsp/SignatureHelpProvider.cpp
     src/lsp/SemanticTokensProvider.cpp
+    src/lsp/TypeInferrer.cpp
     src/lsp/ProjectContext.cpp
     src/config/LucisConfig.cpp
 )

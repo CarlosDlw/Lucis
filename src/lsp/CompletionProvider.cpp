@@ -1,4 +1,5 @@
 #include "lsp/CompletionProvider.h"
+#include "lsp/TypeInferrer.h"
 #include "ffi/CHeaderResolver.h"
 #include "imports/ImportResolver.h"
 #include "lsp/DocComment.h"
@@ -323,7 +324,9 @@ static std::string inferCatchUnwrapSuccessType(
       return "";
     auto payloadType =
         substituteTypeParams(variant->typeSpec(0)->getText(), subst);
-    if (payloadType == "Error") {
+    auto varName = variant->IDENTIFIER()
+                       ? variant->IDENTIFIER()->getText() : "";
+    if (varName == "Err" || payloadType == "Error") {
       if (seenError)
         return "";
       seenError = true;
@@ -1162,6 +1165,13 @@ static std::string inferExprTypeName(
         }
       }
 
+      // 1c) Check struct function-pointer fields
+      if (flc && (flc->tree || flc->project)) {
+        auto structRet = TypeInferrer::resolveMethodReturnTypeViaStructField(
+            receiverType, methodName, flc->tree, flc->project);
+        if (!structRet.empty()) return structRet;
+      }
+
       // 2) Check builtin extended type methods (Vec, Map, Set, etc.)
       if (flc && flc->extTypeReg) {
         std::string baseName = receiverType;
@@ -1287,8 +1297,10 @@ static std::string inferExprTypeName(
       if (ed) {
         for (auto* variant : ed->enumVariant()) {
           if (!variant || variant->typeSpec().empty()) continue;
+          auto varName = variant->IDENTIFIER()
+                             ? variant->IDENTIFIER()->getText() : "";
           auto payloadType = safeText(variant->typeSpec(0));
-          if (payloadType != "Error") {
+          if (varName != "Err" && payloadType != "Error") {
             if (!sourceArgs.empty() && ed->typeParamList()) {
               std::unordered_map<std::string, std::string> subst;
               auto tps = ed->typeParamList()->typeParam();

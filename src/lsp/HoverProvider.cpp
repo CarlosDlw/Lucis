@@ -1,4 +1,5 @@
 #include "lsp/HoverProvider.h"
+#include "lsp/TypeInferrer.h"
 #include "lsp/ProjectContext.h"
 #include "lsp/DocComment.h"
 #include "parser/Parser.h"
@@ -4781,6 +4782,13 @@ static std::string inferExprTypeName(
                 }
             }
 
+            // 1c) Check struct function-pointer fields
+            if (flc && (flc->tree || flc->project)) {
+                auto structRet = TypeInferrer::resolveMethodReturnTypeViaStructField(
+                    receiverType, methodName, flc->tree, flc->project);
+                if (!structRet.empty()) return structRet;
+            }
+
             // 2) Check builtin extended type methods (Vec, Map, Set, etc.)
             if (flc && flc->extTypeReg) {
                 // Extract base name and generic args: "map<string, int32>" → "map", ["string", "int32"]
@@ -4896,9 +4904,11 @@ static std::string inferExprTypeName(
         bool seenError = false;
         for (auto* variant : enumDecl->enumVariant()) {
             if (!variant || variant->typeSpec().size() != 1) return "";
-            auto payloadType = variant->typeSpec(0)->getText();
-            payloadType = substituteTypeParams(payloadType, subst);
-            if (payloadType == "Error") {
+            auto payloadType = substituteTypeParams(
+                variant->typeSpec(0)->getText(), subst);
+            auto varName = variant->IDENTIFIER()
+                               ? variant->IDENTIFIER()->getText() : "";
+            if (varName == "Err" || payloadType == "Error") {
                 if (seenError) return "";
                 seenError = true;
             } else {
@@ -4932,9 +4942,11 @@ static std::string inferExprTypeName(
         }
         for (auto* variant : enumDecl->enumVariant()) {
             if (!variant || variant->typeSpec().size() != 1) continue;
-            auto payloadType = variant->typeSpec(0)->getText();
-            payloadType = substituteTypeParams(payloadType, subst);
-            if (payloadType != "Error")
+            auto payloadType = substituteTypeParams(
+                variant->typeSpec(0)->getText(), subst);
+            auto varName = variant->IDENTIFIER()
+                               ? variant->IDENTIFIER()->getText() : "";
+            if (varName != "Err" && payloadType != "Error")
                 return payloadType;
         }
         return "";
@@ -4960,9 +4972,11 @@ static std::string inferExprTypeName(
         }
         for (auto* variant : enumDecl->enumVariant()) {
             if (!variant || variant->typeSpec().size() != 1) continue;
-            auto payloadType = variant->typeSpec(0)->getText();
-            payloadType = substituteTypeParams(payloadType, subst);
-            if (payloadType != "Error")
+            auto payloadType = substituteTypeParams(
+                variant->typeSpec(0)->getText(), subst);
+            auto varName = variant->IDENTIFIER()
+                               ? variant->IDENTIFIER()->getText() : "";
+            if (varName != "Err" && payloadType != "Error")
                 return payloadType;
         }
         return sourceType;
