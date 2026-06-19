@@ -54,10 +54,10 @@ public:
         auto mainPath = target / "src" / "main.lc";
         if (!fs::exists(mainPath)) {
             std::ofstream ofs(mainPath);
-            ofs << "use std::log::println;\n\n"
+            ofs << "use stdio::printf;\n\n"
                 << "fn main() int32 {\n"
-                << "    println(\"Hello, Lucis!\");\n"
-                << "    ret 0;\n"
+                << "    printf(\"Hello, {s}\\n\", \"Lucis!\");\n"
+                << "    return 0;\n"
                 << "}\n";
             std::cout << "created file '" << (fs::relative(mainPath, absPath)).string() << "'\n";
         }
