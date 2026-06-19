@@ -2603,6 +2603,9 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
         if (operand && !isNumeric(operand))
             error(expr, "unary '-' requires numeric operand, got '" +
                              operand->name + "'");
+        if (operand && operand->kind == TypeKind::Integer && !operand->isSigned)
+            error(expr, "unary '-' cannot be applied to unsigned type '" +
+                             operand->name + "'");
         return operand;
     }
 
