@@ -54,8 +54,15 @@ bool ProjectContext::build(const std::string& filePath) {
 
         // Use persistent stdlib cache to avoid re-parsing stdlib on every rebuild.
         unit.parseResult = getStdlibParse(curPath);
-        if (!unit.parseResult)
-            unit.parseResult = std::make_shared<ParseResult>(Parser::parse(curPath));
+        if (!unit.parseResult) {
+            try {
+                unit.parseResult = std::make_shared<ParseResult>(Parser::parse(curPath));
+            } catch (const std::exception& e) {
+                std::cerr << "[lucis-lsp] parse error in " << curPath
+                          << ": " << e.what() << "\n";
+                continue;
+            }
+        }
 
         if (!unit.parseResult->tree)
             continue;
@@ -193,7 +200,14 @@ std::shared_ptr<ParseResult> ProjectContext::getStdlibParse(const std::string& f
     }
     if (!isStdlib) return nullptr;
 
-    auto pr = std::make_shared<ParseResult>(Parser::parse(filePath));
+    std::shared_ptr<ParseResult> pr;
+    try {
+        pr = std::make_shared<ParseResult>(Parser::parse(filePath));
+    } catch (const std::exception& e) {
+        std::cerr << "[lucis-lsp] parse error in stdlib file " << filePath
+                  << ": " << e.what() << "\n";
+        return nullptr;
+    }
     if (pr->tree) stdlibCache_[filePath] = pr;
     return pr;
 }

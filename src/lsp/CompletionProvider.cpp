@@ -2954,7 +2954,11 @@ void CompletionProvider::addImportedSymbols(std::vector<CompletionItem> &items,
           std::error_code ec;
           if (!fs::exists(candidate, ec) || ec) continue;
           auto parseResult = project ? project->getStdlibParse(candidate.string()) : nullptr;
-          if (!parseResult) parseResult = std::make_shared<ParseResult>(Parser::parse(candidate.string()));
+          if (!parseResult) {
+            try {
+              parseResult = std::make_shared<ParseResult>(Parser::parse(candidate.string()));
+            } catch (...) { continue; }
+          }
           if (!parseResult->tree) continue;
           // Extract symbols directly from the parse tree
           for (auto* tld : parseResult->tree->topLevelDecl()) {
@@ -4051,7 +4055,11 @@ void CompletionProvider::addUseCompletions(std::vector<CompletionItem> &items,
         std::error_code ec;
         if (!fs::exists(candidate, ec) || ec) continue;
         auto parseResult = project->getStdlibParse(candidate.string());
-        if (!parseResult) parseResult = std::make_shared<ParseResult>(Parser::parse(candidate.string()));
+        if (!parseResult) {
+          try {
+            parseResult = std::make_shared<ParseResult>(Parser::parse(candidate.string()));
+          } catch (...) { continue; }
+        }
         if (!parseResult->tree) continue;
         // Extract symbols directly from parse tree (avoids dangling decl pointers)
         for (auto* tld : parseResult->tree->topLevelDecl()) {
