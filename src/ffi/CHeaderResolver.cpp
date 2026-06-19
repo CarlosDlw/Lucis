@@ -14,6 +14,13 @@
 
 namespace fs = std::filesystem;
 
+// Optional project root override for the header cache (set by LSP).
+static std::string s_headerCacheRoot;
+
+void CHeaderResolver::setHeaderCacheRoot(const std::string& root) {
+    s_headerCacheRoot = root;
+}
+
 // Discover system include paths by querying clang.
 static std::vector<std::string> discoverSystemIncludes() {
     std::vector<std::string> paths;
@@ -171,7 +178,14 @@ std::string CHeaderResolver::extractLocalHeader(const std::string& tokenText) {
 }
 
 static std::string getHeaderCachePath() {
-    // Try to find .lucis directory by walking up from current directory
+    // If the LSP set an explicit project root, use it directly.
+    if (!s_headerCacheRoot.empty()) {
+        std::string cachePath = (fs::path(s_headerCacheRoot) / ".lucis" / "headers.cache").string();
+        std::cerr << "[lucis-lsp] using explicit cache path: " << cachePath << "\n";
+        return cachePath;
+    }
+
+    // Otherwise, try to find .lucis directory by walking up from current directory
     try {
         fs::path p = fs::current_path();
         while (true) {

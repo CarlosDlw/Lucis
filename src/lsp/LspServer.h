@@ -53,6 +53,9 @@ private:
     bool             initialized_ = false;
     bool             shutdown_    = false;
 
+    // Project root provided by the LSP client in the initialize request.
+    std::string      rootPath_;
+
     // Dispatch a parsed JSON-RPC message.
     void dispatch(const json& msg);
 

@@ -77,7 +77,7 @@ public:
         ParseResult* preParsed = nullptr);
 
     // Pre-warm C header cache (call early to avoid first-completion delay).
-    void warmHeaderCache();
+    void warmHeaderCache(const std::string& projectRoot = "");
 
     // Lightweight variable info.
     struct LocalVar {
@@ -86,6 +86,7 @@ public:
     };
 
 private:
+    std::string projectRoot_;
     BuiltinRegistry builtinRegistry_;
     TypeRegistry typeRegistry_;
     MethodRegistry methodRegistry_;

@@ -101,6 +101,20 @@ void LspServer::handleInitialize(const json& msg) {
     try {
         std::cerr << "[lucis-lsp] initialize\n";
 
+        // Extract rootUri from the client (e.g. "file:///home/user/project").
+        if (msg.contains("params") && msg["params"].contains("rootUri") &&
+            !msg["params"]["rootUri"].is_null()) {
+            std::string uri = msg["params"]["rootUri"];
+            // Convert file:// URI to a filesystem path.
+            const std::string prefix = "file://";
+            if (uri.substr(0, prefix.size()) == prefix) {
+                rootPath_ = uri.substr(prefix.size());
+            } else {
+                rootPath_ = uri;
+            }
+        }
+        std::cerr << "[lucis-lsp] root path: " << rootPath_ << "\n";
+
         json capabilities = {
             {"textDocumentSync", {
                 {"openClose", true},
@@ -148,10 +162,16 @@ void LspServer::handleInitialized(const json& /*msg*/) {
     try {
         std::cerr << "[lucis-lsp] initialized\n";
 
-        // Ensure .lucis cache directory exists in the project root so the
-        // header cache can persist across sessions.
-        auto cwd = fs::current_path();
-        auto root = ProjectContext::findProjectRoot(cwd.string());
+        // Use the project root from the client's initialize request, or fall
+        // back to walking up from the current directory.
+        std::string root;
+        if (!rootPath_.empty()) {
+            root = rootPath_;
+        } else {
+            auto cwd = fs::current_path();
+            root = ProjectContext::findProjectRoot((cwd / "dummy").string());
+        }
+
         if (!root.empty()) {
             auto lucisDir = fs::path(root) / ".lucis";
             std::error_code ec;
@@ -161,10 +181,10 @@ void LspServer::handleInitialized(const json& /*msg*/) {
         }
 
         // Warm caches in background to avoid blocking first completion.
-        std::thread([] {
+        std::thread([root] {
             std::cerr << "[lucis-lsp] warming C header cache...\n";
             CompletionProvider p;
-            p.warmHeaderCache();
+            p.warmHeaderCache(root);
             std::cerr << "[lucis-lsp] C header cache ready\n";
         }).detach();
     } catch (const std::exception& e) {

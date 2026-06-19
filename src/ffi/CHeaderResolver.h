@@ -30,6 +30,11 @@ public:
     // Extract header name from an INCLUDE_LOCAL token text like: #include "mylib.h"
     static std::string extractLocalHeader(const std::string& tokenText);
 
+    // Override the project root used for the header cache location.
+    // When set, the cache is stored at <root>/.lucis/headers.cache instead
+    // of auto-detecting by walking up from current_path().
+    static void setHeaderCacheRoot(const std::string& root);
+
     // List available system header files (for completion).
     // Returns header names as they would appear in #include <...> (e.g. "stdio.h", "sys/types.h").
     static std::vector<std::string> listSystemHeaders();

@@ -4877,9 +4877,10 @@ void CompletionProvider::addIntrinsics(std::vector<CompletionItem> &items,
   }
 }
 
-void CompletionProvider::warmHeaderCache() {
+void CompletionProvider::warmHeaderCache(const std::string& projectRoot) {
   std::vector<CompletionItem> dummy;
   CompletionProvider temp;
+  temp.projectRoot_ = projectRoot;
   temp.addHeaderSuggestions(dummy, "", false, "", nullptr);
 }
 
@@ -4935,6 +4936,7 @@ void CompletionProvider::addHeaderSuggestions(
   static std::vector<std::string> cachedHeadersLower;
   static bool cached = false;
   if (!cached) {
+    CHeaderResolver::setHeaderCacheRoot(projectRoot_);
     cachedHeaders = CHeaderResolver::listSystemHeaders();
     cachedHeadersLower.reserve(cachedHeaders.size());
     for (const auto &h : cachedHeaders) {
