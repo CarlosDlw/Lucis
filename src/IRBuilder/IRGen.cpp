@@ -4157,14 +4157,27 @@ std::any IRGen::visitCallStmt(LucisParser::CallStmtContext* ctx) {
                 }
 
                 // For untyped variadic args in user-defined functions,
-                // extract string pointer from { ptr, len } fat pointer
-                if (userFn->isVarArg() && i >= fnType->getNumParams() &&
-                    argVal->getType()->isStructTy()) {
-                    auto* st = llvm::cast<llvm::StructType>(argVal->getType());
-                    if (st->getNumElements() == 2 &&
-                        st->getElementType(0)->isPointerTy() &&
-                        st->getElementType(1)->isIntegerTy())
-                        argVal = builder_->CreateExtractValue(argVal, 0, "str_to_cptr");
+                // apply default C argument promotions (float -> double, small ints -> i32)
+                if (userFn->isVarArg() && i >= fnType->getNumParams()) {
+                    if (argVal->getType()->isFloatTy()) {
+                        argVal = builder_->CreateFPExt(argVal, llvm::Type::getDoubleTy(*context_), "c_promote_f64");
+                    } else if (argVal->getType()->isIntegerTy()) {
+                        unsigned bw = argVal->getType()->getIntegerBitWidth();
+                        if (bw < 32) {
+                            if (bw == 1)
+                                argVal = builder_->CreateZExt(argVal, llvm::Type::getInt32Ty(*context_), "c_promote_bool");
+                            else
+                                argVal = builder_->CreateSExt(argVal, llvm::Type::getInt32Ty(*context_), "c_promote_i32");
+                        } else if (bw > 64) {
+                            argVal = builder_->CreateTrunc(argVal, llvm::Type::getInt32Ty(*context_), "c_trunc_i32");
+                        }
+                    } else if (argVal->getType()->isStructTy()) {
+                        auto* st = llvm::cast<llvm::StructType>(argVal->getType());
+                        if (st->getNumElements() == 2 &&
+                            st->getElementType(0)->isPointerTy() &&
+                            st->getElementType(1)->isIntegerTy())
+                            argVal = builder_->CreateExtractValue(argVal, 0, "str_to_cptr");
+                    }
                 }
 
                 args.push_back(argVal);
@@ -12478,14 +12491,27 @@ std::any IRGen::visitFnCallExpr(LucisParser::FnCallExprContext* ctx) {
                     }
                 }
                 // For untyped variadic args in user-defined functions,
-                // extract string pointer from { ptr, len } fat pointer
-                if (directFn->isVarArg() && i >= fnType->getNumParams() &&
-                    argVal->getType()->isStructTy()) {
-                    auto* st = llvm::cast<llvm::StructType>(argVal->getType());
-                    if (st->getNumElements() == 2 &&
-                        st->getElementType(0)->isPointerTy() &&
-                        st->getElementType(1)->isIntegerTy())
-                        argVal = builder_->CreateExtractValue(argVal, 0, "str_to_cptr");
+                // apply default C argument promotions (float -> double, small ints -> i32)
+                if (directFn->isVarArg() && i >= fnType->getNumParams()) {
+                    if (argVal->getType()->isFloatTy()) {
+                        argVal = builder_->CreateFPExt(argVal, llvm::Type::getDoubleTy(*context_), "c_promote_f64");
+                    } else if (argVal->getType()->isIntegerTy()) {
+                        unsigned bw = argVal->getType()->getIntegerBitWidth();
+                        if (bw < 32) {
+                            if (bw == 1)
+                                argVal = builder_->CreateZExt(argVal, llvm::Type::getInt32Ty(*context_), "c_promote_bool");
+                            else
+                                argVal = builder_->CreateSExt(argVal, llvm::Type::getInt32Ty(*context_), "c_promote_i32");
+                        } else if (bw > 64) {
+                            argVal = builder_->CreateTrunc(argVal, llvm::Type::getInt32Ty(*context_), "c_trunc_i32");
+                        }
+                    } else if (argVal->getType()->isStructTy()) {
+                        auto* st = llvm::cast<llvm::StructType>(argVal->getType());
+                        if (st->getNumElements() == 2 &&
+                            st->getElementType(0)->isPointerTy() &&
+                            st->getElementType(1)->isIntegerTy())
+                            argVal = builder_->CreateExtractValue(argVal, 0, "str_to_cptr");
+                    }
                 }
 
                 args.push_back(argVal);
