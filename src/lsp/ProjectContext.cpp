@@ -95,9 +95,6 @@ bool ProjectContext::build(const std::string& filePath) {
             }
         }
 
-        units_.push_back(std::move(unit));
-
-        // Extract use declarations and enqueue their module files
         auto enqueueUse = [&](LucisParser::UseDeclContext* use) {
             std::string usePath;
             if (auto* root = dynamic_cast<LucisParser::UseRootContext*>(use)) {
@@ -151,6 +148,8 @@ bool ProjectContext::build(const std::string& filePath) {
             if (auto* use = top->useDecl())
                 enqueueUse(use);
         }
+
+        units_.push_back(std::move(unit));
     }
 
     valid_ = !units_.empty();
