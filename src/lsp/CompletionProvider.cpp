@@ -4270,7 +4270,7 @@ resolveImportedModuleAlias(const std::string &alias,
               ModuleRegistry::usePathToModulePath(fullPath))) {
         return fullPath;
       }
-      return modulePath;
+      return std::nullopt;
     }
 
     // use std; (simple root import, alias is the module name itself)
