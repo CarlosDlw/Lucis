@@ -3885,106 +3885,13 @@ void CompletionProvider::addUseCompletions(std::vector<CompletionItem> &items,
                                            const std::string &prefix,
                                            const ProjectContext *project) {
 
-  // Known std modules and their symbols (from ImportResolver)
-  static const std::unordered_map<std::string, std::vector<std::string>>
-      stdModules = {
-          {"std::log",
-           {"println", "print", "eprint", "eprintln", "dbg", "sprintf"}},
-          {"std::io",
-           {"readLine",    "readChar",   "readInt",      "readFloat",
-            "readBool",    "readAll",    "prompt",       "promptInt",
-            "promptFloat", "promptBool", "readByte",     "readLines",
-            "readNBytes",  "isEOF",      "readPassword", "promptPassword",
-            "flush",       "flushErr",   "isTTY",        "isStdoutTTY",
-            "isStderrTTY"}},
-          {"std::math",
-           {"PI",         "E",         "TAU",       "INF",       "NAN",
-            "INT32_MAX",  "INT32_MIN", "INT64_MAX", "INT64_MIN", "UINT32_MAX",
-            "UINT64_MAX", "abs",       "min",       "max",       "clamp",
-            "sqrt",       "cbrt",      "pow",       "hypot",     "exp",
-            "exp2",       "ln",        "log2",      "log10",     "sin",
-            "cos",        "tan",       "asin",      "acos",      "atan",
-            "atan2",      "sinh",      "cosh",      "tanh",      "ceil",
-            "floor",      "round",     "trunc",     "lerp",      "map",
-            "toRadians",  "toDegrees", "isNaN",     "isInf",     "isFinite"}},
-          {"std::str",
-           {"contains",     "startsWith",    "endsWith",   "indexOf",
-            "lastIndexOf",  "count",         "toUpper",    "toLower",
-            "trim",         "trimLeft",      "trimRight",  "replace",
-            "replaceFirst", "repeat",        "reverse",    "padLeft",
-            "padRight",     "substring",     "charAt",     "slice",
-            "parseInt",     "parseIntRadix", "parseFloat", "fromCharCode",
-            "split",        "splitN",        "joinVec",    "lines",
-            "chars",        "fromChars",     "toBytes",    "fromBytes"}},
-          {"std::fmt",
-           {"lpad", "rpad", "center", "hex", "hexUpper", "oct", "bin", "fixed",
-            "scientific", "humanBytes", "commas", "percent"}},
-          {"std::conv",
-           {"itoa", "itoaRadix", "utoa", "ftoa", "ftoaPrecision", "atoi",
-            "atof", "toHex", "toOctal", "toBinary", "fromHex", "charToInt",
-            "intToChar"}},
-          {"std::mem",
-           {"alloc", "allocZeroed", "realloc", "free", "copy", "move", "set",
-            "zero", "compare"}},
-          {"std::time",
-           {"now", "nowNanos", "nowMicros", "sleep", "sleepMicros", "clock",
-            "year", "month", "day", "hour", "minute", "second", "weekday",
-            "timestamp", "elapsed", "formatTime", "parseTime"}},
-          {"std::random",
-           {"seed", "seedTime", "randInt", "randIntRange", "randUint",
-            "randFloat", "randFloatRange", "randBool", "randChar", "uuid_v4"}},
-          {"std::fs",
-           {"readFile", "writeFile", "appendFile", "exists", "isFile", "isDir",
-            "remove", "removeDir", "rename", "mkdir", "mkdirAll", "listDir",
-            "readBytes", "writeBytes", "fileSize", "cwd", "setCwd", "tempDir"}},
-          {"std::path",
-           {"join", "parent", "fileName", "stem", "extension", "isAbsolute",
-            "isRelative", "normalize", "toAbsolute", "separator",
-            "withExtension", "withFileName", "joinAll"}},
-          {"std::process",
-           {"exit", "abort", "env", "setEnv", "hasEnv", "exec", "execOutput",
-            "pid", "platform", "arch", "homeDir", "executablePath"}},
-          {"std::os",
-           {"getpid", "getppid", "getuid", "getgid", "hostname", "pageSize",
-            "errno", "strerror", "kill", "dup", "dup2", "closeFd"}},
-          {"std::net",
-           {"tcpConnect", "tcpListen", "tcpAccept", "tcpSend", "tcpRecv",
-            "udpBind", "udpSendTo", "udpRecvFrom", "close", "setTimeout",
-            "resolve"}},
-          {"std::regex",
-           {"match", "find", "findIndex", "regexReplace", "regexReplaceFirst",
-            "isValid", "findAll", "regexSplit"}},
-          {"std::encoding",
-           {"base64EncodeStr", "base64DecodeStr", "urlEncode", "urlDecode",
-            "base64Encode", "base64Decode"}},
-          {"std::crypto",
-           {"md5String", "sha1String", "sha256String", "sha512String", "md5",
-            "sha1", "sha256", "sha512", "hmacSha256", "randomBytes"}},
-          {"std::compress",
-           {"gzipCompress", "gzipDecompress", "deflate", "inflate",
-            "compressLevel"}},
-          {"std::hash",
-           {"hashString", "hashInt", "hashCombine", "hashBytes", "crc32"}},
-          {"std::bits",
-           {"popcount", "ctz", "clz", "rotl", "rotr", "bswap", "isPow2",
-            "nextPow2", "bitReverse", "extractBits", "setBit", "clearBit",
-            "toggleBit", "testBit"}},
-          {"std::ascii",
-           {"isAlpha", "isDigit", "isAlphaNum", "isUpper", "isLower",
-            "isWhitespace", "isPrintable", "isControl", "isHexDigit", "isAscii",
-            "toUpper", "toLower", "toDigit", "fromDigit"}},
-          {"std::thread", {"cpuCount", "threadId", "yield", "Task", "Mutex"}},
-          {"std::test",
-           {"assertEqual", "assertNotEqual", "assertTrue", "assertFalse",
-            "assertGreater", "assertLess", "assertGreaterEq", "assertLessEq",
-            "assertStringContains", "assertNear", "fail", "skip", "log"}},
-      };
+  // Helper: known std modules from ImportResolver (single source of truth).
+  auto& stdModules = ImportResolver::knownModules();
 
-  // Collect the set of std submodule names
+  // Collect submodule names from knownModules.
   static const std::vector<std::string> stdSubmodules = [] {
     std::vector<std::string> result;
-    for (auto &[fullPath, _] : stdModules) {
-      // "std::log" → "log"
+    for (auto &[fullPath, _] : ImportResolver::knownModules()) {
       auto pos = fullPath.find("::");
       if (pos != std::string::npos)
         result.push_back(fullPath.substr(pos + 2));
@@ -4005,14 +3912,13 @@ void CompletionProvider::addUseCompletions(std::vector<CompletionItem> &items,
       ci.insertText = "std::";
       items.push_back(std::move(ci));
     }
+
     // Project namespaces
     if (project && project->isValid()) {
       std::unordered_set<std::string> seenTopLevel;
       for (auto &ns : project->registry().allModules()) {
-        // Skip "std::" prefixed
         if (ns.substr(0, 5) == "std::")
           continue;
-        // For "MyNamespace" — offer it
         auto topLevel = ns;
         auto sep = ns.find("::");
         if (sep == std::string::npos) sep = ns.find('/');
@@ -4027,8 +3933,8 @@ void CompletionProvider::addUseCompletions(std::vector<CompletionItem> &items,
         ci.kind = CompletionKind::Module;
         ci.detail = "module";
         ci.insertText = topLevel + "::";
-    items.push_back(std::move(ci));
-  }
+        items.push_back(std::move(ci));
+      }
 
       // Also scan stdlib directory for top-level .lc modules
       {
@@ -4054,21 +3960,22 @@ void CompletionProvider::addUseCompletions(std::vector<CompletionItem> &items,
           }
         }
       }
+    }
 
-  // #[error] attribute — marks an enum variant as the error variant
-  bool matchAttrError = (!prefix.empty() && prefix[0] == '#' &&
-                          matchesPrefix("[error]", prefix.substr(1))) ||
-                         matchesPrefix("#[error]", prefix);
-  if (matchAttrError) {
-    CompletionItem ci;
-    ci.label = "#[error]";
-    ci.kind = CompletionKind::Keyword;
-    ci.detail = "Marks enum variant as the error variant for ? and catch";
-    ci.insertText = "#[error]";
-    ci.filterText = "#[error]";
-    items.push_back(std::move(ci));
-  }
-}
+    // #[error] attribute — marks an enum variant as the error variant
+    bool matchAttrError = (!prefix.empty() && prefix[0] == '#' &&
+                            matchesPrefix("[error]", prefix.substr(1))) ||
+                           matchesPrefix("#[error]", prefix);
+    if (matchAttrError) {
+      CompletionItem ci;
+      ci.label = "#[error]";
+      ci.kind = CompletionKind::Keyword;
+      ci.detail = "Marks enum variant as the error variant for ? and catch";
+      ci.insertText = "#[error]";
+      ci.filterText = "#[error]";
+      items.push_back(std::move(ci));
+    }
+
     return;
   }
 
@@ -4107,7 +4014,7 @@ void CompletionProvider::addUseCompletions(std::vector<CompletionItem> &items,
       ci.insertText = sub + "::";
       items.push_back(std::move(ci));
     }
-    if (!items.empty()) return;
+    // Don't return — fall through to show module symbols too.
   }
 
   // Case 3: modulePath is a full std module (e.g. "std::log") — suggest symbols

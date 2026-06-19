@@ -47,6 +47,10 @@ public:
     // Returns all standard library search paths (env var, compile-time, system fallbacks).
     static std::vector<std::string> stdlibSearchPaths();
 
+    // Returns the map of known std modules → their exported symbols.
+    static const std::unordered_map<std::string, std::unordered_set<std::string>>&
+    knownModules() { return knownModules_; }
+
 private:
     std::vector<ImportedSymbol>        imports_;
     std::unordered_set<std::string>    symbols_;  // fast lookup
