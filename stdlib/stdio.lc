@@ -50,6 +50,9 @@ fn vprintf(string format, va_list va) void {
                 case 'b' {
                     print(lucis::unsafe::va_arg_bool(va) ? "true" : "false");
                 }
+                case 'p' {
+                    print(lucis::unsafe::va_arg_ptr(va));
+                }
             }
 
             // Consume characters until the closing brace
@@ -73,6 +76,7 @@ fn vprintf(string format, va_list va) void {
  * - {f}: float64 (default 6 decimal places)
  * - {f:N}: float64 with N decimal places
  * - {b}: bool (prints "true" or "false")
+ * - {p}: ptr (prints the pointer)
  * - {{: prints a literal '{'
  *
  * @param format The format string

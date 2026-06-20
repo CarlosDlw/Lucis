@@ -3893,6 +3893,92 @@ std::any IRGen::visitCallStmt(LucisParser::CallStmtContext* ctx) {
         return {};
     }
 
+    // ── print/println/eprint/eprintln (imported from std::log) ─────
+    if (funcName == "print" || funcName == "println" ||
+        funcName == "eprint" || funcName == "eprintln") {
+      std::vector<llvm::Value*> args;
+      std::vector<LucisParser::ExpressionContext*> argExprs;
+      if (auto* argList = ctx->argList()) {
+        for (auto* exprCtx : argList->expression()) {
+          argExprs.push_back(exprCtx);
+          args.push_back(castValue(visit(exprCtx)));
+        }
+      }
+
+      auto* voidTy = llvm::Type::getVoidTy(*context_);
+      auto* ptrTy  = llvm::PointerType::getUnqual(*context_);
+      auto* usizeTy = module_->getDataLayout().getIntPtrType(*context_);
+
+      for (size_t ai = 0; ai < args.size(); ai++) {
+        auto* arg = args[ai];
+        auto* argType = arg->getType();
+        if (ai < argExprs.size() && resolveExprArrayDims(argExprs[ai]) > 0) {
+          std::cerr << "lucis: function '" << funcName
+                    << "' does not accept array arguments directly; "
+                       "use '.toString()' or '.join(...)' before printing\n";
+          continue;
+        }
+
+        const TypeInfo* argTypeInfo = nullptr;
+        if (auto* load = llvm::dyn_cast<llvm::LoadInst>(arg)) {
+          auto* src = load->getPointerOperand();
+          for (auto& [vname, info] : locals_) {
+            if (info.alloca == src) { argTypeInfo = info.typeInfo; break; }
+          }
+          if (argTypeInfo && argTypeInfo->kind == TypeKind::Union)
+            argTypeInfo = nullptr;
+        }
+
+        bool isString = (argTypeInfo && argTypeInfo->kind == TypeKind::String)
+                     || (!argTypeInfo && argType->isStructTy());
+        if (isString) {
+          auto* strPtr = builder_->CreateExtractValue(arg, 0, "str_ptr");
+          auto* strLen = builder_->CreateExtractValue(arg, 1, "str_len");
+          auto callee = declareBuiltin("lucis_" + funcName + "_str", voidTy, {ptrTy, usizeTy});
+          builder_->CreateCall(callee, {strPtr, strLen});
+          continue;
+        }
+
+        std::string suffix;
+        if (argTypeInfo && !argTypeInfo->builtinSuffix.empty())
+          suffix = argTypeInfo->builtinSuffix;
+        else if (argType->isIntegerTy(1))      suffix = "bool";
+        else if (argType->isIntegerTy(8))      suffix = "i8";
+        else if (argType->isIntegerTy(16))     suffix = "i16";
+        else if (argType->isIntegerTy(32))     suffix = "i32";
+        else if (argType->isIntegerTy(64))     suffix = "i64";
+        else if (argType->isIntegerTy(128))    suffix = "i128";
+        else if (argType->isFloatTy())         suffix = "f32";
+        else if (argType->isDoubleTy())        suffix = "f64";
+        else if (argType->isPointerTy())       suffix = "ptr";
+        else                                   suffix = "i32";
+
+        auto cFuncName = "lucis_" + funcName + "_" + suffix;
+        llvm::Value* callArg = arg;
+        llvm::Type* paramType = argType;
+        if (argType->isIntegerTy(256)) {
+          if (suffix == "i128")
+            paramType = llvm::Type::getInt128Ty(*context_);
+          else if (suffix == "i64")
+            paramType = llvm::Type::getInt64Ty(*context_);
+          else
+            paramType = llvm::Type::getInt32Ty(*context_);
+          callArg = builder_->CreateTrunc(arg, paramType);
+        }
+
+        auto callee = declareBuiltin(cFuncName, voidTy, {paramType});
+        builder_->CreateCall(callee, {callArg});
+      }
+
+      if (ctx->argList()) {
+        auto exprs = ctx->argList()->expression();
+        for (size_t i = 0; i < exprs.size() && i < args.size(); i++)
+          cleanupTempArg(exprs[i], args[i]);
+      }
+
+      return {};
+    }
+
     if (auto fit = genericFuncTemplates_.find(funcName);
         fit != genericFuncTemplates_.end()) {
         std::vector<LucisParser::ParamContext*> formalParams;
@@ -8516,7 +8602,8 @@ std::any IRGen::visitStaticMethodCallExpr(
                 }
 
                 std::string suffix;
-                if (argTypeInfo)                       suffix = argTypeInfo->builtinSuffix;
+                if (argTypeInfo && !argTypeInfo->builtinSuffix.empty())
+                                                       suffix = argTypeInfo->builtinSuffix;
                 else if (argType->isIntegerTy(1))      suffix = "bool";
                 else if (argType->isIntegerTy(8))      suffix = "i8";
                 else if (argType->isIntegerTy(16))     suffix = "i16";
