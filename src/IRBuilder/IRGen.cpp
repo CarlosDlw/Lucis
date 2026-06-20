@@ -5,6 +5,7 @@
 #include <llvm/IR/Instructions.h>
 #include <llvm/IR/Intrinsics.h>
 #include <llvm/IR/Verifier.h>
+#include <llvm/IR/InlineAsm.h>
 
 #include <vector>
 #include <unordered_map>
@@ -5174,6 +5175,195 @@ std::any IRGen::visitCallStmt(LucisParser::CallStmtContext* ctx) {
     }
 
     return {};
+}
+
+std::any IRGen::visitAsmStmt(LucisParser::AsmStmtContext* ctx) {
+    auto isVolatile = ctx->VOLATILE() != nullptr;
+
+    auto rawAsmStr = ctx->STR_LIT()->getText();
+    std::string asmStr = rawAsmStr.substr(1, rawAsmStr.size() - 2);
+
+    auto& context = *context_;
+    auto* voidTy  = llvm::Type::getVoidTy(context);
+
+    std::vector<llvm::Type*>  paramTypes;
+    std::vector<llvm::Value*> paramValues;
+    std::vector<std::string>  outConstraints;
+    std::vector<const TypeInfo*> outTypeInfos;
+    std::vector<llvm::AllocaInst*> outAllocas;
+
+    std::string constraintsStr;
+
+    auto append = [&](const std::string& c) {
+        if (!constraintsStr.empty()) constraintsStr += ',';
+        constraintsStr += c;
+    };
+
+    // Outputs: "=r"(var) or "+r"(var)
+    if (auto* outList = ctx->asmOutputList()) {
+        size_t outIdx = 0;
+        for (auto* out : outList->asmOutput()) {
+            auto raw = out->constraint->getText();
+            auto constraint = raw.substr(1, raw.size() - 2);
+            auto* ident = out->IDENTIFIER();
+            if (!ident) continue;
+            auto varName = ident->getText();
+            auto it = locals_.find(varName);
+            if (it == locals_.end()) return {};
+            outConstraints.push_back(constraint);
+            outTypeInfos.push_back(it->second.typeInfo);
+            outAllocas.push_back(it->second.alloca);
+
+            if (!constraint.empty() && constraint[0] == '+') {
+                // "+r" → expand to "=r" output + matching "N" input
+                auto core = constraint.substr(1);
+                append('=' + core);
+                auto matchIdx = std::to_string(outIdx);
+                append(matchIdx);
+                auto* llvmTy = it->second.typeInfo->toLLVMType(context, module_->getDataLayout());
+                auto* loaded = builder_->CreateLoad(llvmTy, it->second.alloca, varName + ".in");
+                paramTypes.push_back(loaded->getType());
+                paramValues.push_back(loaded);
+                outConstraints.back() = '=' + core;
+            } else {
+                append(constraint);
+            }
+            outIdx++;
+        }
+    }
+
+    // Inputs: "r"(expr)
+    if (auto* inList = ctx->asmInputList()) {
+        for (auto* operand : inList->asmOperand()) {
+            auto raw = operand->constraint->getText();
+            auto constraint = raw.substr(1, raw.size() - 2);
+            auto* val = castValue(visit(operand->expression()));
+            if (!val) return {};
+            append(constraint);
+            paramTypes.push_back(val->getType());
+            paramValues.push_back(val);
+        }
+    }
+
+    // Clobbers: "~{reg}"
+    if (auto* clobberList = ctx->asmClobberList()) {
+        for (auto* strTok : clobberList->STR_LIT()) {
+            auto raw = strTok->getText();
+            auto reg = raw.substr(1, raw.size() - 2);
+            append("~{" + reg + "}");
+        }
+    }
+
+    // Determine return type: single output → that type, else void
+    llvm::Type* retType = voidTy;
+    if (outAllocas.size() == 1) {
+        retType = outTypeInfos[0]->toLLVMType(context, module_->getDataLayout());
+    }
+
+    auto* ft = llvm::FunctionType::get(retType, paramTypes, false);
+    auto* asmFn = llvm::InlineAsm::get(ft, asmStr, constraintsStr,
+                                       isVolatile, false,
+                                       llvm::InlineAsm::AD_ATT);
+
+    auto* result = builder_->CreateCall(ft, asmFn, paramValues);
+
+    if (outAllocas.size() == 1 && outAllocas[0]) {
+        builder_->CreateStore(result, outAllocas[0]);
+    }
+
+    return {};
+}
+
+std::any IRGen::visitAsmExpr(LucisParser::AsmExprContext* ctx) {
+    auto isVolatile = ctx->VOLATILE() != nullptr;
+    auto rawAsmStr = ctx->STR_LIT()->getText();
+    std::string asmStr = rawAsmStr.substr(1, rawAsmStr.size() - 2);
+    auto& context = *context_;
+    auto* voidTy  = llvm::Type::getVoidTy(context);
+
+    std::vector<llvm::Type*>  paramTypes;
+    std::vector<llvm::Value*> paramValues;
+    std::vector<const TypeInfo*> outTypeInfos;
+    std::vector<llvm::AllocaInst*> outAllocas;
+    std::string constraintsStr;
+
+    auto append = [&](const std::string& c) {
+        if (!constraintsStr.empty()) constraintsStr += ',';
+        constraintsStr += c;
+    };
+
+    if (auto* outList = ctx->asmOutputList()) {
+        size_t outIdx = 0;
+        for (auto* out : outList->asmOutput()) {
+            auto raw = out->constraint->getText();
+            auto constraint = raw.substr(1, raw.size() - 2);
+            auto* ident = out->IDENTIFIER();
+
+            if (ident) {
+                // Named output: "=r"(var)
+                auto varName = ident->getText();
+                auto it = locals_.find(varName);
+                if (it == locals_.end()) return std::any(llvm::UndefValue::get(voidTy));
+                outTypeInfos.push_back(it->second.typeInfo);
+                outAllocas.push_back(it->second.alloca);
+
+                if (!constraint.empty() && constraint[0] == '+') {
+                    auto core = constraint.substr(1);
+                    append('=' + core);
+                    append(std::to_string(outIdx));
+                    auto* loaded = builder_->CreateLoad(
+                        it->second.typeInfo->toLLVMType(context, module_->getDataLayout()),
+                        it->second.alloca, varName + ".in");
+                    paramTypes.push_back(loaded->getType());
+                    paramValues.push_back(loaded);
+                } else {
+                    append(constraint);
+                }
+            } else {
+                // Unnamed output: "=r" — type defaults to int64
+                append(constraint);
+                auto* defaultTy = typeRegistry_.lookup("int64");
+                outTypeInfos.push_back(defaultTy);
+                outAllocas.push_back(nullptr);
+            }
+            outIdx++;
+        }
+    }
+
+    if (auto* inList = ctx->asmInputList()) {
+        for (auto* operand : inList->asmOperand()) {
+            auto raw = operand->constraint->getText();
+            auto constraint = raw.substr(1, raw.size() - 2);
+            auto* val = castValue(visit(operand->expression()));
+            if (!val) return llvm::UndefValue::get(voidTy);
+            append(constraint);
+            paramTypes.push_back(val->getType());
+            paramValues.push_back(val);
+        }
+    }
+
+    if (auto* clobberList = ctx->asmClobberList()) {
+        for (auto* strTok : clobberList->STR_LIT()) {
+            auto raw = strTok->getText();
+            auto reg = raw.substr(1, raw.size() - 2);
+            append("~{" + reg + "}");
+        }
+    }
+
+    llvm::Type* retType = voidTy;
+    if (outAllocas.size() == 1)
+        retType = outTypeInfos[0]->toLLVMType(context, module_->getDataLayout());
+
+    auto* ft = llvm::FunctionType::get(retType, paramTypes, false);
+    auto* asmFn = llvm::InlineAsm::get(ft, asmStr, constraintsStr,
+                                       isVolatile, false,
+                                       llvm::InlineAsm::AD_ATT);
+    auto* result = builder_->CreateCall(ft, asmFn, paramValues);
+
+    if (outAllocas.size() == 1 && outAllocas[0])
+        builder_->CreateStore(result, outAllocas[0]);
+
+    return result ? std::any(static_cast<llvm::Value*>(result)) : std::any(llvm::UndefValue::get(voidTy));
 }
 
 std::any IRGen::visitReturnStmt(LucisParser::ReturnStmtContext* ctx) {

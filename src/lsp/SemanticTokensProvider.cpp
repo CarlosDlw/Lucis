@@ -60,6 +60,7 @@ static bool isKeyword(size_t tokenType) {
         case LucisLexer::RET:    case LucisLexer::OR:   case LucisLexer::ATTR_ERROR:
         case LucisLexer::MATCH:  case LucisLexer::WILDCARD:
         case LucisLexer::INLINE_BLOCK: case LucisLexer::SCOPE_BLOCK:
+        case LucisLexer::ASM:    case LucisLexer::VOLATILE:
             return true;
         default:
             return false;

@@ -177,6 +177,7 @@ statement
     | nakedBlockStmt
     | inlineBlockStmt
     | scopeBlockStmt
+    | asmStmt
     ;
 
 // defer free(ptr);  or  defer v.free();
@@ -207,6 +208,23 @@ scopeCallbackList
 scopeCallback
     : IDENTIFIER (DOT IDENTIFIER)? LPAREN argList? RPAREN
     ;
+
+// asm volatile("nop");
+// asm("syscall" : "=rax"(result) : "rax"(num), "rdi"(arg0) : "rcx", "r11");
+asmStmt
+    : ASM VOLATILE? LPAREN STR_LIT
+        (COLON asmOutputList?
+         (COLON asmInputList?
+          (COLON asmClobberList?)?)?)?
+      RPAREN SEMI
+    ;
+
+asmOutputList : asmOutput (COMMA asmOutput)*;
+asmInputList  : asmOperand (COMMA asmOperand)*;
+asmClobberList: STR_LIT (COMMA STR_LIT)*;
+
+asmOutput : constraint=STR_LIT (LPAREN IDENTIFIER RPAREN)?;
+asmOperand: constraint=STR_LIT LPAREN expression RPAREN;
 
 // Expression as statement: x++; f(x); etc.
 exprStmt
@@ -537,6 +555,11 @@ expression
     | STR_LIT                                                  # strLitExpr
     | C_STR_LIT                                                # cStrLitExpr
     | IDENTIFIER                                               # identExpr
+    | ASM VOLATILE? LPAREN STR_LIT
+        (COLON asmOutputList?
+         (COLON asmInputList?
+          (COLON asmClobberList?)?)?)?
+      RPAREN                                                   # asmExpr
     ;
 
 // Type specifiers (recursive for array types: []int32, [10]int32, [][]char)

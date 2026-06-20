@@ -155,6 +155,30 @@ public:
     return visitChildren(ctx);
   }
 
+  virtual std::any visitAsmStmt(LucisParser::AsmStmtContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual std::any visitAsmOutputList(LucisParser::AsmOutputListContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual std::any visitAsmInputList(LucisParser::AsmInputListContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual std::any visitAsmClobberList(LucisParser::AsmClobberListContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual std::any visitAsmOutput(LucisParser::AsmOutputContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual std::any visitAsmOperand(LucisParser::AsmOperandContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
   virtual std::any visitExprStmt(LucisParser::ExprStmtContext *ctx) override {
     return visitChildren(ctx);
   }
@@ -328,6 +352,10 @@ public:
   }
 
   virtual std::any visitArrowMethodCallExpr(LucisParser::ArrowMethodCallExprContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual std::any visitAsmExpr(LucisParser::AsmExprContext *ctx) override {
     return visitChildren(ctx);
   }
 

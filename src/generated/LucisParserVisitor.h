@@ -89,6 +89,18 @@ public:
 
     virtual std::any visitScopeCallback(LucisParser::ScopeCallbackContext *context) = 0;
 
+    virtual std::any visitAsmStmt(LucisParser::AsmStmtContext *context) = 0;
+
+    virtual std::any visitAsmOutputList(LucisParser::AsmOutputListContext *context) = 0;
+
+    virtual std::any visitAsmInputList(LucisParser::AsmInputListContext *context) = 0;
+
+    virtual std::any visitAsmClobberList(LucisParser::AsmClobberListContext *context) = 0;
+
+    virtual std::any visitAsmOutput(LucisParser::AsmOutputContext *context) = 0;
+
+    virtual std::any visitAsmOperand(LucisParser::AsmOperandContext *context) = 0;
+
     virtual std::any visitExprStmt(LucisParser::ExprStmtContext *context) = 0;
 
     virtual std::any visitVarDeclStmt(LucisParser::VarDeclStmtContext *context) = 0;
@@ -176,6 +188,8 @@ public:
     virtual std::any visitRshiftExpr(LucisParser::RshiftExprContext *context) = 0;
 
     virtual std::any visitArrowMethodCallExpr(LucisParser::ArrowMethodCallExprContext *context) = 0;
+
+    virtual std::any visitAsmExpr(LucisParser::AsmExprContext *context) = 0;
 
     virtual std::any visitOctLitExpr(LucisParser::OctLitExprContext *context) = 0;
 

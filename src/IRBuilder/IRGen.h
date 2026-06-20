@@ -68,6 +68,7 @@ public:
     std::any visitArrowAssignStmt(LucisParser::ArrowAssignStmtContext* ctx) override;
     std::any visitArrowCompoundAssignStmt(LucisParser::ArrowCompoundAssignStmtContext* ctx) override;
     std::any visitCallStmt(LucisParser::CallStmtContext* ctx)           override;
+    std::any visitAsmStmt(LucisParser::AsmStmtContext* ctx)             override;
     std::any visitExprStmt(LucisParser::ExprStmtContext* ctx)           override;
     std::any visitReturnStmt(LucisParser::ReturnStmtContext* ctx)       override;
     std::any visitIfStmt(LucisParser::IfStmtContext* ctx)               override;
@@ -102,6 +103,7 @@ public:
     std::any visitCharLitExpr(LucisParser::CharLitExprContext* ctx)     override;
     std::any visitStrLitExpr(LucisParser::StrLitExprContext* ctx)       override;
     std::any visitCStrLitExpr(LucisParser::CStrLitExprContext* ctx)   override;
+    std::any visitAsmExpr(LucisParser::AsmExprContext* ctx)           override;
     std::any visitIdentExpr(LucisParser::IdentExprContext* ctx)         override;
     std::any visitArrayLitExpr(LucisParser::ArrayLitExprContext* ctx)   override;
     std::any visitListCompExpr(LucisParser::ListCompExprContext* ctx)   override;

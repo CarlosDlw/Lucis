@@ -190,6 +190,7 @@ private:
     void checkDerefAssignStmt(LucisParser::DerefAssignStmtContext* stmt);
     void checkDerefCompoundAssignStmt(LucisParser::DerefCompoundAssignStmtContext* stmt);
     void checkCallStmt(LucisParser::CallStmtContext* stmt);
+    void checkAsmStmt(LucisParser::AsmStmtContext* stmt);
     void checkExprStmt(LucisParser::ExprStmtContext* stmt);
     void checkReturnStmt(LucisParser::ReturnStmtContext* stmt,
                          const TypeInfo* expectedType);

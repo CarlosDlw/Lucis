@@ -37,6 +37,8 @@ DEFER     : 'defer';
 MATCH     : 'match';
 OR        : 'or';
 EXTERN    : 'extern';
+ASM       : 'asm';
+VOLATILE  : 'volatile';
 AUTO      : 'auto';
 VEC       : 'vec';
 MAP       : 'map';

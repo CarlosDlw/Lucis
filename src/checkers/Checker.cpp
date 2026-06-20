@@ -2018,6 +2018,72 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
     if (dynamic_cast<LucisParser::CStrLitExprContext*>(expr))
         return getPointerType(typeRegistry_.lookup("char"));
 
+    // ── Inline assembly expression ────────────────────────────
+    if (auto* asmE = dynamic_cast<LucisParser::AsmExprContext*>(expr)) {
+        auto* outList = asmE->asmOutputList();
+        size_t numOutputs = outList ? outList->asmOutput().size() : 0;
+
+        // Validate outputs
+        if (outList) {
+            for (auto* out : outList->asmOutput()) {
+                auto raw = out->constraint->getText();
+                auto constraint = raw.substr(1, raw.size() - 2);
+                if (constraint.empty()) {
+                    error(out, "asm output constraint cannot be empty");
+                } else if (constraint[0] != '=' && constraint[0] != '+'
+                           && !std::isdigit(constraint[0])) {
+                    error(out, "asm output constraint must start with '=', '+', or a digit");
+                }
+
+                if (auto* ident = out->IDENTIFIER()) {
+                    auto varName = ident->getText();
+                    auto it = locals_.find(varName);
+                    if (it == locals_.end()) {
+                        error(out, "undefined variable '" + varName + "' in asm output");
+                    } else {
+                        it->second.used = true;
+                    }
+                }
+            }
+        }
+
+        // Validate inputs
+        if (auto* inList = asmE->asmInputList()) {
+            for (auto* operand : inList->asmOperand()) {
+                auto raw = operand->constraint->getText();
+                auto constraint = raw.substr(1, raw.size() - 2);
+                if (constraint.empty()) {
+                    error(operand, "asm input constraint cannot be empty");
+                } else if (constraint[0] == '=') {
+                    error(operand, "asm input constraint cannot use '=' (reserved for outputs)");
+                } else if (constraint[0] == '+') {
+                    error(operand, "asm input constraint cannot use '+' (use in output with '+r' instead)");
+                } else if (std::isdigit(constraint[0])) {
+                    int matchIdx = std::stoi(constraint);
+                    if (matchIdx < 0 || static_cast<size_t>(matchIdx) >= numOutputs) {
+                        error(operand, "asm matching constraint '" + constraint
+                              + "' refers to output " + constraint + " but there "
+                              + (numOutputs == 1 ? "is only 1 output"
+                                                 : "are only " + std::to_string(numOutputs) + " outputs"));
+                    }
+                }
+                resolveExprType(operand->expression());
+            }
+        }
+
+        if (numOutputs == 0)
+            return typeRegistry_.lookup("void");
+        auto* output = outList->asmOutput()[0];
+        if (auto* ident = output->IDENTIFIER()) {
+            auto varName = ident->getText();
+            auto it = locals_.find(varName);
+            if (it != locals_.end())
+                return it->second.type;
+        }
+        // Unnamed output: return int64 (register-wide default for auto)
+        return typeRegistry_.lookup("int64");
+    }
+
     if (dynamic_cast<LucisParser::NullLitExprContext*>(expr))
         return nullptr; // null is compatible with any pointer
 
@@ -6158,6 +6224,8 @@ void Checker::checkStmt(LucisParser::StatementContext* stmt,
         checkDerefCompoundAssignStmt(derefCompound);
     } else if (auto* call = stmt->callStmt()) {
         checkCallStmt(call);
+    } else if (auto* asmS = stmt->asmStmt()) {
+        checkAsmStmt(asmS);
     } else if (auto* exprS = stmt->exprStmt()) {
         checkExprStmt(exprS);
     } else if (auto* ret = stmt->returnStmt()) {
@@ -7682,6 +7750,76 @@ void Checker::checkCallStmt(LucisParser::CallStmtContext* stmt) {
 
     analyzeUnsafeCBufferCall(name, stmt, argExprs);
     applyCallOwnershipEffects(name, argExprs, stmt);
+}
+
+void Checker::checkAsmStmt(LucisParser::AsmStmtContext* stmt) {
+    bool hasOutput = stmt->asmOutputList() != nullptr;
+    bool hasInput = stmt->asmInputList() != nullptr;
+    bool isVolatile = stmt->VOLATILE() != nullptr;
+
+    // Count outputs for matching-constraint validation
+    size_t numOutputs = 0;
+    if (hasOutput)
+        numOutputs = stmt->asmOutputList()->asmOutput().size();
+
+    // Suggest volatile if no outputs (side-effect only asm)
+    if (!hasOutput && !isVolatile) {
+        warning(stmt, "asm statement with no outputs should be 'asm volatile'");
+    }
+
+    // Validate output constraints and variables
+    if (auto* outList = stmt->asmOutputList()) {
+        for (auto* out : outList->asmOutput()) {
+            auto raw = out->constraint->getText();
+            auto constraint = raw.substr(1, raw.size() - 2);
+
+            // Output constraints must start with '=', '+', or be a digit (matching)
+            if (constraint.empty()) {
+                error(out, "asm output constraint cannot be empty");
+            } else if (constraint[0] != '=' && constraint[0] != '+'
+                       && !std::isdigit(constraint[0])) {
+                error(out, "asm output constraint must start with '=', '+', or a digit "
+                      "(got '" + constraint + "')");
+            }
+
+            auto varName = out->IDENTIFIER()->getText();
+            auto it = locals_.find(varName);
+            if (it == locals_.end()) {
+                error(out, "undefined variable '" + varName + "' in asm output");
+                continue;
+            }
+
+            // Mark output variable as used and initialized
+            it->second.used = true;
+        }
+    }
+
+    // Validate input constraints and expressions
+    if (auto* inList = stmt->asmInputList()) {
+        for (auto* operand : inList->asmOperand()) {
+            auto raw = operand->constraint->getText();
+            auto constraint = raw.substr(1, raw.size() - 2);
+
+            if (constraint.empty()) {
+                error(operand, "asm input constraint cannot be empty");
+            } else if (constraint[0] == '=') {
+                error(operand, "asm input constraint cannot use '=' (reserved for outputs)");
+            } else if (constraint[0] == '+') {
+                error(operand, "asm input constraint cannot use '+' (use in output with '+r' instead)");
+            } else if (std::isdigit(constraint[0])) {
+                // Matching constraint — validate index
+                int matchIdx = std::stoi(constraint);
+                if (matchIdx < 0 || static_cast<size_t>(matchIdx) >= numOutputs) {
+                    error(operand, "asm matching constraint '" + constraint
+                          + "' refers to output " + constraint + " but there "
+                          + (numOutputs == 1 ? "is only 1 output"
+                                             : "are only " + std::to_string(numOutputs) + " outputs"));
+                }
+            }
+
+            resolveExprType(operand->expression());
+        }
+    }
 }
 
 void Checker::checkExprStmt(LucisParser::ExprStmtContext* stmt) {
