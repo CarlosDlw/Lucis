@@ -95,6 +95,7 @@ private:
     bool hasIncludeBindingsCache_ = false;
     std::string includeFingerprintCache_;
     CBindings includeBindingsCache_;
+    TypeRegistry includeTypeRegCache_;  // keeps TypeInfo objects alive for includeBindingsCache_
 
     // ── Context detection ───────────────────────────────────────────
 

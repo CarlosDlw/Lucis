@@ -1848,26 +1848,24 @@ CompletionProvider::complete(const std::string &source, size_t line, size_t col,
     }
   }
 
-  // Resolve C headers
+  // Resolve C headers — always per-file, not from the global project bindings.
   const CBindings *cBindingsPtr = nullptr;
 
-  if (project && project->isValid()) {
-    cBindingsPtr = &project->cBindings();
-  } else {
+  {
     auto includeFingerprint = buildIncludeFingerprint(parsed->tree);
     if (hasIncludeBindingsCache_ &&
         includeFingerprint == includeFingerprintCache_) {
       cBindingsPtr = &includeBindingsCache_;
     } else {
       CBindings localBindings;
-      TypeRegistry cTypeReg;
+      includeTypeRegCache_ = TypeRegistry();
       std::vector<LucisParser::IncludeDeclContext *> includes;
       for (auto *pre : parsed->tree->preambleDecl())
         if (auto *inc = pre->includeDecl())
           includes.push_back(inc);
 
       if (!includes.empty()) {
-        CHeaderResolver resolver(cTypeReg, localBindings);
+        CHeaderResolver resolver(includeTypeRegCache_, localBindings);
         for (auto *incl : includes) {
           auto text = incl->getText();
           if (incl->INCLUDE_SYS()) {
