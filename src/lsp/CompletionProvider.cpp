@@ -748,6 +748,21 @@ static std::string inferExprTypeName(
     return "string";
   if (dynamic_cast<LucisParser::CStrLitExprContext *>(expr))
     return "*char";
+
+  // ── Inline assembly expression ────────────────────────────
+  if (auto* asmE = dynamic_cast<LucisParser::AsmExprContext*>(expr)) {
+    auto* outList = asmE->asmOutputList();
+    if (outList && !outList->asmOutput().empty()) {
+      auto* output = outList->asmOutput()[0];
+      if (auto* ident = output->IDENTIFIER()) {
+        auto it = locals.find(safeText(ident));
+        if (it != locals.end()) return it->second.typeName;
+      }
+      return "int64";
+    }
+    return "void";
+  }
+
   if (auto *id = dynamic_cast<LucisParser::IdentExprContext *>(expr)) {
     auto it = locals.find(safeText(id->IDENTIFIER()));
     if (it != locals.end())
