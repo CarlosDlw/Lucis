@@ -33,7 +33,7 @@ Each operand in the output or input list follows this pattern:
 "constraint"(operand)
 ```
 
-- **constraint** — A string literal specifying the register/memory constraint (e.g. `"=r"`, `"r"`, `"m"`)
+- **constraint** — A string literal specifying the register/memory constraint (e.g. `"=r"`, `"r"`, `"m"`, `"{rax}"`)
 - **operand** — For outputs: a variable name (must be declared before the asm statement). For inputs: any expression.
 
 ## Operand Numbering
@@ -85,6 +85,7 @@ Common constraints for x86-64:
 | `"0"`, `"1"`, ... | Matching constraint: use same location as operand N |
 | `"=rm"` | Output: register or memory |
 | `"i"` | Immediate integer operand |
+| `"{reg}"` | Physical register constraint (e.g. `"{rax}"`, `"{rdi}"`). **Must use curly braces `{}`** so LLVM targets the specific physical register instead of interpreting individual letters as single-character constraints (such as `r`, `a`, `x`). |
 
 ## Clobbers
 
@@ -201,6 +202,43 @@ int64 a = 0;
 printf("direct = {d}\n", asm("movq $$99, $0" : "=r"(a) : : "cc"));
 ```
 
+### System Calls (Linux x86-64)
+
+When invoking system calls, you must place arguments in specific physical registers. You do this by enclosing register names in curly braces `{}`.
+
+#### Using `cstring` (C-compatible null-terminated strings)
+
+```lucis
+int64 fd = 1;          // stdout
+cstring msg = c"Hello, world!\n";
+int64 len = 14;
+
+int64 bytes_written = asm volatile(
+    "syscall"
+    : "={rax}"
+    : "{rax}"(1), "{rdi}"(fd), "{rsi}"(msg), "{rdx}"(len)
+    : "rcx", "r11", "memory"
+);
+// bytes_written == 14
+```
+
+#### Using native `string` (Lucis string)
+
+Lucis native `string` values are structures containing `{ ptr, len }`. You can use their `.ptr()` and `.len()` methods to obtain the correct values for physical registers:
+
+```lucis
+int64 fd = 1;          // stdout
+string msg = "Hello, from lucis!\n";
+
+int64 bytes_written = asm volatile(
+    "syscall"
+    : "={rax}"
+    : "{rax}"(1), "{rdi}"(fd), "{rsi}"(msg.ptr()), "{rdx}"(msg.len())
+    : "rcx", "r11", "memory"
+);
+// bytes_written == 19
+```
+
 ## Volatile
 
 Use `volatile` when the asm block has side effects that the optimizer must not remove:
@@ -225,6 +263,8 @@ The inline asm backend uses **AT&T syntax** by default:
 |---|---|
 | `%0`, `%1` | `$0`, `$1` |
 | `$42` | `$$42` |
+| `"rax"` output | `"={rax}"` (requires curly braces `{}`) |
+| `"rax"` input | `"{rax}"` (requires curly braces `{}`) |
 | `"cc"` clobber | `"cc"` clobber (wrapped as `~{cc}` internally) |
 | `"memory"` clobber | `"memory"` clobber |
 
