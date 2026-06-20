@@ -1,7 +1,9 @@
 #include "checkers/Checker.h"
 #include "generated/LucisLexer.h"
 #include "ffi/CBindings.h"
+#include "parser/Parser.h"
 #include <cctype>
+#include <filesystem>
 #include <functional>
 #include <limits>
 #include <unordered_map>
@@ -5131,6 +5133,34 @@ void Checker::setModuleContext(const ModuleRegistry* registry,
     currentFile_        = currentFile;
 }
 
+void Checker::setProjectPaths(const std::string& projectRoot,
+                               const std::vector<std::string>& sourcePaths) {
+    projectRoot_ = projectRoot;
+    sourcePaths_ = sourcePaths;
+}
+
+std::string Checker::findModuleFile(const std::string& modPath) const {
+    namespace fs = std::filesystem;
+    // 1) Search stdlib directories.
+    for (auto& dir : ImportResolver::stdlibSearchPaths()) {
+        auto candidate = fs::path(dir) / (modPath + ".lc");
+        std::error_code ec;
+        if (fs::exists(candidate, ec)) return candidate.string();
+    }
+    // 2) Search project directories.
+    if (!projectRoot_.empty()) {
+        auto root = fs::path(projectRoot_);
+        auto candidate = root / (modPath + ".lc");
+        std::error_code ec;
+        if (fs::exists(candidate, ec)) return candidate.string();
+        for (auto& sp : sourcePaths_) {
+            candidate = root / fs::path(sp) / (modPath + ".lc");
+            if (fs::exists(candidate, ec)) return candidate.string();
+        }
+    }
+    return {};
+}
+
 void Checker::setCBindings(const CBindings* bindings) {
     cBindings_ = bindings;
 }
@@ -5203,7 +5233,7 @@ void Checker::checkUseDecls(LucisParser::ProgramContext* tree) {
                 userImports_[rootName] = rootName;
             } else if (moduleRegistry_ && moduleRegistry_->hasModule(rootName)) {
                 userImports_[rootName] = rootName;
-            } else if (!moduleRegistry_) {
+            } else if (!moduleRegistry_ || !findModuleFile(ModuleRegistry::usePathToModulePath(rootName)).empty()) {
                 userImports_[rootName] = rootName;
             } else {
                 error(root, "unknown module root '" + rootName + "'");
@@ -5229,7 +5259,7 @@ void Checker::checkUseDecls(LucisParser::ProgramContext* tree) {
                 } else {
                     userImports_[symbolName] = modPath;
                 }
-            } else if (!moduleRegistry_) {
+            } else if (!moduleRegistry_ || !findModuleFile(modPath).empty()) {
                 userImports_[symbolName] = modPath;
             } else {
                 error(item, "unknown module '" + path + "'");
@@ -5257,7 +5287,7 @@ void Checker::checkUseDecls(LucisParser::ProgramContext* tree) {
                         userImports_[symbolName] = modPath;
                     }
                 }
-            } else if (!moduleRegistry_) {
+            } else if (!moduleRegistry_ || !findModuleFile(modPath).empty()) {
                 for (auto* id : grp->IDENTIFIER()) {
                     userImports_[id->getText()] = modPath;
                 }

@@ -3881,6 +3881,39 @@ void CompletionProvider::addTypeMethods(std::vector<CompletionItem> &items,
 //  Use import path completions
 // ═══════════════════════════════════════════════════════════════════════
 
+// Scan a directory for .lc files and collect their stem names.
+// Also discover subdirectory packages (dirs containing .lc files).
+static void scanLcFiles(const fs::path& dir,
+                         std::unordered_set<std::string>& out,
+                         const std::string& prefix) {
+    std::error_code ec;
+    if (!fs::is_directory(dir, ec)) return;
+    for (auto& entry : fs::directory_iterator(dir, ec)) {
+        if (ec) break;
+        if (entry.is_regular_file() && entry.path().extension() == ".lc") {
+            auto name = entry.path().stem().string();
+            if (name.empty() || name == "main") continue;
+            out.insert(name);
+        } else if (entry.is_directory()) {
+            // If the subdirectory contains at least one .lc file,
+            // it's a package module (e.g. sd/ → module "sd").
+            auto dname = entry.path().filename().string();
+            if (dname.empty() || dname[0] == '.') continue;
+            std::error_code ec2;
+            bool hasLc = false;
+            for (auto& sub : fs::directory_iterator(entry.path(), ec2)) {
+                if (ec2) break;
+                if (sub.is_regular_file() && sub.path().extension() == ".lc") {
+                    hasLc = true;
+                    break;
+                }
+                if (sub.is_directory()) { hasLc = true; break; }
+            }
+            if (hasLc) out.insert(dname);
+        }
+    }
+}
+
 void CompletionProvider::addUseCompletions(std::vector<CompletionItem> &items,
                                            const std::string &modulePath,
                                            const std::string &prefix,
@@ -3914,51 +3947,59 @@ void CompletionProvider::addUseCompletions(std::vector<CompletionItem> &items,
       items.push_back(std::move(ci));
     }
 
-    // Project namespaces
-    if (project && project->isValid()) {
+    // Project namespaces — always scan filesystem even if project not built yet
+    {
       std::unordered_set<std::string> seenTopLevel;
-      for (auto &ns : project->registry().allModules()) {
-        if (ns.substr(0, 5) == "std::")
-          continue;
-        auto topLevel = ns;
-        auto sep = ns.find("::");
-        if (sep == std::string::npos) sep = ns.find('/');
-        if (sep != std::string::npos)
-          topLevel = ns.substr(0, sep);
-        if (!seenTopLevel.insert(topLevel).second)
-          continue;
-        if (!matchesPrefix(topLevel, prefix))
-          continue;
-        CompletionItem ci;
-        ci.label = topLevel;
-        ci.kind = CompletionKind::Module;
-        ci.detail = "module";
-        ci.insertText = topLevel + "::";
-        items.push_back(std::move(ci));
+
+      // 1) Collect top-level modules from the project registry (only if built).
+      if (project && project->isValid()) {
+        for (auto &ns : project->registry().allModules()) {
+          if (ns.substr(0, 5) == "std::")
+            continue;
+          auto topLevel = ns;
+          auto sep = ns.find("::");
+          if (sep == std::string::npos) sep = ns.find('/');
+          if (sep != std::string::npos)
+            topLevel = ns.substr(0, sep);
+          seenTopLevel.insert(topLevel);
+        }
       }
 
-      // Also scan stdlib directory for top-level .lc modules
+      // 2) Scan stdlib directories for .lc files.
+      for (auto& dir : ImportResolver::stdlibSearchPaths()) {
+        scanLcFiles(fs::path(dir), seenTopLevel, prefix);
+      }
+
+      // 3) Scan the project source directories for .lc files
+      //    (even if project is not yet built/isValid).
+      if (project) {
+        auto root = fs::path(project->projectRoot());
+        scanLcFiles(root, seenTopLevel, prefix);
+        for (auto& sp : project->sourcePaths()) {
+          scanLcFiles(root / sp, seenTopLevel, prefix);
+        }
+      }
+
+      // 4) Emit items for all collected names matching the prefix.
       {
-        static const std::vector<std::string> stdlibDirs = ImportResolver::stdlibSearchPaths();
-        std::unordered_set<std::string> seenStdlib;
-        for (auto& dir : stdlibDirs) {
-          std::error_code ec;
-          for (auto& entry : fs::directory_iterator(dir, ec)) {
-            if (ec) break;
-            if (!entry.is_regular_file()) continue;
-            auto path = entry.path();
-            if (path.extension() != ".lc") continue;
-            auto name = path.stem().string();
-            if (name == "stdio") continue;
-            if (!seenStdlib.insert(name).second) continue;
-            if (!matchesPrefix(name, prefix)) continue;
-            CompletionItem ci;
-            ci.label = name;
-            ci.kind = CompletionKind::Module;
+        auto& known = ImportResolver::knownModules();
+        for (auto& name : seenTopLevel) {
+          if (!matchesPrefix(name, prefix)) continue;
+          CompletionItem ci;
+          ci.label = name;
+          ci.kind = CompletionKind::Module;
+          bool inStdlib = known.count("std::" + name);
+          bool inRegistry = project && project->isValid()
+            && project->registry().hasModule(
+                 ModuleRegistry::usePathToModulePath(name));
+          if (inStdlib)
             ci.detail = "stdlib";
-            ci.insertText = name + "::";
-            items.push_back(std::move(ci));
-          }
+          else if (inRegistry)
+            ci.detail = "module";
+          else
+            ci.detail = "module (file)";
+          ci.insertText = name + "::";
+          items.push_back(std::move(ci));
         }
       }
     }
@@ -3997,23 +4038,56 @@ void CompletionProvider::addUseCompletions(std::vector<CompletionItem> &items,
   }
 
   // Case 2.5: user module root — suggest submodules
-  if (project && project->isValid() && !modulePath.empty()) {
+  if (project && !modulePath.empty()) {
     std::string slashedPath = ModuleRegistry::usePathToModulePath(modulePath);
     std::unordered_set<std::string> submodules;
-    for (auto& mod : project->registry().allModules()) {
-      if (mod.substr(0, slashedPath.size() + 1) != slashedPath + "/")
-        continue;
-      auto rest = mod.substr(slashedPath.size() + 1);
-      auto nextSep = rest.find('/');
-      auto sub = (nextSep != std::string::npos) ? rest.substr(0, nextSep) : rest;
-      if (!matchesPrefix(sub, prefix)) continue;
-      if (!submodules.insert(sub).second) continue;
-      CompletionItem ci;
-      ci.label = sub;
-      ci.kind = CompletionKind::Module;
-      ci.detail = modulePath + "::" + sub;
-      ci.insertText = sub + "::";
-      items.push_back(std::move(ci));
+    // Only built projects have a populated registry.
+    if (project->isValid()) {
+      for (auto& mod : project->registry().allModules()) {
+        if (mod.substr(0, slashedPath.size() + 1) != slashedPath + "/")
+          continue;
+        auto rest = mod.substr(slashedPath.size() + 1);
+        auto nextSep = rest.find('/');
+        auto sub = (nextSep != std::string::npos) ? rest.substr(0, nextSep) : rest;
+        if (!matchesPrefix(sub, prefix)) continue;
+        if (!submodules.insert(sub).second) continue;
+        CompletionItem ci;
+        ci.label = sub;
+        ci.kind = CompletionKind::Module;
+        ci.detail = modulePath + "::" + sub;
+        ci.insertText = sub + "::";
+        items.push_back(std::move(ci));
+      }
+    }
+    // Filesystem fallback: scan project directories for the subdirectory.
+    {
+      auto root = fs::path(project->projectRoot());
+      std::vector<fs::path> searchDirs = { root };
+      for (auto& sp : project->sourcePaths())
+        searchDirs.push_back(root / fs::path(sp));
+      for (auto& dir : searchDirs) {
+        auto subdir = dir / slashedPath;
+        std::error_code ec;
+        if (!fs::is_directory(subdir, ec)) continue;
+        for (auto& entry : fs::directory_iterator(subdir, ec)) {
+          if (ec) break;
+          std::string name;
+          if (entry.is_regular_file() && entry.path().extension() == ".lc") {
+            name = entry.path().stem().string();
+          } else if (entry.is_directory()) {
+            name = entry.path().filename().string();
+          }
+          if (name.empty() || name == "main") continue;
+          if (!matchesPrefix(name, prefix)) continue;
+          if (!submodules.insert(name).second) continue;
+          CompletionItem ci;
+          ci.label = name;
+          ci.kind = CompletionKind::Module;
+          ci.detail = modulePath + "::" + name;
+          ci.insertText = name + "::";
+          items.push_back(std::move(ci));
+        }
+      }
     }
     // Don't return — fall through to show module symbols too.
   }
@@ -4040,9 +4114,13 @@ void CompletionProvider::addUseCompletions(std::vector<CompletionItem> &items,
   }
 
   // Case 4: User module — suggest exported symbols
-  if (project && project->isValid()) {
+  if (project) {
     auto registryPath = ModuleRegistry::usePathToModulePath(modulePath);
-    auto syms = project->registry().getModuleSymbols(registryPath);
+
+    // Only built projects have a populated registry.
+    std::vector<const ExportedSymbol*> syms;
+    if (project->isValid())
+      syms = project->registry().getModuleSymbols(registryPath);
 
     // Fallback: if not in project registry, try parsing stdlib directly
     if (syms.empty()) {
@@ -4089,6 +4167,53 @@ void CompletionProvider::addUseCompletions(std::vector<CompletionItem> &items,
           items.push_back(std::move(ci));
         }
         return;
+      }
+
+      // Project file fallback: search project directories for .lc file
+      {
+        auto root = fs::path(project->projectRoot());
+        std::vector<fs::path> searchDirs = { root };
+        for (auto& sp : project->sourcePaths())
+          searchDirs.push_back(root / fs::path(sp));
+        for (auto& dir : searchDirs) {
+          auto candidate = dir / (registryPath + ".lc");
+          std::error_code ec;
+          if (!fs::exists(candidate, ec) || ec) continue;
+          try {
+            auto parseResult = Parser::parse(candidate.string());
+            if (!parseResult.tree) continue;
+            for (auto* tld : parseResult.tree->topLevelDecl()) {
+              std::string name;
+              int kind = -1;
+              if (auto* fd = tld->functionDecl()) {
+                if (!fd->IDENTIFIER().empty()) name = safeText(fd->IDENTIFIER(0)); kind = 0;
+              } else if (auto* sd = tld->structDecl()) {
+                name = safeText(sd->IDENTIFIER()); kind = 1;
+              } else if (auto* ed = tld->enumDecl()) {
+                name = safeText(ed->IDENTIFIER()); kind = 2;
+              } else if (auto* ud = tld->unionDecl()) {
+                name = safeText(ud->IDENTIFIER()); kind = 3;
+              } else if (auto* ta = tld->typeAliasDecl()) {
+                name = safeText(ta->IDENTIFIER()); kind = 4;
+              } else if (auto* ext = tld->extendDecl()) {
+                continue;
+              }
+              if (name.empty() || !matchesPrefix(name, prefix)) continue;
+              CompletionItem ci;
+              ci.label = name;
+              switch (kind) {
+              case 0: ci.kind = CompletionKind::Function; ci.detail = "function"; break;
+              case 1: ci.kind = CompletionKind::Struct;   ci.detail = "struct";   break;
+              case 2: ci.kind = CompletionKind::Enum;     ci.detail = "enum";     break;
+              case 3: ci.kind = CompletionKind::Struct;   ci.detail = "union";    break;
+              case 4: ci.kind = CompletionKind::Class;    ci.detail = "type alias"; break;
+              default: continue;
+              }
+              items.push_back(std::move(ci));
+            }
+            return;
+          } catch (...) { continue; }
+        }
       }
     }
 

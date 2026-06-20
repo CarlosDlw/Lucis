@@ -33,6 +33,10 @@ public:
                           const std::string& modulePath,
                           const std::string& currentFile);
 
+    // Set project directories for filesystem-based module fallback.
+    void setProjectPaths(const std::string& projectRoot,
+                         const std::vector<std::string>& sourcePaths);
+
     // Set C bindings from parsed #include headers.
     void setCBindings(const CBindings* bindings);
 
@@ -244,6 +248,14 @@ private:
     const ModuleRegistry* moduleRegistry_ = nullptr;
     std::string currentModulePath_;
     std::string currentFile_;
+
+    // Project directories for filesystem module fallback (set by LSP).
+    std::string projectRoot_;
+    std::vector<std::string> sourcePaths_;
+
+    // Try to find a module file on disk using project paths + stdlib dirs.
+    // Returns the file path if found, empty otherwise.
+    std::string findModuleFile(const std::string& modPath) const;
 
     // Phase 1: SemanticDB populated in parallel with TypeRegistry
     semantic::SemanticDB* semanticDB_ = nullptr;

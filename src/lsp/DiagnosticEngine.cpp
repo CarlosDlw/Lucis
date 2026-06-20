@@ -124,6 +124,9 @@ std::vector<Diagnostic> DiagnosticEngine::run(const std::string& source,
         std::string modPath = project->modulePathFor(filePath);
         checker.setModuleContext(&project->registry(), modPath, filePath);
 
+        // Pass project paths for filesystem-based module fallback.
+        checker.setProjectPaths(project->projectRoot(), project->sourcePaths());
+
         // Use project-wide C bindings.
         checker.setCBindings(&project->cBindings());
 
