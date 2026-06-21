@@ -5192,8 +5192,14 @@ std::any IRGen::visitCallStmt(LucisParser::CallStmtContext* ctx) {
 std::any IRGen::visitAsmStmt(LucisParser::AsmStmtContext* ctx) {
     auto isVolatile = ctx->VOLATILE() != nullptr;
 
-    auto rawAsmStr = ctx->STR_LIT()->getText();
-    std::string asmStr = rawAsmStr.substr(1, rawAsmStr.size() - 2);
+    // Build asm string from one or more string literals (concatenated with newlines)
+    std::string asmStr;
+    for (auto* strTok : ctx->STR_LIT()) {
+        auto raw = strTok->getText();
+        auto content = raw.substr(1, raw.size() - 2);
+        if (!asmStr.empty()) asmStr += '\n';
+        asmStr += content;
+    }
 
     auto& context = *context_;
     auto* voidTy  = llvm::Type::getVoidTy(context);
@@ -5266,10 +5272,15 @@ std::any IRGen::visitAsmStmt(LucisParser::AsmStmtContext* ctx) {
         }
     }
 
-    // Determine return type: single output → that type, else void
+    // Determine return type
     llvm::Type* retType = voidTy;
     if (outAllocas.size() == 1) {
         retType = outTypeInfos[0]->toLLVMType(context, module_->getDataLayout());
+    } else if (outAllocas.size() > 1) {
+        std::vector<llvm::Type*> members;
+        for (auto* ti : outTypeInfos)
+            members.push_back(ti->toLLVMType(context, module_->getDataLayout()));
+        retType = llvm::StructType::get(context, members);
     }
 
     auto* ft = llvm::FunctionType::get(retType, paramTypes, false);
@@ -5281,6 +5292,13 @@ std::any IRGen::visitAsmStmt(LucisParser::AsmStmtContext* ctx) {
 
     if (outAllocas.size() == 1 && outAllocas[0]) {
         builder_->CreateStore(result, outAllocas[0]);
+    } else if (outAllocas.size() > 1) {
+        for (size_t i = 0; i < outAllocas.size(); i++) {
+            if (outAllocas[i]) {
+                auto* val = builder_->CreateExtractValue(result, i, "out" + std::to_string(i));
+                builder_->CreateStore(val, outAllocas[i]);
+            }
+        }
     }
 
     return {};
@@ -5288,8 +5306,15 @@ std::any IRGen::visitAsmStmt(LucisParser::AsmStmtContext* ctx) {
 
 std::any IRGen::visitAsmExpr(LucisParser::AsmExprContext* ctx) {
     auto isVolatile = ctx->VOLATILE() != nullptr;
-    auto rawAsmStr = ctx->STR_LIT()->getText();
-    std::string asmStr = rawAsmStr.substr(1, rawAsmStr.size() - 2);
+
+    // Build asm string from one or more string literals (concatenated with newlines)
+    std::string asmStr;
+    for (auto* strTok : ctx->STR_LIT()) {
+        auto raw = strTok->getText();
+        auto content = raw.substr(1, raw.size() - 2);
+        if (!asmStr.empty()) asmStr += '\n';
+        asmStr += content;
+    }
     auto& context = *context_;
     auto* voidTy  = llvm::Type::getVoidTy(context);
 
@@ -5363,8 +5388,14 @@ std::any IRGen::visitAsmExpr(LucisParser::AsmExprContext* ctx) {
     }
 
     llvm::Type* retType = voidTy;
-    if (outAllocas.size() == 1)
+    if (outAllocas.size() == 1) {
         retType = outTypeInfos[0]->toLLVMType(context, module_->getDataLayout());
+    } else if (outAllocas.size() > 1) {
+        std::vector<llvm::Type*> members;
+        for (auto* ti : outTypeInfos)
+            members.push_back(ti->toLLVMType(context, module_->getDataLayout()));
+        retType = llvm::StructType::get(context, members);
+    }
 
     auto* ft = llvm::FunctionType::get(retType, paramTypes, false);
     auto* asmFn = llvm::InlineAsm::get(ft, asmStr, constraintsStr,
@@ -5372,8 +5403,16 @@ std::any IRGen::visitAsmExpr(LucisParser::AsmExprContext* ctx) {
                                        llvm::InlineAsm::AD_ATT);
     auto* result = builder_->CreateCall(ft, asmFn, paramValues);
 
-    if (outAllocas.size() == 1 && outAllocas[0])
+    if (outAllocas.size() == 1 && outAllocas[0]) {
         builder_->CreateStore(result, outAllocas[0]);
+    } else if (outAllocas.size() > 1) {
+        for (size_t i = 0; i < outAllocas.size(); i++) {
+            if (outAllocas[i]) {
+                auto* val = builder_->CreateExtractValue(result, i, "out" + std::to_string(i));
+                builder_->CreateStore(val, outAllocas[i]);
+            }
+        }
+    }
 
     return result ? std::any(static_cast<llvm::Value*>(result)) : std::any(llvm::UndefValue::get(voidTy));
 }

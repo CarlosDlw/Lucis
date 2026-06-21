@@ -807,10 +807,13 @@ public:
     virtual size_t getRuleIndex() const override;
     antlr4::tree::TerminalNode *ASM();
     antlr4::tree::TerminalNode *LPAREN();
-    antlr4::tree::TerminalNode *STR_LIT();
+    std::vector<antlr4::tree::TerminalNode *> STR_LIT();
+    antlr4::tree::TerminalNode* STR_LIT(size_t i);
     antlr4::tree::TerminalNode *RPAREN();
     antlr4::tree::TerminalNode *SEMI();
     antlr4::tree::TerminalNode *VOLATILE();
+    std::vector<antlr4::tree::TerminalNode *> COMMA();
+    antlr4::tree::TerminalNode* COMMA(size_t i);
     std::vector<antlr4::tree::TerminalNode *> COLON();
     antlr4::tree::TerminalNode* COLON(size_t i);
     AsmOutputListContext *asmOutputList();
@@ -1741,9 +1744,12 @@ public:
 
     antlr4::tree::TerminalNode *ASM();
     antlr4::tree::TerminalNode *LPAREN();
-    antlr4::tree::TerminalNode *STR_LIT();
+    std::vector<antlr4::tree::TerminalNode *> STR_LIT();
+    antlr4::tree::TerminalNode* STR_LIT(size_t i);
     antlr4::tree::TerminalNode *RPAREN();
     antlr4::tree::TerminalNode *VOLATILE();
+    std::vector<antlr4::tree::TerminalNode *> COMMA();
+    antlr4::tree::TerminalNode* COMMA(size_t i);
     std::vector<antlr4::tree::TerminalNode *> COLON();
     antlr4::tree::TerminalNode* COLON(size_t i);
     AsmOutputListContext *asmOutputList();

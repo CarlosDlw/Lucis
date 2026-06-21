@@ -211,8 +211,9 @@ scopeCallback
 
 // asm volatile("nop");
 // asm("syscall" : "=rax"(result) : "rax"(num), "rdi"(arg0) : "rcx", "r11");
+// Multiple string literals separated by commas are concatenated with newlines.
 asmStmt
-    : ASM VOLATILE? LPAREN STR_LIT
+    : ASM VOLATILE? LPAREN STR_LIT (COMMA STR_LIT)*
         (COLON asmOutputList?
          (COLON asmInputList?
           (COLON asmClobberList?)?)?)?
@@ -555,7 +556,7 @@ expression
     | STR_LIT                                                  # strLitExpr
     | C_STR_LIT                                                # cStrLitExpr
     | IDENTIFIER                                               # identExpr
-    | ASM VOLATILE? LPAREN STR_LIT
+    | ASM VOLATILE? LPAREN STR_LIT (COMMA STR_LIT)*
         (COLON asmOutputList?
          (COLON asmInputList?
           (COLON asmClobberList?)?)?)?

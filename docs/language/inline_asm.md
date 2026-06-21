@@ -7,12 +7,26 @@ Inline assembly allows you to embed raw machine instructions directly in your Lu
 ## Syntax
 
 ```
-asm volatile? "(" template_string
+asm volatile? "(" template_string ( "," template_string )*
     ( ":" output_list )?
     ( ":" input_list  )?
     ( ":" clobber_list)?
 ")" ";"
 ```
+
+The template consists of one or more string literals separated by commas. Multiple strings are concatenated with newlines, allowing each instruction on its own line:
+
+```
+asm volatile(
+    "movq $2, $0",
+    "addq $3, $1"
+    : "=r"(out1), "=r"(out2)
+    : "r"(a), "r"(b)
+    : "cc"
+);
+```
+
+A single string literal (the old syntax) continues to work:
 
 ### Components
 
@@ -202,6 +216,30 @@ int64 a = 0;
 printf("direct = {d}\n", asm("movq $$99, $0" : "=r"(a) : : "cc"));
 ```
 
+### Multiple outputs
+
+Inline asm supports multiple output operands. LLVM returns a struct value which is then split into individual variables:
+
+```
+int64 out1 = 0;
+int64 out2 = 0;
+
+asm volatile(
+    "movq $2, $0",
+    "addq $3, $1"
+    : "=r"(out1), "=r"(out2)
+    : "r"(10), "r"(20)
+    : "cc"
+);
+// out1 == 10, out2 == 20
+```
+
+The template string can be split across multiple string literals for readability. Each string becomes a separate line in the assembly output.
+
+When using multiple outputs, each output variable is stored independently. For expression form, the first output determines the return type (multi-output expressions are intended for statement form).
+
+Multiple outputs work with the `+r` read-write constraint and matching constraints too:
+
 ### System Calls (Linux x86-64)
 
 When invoking system calls, you must place arguments in specific physical registers. You do this by enclosing register names in curly braces `{}`.
@@ -271,8 +309,7 @@ The inline asm backend uses **AT&T syntax** by default:
 ## Limitations
 
 - Only AT&T dialect is currently supported (Intel dialect planned)
-- Single output: the result is returned and stored to the variable
-- Multiple outputs are not yet supported
+- Physical register multi-output constraints (`"=a"` + `"=d"` with struct return) may have codegen issues on some LLVM versions; use `"=r"` outputs instead
 - Label references (`%=`) are not supported
 - No support for `goto` labels (extended asm with `Goto`)
 
