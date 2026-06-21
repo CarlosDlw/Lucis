@@ -12954,6 +12954,7 @@ std::any IRGen::visitAddSubExpr(LucisParser::AddSubExprContext* ctx) {
         if (lhsPtr && !rhsPtr) {
             // ptr +/- int
             auto* elemTy = getPointeeTy(ctx->expression(0));
+            if (!elemTy->isSized()) elemTy = i8Ty;
             auto* idx = rhs;
             if (ctx->op->getType() == LucisLexer::MINUS) {
                 idx = builder_->CreateNeg(rhs, "neg");
@@ -12964,6 +12965,7 @@ std::any IRGen::visitAddSubExpr(LucisParser::AddSubExprContext* ctx) {
         if (!lhsPtr && rhsPtr) {
             // int + ptr
             auto* elemTy = getPointeeTy(ctx->expression(1));
+            if (!elemTy->isSized()) elemTy = i8Ty;
             return static_cast<llvm::Value*>(
                 builder_->CreateGEP(elemTy, rhs, lhs, "ptradd"));
         }
