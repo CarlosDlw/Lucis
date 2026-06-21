@@ -2439,7 +2439,19 @@ std::any IRGen::visitVarDeclStmt(LucisParser::VarDeclStmtContext* ctx) {
         auto* val     = castValue(initVal);
 
         if (!val->getType()->isArrayTy()) {
-            auto* arrTy = llvm::ArrayType::get(elemType, 0);
+            // Initializer is not an array type (e.g. [] empty literal) —
+            // use the declared type dimensions from the type spec
+            auto* spec = ctx->typeSpec();
+            std::vector<unsigned> sizes;
+            while (!spec->typeSpec().empty() && spec->INT_LIT()) {
+                sizes.push_back(std::stoul(spec->INT_LIT()->getText()));
+                spec = spec->typeSpec(0);
+            }
+            if (sizes.empty() && !aliasArraySizes.empty())
+                sizes = aliasArraySizes;
+            llvm::Type* arrTy = elemType;
+            for (auto it = sizes.rbegin(); it != sizes.rend(); ++it)
+                arrTy = llvm::ArrayType::get(arrTy, *it);
             auto* alloca = builder_->CreateAlloca(arrTy, nullptr, name);
             builder_->CreateStore(llvm::Constant::getNullValue(arrTy), alloca);
             locals_[name] = { alloca, ti, dims };
