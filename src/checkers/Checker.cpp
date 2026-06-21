@@ -7782,6 +7782,7 @@ void Checker::checkAsmStmt(LucisParser::AsmStmtContext* stmt) {
                       "(got '" + constraint + "')");
             }
 
+            if (!out->IDENTIFIER()) continue; // unnamed output — nothing to validate
             auto varName = out->IDENTIFIER()->getText();
             auto it = locals_.find(varName);
             if (it == locals_.end()) {
