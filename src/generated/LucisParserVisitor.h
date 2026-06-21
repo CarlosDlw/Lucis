@@ -89,6 +89,8 @@ public:
 
     virtual std::any visitScopeCallback(LucisParser::ScopeCallbackContext *context) = 0;
 
+    virtual std::any visitLabelDef(LucisParser::LabelDefContext *context) = 0;
+
     virtual std::any visitAsmStmt(LucisParser::AsmStmtContext *context) = 0;
 
     virtual std::any visitAsmOutputList(LucisParser::AsmOutputListContext *context) = 0;
@@ -96,6 +98,8 @@ public:
     virtual std::any visitAsmInputList(LucisParser::AsmInputListContext *context) = 0;
 
     virtual std::any visitAsmClobberList(LucisParser::AsmClobberListContext *context) = 0;
+
+    virtual std::any visitAsmGotoLabelList(LucisParser::AsmGotoLabelListContext *context) = 0;
 
     virtual std::any visitAsmOutput(LucisParser::AsmOutputContext *context) = 0;
 

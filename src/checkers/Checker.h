@@ -86,6 +86,12 @@ private:
         bool pointerEscaped = false;
     };
     std::unordered_map<std::string, VarInfo> locals_;
+
+    // Labels declared in the current function (for asm goto validation)
+    std::unordered_set<std::string> currentFunctionLabels_;
+    // Labels referenced by asm goto (validated at function end)
+    std::unordered_set<std::string> asmGotoLabelRefs_;
+
     unsigned scopeDepth_ = 0;     // current block nesting depth
     const TypeInfo* currentReturnType_ = nullptr;
     unsigned unwrapCatchItDepth_ = 0;

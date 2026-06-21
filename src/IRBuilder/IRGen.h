@@ -69,6 +69,7 @@ public:
     std::any visitArrowCompoundAssignStmt(LucisParser::ArrowCompoundAssignStmtContext* ctx) override;
     std::any visitCallStmt(LucisParser::CallStmtContext* ctx)           override;
     std::any visitAsmStmt(LucisParser::AsmStmtContext* ctx)             override;
+    std::any visitLabelDef(LucisParser::LabelDefContext* ctx)           override;
     std::any visitExprStmt(LucisParser::ExprStmtContext* ctx)           override;
     std::any visitReturnStmt(LucisParser::ReturnStmtContext* ctx)       override;
     std::any visitIfStmt(LucisParser::IfStmtContext* ctx)               override;
@@ -200,6 +201,9 @@ private:
         std::vector<unsigned> fixedArraySizes; // declared [N] sizes (incl. pointer-to-array)
     };
     std::unordered_map<std::string, VarInfo> locals_;
+
+    // Labels declared in the current function, mapped to their BasicBlock
+    std::unordered_map<std::string, llvm::BasicBlock*> labels_;
 
     // Variadic parameter info (name → {data ptr alloca, len alloca, element type})
     struct VariadicParamInfo {

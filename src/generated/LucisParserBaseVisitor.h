@@ -155,6 +155,10 @@ public:
     return visitChildren(ctx);
   }
 
+  virtual std::any visitLabelDef(LucisParser::LabelDefContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
   virtual std::any visitAsmStmt(LucisParser::AsmStmtContext *ctx) override {
     return visitChildren(ctx);
   }
@@ -168,6 +172,10 @@ public:
   }
 
   virtual std::any visitAsmClobberList(LucisParser::AsmClobberListContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual std::any visitAsmGotoLabelList(LucisParser::AsmGotoLabelListContext *ctx) override {
     return visitChildren(ctx);
   }
 

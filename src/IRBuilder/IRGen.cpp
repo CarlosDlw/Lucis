@@ -1244,6 +1244,7 @@ std::any IRGen::visitFunctionDecl(LucisParser::FunctionDeclContext* ctx) {
     currentFunction_ = func;
     currentFnReturnType_ = retInfo;
     locals_.clear(); // each function has its own scope
+    labels_.clear();
     variadicParams_.clear();
     deferStack_.clear();
 
@@ -5189,6 +5190,20 @@ std::any IRGen::visitCallStmt(LucisParser::CallStmtContext* ctx) {
     return {};
 }
 
+std::any IRGen::visitLabelDef(LucisParser::LabelDefContext* ctx) {
+    auto name = ctx->IDENTIFIER()->getText();
+    auto* bb = labels_[name];
+    if (!bb) {
+        bb = llvm::BasicBlock::Create(*context_, "label." + name, currentFunction_);
+        labels_[name] = bb;
+    }
+    if (!builder_->GetInsertBlock()->getTerminator())
+        builder_->CreateBr(bb);
+    builder_->SetInsertPoint(bb);
+    visit(ctx->statement());
+    return {};
+}
+
 std::any IRGen::visitAsmStmt(LucisParser::AsmStmtContext* ctx) {
     auto isVolatile = ctx->VOLATILE() != nullptr;
 
@@ -5267,7 +5282,25 @@ std::any IRGen::visitAsmStmt(LucisParser::AsmStmtContext* ctx) {
         }
     }
 
-    // Clobbers: "~{reg}"
+    // Goto labels (asm goto) — MUST come before clobbers in constraint string
+    // Uses LLVM 15+ "!i" constraint (blockaddress not passed as arg)
+    auto isGoto = ctx->GOTO() != nullptr && ctx->asmGotoLabelList()
+                  && !ctx->asmGotoLabelList()->IDENTIFIER().empty();
+    std::vector<llvm::BasicBlock*> indirectDests;
+    if (isGoto) {
+        for (auto* ident : ctx->asmGotoLabelList()->IDENTIFIER()) {
+            auto name = ident->getText();
+            auto* labelBB = labels_[name];
+            if (!labelBB) {
+                labelBB = llvm::BasicBlock::Create(*context_, "label." + name, currentFunction_);
+                labels_[name] = labelBB;
+            }
+            indirectDests.push_back(labelBB);
+            append("!i");
+        }
+    }
+
+    // Clobbers: "~{reg}" (must come after all operand constraints, including labels)
     if (auto* clobberList = ctx->asmClobberList()) {
         for (auto* strTok : clobberList->STR_LIT()) {
             auto raw = strTok->getText();
@@ -5279,28 +5312,45 @@ std::any IRGen::visitAsmStmt(LucisParser::AsmStmtContext* ctx) {
     // Determine return type
     llvm::Type* retType = voidTy;
     if (outAllocas.size() == 1) {
-        retType = outTypeInfos[0]->toLLVMType(context, module_->getDataLayout());
+        retType = outTypeInfos[0]->toLLVMType(*context_, module_->getDataLayout());
     } else if (outAllocas.size() > 1) {
         std::vector<llvm::Type*> members;
         for (auto* ti : outTypeInfos)
-            members.push_back(ti->toLLVMType(context, module_->getDataLayout()));
-        retType = llvm::StructType::get(context, members);
+            members.push_back(ti->toLLVMType(*context_, module_->getDataLayout()));
+        retType = llvm::StructType::get(*context_, members);
     }
 
     auto* ft = llvm::FunctionType::get(retType, paramTypes, false);
     auto* asmFn = llvm::InlineAsm::get(ft, asmStr, constraintsStr,
-                                       isVolatile, false,
+                                       isVolatile || isGoto, false,
                                        llvm::InlineAsm::AD_ATT);
 
-    auto* result = builder_->CreateCall(ft, asmFn, paramValues);
+    if (isGoto) {
+        auto* fallthroughBB = llvm::BasicBlock::Create(*context_, "asm.fallthrough", currentFunction_);
+        auto* result = builder_->CreateCallBr(ft, asmFn, fallthroughBB, indirectDests, paramValues);
 
-    if (outAllocas.size() == 1 && outAllocas[0]) {
-        builder_->CreateStore(result, outAllocas[0]);
-    } else if (outAllocas.size() > 1) {
-        for (size_t i = 0; i < outAllocas.size(); i++) {
-            if (outAllocas[i]) {
-                auto* val = builder_->CreateExtractValue(result, i, "out" + std::to_string(i));
-                builder_->CreateStore(val, outAllocas[i]);
+        builder_->SetInsertPoint(fallthroughBB);
+        if (outAllocas.size() == 1 && outAllocas[0]) {
+            builder_->CreateStore(result, outAllocas[0]);
+        } else if (outAllocas.size() > 1) {
+            for (size_t i = 0; i < outAllocas.size(); i++) {
+                if (outAllocas[i]) {
+                    auto* val = builder_->CreateExtractValue(result, i, "out" + std::to_string(i));
+                    builder_->CreateStore(val, outAllocas[i]);
+                }
+            }
+        }
+    } else {
+        auto* result = builder_->CreateCall(ft, asmFn, paramValues);
+
+        if (outAllocas.size() == 1 && outAllocas[0]) {
+            builder_->CreateStore(result, outAllocas[0]);
+        } else if (outAllocas.size() > 1) {
+            for (size_t i = 0; i < outAllocas.size(); i++) {
+                if (outAllocas[i]) {
+                    auto* val = builder_->CreateExtractValue(result, i, "out" + std::to_string(i));
+                    builder_->CreateStore(val, outAllocas[i]);
+                }
             }
         }
     }

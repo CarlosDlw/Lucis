@@ -147,7 +147,8 @@ block
 
 // Statements
 statement
-    : useDecl
+    : labelDef
+    | useDecl
     | varDeclStmt
     | assignStmt
     | compoundAssignStmt
@@ -209,20 +210,28 @@ scopeCallback
     : IDENTIFIER (DOT IDENTIFIER)? LPAREN argList? RPAREN
     ;
 
+// label: statement
+labelDef
+    : IDENTIFIER COLON statement
+    ;
+
 // asm volatile("nop");
 // asm("syscall" : "=rax"(result) : "rax"(num), "rdi"(arg0) : "rcx", "r11");
+// asm goto("jmp ${2:l}" : "=r"(x) : "r"(val) : "cc" : label1, label2);
 // Multiple string literals separated by commas are concatenated with newlines.
 asmStmt
-    : ASM VOLATILE? LPAREN STR_LIT (COMMA STR_LIT)*
+    : ASM VOLATILE? GOTO? LPAREN STR_LIT (COMMA STR_LIT)*
         (COLON asmOutputList?
          (COLON asmInputList?
-          (COLON asmClobberList?)?)?)?
+          (COLON asmClobberList?
+           (COLON asmGotoLabelList?)?)?)?)?
       RPAREN SEMI
     ;
 
 asmOutputList : asmOutput (COMMA asmOutput)*;
 asmInputList  : asmOperand (COMMA asmOperand)*;
 asmClobberList: STR_LIT (COMMA STR_LIT)*;
+asmGotoLabelList: IDENTIFIER (COMMA IDENTIFIER)*;
 
 asmOutput : constraint=STR_LIT (LPAREN IDENTIFIER RPAREN)?;
 asmOperand: constraint=STR_LIT LPAREN expression RPAREN;

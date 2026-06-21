@@ -17,28 +17,28 @@ public:
     FOR = 15, IN = 16, LOOP = 17, WHILE = 18, DO = 19, BREAK = 20, CONTINUE = 21, 
     SWITCH = 22, CASE = 23, DEFAULT = 24, SPAWN = 25, AWAIT = 26, LOCK = 27, 
     EXTEND = 28, TRY = 29, CATCH = 30, FINALLY = 31, THROW = 32, DEFER = 33, 
-    MATCH = 34, OR = 35, EXTERN = 36, ASM = 37, VOLATILE = 38, AUTO = 39, 
-    VEC = 40, MAP = 41, SET = 42, TUPLE = 43, ARROW = 44, INCLUDE_SYS = 45, 
-    INCLUDE_LOCAL = 46, INLINE_BLOCK = 47, SCOPE_BLOCK = 48, NULLCOAL = 49, 
-    SPREAD = 50, RANGE_INCL = 51, RANGE = 52, INT1 = 53, INT8 = 54, INT16 = 55, 
-    INT32 = 56, INT64 = 57, INT128 = 58, INTINF = 59, ISIZE = 60, UINT1 = 61, 
-    UINT8 = 62, UINT16 = 63, UINT32 = 64, UINT64 = 65, UINT128 = 66, USIZE = 67, 
-    FLOAT32 = 68, FLOAT64 = 69, FLOAT80 = 70, FLOAT128 = 71, DOUBLE = 72, 
-    BOOL = 73, CHAR = 74, VOID = 75, STRING = 76, CSTRING = 77, SUFFIXED_HEX = 78, 
-    SUFFIXED_OCT = 79, SUFFIXED_BIN = 80, SUFFIXED_INT = 81, SUFFIXED_INT_FLOAT = 82, 
-    SUFFIXED_FLOAT = 83, SUFFIXED_FLOAT_INT = 84, SUFFIXED_DOT_FLOAT = 85, 
-    HEX_LIT = 86, OCT_LIT = 87, BIN_LIT = 88, INT_LIT = 89, FLOAT_LIT = 90, 
-    BOOL_LIT = 91, C_STR_LIT = 92, STR_LIT = 93, CHAR_LIT = 94, ATTR_ERROR = 95, 
-    WILDCARD = 96, IDENTIFIER = 97, PLUS_ASSIGN = 98, MINUS_ASSIGN = 99, 
-    STAR_ASSIGN = 100, SLASH_ASSIGN = 101, PERCENT_ASSIGN = 102, AMP_ASSIGN = 103, 
-    PIPE_ASSIGN = 104, CARET_ASSIGN = 105, LSHIFT_ASSIGN = 106, RSHIFT_ASSIGN = 107, 
-    SEMI = 108, COLON = 109, SCOPE = 110, COMMA = 111, DOT = 112, ASSIGN = 113, 
-    LPAREN = 114, RPAREN = 115, LBRACE = 116, RBRACE = 117, LBRACKET = 118, 
-    RBRACKET = 119, STAR = 120, AMPERSAND = 121, MINUS = 122, PLUS = 123, 
-    SLASH = 124, PERCENT = 125, EQ = 126, NEQ = 127, LTE = 128, GTE = 129, 
-    LT = 130, GT = 131, LAND = 132, LOR = 133, NOT = 134, INCR = 135, DECR = 136, 
-    LSHIFT = 137, PIPE = 138, CARET = 139, TILDE = 140, QUESTION = 141, 
-    WS = 142, LINE_COMMENT = 143, BLOCK_COMMENT = 144
+    MATCH = 34, OR = 35, EXTERN = 36, ASM = 37, VOLATILE = 38, GOTO = 39, 
+    AUTO = 40, VEC = 41, MAP = 42, SET = 43, TUPLE = 44, ARROW = 45, INCLUDE_SYS = 46, 
+    INCLUDE_LOCAL = 47, INLINE_BLOCK = 48, SCOPE_BLOCK = 49, NULLCOAL = 50, 
+    SPREAD = 51, RANGE_INCL = 52, RANGE = 53, INT1 = 54, INT8 = 55, INT16 = 56, 
+    INT32 = 57, INT64 = 58, INT128 = 59, INTINF = 60, ISIZE = 61, UINT1 = 62, 
+    UINT8 = 63, UINT16 = 64, UINT32 = 65, UINT64 = 66, UINT128 = 67, USIZE = 68, 
+    FLOAT32 = 69, FLOAT64 = 70, FLOAT80 = 71, FLOAT128 = 72, DOUBLE = 73, 
+    BOOL = 74, CHAR = 75, VOID = 76, STRING = 77, CSTRING = 78, SUFFIXED_HEX = 79, 
+    SUFFIXED_OCT = 80, SUFFIXED_BIN = 81, SUFFIXED_INT = 82, SUFFIXED_INT_FLOAT = 83, 
+    SUFFIXED_FLOAT = 84, SUFFIXED_FLOAT_INT = 85, SUFFIXED_DOT_FLOAT = 86, 
+    HEX_LIT = 87, OCT_LIT = 88, BIN_LIT = 89, INT_LIT = 90, FLOAT_LIT = 91, 
+    BOOL_LIT = 92, C_STR_LIT = 93, STR_LIT = 94, CHAR_LIT = 95, ATTR_ERROR = 96, 
+    WILDCARD = 97, IDENTIFIER = 98, PLUS_ASSIGN = 99, MINUS_ASSIGN = 100, 
+    STAR_ASSIGN = 101, SLASH_ASSIGN = 102, PERCENT_ASSIGN = 103, AMP_ASSIGN = 104, 
+    PIPE_ASSIGN = 105, CARET_ASSIGN = 106, LSHIFT_ASSIGN = 107, RSHIFT_ASSIGN = 108, 
+    SEMI = 109, COLON = 110, SCOPE = 111, COMMA = 112, DOT = 113, ASSIGN = 114, 
+    LPAREN = 115, RPAREN = 116, LBRACE = 117, RBRACE = 118, LBRACKET = 119, 
+    RBRACKET = 120, STAR = 121, AMPERSAND = 122, MINUS = 123, PLUS = 124, 
+    SLASH = 125, PERCENT = 126, EQ = 127, NEQ = 128, LTE = 129, GTE = 130, 
+    LT = 131, GT = 132, LAND = 133, LOR = 134, NOT = 135, INCR = 136, DECR = 137, 
+    LSHIFT = 138, PIPE = 139, CARET = 140, TILDE = 141, QUESTION = 142, 
+    WS = 143, LINE_COMMENT = 144, BLOCK_COMMENT = 145
   };
 
   enum {
@@ -51,19 +51,19 @@ public:
     RuleParamList = 22, RuleParam = 23, RuleBlock = 24, RuleStatement = 25, 
     RuleDeferStmt = 26, RuleNakedBlockStmt = 27, RuleInlineBlockStmt = 28, 
     RuleScopeBlockStmt = 29, RuleScopeCallbackList = 30, RuleScopeCallback = 31, 
-    RuleAsmStmt = 32, RuleAsmOutputList = 33, RuleAsmInputList = 34, RuleAsmClobberList = 35, 
-    RuleAsmOutput = 36, RuleAsmOperand = 37, RuleExprStmt = 38, RuleVarDeclStmt = 39, 
-    RuleAssignStmt = 40, RuleCompoundAssignStmt = 41, RuleFieldAssignStmt = 42, 
-    RuleFieldCompoundAssignStmt = 43, RuleIndexFieldAssignStmt = 44, RuleFieldIndexAssignStmt = 45, 
-    RuleDerefAssignStmt = 46, RuleDerefCompoundAssignStmt = 47, RuleArrowAssignStmt = 48, 
-    RuleArrowCompoundAssignStmt = 49, RuleCallStmt = 50, RuleArgList = 51, 
-    RuleReturnStmt = 52, RuleIfStmt = 53, RuleElseIfClause = 54, RuleElseClause = 55, 
-    RuleIfBody = 56, RuleForStmt = 57, RuleBreakStmt = 58, RuleContinueStmt = 59, 
-    RuleLoopStmt = 60, RuleWhileStmt = 61, RuleDoWhileStmt = 62, RuleLockStmt = 63, 
-    RuleTryCatchStmt = 64, RuleCatchClause = 65, RuleFinallyClause = 66, 
-    RuleThrowStmt = 67, RuleSwitchStmt = 68, RuleCaseClause = 69, RuleDefaultClause = 70, 
-    RuleMatchArm = 71, RulePattern = 72, RuleLiteralPattern = 73, RuleExpression = 74, 
-    RuleTypeSpec = 75, RuleFnTypeSpec = 76, RulePrimitiveType = 77
+    RuleLabelDef = 32, RuleAsmStmt = 33, RuleAsmOutputList = 34, RuleAsmInputList = 35, 
+    RuleAsmClobberList = 36, RuleAsmGotoLabelList = 37, RuleAsmOutput = 38, 
+    RuleAsmOperand = 39, RuleExprStmt = 40, RuleVarDeclStmt = 41, RuleAssignStmt = 42, 
+    RuleCompoundAssignStmt = 43, RuleFieldAssignStmt = 44, RuleFieldCompoundAssignStmt = 45, 
+    RuleIndexFieldAssignStmt = 46, RuleFieldIndexAssignStmt = 47, RuleDerefAssignStmt = 48, 
+    RuleDerefCompoundAssignStmt = 49, RuleArrowAssignStmt = 50, RuleArrowCompoundAssignStmt = 51, 
+    RuleCallStmt = 52, RuleArgList = 53, RuleReturnStmt = 54, RuleIfStmt = 55, 
+    RuleElseIfClause = 56, RuleElseClause = 57, RuleIfBody = 58, RuleForStmt = 59, 
+    RuleBreakStmt = 60, RuleContinueStmt = 61, RuleLoopStmt = 62, RuleWhileStmt = 63, 
+    RuleDoWhileStmt = 64, RuleLockStmt = 65, RuleTryCatchStmt = 66, RuleCatchClause = 67, 
+    RuleFinallyClause = 68, RuleThrowStmt = 69, RuleSwitchStmt = 70, RuleCaseClause = 71, 
+    RuleDefaultClause = 72, RuleMatchArm = 73, RulePattern = 74, RuleLiteralPattern = 75, 
+    RuleExpression = 76, RuleTypeSpec = 77, RuleFnTypeSpec = 78, RulePrimitiveType = 79
   };
 
   explicit LucisParser(antlr4::TokenStream *input);
@@ -115,10 +115,12 @@ public:
   class ScopeBlockStmtContext;
   class ScopeCallbackListContext;
   class ScopeCallbackContext;
+  class LabelDefContext;
   class AsmStmtContext;
   class AsmOutputListContext;
   class AsmInputListContext;
   class AsmClobberListContext;
+  class AsmGotoLabelListContext;
   class AsmOutputContext;
   class AsmOperandContext;
   class ExprStmtContext;
@@ -660,6 +662,7 @@ public:
   public:
     StatementContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
+    LabelDefContext *labelDef();
     UseDeclContext *useDecl();
     VarDeclStmtContext *varDeclStmt();
     AssignStmtContext *assignStmt();
@@ -801,6 +804,21 @@ public:
 
   ScopeCallbackContext* scopeCallback();
 
+  class  LabelDefContext : public antlr4::ParserRuleContext {
+  public:
+    LabelDefContext(antlr4::ParserRuleContext *parent, size_t invokingState);
+    virtual size_t getRuleIndex() const override;
+    antlr4::tree::TerminalNode *IDENTIFIER();
+    antlr4::tree::TerminalNode *COLON();
+    StatementContext *statement();
+
+
+    virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+   
+  };
+
+  LabelDefContext* labelDef();
+
   class  AsmStmtContext : public antlr4::ParserRuleContext {
   public:
     AsmStmtContext(antlr4::ParserRuleContext *parent, size_t invokingState);
@@ -812,6 +830,7 @@ public:
     antlr4::tree::TerminalNode *RPAREN();
     antlr4::tree::TerminalNode *SEMI();
     antlr4::tree::TerminalNode *VOLATILE();
+    antlr4::tree::TerminalNode *GOTO();
     std::vector<antlr4::tree::TerminalNode *> COMMA();
     antlr4::tree::TerminalNode* COMMA(size_t i);
     std::vector<antlr4::tree::TerminalNode *> COLON();
@@ -819,6 +838,7 @@ public:
     AsmOutputListContext *asmOutputList();
     AsmInputListContext *asmInputList();
     AsmClobberListContext *asmClobberList();
+    AsmGotoLabelListContext *asmGotoLabelList();
 
 
     virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
@@ -874,6 +894,22 @@ public:
   };
 
   AsmClobberListContext* asmClobberList();
+
+  class  AsmGotoLabelListContext : public antlr4::ParserRuleContext {
+  public:
+    AsmGotoLabelListContext(antlr4::ParserRuleContext *parent, size_t invokingState);
+    virtual size_t getRuleIndex() const override;
+    std::vector<antlr4::tree::TerminalNode *> IDENTIFIER();
+    antlr4::tree::TerminalNode* IDENTIFIER(size_t i);
+    std::vector<antlr4::tree::TerminalNode *> COMMA();
+    antlr4::tree::TerminalNode* COMMA(size_t i);
+
+
+    virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+   
+  };
+
+  AsmGotoLabelListContext* asmGotoLabelList();
 
   class  AsmOutputContext : public antlr4::ParserRuleContext {
   public:

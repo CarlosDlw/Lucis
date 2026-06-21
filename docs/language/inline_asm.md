@@ -313,6 +313,49 @@ asm volatile(
 
 The `%=` is translated internally to LLVM's `${:uid}` syntax and replaced with an incrementing counter during codegen. Each asm block gets its own unique number.
 
+## `asm goto` With Labels
+
+`asm goto` allows the inline assembly to branch to a label in the current function. Labels are defined as `name:` followed by a statement. The `goto` keyword and label list come after clobbers (the 4th colon section):
+
+```
+fn main() int32 {
+  int64 result = 0i64;
+
+  asm volatile goto(
+    "test $2, $2",
+    "jz ${3:l}",
+    "movq $1, $0"
+    : "=r"(result)
+    : "r"(42i64), "r"(value)
+    : "cc"
+    : skip_label
+  );
+
+  // Fallthrough: ran when condition was false
+
+skip_label:
+  printf("result = {d}\n", result);
+  return 0;
+}
+```
+
+Key points:
+- The `goto` keyword is placed after `volatile` (if present) and before `(`.
+- Labels are listed after the 4th colon (`: label1, label2`), one colon section after clobbers.
+- In the template, labels are referenced as `${N:l}` where `N` is the operand slot (slots count outputs, then inputs, then labels). For example, with one output (`$0`) and one input (`$1`), the first label is `$2`.
+- Labels can be forward-referenced (defined after the `asm goto` that uses them).
+- Output values are only valid on the fallthrough path; using them on an indirect branch is undefined behavior.
+- `asm goto` implicitly implies `volatile`.
+
+Label definition syntax:
+
+```
+label_name:
+    statement
+```
+
+Labels must be unique within a function.
+
 ## Comparison with GCC Syntax
 
 | GCC | Lucis (LLVM) |
@@ -321,6 +364,7 @@ The `%=` is translated internally to LLVM's `${:uid}` syntax and replaced with a
 | `$42` | `$$42` |
 | `"rax"` output | `"={rax}"` (requires curly braces `{}`) |
 | `"rax"` input | `"{rax}"` (requires curly braces `{}`) |
+| `%lN` | `${N:l}` |
 | `%=` | `%=` (translated to `${:uid}` internally) |
 | `"cc"` clobber | `"cc"` clobber (wrapped as `~{cc}` internally) |
 | `"memory"` clobber | `"memory"` clobber |
@@ -329,7 +373,6 @@ The `%=` is translated internally to LLVM's `${:uid}` syntax and replaced with a
 
 - Only AT&T dialect is currently supported (Intel dialect planned)
 - Physical register multi-output constraints (`"=a"` + `"=d"` with struct return) may have codegen issues on some LLVM versions; use `"=r"` outputs instead
-- No support for `goto` labels (extended asm with `Goto`)
 
 ## When to Use Inline Assembly
 

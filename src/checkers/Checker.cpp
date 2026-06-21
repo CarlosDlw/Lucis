@@ -5943,6 +5943,10 @@ void Checker::checkFunction(LucisParser::FunctionDeclContext* func) {
         retType = typeRegistry_.lookup("void");
     }
 
+    // Clear labels from previous function
+    currentFunctionLabels_.clear();
+    asmGotoLabelRefs_.clear();
+
     // Register parameters as locals (params are always initialized and used)
     if (auto* paramList = func->paramList()) {
         for (auto* param : paramList->param()) {
@@ -5968,6 +5972,12 @@ void Checker::checkFunction(LucisParser::FunctionDeclContext* func) {
     currentReturnType_ = retType;
     checkBlock(func->block(), retType);
     currentReturnType_ = prevRet;
+
+    // Validate asm goto label references (forward references are now resolved)
+    for (auto& refName : asmGotoLabelRefs_) {
+        if (!currentFunctionLabels_.count(refName))
+            error(func, "undefined label '" + refName + "' in asm goto");
+    }
 
     if (retType->kind != TypeKind::Void) {
         if (!blockAlwaysReturns(func->block())) {
@@ -6226,6 +6236,13 @@ void Checker::checkStmt(LucisParser::StatementContext* stmt,
         checkCallStmt(call);
     } else if (auto* asmS = stmt->asmStmt()) {
         checkAsmStmt(asmS);
+    } else if (auto* label = stmt->labelDef()) {
+        auto name = label->IDENTIFIER()->getText();
+        if (currentFunctionLabels_.count(name))
+            error(label, "duplicate label '" + name + "'");
+        else
+            currentFunctionLabels_.insert(name);
+        checkStmt(label->statement(), retType, terminated);
     } else if (auto* exprS = stmt->exprStmt()) {
         checkExprStmt(exprS);
     } else if (auto* ret = stmt->returnStmt()) {
@@ -7820,6 +7837,12 @@ void Checker::checkAsmStmt(LucisParser::AsmStmtContext* stmt) {
 
             resolveExprType(operand->expression());
         }
+    }
+
+    // Collect goto label references (validated at function end for forward refs)
+    if (auto* labelList = stmt->asmGotoLabelList()) {
+        for (auto* ident : labelList->IDENTIFIER())
+            asmGotoLabelRefs_.insert(ident->getText());
     }
 }
 
