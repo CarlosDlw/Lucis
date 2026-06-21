@@ -295,6 +295,24 @@ The inline asm backend uses **AT&T syntax** by default:
 - Register references are implicit via operand numbering
 - Size suffixes (`movq`, `addl`, `cmpb`) are required when the assembler cannot infer operand sizes
 
+## Unique Labels (`%=`)
+
+Use `%=` in the template string to generate a unique number per asm block. This is useful for defining local labels that won't collide when the same asm is inlined or instantiated multiple times:
+
+```
+asm volatile(
+    "test $1, $1",
+    "jz label_%= ",
+    "movq $2, $0",
+    "label_%=:"
+    : "=r"(x)
+    : "r"(val), "r"(42)
+    : "cc"
+);
+```
+
+The `%=` is translated internally to LLVM's `${:uid}` syntax and replaced with an incrementing counter during codegen. Each asm block gets its own unique number.
+
 ## Comparison with GCC Syntax
 
 | GCC | Lucis (LLVM) |
@@ -303,6 +321,7 @@ The inline asm backend uses **AT&T syntax** by default:
 | `$42` | `$$42` |
 | `"rax"` output | `"={rax}"` (requires curly braces `{}`) |
 | `"rax"` input | `"{rax}"` (requires curly braces `{}`) |
+| `%=` | `%=` (translated to `${:uid}` internally) |
 | `"cc"` clobber | `"cc"` clobber (wrapped as `~{cc}` internally) |
 | `"memory"` clobber | `"memory"` clobber |
 
@@ -310,7 +329,6 @@ The inline asm backend uses **AT&T syntax** by default:
 
 - Only AT&T dialect is currently supported (Intel dialect planned)
 - Physical register multi-output constraints (`"=a"` + `"=d"` with struct return) may have codegen issues on some LLVM versions; use `"=r"` outputs instead
-- Label references (`%=`) are not supported
 - No support for `goto` labels (extended asm with `Goto`)
 
 ## When to Use Inline Assembly

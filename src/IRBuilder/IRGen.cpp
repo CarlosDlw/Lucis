@@ -5201,6 +5201,10 @@ std::any IRGen::visitAsmStmt(LucisParser::AsmStmtContext* ctx) {
         asmStr += content;
     }
 
+    // Translate GCC %= to LLVM ${:uid} for unique labels per asm instance
+    for (size_t p = 0; (p = asmStr.find("%=", p)) != std::string::npos; p += 7)
+        asmStr.replace(p, 2, "${:uid}");
+
     auto& context = *context_;
     auto* voidTy  = llvm::Type::getVoidTy(context);
 
@@ -5250,7 +5254,7 @@ std::any IRGen::visitAsmStmt(LucisParser::AsmStmtContext* ctx) {
         }
     }
 
-    // Inputs: "r"(expr)
+    // Inputs: "r"(expr) or "m"(expr)
     if (auto* inList = ctx->asmInputList()) {
         for (auto* operand : inList->asmOperand()) {
             auto raw = operand->constraint->getText();
@@ -5315,6 +5319,11 @@ std::any IRGen::visitAsmExpr(LucisParser::AsmExprContext* ctx) {
         if (!asmStr.empty()) asmStr += '\n';
         asmStr += content;
     }
+
+    // Translate GCC %= to LLVM ${:uid} for unique labels per asm instance
+    for (size_t p = 0; (p = asmStr.find("%=", p)) != std::string::npos; p += 7)
+        asmStr.replace(p, 2, "${:uid}");
+
     auto& context = *context_;
     auto* voidTy  = llvm::Type::getVoidTy(context);
 
