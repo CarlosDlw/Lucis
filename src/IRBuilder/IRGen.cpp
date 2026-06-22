@@ -1107,8 +1107,6 @@ void IRGen::forwardDeclareFunction(LucisParser::FunctionDeclContext* ctx) {
         emitName = "lucis_user_main";
     } else if (funcName == "main") {
         emitName = "main";
-    } else if (moduleRegistry_) {
-        emitName = ModuleRegistry::mangle(currentModulePath_, funcName);
     } else {
         emitName = funcName;
     }
@@ -1127,10 +1125,8 @@ void IRGen::forwardDeclareFunction(LucisParser::FunctionDeclContext* ctx) {
     fnReturnTypes_[emitName] = retInfo;
     fnReturnArrayDims_[emitName] = retArrayDims;
 
-    // Register in callTargetMap_ so calls resolve before body generation
-    if (moduleRegistry_ && funcName != "main") {
-        callTargetMap_[funcName] = emitName;
-    }
+    // Register call target name
+    callTargetMap_[funcName] = emitName;
 
     // Register variadic function info (only for typed variadics)
     if (variadicIdx >= 0 && ctx->paramList()) {
@@ -1202,16 +1198,12 @@ std::any IRGen::visitFunctionDecl(LucisParser::FunctionDeclContext* ctx) {
         emitName = "lucis_user_main";
     } else if (funcName == "main") {
         emitName = "main";
-    } else if (moduleRegistry_) {
-        emitName = ModuleRegistry::mangle(currentModulePath_, funcName);
     } else {
         emitName = funcName;
     }
 
-    // Register in callTargetMap_ so local calls resolve to this mangled name
-    if (moduleRegistry_ && funcName != "main") {
-        callTargetMap_[funcName] = emitName;
-    }
+    // Register call target name
+    callTargetMap_[funcName] = emitName;
 
     // Reuse forward-declared function, or create if not yet declared
     llvm::Function* func = module_->getFunction(emitName);
@@ -1821,12 +1813,9 @@ void IRGen::registerCrossFileSymbols(LucisParser::ProgramContext* ctx) {
                 continue;
             }
 
-            auto mangledName = ModuleRegistry::mangle(
-                currentModulePath_, sym->name);
-            if (!module_->getFunction(mangledName))
-                declareExternFunction(mangledName, funcCtx);
-            // Map unmangled name → mangled name for call resolution
-            callTargetMap_[sym->name] = mangledName;
+            if (!module_->getFunction(sym->name))
+                declareExternFunction(sym->name, funcCtx);
+            callTargetMap_[sym->name] = sym->name;
         }
     }
 
@@ -1848,10 +1837,9 @@ void IRGen::registerCrossFileSymbols(LucisParser::ProgramContext* ctx) {
             continue;
         }
 
-        auto mangledName = ModuleRegistry::mangle(sourceNs, sym->name);
-        if (!module_->getFunction(mangledName))
-            declareExternFunction(mangledName, funcCtx);
-        callTargetMap_[symbolName] = mangledName;
+        if (!module_->getFunction(sym->name))
+            declareExternFunction(sym->name, funcCtx);
+        callTargetMap_[symbolName] = sym->name;
     }
 
     // ── Phase 3: Register local functions into callTargetMap_ ──────────
@@ -9714,11 +9702,10 @@ std::any IRGen::visitStaticMethodCallExpr(
             auto* sym = moduleRegistry_->findSymbol(importIt->second, methodName);
             if (sym && sym->kind == ExportedSymbol::Function) {
                 auto* funcDecl = static_cast<LucisParser::FunctionDeclContext*>(sym->decl);
-                auto mangledName = ModuleRegistry::mangle(importIt->second, methodName);
-                if (!module_->getFunction(mangledName))
-                    declareExternFunction(mangledName, funcDecl);
+                if (!module_->getFunction(methodName))
+                    declareExternFunction(methodName, funcDecl);
 
-                auto* fn = module_->getFunction(mangledName);
+                auto* fn = module_->getFunction(methodName);
                 if (!fn) {
                     std::cerr << "lucis: module '" << importIt->second
                               << "' does not export callable symbol '" << methodName << "'\n";

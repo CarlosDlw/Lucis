@@ -284,8 +284,7 @@ private:
     // Phase 2: authoritative semantic database (populated by Checker)
     const semantic::SemanticDB* semanticDB_ = nullptr;
 
-    // Maps unmangled symbol name → mangled LLVM function name
-    // Built during visitProgram to resolve calls efficiently.
+    // Maps function name → LLVM function name (for call resolution)
     std::unordered_map<std::string, std::string> callTargetMap_;
 
     // User imports: symbol name → source module path

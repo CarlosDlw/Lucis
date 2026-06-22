@@ -30,7 +30,6 @@ static bool boolOrDefault(const YAML::Node& node, const std::string& key,
 std::optional<LucisConfig> LucisConfig::load(const std::string& yamlPath) {
     if (!fs::exists(yamlPath)) return std::nullopt;
 
-    // Run schema validation
     auto valMsgs = validate(yamlPath);
     bool hasError = false;
     for (auto& v : valMsgs) {
@@ -44,15 +43,13 @@ std::optional<LucisConfig> LucisConfig::load(const std::string& yamlPath) {
         YAML::Node root = YAML::LoadFile(yamlPath);
 
         LucisConfig cfg;
-        cfg.name        = root["name"].Scalar();
-        cfg.version     = optOrDefault(root, "version", "0.0.1");
-        cfg.description = optOrDefault(root, "description", "");
+        cfg.name    = root["name"].Scalar();
+        cfg.version = optOrDefault(root, "version", "0.0.1");
 
-        cfg.binary  = optOrDefault(root, "binary", cfg.name);
-        cfg.outDir  = optOrDefault(root, "out_dir", "build");
+        cfg.binary = optOrDefault(root, "binary", cfg.name);
+        cfg.outDir = optOrDefault(root, "out_dir", "build");
 
-        cfg.sourcePaths     = toStringVec(root["source"]);
-        cfg.excludePatterns = toStringVec(root["exclude"]);
+        cfg.sourcePaths = toStringVec(root["source"]);
 
         {
             auto b = root["build"];
@@ -61,33 +58,15 @@ std::optional<LucisConfig> LucisConfig::load(const std::string& yamlPath) {
             cfg.build.staticLink= boolOrDefault(b, "static", false);
             cfg.build.shared    = boolOrDefault(b, "shared", false);
             cfg.build.fpic      = boolOrDefault(b, "fpic", true);
-            cfg.build.quiet     = boolOrDefault(b, "quiet", false);
-
-            // Parse structured emits
-            auto emitsNode = b["emits"];
-            if (emitsNode.IsDefined() && emitsNode.IsMap()) {
-                for (const auto& entry : emitsNode) {
-                    auto key = entry.first.Scalar();
-                    auto val = entry.second;
-                    LucisConfig::EmitConfig ec;
-                    ec.enabled = boolOrDefault(val, "enabled", false);
-                    ec.file    = optOrDefault(val, "file", "");
-                    cfg.build.emits[key] = ec;
-                }
-            }
         }
         {
             auto r = root["run"];
             cfg.run.optLevel = optOrDefault(r, "opt_level", "O0");
             cfg.run.lto      = boolOrDefault(r, "lto", false);
-            cfg.run.quiet    = boolOrDefault(r, "quiet", false);
-            cfg.run.clean    = boolOrDefault(r, "clean", false);
             cfg.run.args     = toStringVec(r["args"]);
         }
         {
             auto l = root["linker"];
-            cfg.linker.flags    = toStringVec(l["flags"]);
-            cfg.linker.rpath    = optOrDefault(l, "rpath", "");
             cfg.linker.libs     = toStringVec(l["libs"]);
             cfg.linker.libPaths = toStringVec(l["lib_paths"]);
         }
@@ -101,8 +80,6 @@ std::optional<LucisConfig> LucisConfig::load(const std::string& yamlPath) {
         return std::nullopt;
     }
 }
-
-// ── Schema validation ────────────────────────────────────────────────
 
 static bool yamlIsMap(const YAML::Node& n) {
     return n.IsDefined() && n.IsMap();
@@ -147,61 +124,47 @@ LucisConfig::validate(const std::string& yamlPath) {
         return msgs;
     }
 
-    // Required fields
     if (!root["name"].IsDefined())
         msgs.push_back({"name", "missing required field"});
     else if (!root["name"].IsScalar())
-        msgs.push_back({"name", "expected scalar, got " + std::string(root["name"].IsSequence() ? "sequence" : root["name"].IsMap() ? "map" : "null")});
+        msgs.push_back({"name", "expected scalar"});
 
-    // Optional scalar fields
-    static const std::vector<std::string> optScalars = {
-        "version", "description", "binary", "out_dir"
-    };
-    for (auto& k : optScalars) {
+    for (auto& k : {"version", "binary", "out_dir"}) {
         if (root[k].IsDefined() && !root[k].IsScalar())
-            msgs.push_back({k, "expected scalar, got " + std::string(root[k].IsSequence() ? "sequence" : root[k].IsMap() ? "map" : "null")});
+            msgs.push_back({k, "expected scalar"});
     }
 
-    // Optional sequence fields
-    static const std::vector<std::string> optSeqs = {
-        "source", "exclude", "includes"
-    };
-    for (auto& k : optSeqs) {
+    for (auto& k : {"source", "includes"}) {
         if (root[k].IsDefined() && !root[k].IsSequence())
-            msgs.push_back({k, "expected sequence, got " + std::string(root[k].IsScalar() ? "scalar" : root[k].IsMap() ? "map" : "null")});
+            msgs.push_back({k, "expected sequence"});
     }
 
-    // Sub-map validations
     if (yamlIsMap(root["build"])) {
         if (root["build"]["opt_level"].IsDefined() && !root["build"]["opt_level"].IsScalar())
-            msgs.push_back({"build.opt_level", "expected scalar, got " + std::string(root["build"]["opt_level"].IsSequence() ? "sequence" : root["build"]["opt_level"].IsMap() ? "map" : "null")});
-        if (root["build"]["emits"].IsDefined() && !root["build"]["emits"].IsMap())
-            msgs.push_back({"build.emits", "expected map, got " + std::string(root["build"]["emits"].IsSequence() ? "sequence" : root["build"]["emits"].IsScalar() ? "scalar" : "null")});
-        // Check build sub-keys for unknown
+            msgs.push_back({"build.opt_level", "expected scalar"});
         static const std::vector<std::string> buildKeys = {
-            "opt_level", "lto", "static", "shared", "fpic", "quiet", "emits"
+            "opt_level", "lto", "static", "shared", "fpic"
         };
         checkUnknownKeys(root["build"], "build", buildKeys, msgs);
     }
 
     if (yamlIsMap(root["run"])) {
         static const std::vector<std::string> runKeys = {
-            "opt_level", "lto", "quiet", "clean", "args"
+            "opt_level", "lto", "args"
         };
         checkUnknownKeys(root["run"], "run", runKeys, msgs);
     }
 
     if (yamlIsMap(root["linker"])) {
         static const std::vector<std::string> linkerKeys = {
-            "flags", "rpath", "libs", "lib_paths"
+            "libs", "lib_paths"
         };
         checkUnknownKeys(root["linker"], "linker", linkerKeys, msgs);
     }
 
-    // Unknown top-level keys
     static const std::vector<std::string> topKeys = {
-        "name", "version", "description", "binary", "out_dir",
-        "source", "exclude", "build", "run", "linker", "includes"
+        "name", "version", "binary", "out_dir",
+        "source", "build", "run", "linker", "includes"
     };
     checkUnknownKeys(root, "", topKeys, msgs);
 
@@ -233,34 +196,21 @@ bool LucisConfig::createDefault(const std::string& dir, const std::string& name)
     LucisConfig cfg;
     cfg.name        = name;
     cfg.version     = "0.0.1";
-    cfg.description = "";
     cfg.binary      = name;
     cfg.outDir      = "build";
     cfg.sourcePaths = {"src/"};
-    cfg.excludePatterns = {};
-    cfg.includes        = {};
+    cfg.includes    = {};
 
     cfg.build.optLevel   = "O2";
     cfg.build.lto        = false;
     cfg.build.staticLink = false;
     cfg.build.shared     = false;
     cfg.build.fpic       = true;
-    cfg.build.quiet      = false;
-
-    // All emit types with defaults
-    cfg.build.emits["llvm"] = {false, ""};
-    cfg.build.emits["asm"]  = {false, ""};
-    cfg.build.emits["bc"]   = {false, ""};
-    cfg.build.emits["obj"]  = {false, ""};
 
     cfg.run.optLevel = "O0";
     cfg.run.lto      = false;
-    cfg.run.quiet    = false;
-    cfg.run.clean    = false;
     cfg.run.args     = {};
 
-    cfg.linker.flags    = {};
-    cfg.linker.rpath    = "";
     cfg.linker.libs     = {};
     cfg.linker.libPaths = {};
 
@@ -271,72 +221,48 @@ bool LucisConfig::save(const std::string& yamlPath) const {
     try {
         YAML::Node root;
 
-        root["name"]        = name;
-        root["version"]     = version;
-        root["description"] = description;
-        root["binary"]      = binary;
-        root["out_dir"]     = outDir;
+        root["name"]    = name;
+        root["version"] = version;
+        root["binary"]  = binary;
+        root["out_dir"] = outDir;
 
         for (const auto& s : sourcePaths)
             root["source"].push_back(s);
 
-        // Always write exclude (emit empty array if none)
-        if (excludePatterns.empty()) {
-            root["exclude"] = YAML::Node(YAML::NodeType::Sequence);
-        } else {
-            for (const auto& e : excludePatterns)
-                root["exclude"].push_back(e);
-        }
-
-        root["build"]["opt_level"]   = build.optLevel;
-        root["build"]["lto"]         = build.lto;
-        root["build"]["static"]      = build.staticLink;
-        root["build"]["shared"]      = build.shared;
-        root["build"]["fpic"]        = build.fpic;
-        root["build"]["quiet"]       = build.quiet;
-
-        // Save structured emits (always write all four types)
-        for (const auto& [key, ec] : build.emits) {
-            root["build"]["emits"][key]["enabled"] = ec.enabled;
-            root["build"]["emits"][key]["file"]    = ec.file;
-        }
+        root["build"]["opt_level"] = build.optLevel;
+        root["build"]["lto"]       = build.lto;
+        root["build"]["static"]    = build.staticLink;
+        root["build"]["shared"]    = build.shared;
+        root["build"]["fpic"]      = build.fpic;
 
         root["run"]["opt_level"] = run.optLevel;
         root["run"]["lto"]       = run.lto;
-        root["run"]["quiet"]     = run.quiet;
-        root["run"]["clean"]     = run.clean;
 
-        // Always write run.args
-        if (run.args.empty()) {
+        // run.args
+        if (run.args.empty())
             root["run"]["args"] = YAML::Node(YAML::NodeType::Sequence);
-        } else {
+        else
             for (const auto& a : run.args)
                 root["run"]["args"].push_back(a);
-        }
 
-        root["linker"]["rpath"] = linker.rpath;
-
-        // Always write linker arrays
         auto writeSeq = [&](YAML::Node parent, const std::string& key,
                              const std::vector<std::string>& vals) {
-            if (vals.empty()) {
+            if (vals.empty())
                 parent[key] = YAML::Node(YAML::NodeType::Sequence);
-            } else {
+            else
                 for (const auto& v : vals)
                     parent[key].push_back(v);
-            }
         };
-        writeSeq(root["linker"], "flags", linker.flags);
+
         writeSeq(root["linker"], "libs", linker.libs);
         writeSeq(root["linker"], "lib_paths", linker.libPaths);
 
-        // Always write includes
-        if (includes.empty()) {
+        // includes
+        if (includes.empty())
             root["includes"] = YAML::Node(YAML::NodeType::Sequence);
-        } else {
+        else
             for (const auto& i : includes)
                 root["includes"].push_back(i);
-        }
 
         std::ofstream ofs(yamlPath);
         if (!ofs) return false;

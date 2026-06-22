@@ -1,5 +1,6 @@
 #include "cli/BuildCommand.h"
 #include "cli/ArgParser.h"
+#include "cli/CliHelpers.h"
 #include "cli/LucisPipeline.h"
 #include "config/LucisConfig.h"
 #include "IRBuilder/IRGen.h"
@@ -21,10 +22,10 @@ namespace fs = std::filesystem;
 
 void BuildCommand::buildArgs(ArgParser& parser) const {
     parser.addPositional("file", "Path to the .lc entrypoint file (auto-resolved from lucis.yaml if omitted)", false);
-    parser.addOption("output", 'o', "FILE", "Output binary path (default: <input>.out, or lucis.yaml binary name verbatim)");
-    parser.addFlag("emit-llvm", '\0', "Emit LLVM IR (.ll)");
-    parser.addFlag("emit-asm",  '\0', "Emit assembly (.s)");
-    parser.addFlag("emit-bc",   '\0', "Emit LLVM bitcode (.bc)");
+    parser.addOption("output", 'o', "FILE", "Output binary path (default: <input>.out)");
+    parser.addFlag("emit-llvm", '\0', "Emit LLVM IR (.ll) to stdout or -o path");
+    parser.addFlag("emit-asm",  '\0', "Emit assembly (.s) to stdout or -o path");
+    parser.addFlag("emit-bc",   '\0', "Emit LLVM bitcode (.bc) to stdout or -o path");
     parser.addFlag("emit-obj",  '\0', "Emit object file (.o)");
     parser.addOption("opt", 'O', "LEVEL", "Optimization level: 0, 1, 2, 3, s, z, or fast (default: 0)");
     parser.addFlag("lto", '\0', "Enable Link Time Optimization");
@@ -39,122 +40,75 @@ void BuildCommand::buildArgs(ArgParser& parser) const {
     parser.addOption("include", 'I', "DIR", "Add include search path (repeatable)", true);
 }
 
-std::string BuildCommand::resolveInputFile(const ArgParser& parser,
-                                            LucisConfig* outConfig) const {
-    auto file = parser.get("file");
-
-    auto config = LucisConfig::findInDir(fs::current_path().string());
-    if (config && outConfig) *outConfig = *config;
-
-    if (!file.empty()) {
-        if (!fs::is_directory(file)) return file;
-        // Directory was passed — fall through to config-based search
-    }
-
-    if (!config) return {};
-
-    for (auto& candidate : { "src/main.lc", "main.lc" }) {
-        auto path = fs::path(candidate);
-        if (fs::exists(path))
-            return fs::canonical(path).string();
-    }
-    return {};
-}
-
 int BuildCommand::run(const ArgParser& parser) {
-    LucisConfig config;
-    std::string inputFile = resolveInputFile(parser, &config);
-    if (inputFile.empty()) {
+    auto resolved = resolveInputFile(parser.get("file"));
+    if (resolved.filePath.empty()) {
         std::cerr << "lucis: no input file specified and no lucis.yaml found\n";
         std::cerr << "usage: lucis build <file>   or   lucis build  (from a project with lucis.yaml)\n";
         return 1;
     }
 
+    bool useConfig = resolved.useConfig;
+    auto& cfg = resolved.config;
+
     LucisPipeline::Options pipeOpts;
-    pipeOpts.inputFile        = inputFile;
-    pipeOpts.quiet            = parser.has("quiet") ? true : config.build.quiet;
-    pipeOpts.includePaths     = parser.has("include") ? parser.getAll("include") : config.includes;
-    pipeOpts.userLinkerFlags  = parser.has("link") ? parser.getAll("link") : config.linker.libs;
-    pipeOpts.binaryName       = config.binary;
-    pipeOpts.outDir           = config.outDir;
-    pipeOpts.sourcePaths      = config.sourcePaths;
-
-    OptimizationLevel lucisOptLevel = OptimizationLevel::O0;
-
-    // Apply config opt_level as default, then CLI override
-    {
-        auto parseOpt = [](const std::string& s) -> OptimizationLevel {
-            if (s == "0")      return OptimizationLevel::O0;
-            if (s == "1")      return OptimizationLevel::O1;
-            if (s == "2")      return OptimizationLevel::O2;
-            if (s == "3")      return OptimizationLevel::O3;
-            if (s == "s")      return OptimizationLevel::Os;
-            if (s == "z")      return OptimizationLevel::Oz;
-            if (s == "fast")   return OptimizationLevel::Ofast;
-            return OptimizationLevel::O0;
-        };
-        lucisOptLevel = parseOpt(config.build.optLevel);
+    pipeOpts.inputFile = resolved.filePath;
+    pipeOpts.quiet     = parser.has("quiet");
+    pipeOpts.includePaths = parser.getAll("include");
+    if (useConfig) {
+        if (pipeOpts.includePaths.empty())
+            pipeOpts.includePaths = cfg->includes;
     }
 
-    if (parser.has("opt")) {
-        std::string optStr = parser.get("opt");
-        if (optStr == "0")      lucisOptLevel = OptimizationLevel::O0;
-        else if (optStr == "1") lucisOptLevel = OptimizationLevel::O1;
-        else if (optStr == "2") lucisOptLevel = OptimizationLevel::O2;
-        else if (optStr == "3") lucisOptLevel = OptimizationLevel::O3;
-        else if (optStr == "s") lucisOptLevel = OptimizationLevel::Os;
-        else if (optStr == "z") lucisOptLevel = OptimizationLevel::Oz;
-        else if (optStr == "fast") lucisOptLevel = OptimizationLevel::Ofast;
-        else {
-            try {
-                int level = std::stoi(optStr);
-                if (level >= 0 && level <= 3)
-                    lucisOptLevel = static_cast<OptimizationLevel>(level);
-            } catch (...) {
-                // Fallback to O0 or log warning if needed
-            }
-        }
-    }
+    pipeOpts.sourcePaths      = useConfig ? cfg->sourcePaths : std::vector<std::string>{"src/"};
+
+    pipeOpts.userLinkerFlags = parser.getAll("link");
+    if (useConfig && pipeOpts.userLinkerFlags.empty())
+        pipeOpts.userLinkerFlags = cfg->linker.libs;
+
+    pipeOpts.binaryName = useConfig ? cfg->binary : "";
+    pipeOpts.outDir     = useConfig ? cfg->outDir : "";
+
+    OptimizationLevel optLevel = OptimizationLevel::O0;
+    if (parser.has("opt"))
+        optLevel = parseOptimizationLevel(parser.get("opt"));
+    else if (useConfig)
+        optLevel = parseOptimizationLevel(cfg->build.optLevel);
+
+    bool useLTO    = parser.has("lto")    ? true : (useConfig ? cfg->build.lto        : false);
+    bool useStatic = parser.has("static") ? true : (useConfig ? cfg->build.staticLink : false);
+    bool useShared = parser.has("shared") ? true : (useConfig ? cfg->build.shared     : false);
+
+    bool usePIC;
+    if (parser.has("fPIC"))
+        usePIC = true;
+    else if (useShared)
+        usePIC = true;
+    else if (useStatic)
+        usePIC = false;
+    else
+        usePIC = useConfig ? cfg->build.fpic : true;
 
     std::string outputFile = parser.get("output");
-    bool useLTO       = parser.has("lto") ? true : config.build.lto;
-    bool useStatic    = parser.has("static") ? true : config.build.staticLink;
-    bool useShared    = parser.has("shared") ? true : config.build.shared;
 
-    // ── Resolve emit tasks from config + CLI overrides ──────────────────────
+    // ── Resolve emit tasks (CLI-only) ─────────────────────────────────────
     struct EmitTask {
         enum Type { LLVM, ASM, BC, OBJ };
         Type type;
-        std::string outPath; // resolved full path, empty = stdout for text emits
+        std::string outPath;
     };
     std::vector<EmitTask> tasks;
     bool emitObjEnabled = false;
     bool hasTextEmits = false;
 
     auto addEmitTask = [&](const std::string& key, EmitTask::Type etype) {
-        bool fromConfig = false;
-        std::string cfgFile;
-        auto it = config.build.emits.find(key);
-        if (it != config.build.emits.end()) {
-            fromConfig = it->second.enabled;
-            cfgFile    = it->second.file;
-        }
-        bool enabled = parser.has("emit-" + key) || fromConfig;
-        if (!enabled) return;
-
+        if (!parser.has("emit-" + key)) return;
         EmitTask t;
         t.type = etype;
+        if (!outputFile.empty())
+            t.outPath = outputFile;
         if (etype == EmitTask::OBJ) emitObjEnabled = true;
         else hasTextEmits = true;
-
-        // Resolve output path
-        if (!cfgFile.empty()) {
-            t.outPath = cfgFile;
-        } else if (!outputFile.empty()) {
-            t.outPath = outputFile;
-        }
-        // else: text emits go to stdout (outPath stays empty)
-
         tasks.push_back(t);
     };
 
@@ -163,7 +117,6 @@ int BuildCommand::run(const ArgParser& parser) {
     addEmitTask("bc",   EmitTask::BC);
     addEmitTask("obj",  EmitTask::OBJ);
 
-    // If there are multiple emits writing to the same path, error out
     for (size_t i = 0; i < tasks.size(); ++i) {
         for (size_t j = i + 1; j < tasks.size(); ++j) {
             if (tasks[i].outPath.empty() || tasks[j].outPath.empty()) continue;
@@ -175,21 +128,7 @@ int BuildCommand::run(const ArgParser& parser) {
         }
     }
 
-    // Intelligent PIC inference
-    bool usePIC;
-    if (parser.has("fPIC")) {
-        usePIC = true;
-    } else if (useShared) {
-        usePIC = true;
-    } else if (useStatic) {
-        usePIC = false;
-    } else {
-        usePIC = config.build.fpic;
-    }
-
     // ── Incremental build cache ──────────────────────────────────────────
-    // Check if all object files from the previous build are up-to-date
-    // (source mtimes unchanged since last build).
     bool buildCached = false;
     std::string projRoot = LucisPipeline::getProjectRoot(pipeOpts.inputFile);
     std::string pipelineBuildDir = projRoot + "/.lucis/build";
@@ -198,7 +137,6 @@ int BuildCommand::run(const ArgParser& parser) {
     if (!pipeOpts.quiet)
         std::cerr << "lucis: [build] checking incremental cache\n";
 
-    // Saved linker flags from cache manifest for cached linking
     std::vector<std::string> savedLinkerFlags;
     {
         std::ifstream manifest(cacheManifestPath);
@@ -207,9 +145,7 @@ int BuildCommand::run(const ArgParser& parser) {
             bool allMatch = true;
             while (std::getline(manifest, line)) {
                 if (line.empty()) continue;
-
                 if (line[0] == 'C' && line.size() > 2 && line[1] == ':') {
-                    // C:/path/to/file.c <mtime>
                     auto content = line.substr(2);
                     auto sep = content.find(' ');
                     if (sep == std::string::npos) { allMatch = false; break; }
@@ -223,10 +159,9 @@ int BuildCommand::run(const ArgParser& parser) {
                         break;
                     }
                 } else if (line[0] == '#') {
-                    // #linkerFlags -lz -lcurl
                     if (line.rfind("#linkerFlags", 0) == 0) {
                         savedLinkerFlags.clear();
-                        size_t pos = 12; // skip "#linkerFlags"
+                        size_t pos = 12;
                         while (pos < line.size()) {
                             while (pos < line.size() && line[pos] == ' ') pos++;
                             if (pos >= line.size()) break;
@@ -237,7 +172,6 @@ int BuildCommand::run(const ArgParser& parser) {
                         }
                     }
                 } else {
-                    // Regular source line: <path> <mtime>
                     auto sep = line.find(' ');
                     if (sep == std::string::npos) { allMatch = false; break; }
                     auto filePath = line.substr(0, sep);
@@ -272,7 +206,6 @@ int BuildCommand::run(const ArgParser& parser) {
         pipeline = LucisPipeline::run(pipeOpts);
         if (!pipeline || pipeline->hasErrors) return 1;
 
-        // Save build manifest after successful compilation
         if (pipeline->buildDir.empty()) pipeline->buildDir = pipelineBuildDir;
         std::string cacheDir = pipeline->buildDir + "/cache";
         std::error_code ec;
@@ -305,7 +238,6 @@ int BuildCommand::run(const ArgParser& parser) {
             }
         }
     } else {
-        // ── Cached build: collect existing .o files and link directly ──
         std::error_code ec;
         for (auto& entry : fs::directory_iterator(pipelineBuildDir, ec)) {
             if (entry.path().extension() == ".o")
@@ -313,9 +245,9 @@ int BuildCommand::run(const ArgParser& parser) {
         }
     }
 
-    // Prepend out_dir to emit file paths (need projectRoot from pipeline)
-    if (!buildCached && !config.outDir.empty()) {
-        auto outDirPath = fs::path(pipeline->projectRoot) / config.outDir;
+    // Prepend out_dir to emit file paths
+    if (!buildCached && useConfig && !cfg->outDir.empty()) {
+        auto outDirPath = fs::path(pipeline->projectRoot) / cfg->outDir;
         fs::create_directories(outDirPath);
         for (auto& t : tasks) {
             if (!t.outPath.empty() && fs::path(t.outPath).is_relative())
@@ -345,7 +277,6 @@ int BuildCommand::run(const ArgParser& parser) {
     std::vector<std::string> objectFiles;
 
     if (!buildCached) {
-        // ── Generate IR for all units ──────────────────────────────────
         struct UnitIR {
             std::string filePath;
             std::unique_ptr<IRModule> mod;
@@ -369,13 +300,12 @@ int BuildCommand::run(const ArgParser& parser) {
                 anyIRError = true;
                 continue;
             }
-            if (lucisOptLevel != OptimizationLevel::O0)
-                Optimizer::optimize(*irMod, lucisOptLevel);
+            if (optLevel != OptimizationLevel::O0)
+                Optimizer::optimize(*irMod, optLevel);
             unitIRs.push_back({unit.filePath, std::move(irMod)});
         }
         if (anyIRError) return 1;
 
-        // Locate the main unit's module
         auto mainPath = fs::canonical(fs::path(pipeOpts.inputFile)).string();
         llvm::Module* mainMod = nullptr;
         for (auto& uir : unitIRs) {
@@ -385,7 +315,7 @@ int BuildCommand::run(const ArgParser& parser) {
             }
         }
 
-        // ── Execute emit tasks on the main module ──────────────────────
+        // ── Execute emit tasks ──────────────────────────────────────
         if (!tasks.empty()) {
             bool anyEmitError = false;
             for (auto& t : tasks) {
@@ -499,15 +429,14 @@ int BuildCommand::run(const ArgParser& parser) {
     }
 
     if (outputFile.empty()) {
-        if (!config.binary.empty()) {
-            outputFile = config.binary;
+        if (useConfig && !cfg->binary.empty()) {
+            outputFile = cfg->binary;
         } else {
-            auto inPath = fs::path(pipeOpts.inputFile);
-            outputFile = inPath.stem().string() + ".out";
+            outputFile = fs::path(pipeOpts.inputFile).stem().string() + ".out";
         }
 
-        if (!config.outDir.empty()) {
-            auto outDirPath = fs::path(buildCached ? projRoot : pipeline->projectRoot) / config.outDir;
+        if (useConfig && !cfg->outDir.empty()) {
+            auto outDirPath = fs::path(buildCached ? projRoot : pipeline->projectRoot) / cfg->outDir;
             fs::create_directories(outDirPath);
             outputFile = (outDirPath / outputFile).string();
         }
@@ -519,21 +448,19 @@ int BuildCommand::run(const ArgParser& parser) {
         std::cerr << "\nlucis: [build] --- linker output ---\n\n";
 
     std::vector<std::string> finalLinkerFlags = buildCached ? savedLinkerFlags : pipeline->linkerFlags;
-    if (useLTO)         finalLinkerFlags.push_back("-flto");
-    if (useStatic)      finalLinkerFlags.push_back("-static");
-    if (useShared)      finalLinkerFlags.push_back("-shared");
+    if (useLTO)    finalLinkerFlags.push_back("-flto");
+    if (useStatic) finalLinkerFlags.push_back("-static");
+    if (useShared) finalLinkerFlags.push_back("-shared");
 
-    for (const auto& f : config.linker.flags)
-        finalLinkerFlags.push_back(f);
     for (auto& arg : parser.getAll("link-arg"))
         finalLinkerFlags.push_back(arg);
 
     if (parser.has("rpath"))
         finalLinkerFlags.push_back("-Wl,-rpath," + parser.get("rpath"));
-    else if (!config.linker.rpath.empty())
-        finalLinkerFlags.push_back("-Wl,-rpath," + config.linker.rpath);
 
-    auto libPaths = parser.has("lib-path") ? parser.getAll("lib-path") : config.linker.libPaths;
+    auto libPaths = parser.getAll("lib-path");
+    if (useConfig && libPaths.empty())
+        libPaths = cfg->linker.libPaths;
 
     if (!CodeGen::linkObjectFiles(objectFiles, outputFile,
                                     finalLinkerFlags,

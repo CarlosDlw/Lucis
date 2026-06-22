@@ -23,7 +23,6 @@ public:
         std::string path = parser.get("path");
         if (path.empty()) path = ".";
 
-        // Resolve target directory
         fs::path target(path);
         bool exists = fs::exists(target);
 
@@ -38,7 +37,6 @@ public:
             std::cout << "created directory '" << path << "/'\n";
         }
 
-        // Always ensure src/ exists
         {
             std::error_code ec;
             fs::create_directories(target / "src", ec);
@@ -50,7 +48,6 @@ public:
             dirName = fs::absolute(fs::current_path()).filename().string();
         }
 
-        // Create default main.lc
         auto mainPath = target / "src" / "main.lc";
         if (!fs::exists(mainPath)) {
             std::ofstream ofs(mainPath);
@@ -62,14 +59,13 @@ public:
             std::cout << "created file '" << (fs::relative(mainPath, absPath)).string() << "'\n";
         }
 
-        // Create lucis.yaml
         if (!LucisConfig::createDefault(absPath, dirName)) {
             std::cerr << "error: could not create lucis.yaml\n";
             return 1;
         }
 
         std::cout << "created file 'lucis.yaml'\n";
-        std::cout << "done. Run `lucis build " << path << "/src/main.lc` to compile.\n";
+        std::cout << "done. Run `lucis build` or `lucis run` from this directory to compile.\n";
         return 0;
     }
 };

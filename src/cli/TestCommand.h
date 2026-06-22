@@ -8,6 +8,9 @@ public:
     std::string description() const override {
         return "Run the Lucis test suite";
     }
-    void buildArgs(ArgParser& parser) const override;
-    int run(const ArgParser& parser) override;
+    void buildArgs(ArgParser& parser) const override {}
+    int run(const ArgParser& parser) override {
+        std::cout << "lucis test is not yet implemented.\n";
+        return 0;
+    }
 };

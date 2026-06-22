@@ -341,6 +341,7 @@ std::unique_ptr<PipelineResult> LucisPipeline::run(const Options& opts) {
             printUnitLine(stage, "check", checkIdx, result->units.size(), unit.filePath);
         Checker checker;
         checker.setModuleContext(result->registry.get(), unit.modulePath, unit.filePath);
+        checker.setProjectPaths(result->projectRoot, opts.sourcePaths);
         checker.setCBindings(result->cBindings.get());
         checker.setSemanticDB(result->semanticDB.get());
         bool passed = checker.check(unit.parseResult->tree);

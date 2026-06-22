@@ -1,9 +1,6 @@
 #pragma once
 
 #include "cli/Command.h"
-#include "config/LucisConfig.h"
-
-#include <string>
 
 class RunCommand : public Command {
 public:
@@ -13,8 +10,4 @@ public:
     }
     void buildArgs(ArgParser& parser) const override;
     int run(const ArgParser& parser) override;
-
-private:
-    std::string resolveInputFile(const ArgParser& parser,
-                                  LucisConfig* outConfig = nullptr) const;
 };
