@@ -2778,6 +2778,23 @@ std::any IRGen::visitCompoundAssignStmt(LucisParser::CompoundAssignStmtContext* 
     bool isFloat = varTy->isFloatingPointTy();
     llvm::Value* result = nullptr;
 
+    // ── Pointer arithmetic: ptr += int / ptr -= int ────────────
+    bool isPtrArith = elemTI && elemTI->kind == TypeKind::Pointer &&
+                      (ctx->op->getType() == LucisLexer::PLUS_ASSIGN ||
+                       ctx->op->getType() == LucisLexer::MINUS_ASSIGN);
+    if (isPtrArith) {
+        auto* pointeeLLTy = elemTI->pointeeType
+            ? elemTI->pointeeType->toLLVMType(*context_, module_->getDataLayout())
+            : llvm::Type::getInt8Ty(*context_);
+        auto* idx = rhs;
+        if (ctx->op->getType() == LucisLexer::MINUS_ASSIGN)
+            idx = builder_->CreateNeg(rhs, "neg");
+        result = static_cast<llvm::Value*>(
+            builder_->CreateGEP(pointeeLLTy, cur, idx, "ptr_cmpd"));
+        builder_->CreateStore(result, alloca);
+        return {};
+    }
+
     // Division by zero guard for /= and %=
     if (!isFloat && (ctx->op->getType() == LucisLexer::SLASH_ASSIGN ||
                      ctx->op->getType() == LucisLexer::PERCENT_ASSIGN)) {
@@ -3041,6 +3058,21 @@ std::any IRGen::visitFieldCompoundAssignStmt(
 
         bool isFloat = currentTy->isFloatingPointTy();
         llvm::Value* result = nullptr;
+        // Pointer arithmetic on pointer field: field += int / field -= int
+        if (currentTI && currentTI->kind == TypeKind::Pointer &&
+            (ctx->op->getType() == LucisLexer::PLUS_ASSIGN ||
+             ctx->op->getType() == LucisLexer::MINUS_ASSIGN)) {
+            auto* pointeeLLTy = currentTI->pointeeType
+                ? currentTI->pointeeType->toLLVMType(*context_, module_->getDataLayout())
+                : llvm::Type::getInt8Ty(*context_);
+            auto* idx = rhs;
+            if (ctx->op->getType() == LucisLexer::MINUS_ASSIGN)
+                idx = builder_->CreateNeg(rhs, "neg");
+            result = static_cast<llvm::Value*>(
+                builder_->CreateGEP(pointeeLLTy, cur, idx, "ptr_cmpd"));
+            builder_->CreateStore(result, currentPtr);
+            return {};
+        }
         if (!isFloat && (ctx->op->getType() == LucisLexer::SLASH_ASSIGN ||
                          ctx->op->getType() == LucisLexer::PERCENT_ASSIGN)) {
             emitDivByZeroGuard(rhs, ctx->op);
@@ -3142,6 +3174,22 @@ std::any IRGen::visitFieldCompoundAssignStmt(
 
     bool isFloat = currentTy->isFloatingPointTy();
     llvm::Value* result = nullptr;
+
+    // Pointer arithmetic on pointer field: field += int / field -= int
+    if (currentTI && currentTI->kind == TypeKind::Pointer &&
+        (ctx->op->getType() == LucisLexer::PLUS_ASSIGN ||
+         ctx->op->getType() == LucisLexer::MINUS_ASSIGN)) {
+        auto* pointeeLLTy = currentTI->pointeeType
+            ? currentTI->pointeeType->toLLVMType(*context_, module_->getDataLayout())
+            : llvm::Type::getInt8Ty(*context_);
+        auto* idx = rhs;
+        if (ctx->op->getType() == LucisLexer::MINUS_ASSIGN)
+            idx = builder_->CreateNeg(rhs, "neg");
+        result = static_cast<llvm::Value*>(
+            builder_->CreateGEP(pointeeLLTy, cur, idx, "ptr_cmpd"));
+        builder_->CreateStore(result, currentPtr);
+        return {};
+    }
 
     // Division by zero guard for /= and %=
     if (!isFloat && (ctx->op->getType() == LucisLexer::SLASH_ASSIGN ||
@@ -3711,6 +3759,22 @@ std::any IRGen::visitArrowCompoundAssignStmt(
     auto opType = ctx->op->getType();
     bool isFloat = fieldTy->isFloatingPointTy();
 
+    // Pointer arithmetic on pointer field accessed via ->: field += int
+    auto* fieldTI = currentTI->fields[fieldIdx].typeInfo;
+    if (fieldTI && fieldTI->kind == TypeKind::Pointer &&
+        (opType == LucisLexer::PLUS_ASSIGN || opType == LucisLexer::MINUS_ASSIGN)) {
+        auto* pointeeLLTy = fieldTI->pointeeType
+            ? fieldTI->pointeeType->toLLVMType(*context_, module_->getDataLayout())
+            : llvm::Type::getInt8Ty(*context_);
+        auto* idx = rhs;
+        if (opType == LucisLexer::MINUS_ASSIGN)
+            idx = builder_->CreateNeg(rhs, "neg");
+        result = static_cast<llvm::Value*>(
+            builder_->CreateGEP(pointeeLLTy, oldVal, idx, "ptr_cmpd"));
+        builder_->CreateStore(result, gep);
+        return {};
+    }
+
     // Division by zero guard for /= and %=
     if (!isFloat && (opType == LucisLexer::SLASH_ASSIGN ||
                      opType == LucisLexer::PERCENT_ASSIGN)) {
@@ -4139,6 +4203,22 @@ std::any IRGen::visitArrowAnyCompoundAssignStmt(
     bool isFloat = lv.ty->isFloatingPointTy();
     auto opType = ctx->op->getType();
     llvm::Value* result;
+
+    // Pointer arithmetic on pointer field: field += int / field -= int
+    if (lv.fieldTI && lv.fieldTI->kind == TypeKind::Pointer &&
+        (opType == LucisLexer::PLUS_ASSIGN || opType == LucisLexer::MINUS_ASSIGN)) {
+        auto* pointeeLLTy = lv.fieldTI->pointeeType
+            ? lv.fieldTI->pointeeType->toLLVMType(*context_, module_->getDataLayout())
+            : llvm::Type::getInt8Ty(*context_);
+        auto* idx = rhs;
+        if (opType == LucisLexer::MINUS_ASSIGN)
+            idx = builder_->CreateNeg(rhs, "neg");
+        result = static_cast<llvm::Value*>(
+            builder_->CreateGEP(pointeeLLTy, oldVal, idx, "ptr_cmpd"));
+        builder_->CreateStore(result, lv.ptr);
+        return {};
+    }
+
     if (opType == LucisLexer::PLUS_ASSIGN)
         result = isFloat ? builder_->CreateFAdd(oldVal, rhs) : builder_->CreateAdd(oldVal, rhs);
     else if (opType == LucisLexer::MINUS_ASSIGN)
@@ -13836,6 +13916,19 @@ std::any IRGen::visitPreIncrExpr(LucisParser::PreIncrExprContext* ctx) {
     auto [ptr, ty] = resolveIncrDecrTarget(ctx->expression());
     if (!ptr)
         return static_cast<llvm::Value*>(llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
+
+    auto* exprTI = resolveExprTypeInfo(ctx->expression());
+    if (exprTI && exprTI->kind == TypeKind::Pointer && exprTI->pointeeType) {
+        // Pointer ++: GEP with stride 1
+        llvm::Value* ptrVal = builder_->CreateLoad(llvm::PointerType::getUnqual(*context_), ptr, "preinc_ptr");
+        auto* pointeeLLTy = exprTI->pointeeType->toLLVMType(*context_, module_->getDataLayout());
+        auto* one = llvm::ConstantInt::get(llvm::Type::getInt64Ty(*context_), 1);
+        auto* newPtr = static_cast<llvm::Value*>(
+            builder_->CreateGEP(pointeeLLTy, ptrVal, one, "ptrinc"));
+        builder_->CreateStore(newPtr, ptr);
+        return newPtr;
+    }
+
     auto* cur = builder_->CreateLoad(ty, ptr, "preinc_load");
     auto* one = llvm::ConstantInt::get(ty, 1);
     auto* inc = builder_->CreateAdd(cur, one, "preinc");
@@ -13847,6 +13940,19 @@ std::any IRGen::visitPreDecrExpr(LucisParser::PreDecrExprContext* ctx) {
     auto [ptr, ty] = resolveIncrDecrTarget(ctx->expression());
     if (!ptr)
         return static_cast<llvm::Value*>(llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
+
+    auto* exprTI = resolveExprTypeInfo(ctx->expression());
+    if (exprTI && exprTI->kind == TypeKind::Pointer && exprTI->pointeeType) {
+        // Pointer --: GEP with stride -1
+        llvm::Value* ptrVal = builder_->CreateLoad(llvm::PointerType::getUnqual(*context_), ptr, "predec_ptr");
+        auto* pointeeLLTy = exprTI->pointeeType->toLLVMType(*context_, module_->getDataLayout());
+        auto* negOne = llvm::ConstantInt::get(llvm::Type::getInt64Ty(*context_), -1, true);
+        auto* newPtr = static_cast<llvm::Value*>(
+            builder_->CreateGEP(pointeeLLTy, ptrVal, negOne, "ptrdec"));
+        builder_->CreateStore(newPtr, ptr);
+        return newPtr;
+    }
+
     auto* cur = builder_->CreateLoad(ty, ptr, "predec_load");
     auto* one = llvm::ConstantInt::get(ty, 1);
     auto* dec = builder_->CreateSub(cur, one, "predec");
@@ -13858,6 +13964,19 @@ std::any IRGen::visitPostIncrExpr(LucisParser::PostIncrExprContext* ctx) {
     auto [ptr, ty] = resolveIncrDecrTarget(ctx->expression());
     if (!ptr)
         return static_cast<llvm::Value*>(llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
+
+    auto* exprTI = resolveExprTypeInfo(ctx->expression());
+    if (exprTI && exprTI->kind == TypeKind::Pointer && exprTI->pointeeType) {
+        // Pointer ++: GEP with stride 1, return old pointer
+        llvm::Value* old = builder_->CreateLoad(llvm::PointerType::getUnqual(*context_), ptr, "postinc_old");
+        auto* pointeeLLTy = exprTI->pointeeType->toLLVMType(*context_, module_->getDataLayout());
+        auto* one = llvm::ConstantInt::get(llvm::Type::getInt64Ty(*context_), 1);
+        auto* newPtr = static_cast<llvm::Value*>(
+            builder_->CreateGEP(pointeeLLTy, old, one, "ptrinc"));
+        builder_->CreateStore(newPtr, ptr);
+        return old;
+    }
+
     auto* old = builder_->CreateLoad(ty, ptr, "postinc_load");
     auto* one = llvm::ConstantInt::get(ty, 1);
     auto* inc = builder_->CreateAdd(old, one, "postinc");
@@ -13869,6 +13988,19 @@ std::any IRGen::visitPostDecrExpr(LucisParser::PostDecrExprContext* ctx) {
     auto [ptr, ty] = resolveIncrDecrTarget(ctx->expression());
     if (!ptr)
         return static_cast<llvm::Value*>(llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
+
+    auto* exprTI = resolveExprTypeInfo(ctx->expression());
+    if (exprTI && exprTI->kind == TypeKind::Pointer && exprTI->pointeeType) {
+        // Pointer --: GEP with stride -1, return old pointer
+        llvm::Value* old = builder_->CreateLoad(llvm::PointerType::getUnqual(*context_), ptr, "postdec_old");
+        auto* pointeeLLTy = exprTI->pointeeType->toLLVMType(*context_, module_->getDataLayout());
+        auto* negOne = llvm::ConstantInt::get(llvm::Type::getInt64Ty(*context_), -1, true);
+        auto* newPtr = static_cast<llvm::Value*>(
+            builder_->CreateGEP(pointeeLLTy, old, negOne, "ptrdec"));
+        builder_->CreateStore(newPtr, ptr);
+        return old;
+    }
+
     auto* old = builder_->CreateLoad(ty, ptr, "postdec_load");
     auto* one = llvm::ConstantInt::get(ty, 1);
     auto* dec = builder_->CreateSub(old, one, "postdec");

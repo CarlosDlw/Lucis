@@ -2915,8 +2915,8 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
     if (auto* pi = dynamic_cast<LucisParser::PreIncrExprContext*>(expr)) {
         auto* inner = pi->expression();
         auto* type = resolveExprType(inner);
-        if (type && !isInteger(type))
-            error(expr, "operator '++' requires integer operand, got '" +
+        if (type && !isInteger(type) && type->kind != TypeKind::Pointer)
+            error(expr, "operator '++' requires integer or pointer operand, got '" +
                              type->name + "'");
         if (!isLValue(inner))
             error(expr, "operator '++' requires a variable (lvalue)");
@@ -2926,8 +2926,8 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
     if (auto* pd = dynamic_cast<LucisParser::PreDecrExprContext*>(expr)) {
         auto* inner = pd->expression();
         auto* type = resolveExprType(inner);
-        if (type && !isInteger(type))
-            error(expr, "operator '--' requires integer operand, got '" +
+        if (type && !isInteger(type) && type->kind != TypeKind::Pointer)
+            error(expr, "operator '--' requires integer or pointer operand, got '" +
                              type->name + "'");
         if (!isLValue(inner))
             error(expr, "operator '--' requires a variable (lvalue)");
@@ -2938,8 +2938,8 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
     if (auto* pi = dynamic_cast<LucisParser::PostIncrExprContext*>(expr)) {
         auto* inner = pi->expression();
         auto* type = resolveExprType(inner);
-        if (type && !isInteger(type))
-            error(expr, "operator '++' requires integer operand, got '" +
+        if (type && !isInteger(type) && type->kind != TypeKind::Pointer)
+            error(expr, "operator '++' requires integer or pointer operand, got '" +
                              type->name + "'");
         if (!isLValue(inner))
             error(expr, "operator '++' requires a variable (lvalue)");
@@ -2949,8 +2949,8 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
     if (auto* pd = dynamic_cast<LucisParser::PostDecrExprContext*>(expr)) {
         auto* inner = pd->expression();
         auto* type = resolveExprType(inner);
-        if (type && !isInteger(type))
-            error(expr, "operator '--' requires integer operand, got '" +
+        if (type && !isInteger(type) && type->kind != TypeKind::Pointer)
+            error(expr, "operator '--' requires integer or pointer operand, got '" +
                              type->name + "'");
         if (!isLValue(inner))
             error(expr, "operator '--' requires a variable (lvalue)");
@@ -6999,28 +6999,36 @@ void Checker::checkCompoundAssignStmt(LucisParser::CompoundAssignStmtContext* st
     auto* rhsType = resolveExprType(stmt->expression());
     auto opText = stmt->op->getText();
 
-    bool needsNumeric = (opText == "+=" || opText == "-=" ||
+    bool isPtrArith = varType && varType->kind == TypeKind::Pointer &&
+                      (opText == "+=" || opText == "-=");
+
+    bool needsNumeric = !isPtrArith && (opText == "+=" || opText == "-=" ||
                          opText == "*=" || opText == "/=");
     bool needsInteger = (opText == "%=" || opText == "&=" || opText == "|=" ||
                          opText == "^=" || opText == "<<=" || opText == ">>=");
 
-    if (needsNumeric && varType && !isNumeric(varType))
-        error(stmt, "operator '" + opText +
-                         "' requires numeric variable, got '" + varType->name + "'");
-    if (needsInteger && varType && !isInteger(varType))
-        error(stmt, "operator '" + opText +
-                         "' requires integer variable, got '" + varType->name + "'");
-    if (needsNumeric && rhsType && !isNumeric(rhsType))
-        error(stmt, "operator '" + opText +
-                         "' requires numeric operand, got '" + rhsType->name + "'");
-    if (needsInteger && rhsType && !isInteger(rhsType))
-        error(stmt, "operator '" + opText +
-                         "' requires integer operand, got '" + rhsType->name + "'");
-
-    // Type compatibility between variable and RHS
-    if (rhsType && varType && !isAssignable(varType, rhsType))
-        error(stmt, "type mismatch in compound assignment: variable type '" +
-                    varType->name + "', cannot use '" + rhsType->name + "'");
+    if (isPtrArith) {
+        if (rhsType && !isInteger(rhsType))
+            error(stmt, "pointer arithmetic '" + opText +
+                             "' requires integer operand, got '" + rhsType->name + "'");
+    } else {
+        if (needsNumeric && varType && !isNumeric(varType))
+            error(stmt, "operator '" + opText +
+                             "' requires numeric variable, got '" + varType->name + "'");
+        if (needsInteger && varType && !isInteger(varType))
+            error(stmt, "operator '" + opText +
+                             "' requires integer variable, got '" + varType->name + "'");
+        if (needsNumeric && rhsType && !isNumeric(rhsType))
+            error(stmt, "operator '" + opText +
+                             "' requires numeric operand, got '" + rhsType->name + "'");
+        if (needsInteger && rhsType && !isInteger(rhsType))
+            error(stmt, "operator '" + opText +
+                             "' requires integer operand, got '" + rhsType->name + "'");
+        // Type compatibility between variable and RHS
+        if (rhsType && varType && !isAssignable(varType, rhsType))
+            error(stmt, "type mismatch in compound assignment: variable type '" +
+                        varType->name + "', cannot use '" + rhsType->name + "'");
+    }
 
     // Compile-time division by zero check
     if (opText == "/=" || opText == "%=") {
@@ -7129,28 +7137,36 @@ void Checker::checkFieldCompoundAssignStmt(LucisParser::FieldCompoundAssignStmtC
     auto* rhsType = resolveExprType(stmt->expression());
     auto opText = stmt->op->getText();
 
-    bool needsNumeric = (opText == "+=" || opText == "-=" ||
+    bool isPtrArith = currentType && currentType->kind == TypeKind::Pointer &&
+                      (opText == "+=" || opText == "-=");
+
+    bool needsNumeric = !isPtrArith && (opText == "+=" || opText == "-=" ||
                          opText == "*=" || opText == "/=");
     bool needsInteger = (opText == "%=" || opText == "&=" || opText == "|=" ||
                          opText == "^=" || opText == "<<=" || opText == ">>=");
 
-    if (needsNumeric && currentType && !isNumeric(currentType))
-        error(stmt, "operator '" + opText +
-                         "' requires numeric field, got '" + currentType->name + "'");
-    if (needsInteger && currentType && !isInteger(currentType))
-        error(stmt, "operator '" + opText +
-                         "' requires integer field, got '" + currentType->name + "'");
-    if (needsNumeric && rhsType && !isNumeric(rhsType))
-        error(stmt, "operator '" + opText +
-                         "' requires numeric operand, got '" + rhsType->name + "'");
-    if (needsInteger && rhsType && !isInteger(rhsType))
-        error(stmt, "operator '" + opText +
-                         "' requires integer operand, got '" + rhsType->name + "'");
-
-    // Type compatibility between field and RHS
-    if (rhsType && currentType && !isAssignable(currentType, rhsType))
-        error(stmt, "type mismatch in field compound assignment: field type '" +
-                    currentType->name + "', cannot use '" + rhsType->name + "'");
+    if (isPtrArith) {
+        if (rhsType && !isInteger(rhsType))
+            error(stmt, "pointer arithmetic '" + opText +
+                             "' requires integer operand, got '" + rhsType->name + "'");
+    } else {
+        if (needsNumeric && currentType && !isNumeric(currentType))
+            error(stmt, "operator '" + opText +
+                             "' requires numeric field, got '" + currentType->name + "'");
+        if (needsInteger && currentType && !isInteger(currentType))
+            error(stmt, "operator '" + opText +
+                             "' requires integer field, got '" + currentType->name + "'");
+        if (needsNumeric && rhsType && !isNumeric(rhsType))
+            error(stmt, "operator '" + opText +
+                             "' requires numeric operand, got '" + rhsType->name + "'");
+        if (needsInteger && rhsType && !isInteger(rhsType))
+            error(stmt, "operator '" + opText +
+                             "' requires integer operand, got '" + rhsType->name + "'");
+        // Type compatibility between field and RHS
+        if (rhsType && currentType && !isAssignable(currentType, rhsType))
+            error(stmt, "type mismatch in field compound assignment: field type '" +
+                        currentType->name + "', cannot use '" + rhsType->name + "'");
+    }
 
     // Compile-time division by zero check
     if (opText == "/=" || opText == "%=") {
@@ -7319,28 +7335,36 @@ void Checker::checkArrowCompoundAssignStmt(LucisParser::ArrowCompoundAssignStmtC
     auto* rhsType = resolveExprType(stmt->expression());
     auto opText = stmt->op->getText();
 
-    bool needsNumeric = (opText == "+=" || opText == "-=" ||
+    bool isPtrArith = fieldType && fieldType->kind == TypeKind::Pointer &&
+                      (opText == "+=" || opText == "-=");
+
+    bool needsNumeric = !isPtrArith && (opText == "+=" || opText == "-=" ||
                          opText == "*=" || opText == "/=");
     bool needsInteger = (opText == "%=" || opText == "&=" || opText == "|=" ||
                          opText == "^=" || opText == "<<=" || opText == ">>=");
 
-    if (needsNumeric && fieldType && !isNumeric(fieldType))
-        error(stmt, "operator '" + opText +
-                         "' requires numeric field, got '" + fieldType->name + "'");
-    if (needsInteger && fieldType && !isInteger(fieldType))
-        error(stmt, "operator '" + opText +
-                         "' requires integer field, got '" + fieldType->name + "'");
-    if (needsNumeric && rhsType && !isNumeric(rhsType))
-        error(stmt, "operator '" + opText +
-                         "' requires numeric operand, got '" + rhsType->name + "'");
-    if (needsInteger && rhsType && !isInteger(rhsType))
-        error(stmt, "operator '" + opText +
-                         "' requires integer operand, got '" + rhsType->name + "'");
-
-    // Type compatibility between field and RHS
-    if (rhsType && fieldType && !isAssignable(fieldType, rhsType))
-        error(stmt, "type mismatch in arrow compound assignment: field type '" +
-                    fieldType->name + "', cannot use '" + rhsType->name + "'");
+    if (isPtrArith) {
+        if (rhsType && !isInteger(rhsType))
+            error(stmt, "pointer arithmetic '" + opText +
+                             "' requires integer operand, got '" + rhsType->name + "'");
+    } else {
+        if (needsNumeric && fieldType && !isNumeric(fieldType))
+            error(stmt, "operator '" + opText +
+                             "' requires numeric field, got '" + fieldType->name + "'");
+        if (needsInteger && fieldType && !isInteger(fieldType))
+            error(stmt, "operator '" + opText +
+                             "' requires integer field, got '" + fieldType->name + "'");
+        if (needsNumeric && rhsType && !isNumeric(rhsType))
+            error(stmt, "operator '" + opText +
+                             "' requires numeric operand, got '" + rhsType->name + "'");
+        if (needsInteger && rhsType && !isInteger(rhsType))
+            error(stmt, "operator '" + opText +
+                             "' requires integer operand, got '" + rhsType->name + "'");
+        // Type compatibility between field and RHS
+        if (rhsType && fieldType && !isAssignable(fieldType, rhsType))
+            error(stmt, "type mismatch in arrow compound assignment: field type '" +
+                        fieldType->name + "', cannot use '" + rhsType->name + "'");
+    }
 
     if (opText == "/=" || opText == "%=") {
         if (auto* intLit = dynamic_cast<LucisParser::IntLitExprContext*>(stmt->expression())) {
