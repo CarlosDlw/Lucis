@@ -12,7 +12,7 @@ Variadic argument handling (`va_list`, `va_start`, `va_arg`, `va_end`), raw memo
 
 ### [`lucis::sys`](intrinsics/sys.md) — System control
 
-Typed memory access (read/write), pointer arithmetic (offset), bit reinterpretation (bitcast), compiler hints (assume/unreachable/expect), volatile access, bit manipulation (bitreverse/bswap/ctpop/ctlz/cttz), float math (sqrt/fma/ceil/floor/trunc/round/fabs/minimum/maximum/copysign), integer abs/rotate, overflow detection, stack/frame pointers, memory fences, prefetch, CPU control, lifetime hints, and raw system calls.
+Typed memory access (read/write), pointer arithmetic (offset), bit reinterpretation (bitcast), compiler hints (assume/unreachable/expect), volatile access, bit manipulation (bitreverse/bswap/ctpop/ctlz/cttz), float math (sqrt/fma/ceil/floor/trunc/round/fabs/minimum/maximum/copysign), integer abs/rotate, overflow detection, saturating arithmetic, stack/frame pointers, memory fences, prefetch, CPU control, lifetime hints, and raw system calls.
 
 ### [`lucis::io`](intrinsics/io.md) — Low-level file I/O
 

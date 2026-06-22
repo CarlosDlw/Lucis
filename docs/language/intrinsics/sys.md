@@ -192,6 +192,44 @@ Unsigned multiplication with overflow detection.
 
 ---
 
+## Saturating Arithmetic
+
+Generic intrinsics that perform arithmetic with saturation — results are clamped to the type's range instead of wrapping or overflowing. They lower to LLVM `@llvm.sadd.sat` / `@llvm.uadd.sat` / etc.
+
+### `lucis::sys::sadd_sat\<T\>(a, b) -> T`
+
+```lucis
+int32 r = lucis::sys::sadd_sat<int32>(INT32_MAX, 1);  // → INT32_MAX
+```
+
+Signed addition with saturation. Overflows clamp to `T::MAX` or `T::MIN`.
+
+### `lucis::sys::uadd_sat\<T\>(a, b) -> T`
+
+```lucis
+uint32 r = lucis::sys::uadd_sat<uint32>(0xFFFFFFFF, 1);  // → 0xFFFFFFFF
+```
+
+Unsigned addition with saturation. Overflows clamp to `T::MAX`.
+
+### `lucis::sys::ssub_sat\<T\>(a, b) -> T`
+
+```lucis
+int32 r = lucis::sys::ssub_sat<int32>(INT32_MIN, 1);  // → INT32_MIN
+```
+
+Signed subtraction with saturation. Underflows clamp to `T::MIN`, overflows to `T::MAX`.
+
+### `lucis::sys::usub_sat\<T\>(a, b) -> T`
+
+```lucis
+uint32 r = lucis::sys::usub_sat<uint32>(0, 1);  // → 0
+```
+
+Unsigned subtraction with saturation. Underflows clamp to 0.
+
+---
+
 ## Stack & Frame Pointer
 
 Access to the current frame pointer, return address, and stack pointer.

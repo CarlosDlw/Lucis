@@ -44,6 +44,7 @@ use tests::sys_memory::testSysMemory;
 use tests::sys_overflow::testSysOverflow;
 use tests::sys_prefetch::testSysPrefetch;
 use tests::sys_rotate_abs::testSysRotateAbs;
+use tests::sys_saturating::testSysSaturating;
 use tests::sys_stack::testSysStack;
 use tests::sys_syscall::testSysSyscall;
 use tests::sys_volatile::testSysVolatile;
@@ -112,5 +113,6 @@ fn main() int32 {
     testSysFloatMath();
     testSysRotateAbs();
     testSysExpectLifetime();
+    testSysSaturating();
     ret 0;
 }

@@ -389,6 +389,70 @@ void registerSysNamespace(IntrinsicRegistry& reg, TypeRegistry& typeReg) {
         "bool overflow = lucis::sys::umul_with_overflow<uint32>(a, b, &result);\n"
         "```"));
 
+    // ── Saturating arithmetic (LLVM intrinsics) ──────────────────
+    auto makeSaturatingOp = [](const std::string& name,
+                                llvm::Intrinsic::ID id,
+                                const std::string& desc) {
+        IntrinsicFunction fn;
+        fn.name = name;
+        fn.returnType = "_any";
+        fn.isGeneric = true;
+        fn.params.push_back({"_any", false});
+        fn.params.push_back({"_any", false});
+        fn.description = desc;
+
+        fn.lowering.kind = IntrinsicFunction::Lowering::InlineIR;
+        fn.lowering.emitIR = [id, name](
+            llvm::IRBuilder<>& builder,
+            llvm::Module* module,
+            llvm::LLVMContext& context,
+            const TypeRegistry& typeRegistry,
+            const std::vector<llvm::Value*>& args,
+            const std::vector<const TypeInfo*>& typeArgs) -> llvm::Value* {
+
+            auto& dl = module->getDataLayout();
+            auto* intTy = typeArgs[0]->toLLVMType(context, dl);
+            auto* a = builder.CreateIntCast(args[0], intTy, true, "a");
+            auto* b = builder.CreateIntCast(args[1], intTy, true, "b");
+            auto* callee = llvm::Intrinsic::getOrInsertDeclaration(
+                module, id, {intTy});
+            return builder.CreateCall(callee, {a, b}, name.c_str());
+        };
+        return fn;
+    };
+
+    sys.functions.push_back(makeSaturatingOp("sadd_sat",
+        llvm::Intrinsic::sadd_sat,
+        "Signed integer addition with saturation.\n"
+        "Clamps the result to the range of T on overflow.\n\n"
+        "```lucis\n"
+        "int32 r = lucis::sys::sadd_sat<int32>(INT32_MAX, 1);  // → INT32_MAX\n"
+        "```"));
+
+    sys.functions.push_back(makeSaturatingOp("uadd_sat",
+        llvm::Intrinsic::uadd_sat,
+        "Unsigned integer addition with saturation.\n"
+        "Clamps the result to the maximum of T on overflow.\n\n"
+        "```lucis\n"
+        "uint32 r = lucis::sys::uadd_sat<uint32>(0xFFFFFFFF, 1);  // → 0xFFFFFFFF\n"
+        "```"));
+
+    sys.functions.push_back(makeSaturatingOp("ssub_sat",
+        llvm::Intrinsic::ssub_sat,
+        "Signed integer subtraction with saturation.\n"
+        "Clamps the result to the range of T on underflow.\n\n"
+        "```lucis\n"
+        "int32 r = lucis::sys::ssub_sat<int32>(INT32_MIN, 1);  // → INT32_MIN\n"
+        "```"));
+
+    sys.functions.push_back(makeSaturatingOp("usub_sat",
+        llvm::Intrinsic::usub_sat,
+        "Unsigned integer subtraction with saturation.\n"
+        "Clamps the result to 0 on underflow.\n\n"
+        "```lucis\n"
+        "uint32 r = lucis::sys::usub_sat<uint32>(0, 1);  // → 0\n"
+        "```"));
+
     // ── Stack / frame intrinsics ────────────────────────────────
     // frame_address(level) -> usize
     {

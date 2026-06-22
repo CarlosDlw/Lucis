@@ -1,0 +1,66 @@
+use std::log::println;
+use std::test::{ assertEqual };
+
+fn testSysSaturating() int32 {
+    println("[Testing sys:: saturating arithmetic intrinsics...]");
+
+    // ── Signed add saturation ────────────────────────────────────
+    int32 max32 = 2147483647;
+
+    // Saturates at INT32_MAX
+    int32 sa1 = lucis::sys::sadd_sat<int32>(max32, 1);
+    assertEqual(sa1, 2147483647);
+
+    // Normal add
+    int32 sa2 = lucis::sys::sadd_sat<int32>(10, 20);
+    assertEqual(sa2, 30);
+
+    // Saturates at INT32_MIN (negative overflow)
+    int32 sa3 = lucis::sys::sadd_sat<int32>(-2147483648, -1);
+    assertEqual(sa3, -2147483648);
+
+    // ── Unsigned add saturation ──────────────────────────────────
+    uint32 uma = 0xFFFFFFFFu32;
+
+    // Saturates at UINT32_MAX
+    uint32 ua1 = lucis::sys::uadd_sat<uint32>(uma, 1);
+    assertEqual(ua1, 0xFFFFFFFF);
+
+    // Normal add
+    uint32 ua2 = lucis::sys::uadd_sat<uint32>(100, 200);
+    assertEqual(ua2, 300);
+
+    // ── Signed sub saturation ────────────────────────────────────
+    int32 min32 = -2147483648;
+
+    // Saturates at INT32_MIN
+    int32 ss1 = lucis::sys::ssub_sat<int32>(min32, 1);
+    assertEqual(ss1, -2147483648);
+
+    // Normal sub
+    int32 ss2 = lucis::sys::ssub_sat<int32>(10, 20);
+    assertEqual(ss2, -10);
+
+    // Saturates at INT32_MAX (positive overflow on subtraction)
+    int32 ss3 = lucis::sys::ssub_sat<int32>(2147483647, -1);
+    assertEqual(ss3, 2147483647);
+
+    // ── Unsigned sub saturation ──────────────────────────────────
+    // Saturates at 0
+    uint32 us1 = lucis::sys::usub_sat<uint32>(0, 1);
+    assertEqual(us1, 0);
+
+    // Normal sub
+    uint32 us2 = lucis::sys::usub_sat<uint32>(50, 20);
+    assertEqual(us2, 30);
+
+    // ── Other integer sizes ──────────────────────────────────────
+    int16 sa16 = lucis::sys::sadd_sat<int16>(32767, 1);
+    assertEqual(sa16, 32767);
+
+    int64 sa64 = lucis::sys::sadd_sat<int64>(10, 20);
+    assertEqual(sa64, 30);
+
+    println("✔ sys::saturating arithmetic tests passed");
+    ret 0;
+}
