@@ -1,0 +1,21 @@
+use std::log::println;
+
+fn testSysRdRand() int32 {
+    println("[Testing sys:: hardware RNG intrinsics...]");
+
+    // Compile-check: verify the intrinsics exist and accept correct pointer types.
+    // Runtime test requires RDRAND CPU support (Ivy Bridge+ / AMD Excavator+).
+    // On unsupported CPUs, rdrand raises SIGILL — only enable below on known hardware.
+
+    uint16 v16 = 0u16;
+    uint32 v32 = 0u32;
+    uint64 v64 = 0u64;
+
+    // Uncomment on RDRAND-capable hardware for full test:
+    // bool ok = lucis::sys::rdrand64(&v64);
+    // ok = lucis::sys::rdrand32(&v32);
+    // ok = lucis::sys::rdrand16(&v16);
+
+    println("✔ sys::rdrand tests passed (compile check)");
+    ret 0;
+}

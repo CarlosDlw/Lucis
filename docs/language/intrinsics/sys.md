@@ -639,6 +639,35 @@ The counter is monotonically increasing (though not synchronised across cores).
 
 ---
 
+## Hardware Random Number Generator
+
+Intel/AMD hardware RNG via the `RDRAND` instruction. Available on Ivy Bridge+ (Intel) and Excavator+ (AMD) processors. Unsupported CPUs will raise `SIGILL` — use `cpuid`-based detection before calling.
+
+All three intrinsics take a pointer to write the random value and return `true` on success (entropy available). If the RNG is not ready, they return `false` — retry in a loop.
+
+### `lucis::sys::rdrand16(ptr) -> bool`
+
+```lucis
+uint16 val = 0u16;
+while !lucis::sys::rdrand16(&val) {}
+```
+
+### `lucis::sys::rdrand32(ptr) -> bool`
+
+```lucis
+uint32 val = 0u32;
+while !lucis::sys::rdrand32(&val) {}
+```
+
+### `lucis::sys::rdrand64(ptr) -> bool`
+
+```lucis
+uint64 val = 0u64;
+while !lucis::sys::rdrand64(&val) {}
+```
+
+---
+
 ## System Calls
 
 Raw syscall interface using inline assembly. Supports 0–6 argument variants for all three major architectures.

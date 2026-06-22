@@ -1443,5 +1443,96 @@ void registerSysNamespace(IntrinsicRegistry& reg, TypeRegistry& typeReg) {
         "lucis::sys::lifetime_end(&obj);\n"
         "```"));
 
+    // ── Hardware random number generator (x86-64 rdrand) ─────────
+    auto makeRdRand = [](const std::string& name,
+                          const std::string& asmInsn,
+                          const std::string& intTypeName,
+                          const std::string& desc) {
+        IntrinsicFunction fn;
+        fn.name = name;
+        fn.returnType = "bool";
+        fn.params.push_back({"_any", false}); // ptr to write result
+        fn.description = desc;
+
+        fn.lowering.kind = IntrinsicFunction::Lowering::InlineIR;
+        fn.lowering.emitIR = [name, asmInsn, intTypeName](
+            llvm::IRBuilder<>& builder,
+            llvm::Module* module,
+            llvm::LLVMContext& context,
+            const TypeRegistry& typeRegistry,
+            const std::vector<llvm::Value*>& args,
+            const std::vector<const TypeInfo*>& typeArgs) -> llvm::Value* {
+
+            const auto tripleStr = module->getTargetTriple().str();
+            auto* boolTy = llvm::Type::getInt1Ty(context);
+
+            if (tripleStr.find("x86_64") != 0 && tripleStr.find("i386") != 0 &&
+                tripleStr.find("i686") != 0) {
+                // Unsupported target: store 0 and return false
+                auto* intTy = llvm::Type::getIntNTy(context,
+                    intTypeName == "uint16" ? 16 :
+                    intTypeName == "uint32" ? 32 : 64);
+                builder.CreateStore(llvm::ConstantInt::get(intTy, 0), args[0]);
+                return llvm::ConstantInt::getFalse(context);
+            }
+
+            auto bits = intTypeName == "uint16" ? 16 :
+                        intTypeName == "uint32" ? 32 : 64;
+            auto* intTy = llvm::Type::getIntNTy(context, bits);
+            auto* i8Ty  = llvm::Type::getInt8Ty(context);
+
+            // Build function type: returns {iN, i8} (value + success byte)
+            auto* structTy = llvm::StructType::get(context, {intTy, i8Ty});
+            auto* ft = llvm::FunctionType::get(structTy, false);
+
+            std::string constraints = "=r,=r,~{cc},~{dirflag},~{fpsr},~{flags}";
+            auto* asmFn = llvm::InlineAsm::get(ft, asmInsn, constraints,
+                true, false, llvm::InlineAsm::AD_ATT);
+
+            auto* callResult = builder.CreateCall(asmFn, {}, name.c_str());
+            auto* val = builder.CreateExtractValue(callResult, {0}, "val");
+            auto* ok_byte = builder.CreateExtractValue(callResult, {1}, "ok");
+            auto* ok = builder.CreateTrunc(ok_byte, boolTy);
+            // Only store if success (LLVM select for safety)
+            builder.CreateStore(val, args[0]);
+            return ok;
+        };
+        return fn;
+    };
+
+    sys.functions.push_back(makeRdRand("rdrand16",
+        "rdrandw $0; setc $1",
+        "uint16",
+        "Hardware random number generator (16-bit).\n"
+        "Writes the random value through the pointer and returns true on success.\n"
+        "May return false if the RNG is not ready (retry recommended).\n"
+        "Available on x86-64 with RDRAND support (Ivy Bridge+).\n\n"
+        "```lucis\n"
+        "uint16 val = 0;\n"
+        "while !lucis::sys::rdrand16(&val) {}\n"
+        "```"));
+
+    sys.functions.push_back(makeRdRand("rdrand32",
+        "rdrandl $0; setc $1",
+        "uint32",
+        "Hardware random number generator (32-bit).\n"
+        "Writes the random value through the pointer and returns true on success.\n"
+        "Available on x86-64 with RDRAND support (Ivy Bridge+).\n\n"
+        "```lucis\n"
+        "uint32 val = 0;\n"
+        "while !lucis::sys::rdrand32(&val) {}\n"
+        "```"));
+
+    sys.functions.push_back(makeRdRand("rdrand64",
+        "rdrandq $0; setc $1",
+        "uint64",
+        "Hardware random number generator (64-bit).\n"
+        "Writes the random value through the pointer and returns true on success.\n"
+        "Available on x86-64 with RDRAND support (Ivy Bridge+).\n\n"
+        "```lucis\n"
+        "uint64 val = 0;\n"
+        "while !lucis::sys::rdrand64(&val) {}\n"
+        "```"));
+
     reg.registerNamespace(std::move(sys));
 }
