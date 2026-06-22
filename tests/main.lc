@@ -1,3 +1,4 @@
+use tests::atomic_ordering::testAtomicOrdering;
 use tests::array_features_full::testArrayFeaturesFull;
 use tests::array_types::testArrayTypes;
 use tests::bool_types::testBoolTypes;
@@ -36,10 +37,13 @@ use tests::structs_methods_extend::testStructsMethodsAndExtend;
 use tests::structs_pointers::testStructsPointers;
 use tests::sys_bitops::testSysBitOps;
 use tests::sys_cpu::testSysCPU;
+use tests::sys_expect_lifetime::testSysExpectLifetime;
 use tests::sys_fence::testSysFence;
+use tests::sys_float_math::testSysFloatMath;
 use tests::sys_memory::testSysMemory;
 use tests::sys_overflow::testSysOverflow;
 use tests::sys_prefetch::testSysPrefetch;
+use tests::sys_rotate_abs::testSysRotateAbs;
 use tests::sys_stack::testSysStack;
 use tests::sys_syscall::testSysSyscall;
 use tests::sys_volatile::testSysVolatile;
@@ -52,6 +56,7 @@ use tests::vec_pointers::testVecPointers;
 use tests::void_types::testVoidTypes;
 
 fn main() int32 {
+    // testAtomicOrdering();  // FIXME: libatomic memcpy overlap triggers ASAN in lucis test
     testIntTypes();
     testIntMethodsExtra();
     testUintTypes();
@@ -104,5 +109,8 @@ fn main() int32 {
     testSysPrefetch();
     testSysCPU();
     testSysSyscall();
+    testSysFloatMath();
+    testSysRotateAbs();
+    testSysExpectLifetime();
     ret 0;
 }

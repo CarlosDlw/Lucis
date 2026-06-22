@@ -402,6 +402,157 @@ lucis::sys::unreachable();
 
 Marks the current point as unreachable (`@llvm.unreachable`). If control flow reaches this call, behaviour is undefined. Useful in default branches that should never execute.
 
+### `lucis::sys::expect(cond, expected) -> bool`
+
+```lucis
+if lucis::sys::expect(x > 0, true) {
+    // fast path
+}
+```
+
+Branch-weight hint via `@llvm.expect`. Returns `cond` unchanged while telling the optimizer that `expected` is the likely value. Use it to mark hot/cold branches without changing semantics.
+
+| Param | Type | Description |
+|-------|------|-------------|
+| `cond` | `bool` | The condition to check |
+| `expected` | `bool` | The expected value of `cond` |
+
+---
+
+## Lifetime Hints
+
+Annotations that tell the optimizer when an object's memory is valid.
+
+### `lucis::sys::lifetime_start(ptr)`
+
+```lucis
+lucis::sys::lifetime_start(&obj);
+```
+
+Marks the start of an object's lifetime (`@llvm.lifetime.start`). The pointer must point to the beginning of the allocation. LLVM uses this to optimize stack reuse and detect use-after-free.
+
+### `lucis::sys::lifetime_end(ptr)`
+
+```lucis
+lucis::sys::lifetime_end(&obj);
+```
+
+Marks the end of an object's lifetime (`@llvm.lifetime.end`). Accessing the object after this becomes undefined behaviour. Pair with `lifetime_start`.
+
+---
+
+## Float Math
+
+Generic intrinsics for floating-point operations that lower directly to LLVM float intrinsics. All are generic over `<T>` where `T` is a floating-point type (`float32` or `float64`).
+
+### `lucis::sys::sqrt\<T\>(x) -> T`
+
+```lucis
+float64 r = lucis::sys::sqrt<float64>(2.0);  // → 1.414...
+```
+
+Square root (`@llvm.sqrt`).
+
+### `lucis::sys::fma\<T\>(a, b, c) -> T`
+
+```lucis
+float64 r = lucis::sys::fma<float64>(2.0, 3.0, 4.0);  // → 10.0
+```
+
+Fused multiply-add: `a * b + c` with a single rounding (`@llvm.fma`).
+
+### `lucis::sys::ceil\<T\>(x) -> T`
+
+```lucis
+float64 r = lucis::sys::ceil<float64>(3.14);  // → 4.0
+```
+
+Rounds up to the nearest integral value (`@llvm.ceil`).
+
+### `lucis::sys::floor\<T\>(x) -> T`
+
+```lucis
+float64 r = lucis::sys::floor<float64>(3.14);  // → 3.0
+```
+
+Rounds down to the nearest integral value (`@llvm.floor`).
+
+### `lucis::sys::trunc\<T\>(x) -> T`
+
+```lucis
+float64 r = lucis::sys::trunc<float64>(-3.14);  // → -3.0
+```
+
+Rounds towards zero to the nearest integral value (`@llvm.trunc`).
+
+### `lucis::sys::round\<T\>(x) -> T`
+
+```lucis
+float64 r = lucis::sys::round<float64>(3.5);  // → 4.0
+```
+
+Rounds to the nearest integral value, rounding away from zero at halfway (`@llvm.round`).
+
+### `lucis::sys::fabs\<T\>(x) -> T`
+
+```lucis
+float64 r = lucis::sys::fabs<float64>(-3.14);  // → 3.14
+```
+
+Floating-point absolute value (`@llvm.fabs`).
+
+### `lucis::sys::minimum\<T\>(a, b) -> T`
+
+```lucis
+float64 r = lucis::sys::minimum<float64>(3.0, 5.0);  // → 3.0
+```
+
+Returns the minimum of `a` and `b`, propagating NaN (`@llvm.minimum`).
+
+### `lucis::sys::maximum\<T\>(a, b) -> T`
+
+```lucis
+float64 r = lucis::sys::maximum<float64>(3.0, 5.0);  // → 5.0
+```
+
+Returns the maximum of `a` and `b`, propagating NaN (`@llvm.maximum`).
+
+### `lucis::sys::copysign\<T\>(magnitude, sign) -> T`
+
+```lucis
+float64 r = lucis::sys::copysign<float64>(1.0, -1.0);  // → -1.0
+```
+
+Returns a value with the magnitude of the first argument and the sign of the second (`@llvm.copysign`).
+
+---
+
+## Integer Absolute Value & Rotation
+
+### `lucis::sys::abs\<T\>(x) -> T`
+
+```lucis
+int32 a = lucis::sys::abs<int32>(-42);  // → 42
+```
+
+Returns the absolute value of a signed integer (`@llvm.abs`). `is_int_min_poison` is set to `false` (defined at `INT_MIN`).
+
+### `lucis::sys::rotl\<T\>(x, n) -> T`
+
+```lucis
+int32 r = lucis::sys::rotl<int32>(0x80000001, 1);  // → 3
+```
+
+Rotates the bits of `x` left by `n` positions (`@llvm.fshl`).
+
+### `lucis::sys::rotr\<T\>(x, n) -> T`
+
+```lucis
+int32 r = lucis::sys::rotr<int32>(0x80000001, 1);  // → 0xC0000000
+```
+
+Rotates the bits of `x` right by `n` positions (`@llvm.fshr`).
+
 ---
 
 ## CPU Control

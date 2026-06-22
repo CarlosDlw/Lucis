@@ -1112,5 +1112,272 @@ void registerSysNamespace(IntrinsicRegistry& reg, TypeRegistry& typeReg) {
         sys.functions.push_back(std::move(fn));
     }
 
+    // ── Float math intrinsics ────────────────────────────────────
+    auto makeFloatOp = [](const std::string& name,
+                          const std::string& llvmName,
+                          const std::string& desc,
+                          unsigned minArgs = 1) {
+        IntrinsicFunction fn;
+        fn.name = name;
+        fn.returnType = "_any";
+        fn.isGeneric = true;
+        for (unsigned i = 0; i < minArgs; i++)
+            fn.params.push_back({"_any", false});
+        fn.description = desc;
+
+        fn.lowering.kind = IntrinsicFunction::Lowering::InlineIR;
+        fn.lowering.emitIR = [llvmName, name, minArgs](
+            llvm::IRBuilder<>& builder,
+            llvm::Module* module,
+            llvm::LLVMContext& context,
+            const TypeRegistry& typeRegistry,
+            const std::vector<llvm::Value*>& args,
+            const std::vector<const TypeInfo*>& typeArgs) -> llvm::Value* {
+
+            auto& dl = module->getDataLayout();
+            auto* floatTy = typeArgs[0]->toLLVMType(context, dl);
+            auto id = llvm::Intrinsic::lookupIntrinsicID(llvmName);
+            auto* callee = llvm::Intrinsic::getOrInsertDeclaration(
+                module, id, {floatTy});
+
+            std::vector<llvm::Value*> callArgs;
+            for (unsigned i = 0; i < minArgs; i++)
+                callArgs.push_back(args[i]);
+            return builder.CreateCall(callee, callArgs, name.c_str());
+        };
+        return fn;
+    };
+
+    sys.functions.push_back(makeFloatOp("sqrt",
+        "llvm.sqrt",
+        "Returns the square root of a floating-point value.\n\n"
+        "```lucis\n"
+        "float64 r = lucis::sys::sqrt<float64>(2.0);  // → 1.414...\n"
+        "```"));
+
+    sys.functions.push_back(makeFloatOp("fma",
+        "llvm.fma",
+        "Fused multiply-add: returns a * b + c with a single rounding.\n\n"
+        "```lucis\n"
+        "float64 r = lucis::sys::fma<float64>(a, b, c);\n"
+        "```", 3));
+
+    sys.functions.push_back(makeFloatOp("ceil",
+        "llvm.ceil",
+        "Rounds a floating-point value up to the nearest integral value.\n\n"
+        "```lucis\n"
+        "float64 r = lucis::sys::ceil<float64>(3.14);  // → 4.0\n"
+        "```"));
+
+    sys.functions.push_back(makeFloatOp("floor",
+        "llvm.floor",
+        "Rounds a floating-point value down to the nearest integral value.\n\n"
+        "```lucis\n"
+        "float64 r = lucis::sys::floor<float64>(3.14);  // → 3.0\n"
+        "```"));
+
+    sys.functions.push_back(makeFloatOp("trunc",
+        "llvm.trunc",
+        "Rounds a floating-point value towards zero to the nearest integral value.\n\n"
+        "```lucis\n"
+        "float64 r = lucis::sys::trunc<float64>(-3.14);  // → -3.0\n"
+        "```"));
+
+    sys.functions.push_back(makeFloatOp("round",
+        "llvm.round",
+        "Rounds a floating-point value to the nearest integral value, "
+        "rounding away from zero for halfway cases.\n\n"
+        "```lucis\n"
+        "float64 r = lucis::sys::round<float64>(3.5);  // → 4.0\n"
+        "```"));
+
+    sys.functions.push_back(makeFloatOp("fabs",
+        "llvm.fabs",
+        "Returns the absolute value of a floating-point value.\n\n"
+        "```lucis\n"
+        "float64 r = lucis::sys::fabs<float64>(-3.14);  // → 3.14\n"
+        "```"));
+
+    sys.functions.push_back(makeFloatOp("minimum",
+        "llvm.minimum",
+        "Returns the minimum of two floating-point values (propagates NaN).\n\n"
+        "```lucis\n"
+        "float64 r = lucis::sys::minimum<float64>(3.0, 5.0);  // → 3.0\n"
+        "```", 2));
+
+    sys.functions.push_back(makeFloatOp("maximum",
+        "llvm.maximum",
+        "Returns the maximum of two floating-point values (propagates NaN).\n\n"
+        "```lucis\n"
+        "float64 r = lucis::sys::maximum<float64>(3.0, 5.0);  // → 5.0\n"
+        "```", 2));
+
+    sys.functions.push_back(makeFloatOp("copysign",
+        "llvm.copysign",
+        "Returns a value with the magnitude of the first operand and "
+        "the sign of the second.\n\n"
+        "```lucis\n"
+        "float64 r = lucis::sys::copysign<float64>(1.0, -1.0);  // → -1.0\n"
+        "```", 2));
+
+    // ── Integer abs (requires is_int_min_poison flag) ────────────
+    {
+        IntrinsicFunction fn;
+        fn.name = "abs";
+        fn.returnType = "_any";
+        fn.isGeneric = true;
+        fn.params.push_back({"_any", false});
+        fn.description =
+            "Returns the absolute value of a signed integer.\n\n"
+            "```lucis\n"
+            "int32 a = lucis::sys::abs<int32>(-42);  // → 42\n"
+            "```";
+
+        fn.lowering.kind = IntrinsicFunction::Lowering::InlineIR;
+        fn.lowering.emitIR = [](
+            llvm::IRBuilder<>& builder,
+            llvm::Module* module,
+            llvm::LLVMContext& context,
+            const TypeRegistry& typeRegistry,
+            const std::vector<llvm::Value*>& args,
+            const std::vector<const TypeInfo*>& typeArgs) -> llvm::Value* {
+
+            auto& dl = module->getDataLayout();
+            auto* intTy = typeArgs[0]->toLLVMType(context, dl);
+            auto* val = builder.CreateIntCast(args[0], intTy, true, "cast");
+            auto* callee = llvm::Intrinsic::getOrInsertDeclaration(
+                module, llvm::Intrinsic::abs, {intTy});
+            auto* isIntMinPoison = llvm::ConstantInt::getFalse(context);
+            return builder.CreateCall(callee, {val, isIntMinPoison}, "abs");
+        };
+
+        sys.functions.push_back(std::move(fn));
+    }
+
+    // ── Rotate left / right ──────────────────────────────────────
+    auto makeRotateOp = [](const std::string& name,
+                           llvm::Intrinsic::ID id,
+                           const std::string& desc) {
+        IntrinsicFunction fn;
+        fn.name = name;
+        fn.returnType = "_any";
+        fn.isGeneric = true;
+        fn.params.push_back({"_any", false});
+        fn.params.push_back({"_any", false});
+        fn.description = desc;
+
+        fn.lowering.kind = IntrinsicFunction::Lowering::InlineIR;
+        fn.lowering.emitIR = [id, name](
+            llvm::IRBuilder<>& builder,
+            llvm::Module* module,
+            llvm::LLVMContext& context,
+            const TypeRegistry& typeRegistry,
+            const std::vector<llvm::Value*>& args,
+            const std::vector<const TypeInfo*>& typeArgs) -> llvm::Value* {
+
+            auto& dl = module->getDataLayout();
+            auto* intTy = typeArgs[0]->toLLVMType(context, dl);
+            auto* callee = llvm::Intrinsic::getOrInsertDeclaration(
+                module, id, {intTy});
+            auto* val = builder.CreateIntCast(args[0], intTy, false, "cast");
+            auto* shift = builder.CreateIntCast(args[1], intTy, false, "shift");
+            return builder.CreateCall(callee, {val, val, shift},
+                                      name.c_str());
+        };
+        return fn;
+    };
+
+    sys.functions.push_back(makeRotateOp("rotl",
+        llvm::Intrinsic::fshl,
+        "Rotates the bits of an integer value left by shift positions.\n\n"
+        "```lucis\n"
+        "int32 r = lucis::sys::rotl<int32>(0x80000001, 1);  // → 3\n"
+        "```"));
+
+    sys.functions.push_back(makeRotateOp("rotr",
+        llvm::Intrinsic::fshr,
+        "Rotates the bits of an integer value right by shift positions.\n\n"
+        "```lucis\n"
+        "int32 r = lucis::sys::rotr<int32>(0x80000001, 1);  // → 0xC0000000\n"
+        "```"));
+
+    // ── Branch hint ──────────────────────────────────────────────
+    {
+        IntrinsicFunction fn;
+        fn.name = "expect";
+        fn.returnType = "bool";
+        fn.params.push_back({"bool", false});
+        fn.params.push_back({"bool", false});
+        fn.description =
+            "Provides a branch-weight hint to the optimizer.\n"
+            "Returns the first argument unchanged. The second argument "
+            "is the expected value (used by LLVM branch-weight metadata).\n\n"
+            "```lucis\n"
+            "if lucis::sys::expect(x > 0, true) { ... }\n"
+            "```";
+
+        fn.lowering.kind = IntrinsicFunction::Lowering::InlineIR;
+        fn.lowering.emitIR = [](
+            llvm::IRBuilder<>& builder,
+            llvm::Module* module,
+            llvm::LLVMContext& context,
+            const TypeRegistry& typeRegistry,
+            const std::vector<llvm::Value*>& args,
+            const std::vector<const TypeInfo*>& typeArgs) -> llvm::Value* {
+
+            auto* callee = llvm::Intrinsic::getOrInsertDeclaration(
+                module, llvm::Intrinsic::expect, {args[0]->getType()});
+            llvm::Value* expected = args[1];
+            // args[1] is i1 (bool), need i1 for llvm.expect
+            return builder.CreateCall(callee, {args[0], expected}, "expect");
+        };
+
+        sys.functions.push_back(std::move(fn));
+    }
+
+    // ── Lifetime hints ───────────────────────────────────────────
+    auto makeLifetimeOp = [](const std::string& name,
+                              llvm::Intrinsic::ID id,
+                              const std::string& desc) {
+        IntrinsicFunction fn;
+        fn.name = name;
+        fn.returnType = "void";
+        fn.params.push_back({"_any", false});   // ptr
+        fn.description = desc;
+
+        fn.lowering.kind = IntrinsicFunction::Lowering::InlineIR;
+        fn.lowering.emitIR = [id](
+            llvm::IRBuilder<>& builder,
+            llvm::Module* module,
+            llvm::LLVMContext& context,
+            const TypeRegistry& typeRegistry,
+            const std::vector<llvm::Value*>& args,
+            const std::vector<const TypeInfo*>& typeArgs) -> llvm::Value* {
+
+            auto* ptrTy = llvm::PointerType::get(context, 0);
+            auto* callee = llvm::Intrinsic::getOrInsertDeclaration(
+                module, id, {ptrTy});
+            builder.CreateCall(callee, {args[0]});
+            return llvm::UndefValue::get(llvm::Type::getVoidTy(context));
+        };
+        return fn;
+    };
+
+    sys.functions.push_back(makeLifetimeOp("lifetime_start",
+        llvm::Intrinsic::lifetime_start,
+        "Marks the start of an object's lifetime for the optimizer.\n"
+        "The pointer must point to the start of the allocation.\n\n"
+        "```lucis\n"
+        "lucis::sys::lifetime_start(&obj);\n"
+        "```"));
+
+    sys.functions.push_back(makeLifetimeOp("lifetime_end",
+        llvm::Intrinsic::lifetime_end,
+        "Marks the end of an object's lifetime for the optimizer.\n"
+        "Accessing the object after this is undefined behavior.\n\n"
+        "```lucis\n"
+        "lucis::sys::lifetime_end(&obj);\n"
+        "```"));
+
     reg.registerNamespace(std::move(sys));
 }

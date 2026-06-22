@@ -12,7 +12,7 @@ Variadic argument handling (`va_list`, `va_start`, `va_arg`, `va_end`), raw memo
 
 ### [`lucis::sys`](intrinsics/sys.md) — System control
 
-Typed memory access (read/write), pointer arithmetic (offset), bit reinterpretation (bitcast), compiler hints (assume/unreachable), volatile access, bit manipulation, overflow detection, stack/frame pointers, memory fences, prefetch, CPU control, and raw system calls.
+Typed memory access (read/write), pointer arithmetic (offset), bit reinterpretation (bitcast), compiler hints (assume/unreachable/expect), volatile access, bit manipulation (bitreverse/bswap/ctpop/ctlz/cttz), float math (sqrt/fma/ceil/floor/trunc/round/fabs/minimum/maximum/copysign), integer abs/rotate, overflow detection, stack/frame pointers, memory fences, prefetch, CPU control, lifetime hints, and raw system calls.
 
 ### [`lucis::io`](intrinsics/io.md) — Low-level file I/O
 
@@ -20,7 +20,7 @@ Unbuffered file descriptor operations: open, read, write, close, lseek. Cross-pl
 
 ### [`lucis::atomic`](intrinsics/atomic.md) — Atomic operations
 
-Atomic load, store, fetch-and-{add,sub,and,or,xor}, exchange, and compare-and-swap. All operations are sequentially consistent.
+Atomic load, store, fetch-and-{add,sub,and,or,xor}, exchange, and compare-and-swap with configurable ordering: seq_cst (default), acquire, release, acq_rel, and relaxed.
 
 ### `lucis::core` — Core language primitives
 

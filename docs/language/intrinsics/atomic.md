@@ -1,41 +1,69 @@
 # `lucis::atomic` — Atomic Operations
 
-The `atomic` namespace provides **atomic memory operations** with sequential consistency. These are essential for lock-free concurrent programming.
+The `atomic` namespace provides **atomic memory operations** with configurable ordering. These are essential for lock-free concurrent programming.
 
 > **Always available** — no `use lucis::atomic` declaration needed.
 
-All operations are **sequentially consistent** (seq_cst), establishing a single total order across all threads.
+## Ordering Variants
+
+All operations have ordering variants. The default variants use **seq_cst** (sequential consistency, the strongest ordering). Suffixed variants provide weaker orderings for better performance:
+
+| Suffix | Ordering | Use Case |
+|--------|----------|----------|
+| _(none) | `seq_cst` | Safe default, total order across threads |
+| `_acq` | `acquire` | Load before accessing protected data |
+| `_rel` | `release` | Store after updating protected data |
+| `_acqrel` | `acq_rel` | RMW operations (e.g. reference counting) |
+| `_rlx` | `relaxed` | Simple counters where only atomicity matters |
+
+**Available suffix combinations:**
+
+| Base | `_acq` | `_rel` | `_acqrel` | `_rlx` |
+|------|--------|--------|-----------|--------|
+| `load` | `load_acq` | — | — | `load_rlx` |
+| `store` | — | `store_rel` | — | `store_rlx` |
+| `add` | — | — | `add_acqrel` | `add_rlx` |
+| `sub` | — | — | `sub_acqrel` | `sub_rlx` |
+| `exchange` | — | — | `xchg_acqrel` | `xchg_rlx` |
+| `cas` | — | — | `cas_acqrel` | `cas_rlx` |
 
 ---
 
 ## Load & Store
 
-### `lucis::atomic::load\<T\>(ptr) -> T`
+**Default (seq_cst):**
+- `lucis::atomic::load\<T\>(ptr) -> T`
+- `lucis::atomic::store\<T\>(ptr, val)`
+
+**Acquire / Release variants:**
+- `lucis::atomic::load_acq\<T\>(ptr) -> T` — acquire ordering for loads
+- `lucis::atomic::store_rel\<T\>(ptr, val)` — release ordering for stores
+
+**Relaxed variants:**
+- `lucis::atomic::load_rlx\<T\>(ptr) -> T`
+- `lucis::atomic::store_rlx\<T\>(ptr, val)`
 
 ```lucis
-int32 val = lucis::atomic::load<int32>(&counter);
+int32 val = lucis::atomic::load_acq<int32>(&counter);
+lucis::atomic::store_rel<int32>(&counter, 42);
 ```
-
-Atomically reads a value of type `T` from `ptr` with seq_cst ordering.
-
-| Param | Type | Description |
-|-------|------|-------------|
-| `<T>` | type | Value type to load |
-| `ptr` | `*_any` | Pointer to read from |
-
-### `lucis::atomic::store\<T\>(ptr, val)`
-
-```lucis
-lucis::atomic::store<int32>(&counter, 42);
-```
-
-Atomically writes `val` of type `T` to `ptr` with seq_cst ordering.
 
 ---
 
 ## Fetch-and-Op (Read-Modify-Write)
 
 These atomically modify a value and return the **old** value. They lower to LLVM `atomicrmw` instructions.
+
+**Default (seq_cst):** `add`, `sub`, `bit_and`, `bit_or`, `bit_xor`
+
+**Acq_rel variants:** `add_acqrel`, `sub_acqrel`
+
+**Relaxed variants:** `add_rlx`, `sub_rlx`
+
+```lucis
+int32 old = lucis::atomic::add_acqrel<int32>(&refcount, -1);
+int32 val = lucis::atomic::add_rlx<int32>(&stats_counter, 1);
+```
 
 ### `lucis::atomic::add\<T\>(ptr, val) -> T`
 
@@ -81,6 +109,17 @@ Atomically XORs `val` with `*ptr`. Returns the old value.
 
 ## Exchange & CAS
 
+**Default (seq_cst):** `exchange`, `cas`
+
+**Acq_rel variants:** `xchg_acqrel`, `cas_acqrel`
+
+**Relaxed variants:** `xchg_rlx`, `cas_rlx`
+
+```lucis
+int32 old = lucis::atomic::xchg_acqrel<int32>(&lock, 1);
+bool ok = lucis::atomic::cas_rlx<int32>(&data, expected, desired);
+```
+
 ### `lucis::atomic::exchange\<T\>(ptr, val) -> T`
 
 ```lucis
@@ -112,7 +151,7 @@ fn atomic_increment(*int32 ptr) void {
 
 ## Thread Fences
 
-Sequentially-consistent memory fences are available in `lucis::sys`:
+Memory fences are available in `lucis::sys`:
 
 | Function | Ordering |
 |----------|----------|

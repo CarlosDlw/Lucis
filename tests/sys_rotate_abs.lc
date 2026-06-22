@@ -1,0 +1,36 @@
+use std::log::println;
+use std::test::{ assertEqual };
+
+fn testSysRotateAbs() int32 {
+    println("[Testing sys:: rotate and abs intrinsics...]");
+
+    // abs
+    int32 ai = lucis::sys::abs<int32>(-42);
+    assertEqual(ai, 42);
+    ai = lucis::sys::abs<int32>(42);
+    assertEqual(ai, 42);
+    ai = lucis::sys::abs<int32>(0);
+    assertEqual(ai, 0);
+
+    int64 al = lucis::sys::abs<int64>(-999);
+    assertEqual(al, 999);
+
+    // rotl: 0x80000001 <<< 1 = 0x00000003
+    int32 rl = lucis::sys::rotl<int32>(0x80000001, 1);
+    assertEqual(rl, 3);
+
+    // rotl: identity (shift by 32)
+    int32 rl32 = lucis::sys::rotl<int32>(0x12345678, 32);
+    assertEqual(rl32, 0x12345678);
+
+    // rotr: 0x80000001 >>> 1 = 0xC0000000
+    int32 rr = lucis::sys::rotr<int32>(0x80000001, 1);
+    assertEqual(rr, -1073741824); // 0xC0000000 as signed int32
+
+    // rotr: identity
+    int32 rr32 = lucis::sys::rotr<int32>(0x12345678, 32);
+    assertEqual(rr32, 0x12345678);
+
+    println("✔ sys::rotate/abs tests passed");
+    ret 0;
+}

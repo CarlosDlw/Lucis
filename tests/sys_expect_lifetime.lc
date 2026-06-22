@@ -1,0 +1,32 @@
+use std::log::println;
+use std::test::{ assertEqual, assertTrue };
+
+fn testSysExpectLifetime() int32 {
+    println("[Testing sys:: expect, lifetime, and fence intrinsics...]");
+
+    // expect — returns first argument unchanged
+    bool exTrue = lucis::sys::expect(true, true);
+    assertTrue(exTrue);
+    bool exFalse = lucis::sys::expect(false, true);
+    assertTrue(!exFalse);
+
+    int32 x = 42;
+    if lucis::sys::expect(x > 0, true) {
+        // branch taken (expected path)
+        assertTrue(true);
+    }
+
+    // fences (already tested in sys_fence.lc, verify still work)
+    lucis::sys::fence_acquire();
+    lucis::sys::fence_release();
+
+    // lifetime_start / lifetime_end — must not crash
+    int32 data = 0;
+    lucis::sys::lifetime_start(&data);
+    data = 42;
+    assertEqual(data, 42);
+    lucis::sys::lifetime_end(&data);
+
+    println("✔ sys::expect/lifetime/fence tests passed");
+    ret 0;
+}

@@ -1,0 +1,67 @@
+use std::log::println;
+use std::test::{ assertEqual, assertTrue };
+
+fn testSysFloatMath() int32 {
+    println("[Testing sys:: float math intrinsics...]");
+
+    // sqrt
+    float64 s = lucis::sys::sqrt<float64>(4.0);
+    assertEqual(s, 2.0);
+
+    // ceil
+    float64 c = lucis::sys::ceil<float64>(3.14);
+    assertEqual(c, 4.0);
+    c = lucis::sys::ceil<float64>(-3.14);
+    assertEqual(c, -3.0);
+
+    // floor
+    float64 f = lucis::sys::floor<float64>(3.14);
+    assertEqual(f, 3.0);
+    f = lucis::sys::floor<float64>(-3.14);
+    assertEqual(f, -4.0);
+
+    // trunc
+    float64 t = lucis::sys::trunc<float64>(3.14);
+    assertEqual(t, 3.0);
+    t = lucis::sys::trunc<float64>(-3.14);
+    assertEqual(t, -3.0);
+
+    // round (ties away from zero per LLVM semantics)
+    float64 r = lucis::sys::round<float64>(3.5);
+    assertEqual(r, 4.0);
+    r = lucis::sys::round<float64>(3.4);
+    assertEqual(r, 3.0);
+    r = lucis::sys::round<float64>(-3.5);
+    assertEqual(r, -4.0);
+
+    // fabs
+    float64 a = lucis::sys::fabs<float64>(-3.14);
+    assertEqual(a, 3.14);
+    a = lucis::sys::fabs<float64>(3.14);
+    assertEqual(a, 3.14);
+
+    // minimum
+    float64 mi = lucis::sys::minimum<float64>(3.0, 5.0);
+    assertEqual(mi, 3.0);
+
+    // maximum
+    float64 ma = lucis::sys::maximum<float64>(3.0, 5.0);
+    assertEqual(ma, 5.0);
+
+    // copysign
+    float64 cs = lucis::sys::copysign<float64>(1.0, -1.0);
+    assertEqual(cs, -1.0);
+    cs = lucis::sys::copysign<float64>(-1.0, 1.0);
+    assertEqual(cs, 1.0);
+
+    // fma: 2 * 3 + 4 = 10
+    float64 fm = lucis::sys::fma<float64>(2.0, 3.0, 4.0);
+    assertEqual(fm, 10.0);
+
+    // Verify float32 variants exist (exercise type instantiation)
+    float32 fs = lucis::sys::sqrt<float32>(4.0f32);
+    assertEqual(fs as float64, 2.0);
+
+    println("✔ sys::float math tests passed");
+    ret 0;
+}

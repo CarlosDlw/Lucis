@@ -14,10 +14,12 @@ void registerAtomicNamespace(IntrinsicRegistry& reg, TypeRegistry& typeReg) {
     IntrinsicNamespace atomic;
     atomic.name = "atomic";
     atomic.description =
-        "Atomic memory operations with sequential consistency.\n"
+        "Atomic memory operations with configurable ordering.\n"
         "Provides atomic load, store, fetch-and-{add,sub,and,or,xor}, "
         "exchange, and compare-and-swap.\n\n"
-        "All operations are sequentially consistent.\n"
+        "Default variants use sequential consistency (seq_cst).\n"
+        "Suffixed variants: _acq (acquire), _rel (release), "
+        "_acqrel (acq_rel), _rlx (relaxed).\n"
         "Always available without any `use` declaration.";
 
     auto makeGenIntrinsic = [](
@@ -76,7 +78,7 @@ void registerAtomicNamespace(IntrinsicRegistry& reg, TypeRegistry& typeReg) {
                const std::vector<llvm::Value*>& args) -> llvm::Value* {
                 auto* elemTy = elemTI->toLLVMType(context, module->getDataLayout());
                 auto* load = builder.CreateAlignedLoad(elemTy, args[0],
-                    llvm::MaybeAlign(1));
+                    llvm::MaybeAlign());
                 load->setAtomic(llvm::AtomicOrdering::SequentiallyConsistent);
                 return load;
             });
@@ -96,7 +98,7 @@ void registerAtomicNamespace(IntrinsicRegistry& reg, TypeRegistry& typeReg) {
                const std::vector<llvm::Value*>& args) -> llvm::Value* {
                 auto* elemTy = elemTI->toLLVMType(context, module->getDataLayout());
                 auto* store = builder.CreateAlignedStore(args[1], args[0],
-                    llvm::MaybeAlign(1));
+                    llvm::MaybeAlign());
                 store->setAtomic(llvm::AtomicOrdering::SequentiallyConsistent);
                 return llvm::UndefValue::get(llvm::Type::getVoidTy(context));
             });
@@ -117,7 +119,7 @@ void registerAtomicNamespace(IntrinsicRegistry& reg, TypeRegistry& typeReg) {
                const std::vector<llvm::Value*>& args) -> llvm::Value* {
                 return builder.CreateAtomicRMW(
                     llvm::AtomicRMWInst::Add, args[0], args[1],
-                    llvm::MaybeAlign(1),
+                    llvm::MaybeAlign(),
                     llvm::AtomicOrdering::SequentiallyConsistent);
             });
         atomic.functions.push_back(std::move(fn));
@@ -137,7 +139,7 @@ void registerAtomicNamespace(IntrinsicRegistry& reg, TypeRegistry& typeReg) {
                const std::vector<llvm::Value*>& args) -> llvm::Value* {
                 return builder.CreateAtomicRMW(
                     llvm::AtomicRMWInst::Sub, args[0], args[1],
-                    llvm::MaybeAlign(1),
+                    llvm::MaybeAlign(),
                     llvm::AtomicOrdering::SequentiallyConsistent);
             });
         atomic.functions.push_back(std::move(fn));
@@ -157,7 +159,7 @@ void registerAtomicNamespace(IntrinsicRegistry& reg, TypeRegistry& typeReg) {
                const std::vector<llvm::Value*>& args) -> llvm::Value* {
                 return builder.CreateAtomicRMW(
                     llvm::AtomicRMWInst::And, args[0], args[1],
-                    llvm::MaybeAlign(1),
+                    llvm::MaybeAlign(),
                     llvm::AtomicOrdering::SequentiallyConsistent);
             });
         atomic.functions.push_back(std::move(fn));
@@ -177,7 +179,7 @@ void registerAtomicNamespace(IntrinsicRegistry& reg, TypeRegistry& typeReg) {
                const std::vector<llvm::Value*>& args) -> llvm::Value* {
                 return builder.CreateAtomicRMW(
                     llvm::AtomicRMWInst::Or, args[0], args[1],
-                    llvm::MaybeAlign(1),
+                    llvm::MaybeAlign(),
                     llvm::AtomicOrdering::SequentiallyConsistent);
             });
         atomic.functions.push_back(std::move(fn));
@@ -197,7 +199,7 @@ void registerAtomicNamespace(IntrinsicRegistry& reg, TypeRegistry& typeReg) {
                const std::vector<llvm::Value*>& args) -> llvm::Value* {
                 return builder.CreateAtomicRMW(
                     llvm::AtomicRMWInst::Xor, args[0], args[1],
-                    llvm::MaybeAlign(1),
+                    llvm::MaybeAlign(),
                     llvm::AtomicOrdering::SequentiallyConsistent);
             });
         atomic.functions.push_back(std::move(fn));
@@ -217,7 +219,7 @@ void registerAtomicNamespace(IntrinsicRegistry& reg, TypeRegistry& typeReg) {
                const std::vector<llvm::Value*>& args) -> llvm::Value* {
                 return builder.CreateAtomicRMW(
                     llvm::AtomicRMWInst::Xchg, args[0], args[1],
-                    llvm::MaybeAlign(1),
+                    llvm::MaybeAlign(),
                     llvm::AtomicOrdering::SequentiallyConsistent);
             });
         atomic.functions.push_back(std::move(fn));
@@ -238,9 +240,261 @@ void registerAtomicNamespace(IntrinsicRegistry& reg, TypeRegistry& typeReg) {
                const std::vector<llvm::Value*>& args) -> llvm::Value* {
                 auto* cas = builder.CreateAtomicCmpXchg(
                     args[0], args[1], args[2],
-                    llvm::MaybeAlign(1),
+                    llvm::MaybeAlign(),
                     llvm::AtomicOrdering::SequentiallyConsistent,
                     llvm::AtomicOrdering::SequentiallyConsistent);
+                return builder.CreateExtractValue(cas, {1}, "cas_ok");
+            });
+        atomic.functions.push_back(std::move(fn));
+    }
+
+    // ── Ordering variants ─────────────────────────────────────────
+
+    // ── atomic_load_acq<T>(ptr) -> T  (acquire) ──────────────────
+    {
+        auto fn = makeGenIntrinsic("load_acq", "_any",
+            {{"_any", false}},
+            "Atomically loads a value of type T from ptr (acquire ordering).\n"
+            "Prevents subsequent loads/stores from being reordered before this load.\n\n"
+            "```lucis\n"
+            "int32 val = lucis::atomic::load_acq<int32>(&data);\n"
+            "```",
+            [](llvm::IRBuilder<>& builder, llvm::LLVMContext& context,
+               llvm::Module* module, const TypeInfo* elemTI,
+               const std::vector<llvm::Value*>& args) -> llvm::Value* {
+                auto* elemTy = elemTI->toLLVMType(context, module->getDataLayout());
+                auto* load = builder.CreateAlignedLoad(elemTy, args[0],
+                    llvm::MaybeAlign());
+                load->setAtomic(llvm::AtomicOrdering::Acquire);
+                return load;
+            });
+        atomic.functions.push_back(std::move(fn));
+    }
+
+    // ── atomic_load_rlx<T>(ptr) -> T  (relaxed) ──────────────────
+    {
+        auto fn = makeGenIntrinsic("load_rlx", "_any",
+            {{"_any", false}},
+            "Atomically loads a value of type T from ptr (relaxed ordering).\n"
+            "No ordering guarantees; only atomicity is ensured.\n\n"
+            "```lucis\n"
+            "int32 val = lucis::atomic::load_rlx<int32>(&data);\n"
+            "```",
+            [](llvm::IRBuilder<>& builder, llvm::LLVMContext& context,
+               llvm::Module* module, const TypeInfo* elemTI,
+               const std::vector<llvm::Value*>& args) -> llvm::Value* {
+                auto* elemTy = elemTI->toLLVMType(context, module->getDataLayout());
+                auto* load = builder.CreateAlignedLoad(elemTy, args[0],
+                    llvm::MaybeAlign());
+                load->setAtomic(llvm::AtomicOrdering::Monotonic);
+                return load;
+            });
+        atomic.functions.push_back(std::move(fn));
+    }
+
+    // ── atomic_store_rel<T>(ptr, val)  (release) ─────────────────
+    {
+        auto fn = makeGenIntrinsic("store_rel", "void",
+            {{"_any", false}, {"_any", false}},
+            "Atomically stores a value of type T to ptr (release ordering).\n"
+            "Prevents preceding loads/stores from being reordered after this store.\n\n"
+            "```lucis\n"
+            "lucis::atomic::store_rel<int32>(&data, 42);\n"
+            "```",
+            [](llvm::IRBuilder<>& builder, llvm::LLVMContext& context,
+               llvm::Module* module, const TypeInfo* elemTI,
+               const std::vector<llvm::Value*>& args) -> llvm::Value* {
+                auto* elemTy = elemTI->toLLVMType(context, module->getDataLayout());
+                auto* store = builder.CreateAlignedStore(args[1], args[0],
+                    llvm::MaybeAlign());
+                store->setAtomic(llvm::AtomicOrdering::Release);
+                return llvm::UndefValue::get(llvm::Type::getVoidTy(context));
+            });
+        atomic.functions.push_back(std::move(fn));
+    }
+
+    // ── atomic_store_rlx<T>(ptr, val)  (relaxed) ─────────────────
+    {
+        auto fn = makeGenIntrinsic("store_rlx", "void",
+            {{"_any", false}, {"_any", false}},
+            "Atomically stores a value of type T to ptr (relaxed ordering).\n"
+            "No ordering guarantees; only atomicity is ensured.\n\n"
+            "```lucis\n"
+            "lucis::atomic::store_rlx<int32>(&data, 42);\n"
+            "```",
+            [](llvm::IRBuilder<>& builder, llvm::LLVMContext& context,
+               llvm::Module* module, const TypeInfo* elemTI,
+               const std::vector<llvm::Value*>& args) -> llvm::Value* {
+                auto* elemTy = elemTI->toLLVMType(context, module->getDataLayout());
+                auto* store = builder.CreateAlignedStore(args[1], args[0],
+                    llvm::MaybeAlign());
+                store->setAtomic(llvm::AtomicOrdering::Monotonic);
+                return llvm::UndefValue::get(llvm::Type::getVoidTy(context));
+            });
+        atomic.functions.push_back(std::move(fn));
+    }
+
+    // ── atomic_add_acqrel<T>(ptr, val) -> T  (acq_rel, fetch_add) ─
+    {
+        auto fn = makeGenIntrinsic("add_acqrel", "_any",
+            {{"_any", false}, {"_any", false}},
+            "Atomically adds val to *ptr (acq_rel ordering, fetch_add semantics).\n"
+            "Returns the old value. Suitable for reference counting.\n\n"
+            "```lucis\n"
+            "int32 old = lucis::atomic::add_acqrel<int32>(&counter, 1);\n"
+            "```",
+            [](llvm::IRBuilder<>& builder, llvm::LLVMContext& context,
+               llvm::Module* module, const TypeInfo* elemTI,
+               const std::vector<llvm::Value*>& args) -> llvm::Value* {
+                return builder.CreateAtomicRMW(
+                    llvm::AtomicRMWInst::Add, args[0], args[1],
+                    llvm::MaybeAlign(),
+                    llvm::AtomicOrdering::AcquireRelease);
+            });
+        atomic.functions.push_back(std::move(fn));
+    }
+
+    // ── atomic_add_rlx<T>(ptr, val) -> T  (relaxed, fetch_add) ──
+    {
+        auto fn = makeGenIntrinsic("add_rlx", "_any",
+            {{"_any", false}, {"_any", false}},
+            "Atomically adds val to *ptr (relaxed ordering, fetch_add semantics).\n"
+            "Returns the old value. Suitable for simple counters.\n\n"
+            "```lucis\n"
+            "int32 old = lucis::atomic::add_rlx<int32>(&counter, 1);\n"
+            "```",
+            [](llvm::IRBuilder<>& builder, llvm::LLVMContext& context,
+               llvm::Module* module, const TypeInfo* elemTI,
+               const std::vector<llvm::Value*>& args) -> llvm::Value* {
+                return builder.CreateAtomicRMW(
+                    llvm::AtomicRMWInst::Add, args[0], args[1],
+                    llvm::MaybeAlign(),
+                    llvm::AtomicOrdering::Monotonic);
+            });
+        atomic.functions.push_back(std::move(fn));
+    }
+
+    // ── atomic_sub_acqrel<T>(ptr, val) -> T  (acq_rel, fetch_sub) ─
+    {
+        auto fn = makeGenIntrinsic("sub_acqrel", "_any",
+            {{"_any", false}, {"_any", false}},
+            "Atomically subtracts val from *ptr (acq_rel ordering, fetch_sub).\n"
+            "Returns the old value.\n\n"
+            "```lucis\n"
+            "int32 old = lucis::atomic::sub_acqrel<int32>(&counter, 1);\n"
+            "```",
+            [](llvm::IRBuilder<>& builder, llvm::LLVMContext& context,
+               llvm::Module* module, const TypeInfo* elemTI,
+               const std::vector<llvm::Value*>& args) -> llvm::Value* {
+                return builder.CreateAtomicRMW(
+                    llvm::AtomicRMWInst::Sub, args[0], args[1],
+                    llvm::MaybeAlign(),
+                    llvm::AtomicOrdering::AcquireRelease);
+            });
+        atomic.functions.push_back(std::move(fn));
+    }
+
+    // ── atomic_sub_rlx<T>(ptr, val) -> T  (relaxed, fetch_sub) ──
+    {
+        auto fn = makeGenIntrinsic("sub_rlx", "_any",
+            {{"_any", false}, {"_any", false}},
+            "Atomically subtracts val from *ptr (relaxed ordering, fetch_sub).\n"
+            "Returns the old value.\n\n"
+            "```lucis\n"
+            "int32 old = lucis::atomic::sub_rlx<int32>(&counter, 1);\n"
+            "```",
+            [](llvm::IRBuilder<>& builder, llvm::LLVMContext& context,
+               llvm::Module* module, const TypeInfo* elemTI,
+               const std::vector<llvm::Value*>& args) -> llvm::Value* {
+                return builder.CreateAtomicRMW(
+                    llvm::AtomicRMWInst::Sub, args[0], args[1],
+                    llvm::MaybeAlign(),
+                    llvm::AtomicOrdering::Monotonic);
+            });
+        atomic.functions.push_back(std::move(fn));
+    }
+
+    // ── atomic_xchg_acqrel<T>(ptr, val) -> T  (acq_rel, swap) ───
+    {
+        auto fn = makeGenIntrinsic("xchg_acqrel", "_any",
+            {{"_any", false}, {"_any", false}},
+            "Atomically swaps *ptr with val (acq_rel ordering).\n"
+            "Returns the old value. Suitable for spinlocks.\n\n"
+            "```lucis\n"
+            "int32 old = lucis::atomic::xchg_acqrel<int32>(&lock, 1);\n"
+            "```",
+            [](llvm::IRBuilder<>& builder, llvm::LLVMContext& context,
+               llvm::Module* module, const TypeInfo* elemTI,
+               const std::vector<llvm::Value*>& args) -> llvm::Value* {
+                return builder.CreateAtomicRMW(
+                    llvm::AtomicRMWInst::Xchg, args[0], args[1],
+                    llvm::MaybeAlign(),
+                    llvm::AtomicOrdering::AcquireRelease);
+            });
+        atomic.functions.push_back(std::move(fn));
+    }
+
+    // ── atomic_xchg_rlx<T>(ptr, val) -> T  (relaxed, swap) ──────
+    {
+        auto fn = makeGenIntrinsic("xchg_rlx", "_any",
+            {{"_any", false}, {"_any", false}},
+            "Atomically swaps *ptr with val (relaxed ordering).\n"
+            "Returns the old value.\n\n"
+            "```lucis\n"
+            "int32 old = lucis::atomic::xchg_rlx<int32>(&data, 42);\n"
+            "```",
+            [](llvm::IRBuilder<>& builder, llvm::LLVMContext& context,
+               llvm::Module* module, const TypeInfo* elemTI,
+               const std::vector<llvm::Value*>& args) -> llvm::Value* {
+                return builder.CreateAtomicRMW(
+                    llvm::AtomicRMWInst::Xchg, args[0], args[1],
+                    llvm::MaybeAlign(),
+                    llvm::AtomicOrdering::Monotonic);
+            });
+        atomic.functions.push_back(std::move(fn));
+    }
+
+    // ── atomic_cas_acqrel<T>(ptr, expected, desired) -> bool ─────
+    {
+        auto fn = makeGenIntrinsic("cas_acqrel", "bool",
+            {{"_any", false}, {"_any", false}, {"_any", false}},
+            "Atomically compares *ptr with expected and swaps if equal "
+            "(acq_rel success, acquire failure, weak CAS).\n"
+            "Returns true if the swap occurred.\n\n"
+            "```lucis\n"
+            "bool ok = lucis::atomic::cas_acqrel<int32>(&data, old, new);\n"
+            "```",
+            [](llvm::IRBuilder<>& builder, llvm::LLVMContext& context,
+               llvm::Module* module, const TypeInfo* elemTI,
+               const std::vector<llvm::Value*>& args) -> llvm::Value* {
+                auto* cas = builder.CreateAtomicCmpXchg(
+                    args[0], args[1], args[2],
+                    llvm::MaybeAlign(),
+                    llvm::AtomicOrdering::AcquireRelease,
+                    llvm::AtomicOrdering::Acquire);
+                return builder.CreateExtractValue(cas, {1}, "cas_ok");
+            });
+        atomic.functions.push_back(std::move(fn));
+    }
+
+    // ── atomic_cas_rlx<T>(ptr, expected, desired) -> bool ────────
+    {
+        auto fn = makeGenIntrinsic("cas_rlx", "bool",
+            {{"_any", false}, {"_any", false}, {"_any", false}},
+            "Atomically compares *ptr with expected and swaps if equal "
+            "(relaxed ordering, weak CAS).\n"
+            "Returns true if the swap occurred.\n\n"
+            "```lucis\n"
+            "bool ok = lucis::atomic::cas_rlx<int32>(&data, old, new);\n"
+            "```",
+            [](llvm::IRBuilder<>& builder, llvm::LLVMContext& context,
+               llvm::Module* module, const TypeInfo* elemTI,
+               const std::vector<llvm::Value*>& args) -> llvm::Value* {
+                auto* cas = builder.CreateAtomicCmpXchg(
+                    args[0], args[1], args[2],
+                    llvm::MaybeAlign(),
+                    llvm::AtomicOrdering::Monotonic,
+                    llvm::AtomicOrdering::Monotonic);
                 return builder.CreateExtractValue(cas, {1}, "cas_ok");
             });
         atomic.functions.push_back(std::move(fn));

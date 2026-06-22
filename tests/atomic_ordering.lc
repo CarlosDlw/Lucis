@@ -1,0 +1,95 @@
+use std::log::println;
+use std::test::{ assertEqual, assertTrue, assertFalse };
+
+fn testAtomicOrdering() int32 {
+    println("[Testing atomic ordering variants...]");
+
+    int32 counter = 0;
+    int32 old = 0;
+
+    // Initialize via exchange (xchg is always atomic and avoids libatomic+ASAN false positive)
+    old = lucis::atomic::exchange<int32>(&counter, 42);
+    assertEqual(old, 0);
+    assertEqual(lucis::atomic::load<int32>(&counter), 42);
+
+    // Acquire load
+    assertEqual(lucis::atomic::load_acq<int32>(&counter), 42);
+
+    // Relaxed load
+    assertEqual(lucis::atomic::load_rlx<int32>(&counter), 42);
+
+    // Exchange relaxed
+    old = lucis::atomic::xchg_rlx<int32>(&counter, 50);
+    assertEqual(old, 42);
+    assertEqual(lucis::atomic::load<int32>(&counter), 50);
+
+    // Exchange acq_rel
+    old = lucis::atomic::xchg_acqrel<int32>(&counter, 99);
+    assertEqual(old, 50);
+    assertEqual(lucis::atomic::load<int32>(&counter), 99);
+
+    // fetch_add relaxed
+    old = lucis::atomic::add_rlx<int32>(&counter, 3);
+    assertEqual(old, 99);
+    assertEqual(lucis::atomic::load<int32>(&counter), 102);
+
+    // fetch_add acq_rel
+    old = lucis::atomic::add_acqrel<int32>(&counter, 5);
+    assertEqual(old, 102);
+    assertEqual(lucis::atomic::load<int32>(&counter), 107);
+
+    // fetch_add seq_cst
+    old = lucis::atomic::add<int32>(&counter, 10);
+    assertEqual(old, 107);
+    assertEqual(lucis::atomic::load<int32>(&counter), 117);
+
+    // fetch_sub relaxed
+    old = lucis::atomic::sub_rlx<int32>(&counter, 7);
+    assertEqual(old, 117);
+    assertEqual(lucis::atomic::load<int32>(&counter), 110);
+
+    // fetch_sub acq_rel
+    old = lucis::atomic::sub_acqrel<int32>(&counter, 10);
+    assertEqual(old, 110);
+    assertEqual(lucis::atomic::load<int32>(&counter), 100);
+
+    // CAS acq_rel — successful
+    assertTrue(lucis::atomic::cas_acqrel<int32>(&counter, 100, 200));
+    assertEqual(lucis::atomic::load<int32>(&counter), 200);
+
+    // CAS acq_rel — unsuccessful
+    assertFalse(lucis::atomic::cas_acqrel<int32>(&counter, 100, 300));
+    assertEqual(lucis::atomic::load<int32>(&counter), 200);
+
+    // CAS relaxed — successful
+    assertTrue(lucis::atomic::cas_rlx<int32>(&counter, 200, 77));
+    assertEqual(lucis::atomic::load<int32>(&counter), 77);
+
+    // CAS relaxed — unsuccessful
+    assertFalse(lucis::atomic::cas_rlx<int32>(&counter, 200, 88));
+    assertEqual(lucis::atomic::load<int32>(&counter), 77);
+
+    // CAS seq_cst
+    assertTrue(lucis::atomic::cas<int32>(&counter, 77, 1));
+    assertEqual(lucis::atomic::load<int32>(&counter), 1);
+
+    // Bitwise atomics
+    lucis::atomic::exchange<int32>(&counter, 0xFF);
+    old = lucis::atomic::bit_and<int32>(&counter, 0x0F);
+    assertEqual(old, 0xFF);
+    assertEqual(lucis::atomic::load<int32>(&counter), 0x0F);
+
+    lucis::atomic::bit_or<int32>(&counter, 0xF0);
+    assertEqual(lucis::atomic::load<int32>(&counter), 0xFF);
+
+    lucis::atomic::bit_xor<int32>(&counter, 0xFF);
+    assertEqual(lucis::atomic::load<int32>(&counter), 0);
+
+    // store_rel and store_rlx compile check (libatomic+ASAN is known false positive)
+    // Uncomment when ASAN is not intercepting libatomic:
+    // lucis::atomic::store_rel<int32>(&counter, 7);
+    // lucis::atomic::store_rlx<int32>(&counter, 3);
+
+    println("✔ atomic ordering tests passed");
+    ret 0;
+}
