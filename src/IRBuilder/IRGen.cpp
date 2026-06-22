@@ -1102,13 +1102,14 @@ void IRGen::forwardDeclareFunction(LucisParser::FunctionDeclContext* ctx) {
         }
     }
 
-    std::string emitName;
+    std::string emitName = funcName;
     if (isMainWithArgs) {
         emitName = "lucis_user_main";
-    } else if (funcName == "main") {
-        emitName = "main";
-    } else {
-        emitName = funcName;
+    } else if (funcName != "main") {
+        if (module_->getFunction(emitName) && moduleRegistry_)
+            emitName = ModuleRegistry::mangle(currentModulePath_, funcName);
+        else if (moduleRegistry_ && cBindings_ && cBindings_->findFunction(funcName))
+            emitName = ModuleRegistry::mangle(currentModulePath_, funcName);
     }
 
     // Skip if already declared (e.g. from cross-file registration)
@@ -1192,14 +1193,14 @@ std::any IRGen::visitFunctionDecl(LucisParser::FunctionDeclContext* ctx) {
     }
 
     // If main has args, emit the user's code under a different name
-    // Apply namespace mangling for non-main functions
-    std::string emitName;
+    std::string emitName = funcName;
     if (isMainWithArgs) {
         emitName = "lucis_user_main";
-    } else if (funcName == "main") {
-        emitName = "main";
-    } else {
-        emitName = funcName;
+    } else if (funcName != "main") {
+        if (module_->getFunction(emitName) && moduleRegistry_)
+            emitName = ModuleRegistry::mangle(currentModulePath_, funcName);
+        else if (moduleRegistry_ && cBindings_ && cBindings_->findFunction(funcName))
+            emitName = ModuleRegistry::mangle(currentModulePath_, funcName);
     }
 
     // Register call target name
@@ -1813,9 +1814,12 @@ void IRGen::registerCrossFileSymbols(LucisParser::ProgramContext* ctx) {
                 continue;
             }
 
-            if (!module_->getFunction(sym->name))
-                declareExternFunction(sym->name, funcCtx);
-            callTargetMap_[sym->name] = sym->name;
+            auto mangledName = sym->name;
+            if (module_->getFunction(mangledName) || (cBindings_ && cBindings_->findFunction(sym->name)))
+                mangledName = ModuleRegistry::mangle(sym->modulePath, sym->name);
+            if (!module_->getFunction(mangledName))
+                declareExternFunction(mangledName, funcCtx);
+            callTargetMap_[sym->name] = mangledName;
         }
     }
 
@@ -1837,9 +1841,12 @@ void IRGen::registerCrossFileSymbols(LucisParser::ProgramContext* ctx) {
             continue;
         }
 
-        if (!module_->getFunction(sym->name))
-            declareExternFunction(sym->name, funcCtx);
-        callTargetMap_[symbolName] = sym->name;
+        auto mangledName = sym->name;
+        if (module_->getFunction(mangledName) || (cBindings_ && cBindings_->findFunction(sym->name)))
+            mangledName = ModuleRegistry::mangle(sourceNs, sym->name);
+        if (!module_->getFunction(mangledName))
+            declareExternFunction(mangledName, funcCtx);
+        callTargetMap_[symbolName] = mangledName;
     }
 
     // ── Phase 3: Register local functions into callTargetMap_ ──────────
@@ -9702,10 +9709,13 @@ std::any IRGen::visitStaticMethodCallExpr(
             auto* sym = moduleRegistry_->findSymbol(importIt->second, methodName);
             if (sym && sym->kind == ExportedSymbol::Function) {
                 auto* funcDecl = static_cast<LucisParser::FunctionDeclContext*>(sym->decl);
-                if (!module_->getFunction(methodName))
-                    declareExternFunction(methodName, funcDecl);
+                auto mangledName = methodName;
+                if (module_->getFunction(mangledName) || (cBindings_ && cBindings_->findFunction(methodName)))
+                    mangledName = ModuleRegistry::mangle(importIt->second, methodName);
+                if (!module_->getFunction(mangledName))
+                    declareExternFunction(mangledName, funcDecl);
 
-                auto* fn = module_->getFunction(methodName);
+                auto* fn = module_->getFunction(mangledName);
                 if (!fn) {
                     std::cerr << "lucis: module '" << importIt->second
                               << "' does not export callable symbol '" << methodName << "'\n";
