@@ -12,7 +12,9 @@
 #include <iomanip>
 #include <fstream>
 #include <filesystem>
+#include <fcntl.h>
 #include <unistd.h>
+#include <sys/wait.h>
 
 #include <llvm/Support/FileSystem.h>
 #include <llvm/Bitcode/BitcodeWriter.h>
@@ -377,21 +379,9 @@ int BuildCommand::run(const ArgParser& parser) {
             if (anyEmitError) return 1;
 
             if (emitObjEnabled) {
-                std::string objEmitPath = pipeline->buildDir + "/" + fs::path(pipeOpts.inputFile).stem().string() + ".o";
-                for (auto& t : tasks) {
-                    if (t.type == EmitTask::OBJ && !t.outPath.empty()) {
-                        objEmitPath = t.outPath;
-                        break;
-                    }
-                }
-                if (!mainMod) { std::cerr << "lucis: no main module for OBJ emit\n"; return 1; }
-                if (!CodeGen::emitObjectFile(mainMod, objEmitPath, usePIC)) {
-                    std::cerr << "lucis: failed to emit object file\n";
-                    return 1;
-                }
-                if (!pipeOpts.quiet)
-                    std::cout << "lucis: object file written to '" << objEmitPath << "'\n";
-                return 0;
+                // Obj emit is deferred — we need all modules' .o files first.
+                // Don't return here; fall through to the object generation loop,
+                // then merge everything with ld -r after all .o files are ready.
             }
 
             if (hasTextEmits) return 0;
@@ -426,6 +416,61 @@ int BuildCommand::run(const ArgParser& parser) {
             objectFiles.push_back(objPath);
         }
         objectFiles.insert(objectFiles.end(), cObjectFiles.begin(), cObjectFiles.end());
+
+        // ── Obj emit: merge all modules into one relocatable .o ────────
+        if (emitObjEnabled) {
+            std::string objEmitPath = pipeline->buildDir + "/"
+                + fs::path(pipeOpts.inputFile).stem().string() + ".o";
+            for (auto& t : tasks) {
+                if (t.type == EmitTask::OBJ && !t.outPath.empty()) {
+                    objEmitPath = t.outPath;
+                    break;
+                }
+            }
+
+            std::vector<std::string> allObjs = objectFiles;
+            allObjs.push_back(CodeGen::builtinsLibraryPath());
+
+            pid_t ldPid = ::fork();
+            if (ldPid < 0) {
+                std::cerr << "lucis: failed to fork for ld -r\n";
+                return 1;
+            }
+            if (ldPid == 0) {
+                if (pipeOpts.quiet) {
+                    int devNull = ::open("/dev/null", O_WRONLY);
+                    if (devNull >= 0) {
+                        ::dup2(devNull, STDOUT_FILENO);
+                        ::dup2(devNull, STDERR_FILENO);
+                        if (devNull > STDERR_FILENO) ::close(devNull);
+                    }
+                }
+                std::vector<const char*> argv;
+                argv.push_back("ld");
+                argv.push_back("-r");
+                for (auto& obj : allObjs)
+                    argv.push_back(obj.c_str());
+                argv.push_back("-o");
+                argv.push_back(objEmitPath.c_str());
+                argv.push_back(nullptr);
+                ::execvp("ld", const_cast<char**>(argv.data()));
+                ::_exit(127);
+            }
+            int ldStatus = 0;
+            while (::waitpid(ldPid, &ldStatus, 0) < 0) {
+                if (errno != EINTR) {
+                    std::cerr << "lucis: ld -r failed\n";
+                    return 1;
+                }
+            }
+            if (!WIFEXITED(ldStatus) || WEXITSTATUS(ldStatus) != 0) {
+                std::cerr << "lucis: ld -r failed (exit " << WEXITSTATUS(ldStatus) << ")\n";
+                return 1;
+            }
+            if (!pipeOpts.quiet)
+                std::cout << "lucis: relocatable object written to '" << objEmitPath << "'\n";
+            return 0;
+        }
     } else {
         objectFiles = std::move(cachedObjectFiles);
     }
