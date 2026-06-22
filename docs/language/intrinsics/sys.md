@@ -673,6 +673,40 @@ The counter is monotonically increasing (though not synchronised across cores).
 
 ---
 
+## Cache Control
+
+### `lucis::sys::cache_flush(start, end)`
+
+```lucis
+lucis::sys::cache_flush(&code_start, &code_end);
+```
+
+Flushes the instruction cache for the memory range `[start, end)`. Essential for JIT compilers and self-modifying code. Lowers to `@llvm.clear_cache`.
+
+---
+
+## TLS Base Register (x86-64 FSGSBASE)
+
+Read/write the FS segment base on x86-64, which Linux uses as the thread-local storage pointer. Requires the **FSGSBASE** CPU feature (Ivy Bridge+) and kernel support. Unsupported targets return 0 / no-op.
+
+### `lucis::sys::read_fs_base() -> usize`
+
+```lucis
+usize tls = lucis::sys::read_fs_base();
+```
+
+Reads the FS base register (`rdfsbase`).
+
+### `lucis::sys::write_fs_base(val)`
+
+```lucis
+lucis::sys::write_fs_base(new_tls);
+```
+
+Writes the FS base register (`wrfsbase`). Requires kernel support (`CR4.FSGSBASE`).
+
+---
+
 ## Hardware Random Number Generator
 
 Intel/AMD hardware RNG via the `RDRAND` instruction. Available on Ivy Bridge+ (Intel) and Excavator+ (AMD) processors. Unsupported CPUs will raise `SIGILL` — use `cpuid`-based detection before calling.

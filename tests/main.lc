@@ -36,6 +36,7 @@ use tests::structs_core::testStructsCore;
 use tests::structs_methods_extend::testStructsMethodsAndExtend;
 use tests::structs_pointers::testStructsPointers;
 use tests::sys_bitops::testSysBitOps;
+use tests::sys_cache_tls::testSysCacheTls;
 use tests::sys_cpu::testSysCPU;
 use tests::sys_endianness::testSysEndianness;
 use tests::sys_expect_lifetime::testSysExpectLifetime;
@@ -110,6 +111,7 @@ fn main() int32 {
     testSysStack();
     testSysFence();
     testSysPrefetch();
+    testSysCacheTls();
     testSysCPU();
     testSysSyscall();
     testSysFloatMath();

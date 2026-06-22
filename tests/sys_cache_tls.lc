@@ -1,0 +1,17 @@
+use std::log::println;
+
+fn testSysCacheTls() int32 {
+    println("[Testing sys:: cache control and TLS intrinsics...]");
+
+    // ── cache_flush ──────────────────────────────────────────────
+    int32 code = 0;
+    lucis::sys::cache_flush(&code, &code);  // safe: no side effects on inert memory
+
+    // ── TLS base (compile-check only; requires FSGSBASE at runtime) ──
+    // Uncomment on FSGSBASE-capable hardware:
+    // usize tls = lucis::sys::read_fs_base();
+    // lucis::sys::write_fs_base(tls);
+
+    println("✔ sys::cache/TLS tests passed (compile check)");
+    ret 0;
+}

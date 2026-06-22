@@ -1603,5 +1603,132 @@ void registerSysNamespace(IntrinsicRegistry& reg, TypeRegistry& typeReg) {
         "uint32 host = lucis::sys::from_le<uint32>(le_val);\n"
         "```"));
 
+    // ── Instruction cache flush ──────────────────────────────────
+    {
+        IntrinsicFunction fn;
+        fn.name = "cache_flush";
+        fn.returnType = "void";
+        fn.params.push_back({"_any", false}); // start
+        fn.params.push_back({"_any", false}); // end
+        fn.description =
+            "Flushes the instruction cache for the given memory range.\n"
+            "Useful for JIT compilers and self-modifying code.\n\n"
+            "```lucis\n"
+            "lucis::sys::cache_flush(&code_start, &code_end);\n"
+            "```";
+
+        fn.lowering.kind = IntrinsicFunction::Lowering::InlineIR;
+        fn.lowering.emitIR = [](
+            llvm::IRBuilder<>& builder,
+            llvm::Module* module,
+            llvm::LLVMContext& context,
+            const TypeRegistry& typeRegistry,
+            const std::vector<llvm::Value*>& args,
+            const std::vector<const TypeInfo*>& typeArgs) -> llvm::Value* {
+
+            auto* callee = llvm::Intrinsic::getOrInsertDeclaration(
+                module, llvm::Intrinsic::clear_cache);
+            builder.CreateCall(callee, {args[0], args[1]});
+            return llvm::UndefValue::get(llvm::Type::getVoidTy(context));
+        };
+
+        sys.functions.push_back(std::move(fn));
+    }
+
+    // ── TLS base access (x86-64 FSGSBASE) ────────────────────────
+    auto makeFSBaseOp = [](const std::string& name,
+                            bool isRead,
+                            const std::string& desc) {
+        IntrinsicFunction fn;
+        fn.name = name;
+        fn.returnType = "usize";
+        fn.description = desc;
+
+        fn.lowering.kind = IntrinsicFunction::Lowering::InlineIR;
+        fn.lowering.emitIR = [name, isRead](
+            llvm::IRBuilder<>& builder,
+            llvm::Module* module,
+            llvm::LLVMContext& context,
+            const TypeRegistry& typeRegistry,
+            const std::vector<llvm::Value*>& args,
+            const std::vector<const TypeInfo*>& typeArgs) -> llvm::Value* {
+
+            const auto tripleStr = module->getTargetTriple().str();
+            auto* usizeTy = llvm::Type::getIntNTy(context,
+                module->getDataLayout().getPointerSizeInBits());
+
+            if (tripleStr.find("x86_64") != 0) {
+                // Unsupported target
+                return llvm::ConstantInt::get(usizeTy, 0);
+            }
+
+            std::string asmStr = isRead ? "rdfsbase $0" : "wrfsbase $0";
+            std::string constraints = isRead ? "=r,~{memory}" : "r,~{memory}";
+            auto* retTy = isRead ? usizeTy : llvm::Type::getVoidTy(context);
+            auto* ft = llvm::FunctionType::get(retTy,
+                isRead ? llvm::ArrayRef<llvm::Type*>() :
+                         llvm::ArrayRef<llvm::Type*>({usizeTy}),
+                false);
+
+            auto* asmFn = llvm::InlineAsm::get(ft, asmStr, constraints,
+                true, false, llvm::InlineAsm::AD_ATT);
+
+            if (isRead)
+                return builder.CreateCall(asmFn, {}, name.c_str());
+            else
+                builder.CreateCall(asmFn, {args[0]});
+            return llvm::UndefValue::get(llvm::Type::getVoidTy(context));
+        };
+        return fn;
+    };
+
+    sys.functions.push_back(makeFSBaseOp("read_fs_base",
+        true,
+        "Reads the x86-64 FS segment base register (TLS pointer on Linux).\n"
+        "Requires FSGSBASE CPU feature (Ivy Bridge+).\n"
+        "Returns 0 on unsupported targets.\n\n"
+        "```lucis\n"
+        "usize tls = lucis::sys::read_fs_base();\n"
+        "```"));
+
+    // write_fs_base takes a value
+    {
+        IntrinsicFunction fn;
+        fn.name = "write_fs_base";
+        fn.returnType = "void";
+        fn.params.push_back({"usize", false});
+        fn.description =
+            "Writes the x86-64 FS segment base register.\n"
+            "Requires FSGSBASE CPU feature (Ivy Bridge+) and kernel support.\n"
+            "No-op on unsupported targets.\n\n"
+            "```lucis\n"
+            "lucis::sys::write_fs_base(new_tls);\n"
+            "```";
+
+        fn.lowering.kind = IntrinsicFunction::Lowering::InlineIR;
+        fn.lowering.emitIR = [](
+            llvm::IRBuilder<>& builder,
+            llvm::Module* module,
+            llvm::LLVMContext& context,
+            const TypeRegistry& typeRegistry,
+            const std::vector<llvm::Value*>& args,
+            const std::vector<const TypeInfo*>& typeArgs) -> llvm::Value* {
+
+            const auto tripleStr = module->getTargetTriple().str();
+            if (tripleStr.find("x86_64") != 0)
+                return llvm::UndefValue::get(llvm::Type::getVoidTy(context));
+
+            auto* usizeTy = args[0]->getType();
+            auto* ft = llvm::FunctionType::get(llvm::Type::getVoidTy(context),
+                {usizeTy}, false);
+            auto* asmFn = llvm::InlineAsm::get(ft, "wrfsbase $0",
+                "r,~{memory}", true, false, llvm::InlineAsm::AD_ATT);
+            builder.CreateCall(asmFn, {args[0]});
+            return llvm::UndefValue::get(llvm::Type::getVoidTy(context));
+        };
+
+        sys.functions.push_back(std::move(fn));
+    }
+
     reg.registerNamespace(std::move(sys));
 }
