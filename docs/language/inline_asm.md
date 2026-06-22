@@ -119,6 +119,12 @@ Clobbers tell the compiler which registers or state the assembly modifies:
 asm volatile("nop");
 ```
 
+### Intel dialect example
+
+```
+asm volatile intel("mov $0, 42" : "=r"(x));
+```
+
 ### Single output
 
 ```
@@ -290,10 +296,34 @@ Without `volatile`, the optimizer may eliminate the asm block if it determines t
 
 ## Dialect
 
-The inline asm backend uses **AT&T syntax** by default:
+Inline asm supports both **AT&T** (default) and **Intel** syntax. Use the `intel` keyword to switch dialects per-block:
+
+```
+asm intel("mov $0, 42" : "=r"(x));
+asm volatile intel("add $0, $2" : "+r"(val) : "r"(inc) : "cc");
+```
+
+### AT&T (default)
+
 - `mov $42, %rax` → `movq $$42, $0` (use `q`/`l`/`w`/`b` size suffixes)
 - Register references are implicit via operand numbering
 - Size suffixes (`movq`, `addl`, `cmpb`) are required when the assembler cannot infer operand sizes
+- Immediate values prefixed with `$`, registers prefixed with `%`
+
+### Intel (with `intel` keyword)
+
+- `mov rax, 42` → `mov $0, 42` (destination first)
+- `add rax, rbx` → `add $0, $1`
+- No size suffixes needed (assembler infers from operands)
+- No `$` or `%` prefixes on registers/immediates
+
+### Comparison
+
+| AT&T | Intel |
+|---|---|
+| `movq $$42, $0` | `mov $0, 42` |
+| `addq $1, $0` | `add $0, 1` |
+| `shlq $$2, $0` | `shl $0, 2` |
 
 ## Unique Labels (`%=`)
 
@@ -371,7 +401,6 @@ Labels must be unique within a function.
 
 ## Limitations
 
-- Only AT&T dialect is currently supported (Intel dialect planned)
 - Physical register multi-output constraints (`"=a"` + `"=d"` with struct return) may have codegen issues on some LLVM versions; use `"=r"` outputs instead
 
 ## When to Use Inline Assembly

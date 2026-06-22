@@ -1,0 +1,41 @@
+use std::log::println;
+use std::test::{ assertEqual };
+
+fn testInlineAsmIntel() int32 {
+    println("[Testing inline asm Intel dialect...]");
+
+    // AT&T default — verify baseline still works
+    int64 att = 0i64;
+    asm volatile("movq $$99, $0" : "=r"(att) : : "cc");
+    assertEqual(att, 99);
+
+    // Intel: mov reg, imm
+    int64 ival = 0i64;
+    asm volatile intel("mov $0, 42" : "=r"(ival) : : "cc");
+    assertEqual(ival, 42);
+
+    // Intel: add src, dst with +r read-write
+    int64 val = 10i64;
+    int64 inc = 7i64;
+    asm volatile intel("add $0, $2" : "+r"(val) : "r"(inc) : "cc");
+    assertEqual(val, 17);
+
+    // Intel: subtract
+    int64 x = 100i64;
+    asm volatile intel("sub $0, 1" : "+r"(x) : : "cc");
+    assertEqual(x, 99);
+
+    // Intel: bitwise OR
+    int64 bits = 0x0Fi64;
+    asm volatile intel("or $0, 0xF0" : "+r"(bits) : : "cc");
+    assertEqual(bits, 0xFF);
+
+    // Intel expression form
+    int64 expr_out = 0i64;
+    int64 expr_val = asm intel("mov $0, 77" : "=r"(expr_out) : : "cc");
+    assertEqual(expr_out, 77);
+    assertEqual(expr_val, 77);
+
+    println("✔ inline asm Intel dialect tests passed");
+    ret 0;
+}

@@ -24,6 +24,7 @@ use tests::float_types::testFloatTypes;
 use tests::generics_inference_methods::testGenericsInferenceAndMethods;
 use tests::generics_task_constraints::testGenericsTaskAndConstraints;
 use tests::generics_user_types::testGenericsUserTypes;
+use tests::inline_asm_intel::testInlineAsmIntel;
 use tests::integer_literal_formats::testIntegerLiteralFormats;
 use tests::int_methods_extra::testIntMethodsExtra;
 use tests::int_types::testIntTypes;
@@ -95,6 +96,7 @@ fn main() int32 {
     testGenericsInferenceAndMethods();
     testGenericsUserTypes();
     testGenericsTaskAndConstraints();
+    testInlineAsmIntel();
     testOperatorsFull();
     testRangesFull();
     testUnionsFull();

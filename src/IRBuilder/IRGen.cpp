@@ -5826,8 +5826,9 @@ std::any IRGen::visitAsmStmt(LucisParser::AsmStmtContext* ctx) {
 
     auto* ft = llvm::FunctionType::get(retType, paramTypes, false);
     auto* asmFn = llvm::InlineAsm::get(ft, asmStr, constraintsStr,
-                                       isVolatile || isGoto, false,
-                                       llvm::InlineAsm::AD_ATT);
+                                        isVolatile || isGoto, false,
+                                        ctx->INTEL() ? llvm::InlineAsm::AD_Intel
+                                                     : llvm::InlineAsm::AD_ATT);
 
     if (isGoto) {
         auto* fallthroughBB = llvm::BasicBlock::Create(*context_, "asm.fallthrough", currentFunction_);
@@ -5962,8 +5963,9 @@ std::any IRGen::visitAsmExpr(LucisParser::AsmExprContext* ctx) {
 
     auto* ft = llvm::FunctionType::get(retType, paramTypes, false);
     auto* asmFn = llvm::InlineAsm::get(ft, asmStr, constraintsStr,
-                                       isVolatile, false,
-                                       llvm::InlineAsm::AD_ATT);
+                                        isVolatile, false,
+                                        ctx->INTEL() ? llvm::InlineAsm::AD_Intel
+                                                     : llvm::InlineAsm::AD_ATT);
     auto* result = builder_->CreateCall(ft, asmFn, paramValues);
 
     if (outAllocas.size() == 1 && outAllocas[0]) {

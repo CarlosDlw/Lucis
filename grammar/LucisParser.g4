@@ -222,7 +222,7 @@ labelDef
 // asm goto("jmp ${2:l}" : "=r"(x) : "r"(val) : "cc" : label1, label2);
 // Multiple string literals separated by commas are concatenated with newlines.
 asmStmt
-    : ASM VOLATILE? GOTO? LPAREN STR_LIT (COMMA STR_LIT)*
+    : ASM VOLATILE? GOTO? INTEL? LPAREN STR_LIT (COMMA STR_LIT)*
         (COLON asmOutputList?
          (COLON asmInputList?
           (COLON asmClobberList?
@@ -580,10 +580,10 @@ expression
     | STR_LIT                                                  # strLitExpr
     | C_STR_LIT                                                # cStrLitExpr
     | IDENTIFIER                                               # identExpr
-    | ASM VOLATILE? LPAREN STR_LIT (COMMA STR_LIT)*
+    | ASM VOLATILE? INTEL? LPAREN STR_LIT (COMMA STR_LIT)*
         (COLON asmOutputList?
          (COLON asmInputList?
-          (COLON asmClobberList?)?)?)?
+           (COLON asmClobberList?)?)?)?
       RPAREN                                                   # asmExpr
     ;
 

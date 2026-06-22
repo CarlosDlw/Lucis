@@ -40,6 +40,7 @@ EXTERN    : 'extern';
 ASM       : 'asm';
 VOLATILE  : 'volatile';
 GOTO      : 'goto';
+INTEL     : 'intel';
 AUTO      : 'auto';
 VEC       : 'vec';
 MAP       : 'map';
