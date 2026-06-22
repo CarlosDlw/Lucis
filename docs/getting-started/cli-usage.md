@@ -9,9 +9,9 @@ lucis <command> [args...]
 
 Commands:
   build       Compile a Lucis project into a native binary
-  run         Compile and execute a Lucis program via JIT
+  run         Compile and execute a Lucis program
   check       Type-check a Lucis project without generating code
-  test        Run the Lucis test suite
+  test        Run the Lucis test suite (not yet implemented)
   help        Show help for a command
   helpc       C library reference helper
   init        Create a new Lucis project
@@ -28,6 +28,20 @@ removed in a future release. Use `lucis build <file> [-o <output>]` instead.
 --print-builtins-path    Print the path to the builtins library
 ```
 
+## CLI / Config Isolation
+
+The CLI and `lucis.yaml` have a strict isolation rule:
+
+- **Explicit file argument** (`lucis build foo.lc`): config is **completely ignored**.
+  All behavior is controlled by CLI flags. This is the "standalone" mode.
+- **No file argument** (`lucis build` from a project directory): config **drives the
+  pipeline** — entrypoint, output binary name, output directory, optimization level,
+  source directories, linker libraries, and include paths are taken from `lucis.yaml`.
+  CLI flags override individual config values.
+
+This ensures clean behavior regardless of whether you're in a project directory
+or compiling a standalone file.
+
 ## init — Create a New Project
 
 ```
@@ -40,7 +54,7 @@ created automatically along with a `src/` directory and a starter `src/main.lc`.
 
 A `lucis.yaml` project configuration file is generated with sensible defaults.
 It controls the project name, binary output, source directories, build options,
-linker flags, and more.
+and linker settings.
 
 | Flag | Description |
 |------|-------------|
@@ -58,6 +72,7 @@ lucis init ../projects/hello
 lucis build [<file>] [-o <output>] [-O <level>] [--lto]
                [--emit-llvm] [--emit-asm] [--emit-bc] [--emit-obj]
                [--static] [--shared] [--fPIC]
+               [--link-arg <FLAG>] [--rpath <DIR>]
                [-l <lib>] [-L <dir>] [-I <dir>] [-q]
 ```
 
@@ -68,18 +83,24 @@ to `<input-stem>.out`. If `binary` is set in `lucis.yaml`, that name is used
 verbatim (no `.out` appended). If `out_dir` is set, the binary is placed in
 that directory (relative to the project root).
 
-Config values from `lucis.yaml` (`binary`, `out_dir`, linker flags, etc.) are
-applied as defaults and can be overridden by CLI flags.
+All emit flags (`--emit-llvm`, `--emit-asm`, `--emit-bc`, `--emit-obj`) are
+**CLI-only** — they are not configured in `lucis.yaml`. Without `-o`, text emits
+(LLVM IR, assembly) print to **stdout**; bitcode and object emits use an
+auto-generated file path. With `-o`, all emits write to the given file.
+
+When at least one emit flag is active, the build stops after generating the
+requested output — no linking or binary is produced. With no emit flags, a
+normal binary is produced.
 
 | Flag | Description |
 |------|-------------|
 | `-o, --output <FILE>` | Output file path (binary, IR, asm, bitcode, or object) |
 | `-O, --opt <LEVEL>` | Optimization level: `0`, `1`, `2`, `3`, `s`, `z`, or `fast` (default: `0`) |
 | `--lto` | Enable Link Time Optimization (LTO) |
-| `--emit-llvm` | Emit LLVM IR (`.ll`) — overrides `build.emits.llvm.enabled` |
-| `--emit-asm` | Emit assembly (`.s`) — overrides `build.emits.asm.enabled` |
-| `--emit-bc` | Emit LLVM bitcode (`.bc`) — overrides `build.emits.bc.enabled` |
-| `--emit-obj` | Emit object file (`.o`) — overrides `build.emits.obj.enabled` |
+| `--emit-llvm` | Emit LLVM IR (`.ll`) to stdout or `-o` file |
+| `--emit-asm` | Emit assembly (`.s`) to stdout or `-o` file |
+| `--emit-bc` | Emit LLVM bitcode (`.bc`) |
+| `--emit-obj` | Emit object file (`.o`) |
 | `--static` | Produce a statically linked executable |
 | `--shared` | Produce a shared library (`.so`, `.dll`) |
 | `--fPIC` | Generate position-independent code (PIC) |
@@ -89,15 +110,28 @@ applied as defaults and can be overridden by CLI flags.
 | `-L, --lib-path <DIR>` | Add library search path (repeatable) |
 | `-I, --include <DIR>` | Add include search path (repeatable) |
 | `-q, --quiet` | Suppress pipeline logs |
-...
-# Build a shared library (automatically enables --fPIC)
+
 ```bash
+# Standard build
+lucis build main.lc -o ./main -O2
+
+# Build a shared library (automatically enables --fPIC)
 lucis build module.lc --shared -o libmodule.so
-```
 
 # Build a static binary
-```
 lucis build main.lc --static -o main_static
+
+# Emit LLVM IR to stdout
+lucis build main.lc --emit-llvm | less
+
+# Emit Assembly to file
+lucis build main.lc --emit-asm -o main.s
+
+# Emit object file
+lucis build main.lc --emit-obj -o main.o
+
+# Size-optimized build with LTO
+lucis build main.lc -Oz --lto
 ```
 
 **Optimization Levels:**
@@ -112,96 +146,60 @@ lucis build main.lc --static -o main_static
 - `--shared`: Produce a shared library (`.so`, `.dll`).
 - `--fPIC`: Generate position-independent code (PIC). Automatically enabled with `--shared`.
 
-**Emit Modes:**
-Emit modes can be configured in `lucis.yaml` under `build.emits`, with individual
-`enabled` (bool) and `file` (output filename) fields. CLI flags like `--emit-llvm`
-override the `enabled` status.
-
-When multiple emits are enabled, all specified outputs are generated. If the same
-output path is used by multiple emits, the build fails with a conflict error.
-
-If at least one text emit (LLVM, ASM, BC) is active, the build stops before
-linking (no binary is produced). If `emit_obj` is the only active emit, the build
-generates the object file and stops. With no emits active, a normal binary is
-produced.
-
-By default (CLI only, no config), `--emit-llvm` and `--emit-asm` print to
-**stdout**. If `-o` is provided, the output is redirected to the specified file.
-`--emit-obj` requires `-o` to specify the object file path; otherwise, it writes
-to the build directory.
-
-```bash
-# Standard build
-lucis build main.lc -o ./main -O2
-
-# Build a shared library (automatically enables --fPIC)
-lucis build module.lc --shared -o libmodule.so
-
-# Build a static binary
-lucis build main.lc --static -o main_static
-
-# Emit Assembly to file
-lucis build main.lc --emit-asm -o main.s
-
-# Emit LLVM IR to stdout
-lucis build main.lc --emit-llvm | less
-
-# Size-optimized build with LTO
-lucis build main.lc -Oz --lto
-```
-
-## run — JIT Execution
+## run — Compile and Execute
 
 ```
-lucis run [<file>] [-O <level>] [--lto] [-l <lib>] [-L <dir>] [-I <dir>] [-q] [-- args...]
+lucis run [<file>] [-O <level>] [--lto] [-c] [-l <lib>] [-L <dir>] [-I <dir>] [-q] [-- args...]
 ```
 
-Compiles and immediately executes the program via LLVM JIT — no binary is
-written to disk. If `<file>` is omitted, the entrypoint is auto-resolved from
-`lucis.yaml`.
+Compiles and immediately executes the program — the compiled binary is cached
+in `.lucis/cache/` and reused on subsequent runs when the source hasn't changed.
+If `<file>` is omitted, the entrypoint is auto-resolved from `lucis.yaml`.
 
 | Flag | Description |
 |------|-------------|
 | `-O, --opt <LEVEL>` | Optimization level: `0`, `1`, `2`, `3`, `s`, `z`, or `fast` |
-| `--lto` | Enable Link Time Optimization for JIT |
+| `--lto` | Enable Link Time Optimization |
+| `-c, --clean` | Clear run cache before compiling |
+| `-l, --link <LIB>` | Link against a library (repeatable) |
+| `-L, --lib-path <DIR>` | Add library search path (repeatable) |
+| `-I, --include <DIR>` | Add include search path (repeatable) |
+| `-q, --quiet` | Suppress pipeline logs |
+| `-- args...` | Arguments forwarded to the compiled program |
 
 ```bash
 lucis run main.lc -O3
 lucis run app.lc --lto -- arg1 arg2
+lucis run app.lc -c -q              # clear cache before run
 ```
 
 ## check — Type Checking
 
 ```
-lucis check <file> [-I <dir>] [-q]
+lucis check [<file>] [-I <dir>] [-q]
 ```
 
 Runs the parser and semantic checker without generating any code or binary.
+If `<file>` is omitted, the entrypoint is auto-resolved from `lucis.yaml`.
+
+| Flag | Description |
+|------|-------------|
+| `-I, --include <DIR>` | Add include search path (repeatable) |
+| `-q, --quiet` | Suppress pipeline logs |
 
 ```bash
 lucis check main.lc
-lucis check main.lc -q
+lucis check -q
 ```
 
 ## test — Run Test Suite
 
 ```
-lucis test [filter] [-l] [-q]
-```
-
-Runs the Lucis project's test suite (expects a `tests/main.lc` in the project).
-
-| Flag | Description |
-|------|-------------|
-| `filter` | Optional substring match to filter tests |
-| `-l, --list` | List available test files |
-| `-q, --quiet` | Suppress output |
-
-```bash
 lucis test
-lucis test -q
-lucis test structs
 ```
+
+**Not yet implemented.** Prints a message and exits. A proper test runner with
+test discovery, filtering, and per-test reporting is planned for a future release.
 
 ## help — Command Help
 
@@ -240,69 +238,33 @@ it to define project boundaries and settings. The file is generated by
 `lucis init` and can be edited manually.
 
 ```yaml
-name: my-app                    # Project name
+name: my-app                    # Project name (required)
 version: "0.0.1"               # Project version
-description: ""                 # Optional description
 
 binary: my-app                  # Output binary name (default: <name>)
 out_dir: build                  # Build output directory
 
-# Source directories to scan for .lc files.
-# When set, only files under these paths are included in the project.
-source:
+source:                         # Source directories for use resolution
   - src/
 
-# Files/directories to exclude from scanning.
-exclude:
-  - "ztests/**"
-
-# Build defaults (can be overridden by CLI flags)
-build:
+build:                          # Build defaults (overridden by CLI flags)
   opt_level: O2                 # O0, O1, O2, O3, Os, Oz, Ofast
   lto: false                    # Enable Link Time Optimization
   static: false                 # Static linking
   shared: false                 # Shared library
   fpic: true                    # Position-independent code
-  quiet: false                  # Suppress logs
-  emits:                        # Structured emit targets (opt-in)
-    llvm:
-      enabled: false            # Emit LLVM IR (--emit-llvm)
-      file: ""                  # Output filename (empty = stdout)
-    asm:
-      enabled: false            # Emit assembly (--emit-asm)
-      file: ""
-    bc:
-      enabled: false            # Emit LLVM bitcode (--emit-bc)
-      file: ""
-    obj:
-      enabled: false            # Emit object file (--emit-obj)
-      file: ""                  # Output filename (required)
 
-# Run defaults (used by `lucis run`)
-run:
+run:                            # Run defaults (overridden by CLI flags)
   opt_level: O0
   lto: false
-  quiet: false
-  clean: false                  # Clear cache before run
   args: []                      # Default program arguments
 
-# Linker settings
-linker:
-  flags: []                     # Extra linker flags (--link-arg)
-  rpath: ""                     # Runtime library search path
+linker:                         # Linker settings
   libs: []                      # Libraries to link (-l)
   lib_paths: []                 # Library search paths (-L)
 
-# Include paths for C FFI
-includes: []
+includes: []                    # Include paths for C FFI (-I)
 ```
-
-## Project Scanning
-
-When you run `lucis build <file>` or `lucis run <file>`, the compiler scans the
-project for all `.lc` files. If `lucis.yaml` exists with `source` paths, only
-those directories are scanned. Otherwise, the entire project root is searched
-recursively. Every `.lc` file must have a `namespace` declaration.
 
 ## Build Artifacts
 
@@ -311,28 +273,34 @@ intermediate object files:
 
 ```
 project/
-├── main.lc
-├── utils.lc
+├── src/
+│   └── main.lc
+├── lucis.yaml
 └── .lucis/
-    └ build/
-      ├── Main__main.o
-      └── Utils__utils.o
+    ├── build/
+    │   ├── src__main__main.o
+    │   └── cache/
+    │       ├── build_manifest.txt
+    │       └── semantic.db
+    └── cache/
+        └── run-<hash>.bin
 ```
 
-These files are reused across compilations. You can safely delete `.lucis/build/`
+These files are reused across compilations. You can safely delete `.lucis/`
 to force a clean rebuild.
 
 ## Compiler Pipeline
 
 When you run `lucis build`, the compiler performs these steps:
 
-1. **Scan** — Discover all `.lc` files in the project directory
-2. **Parse** — Parse each file using the ANTLR4 grammar
-3. **Register** — Build a namespace registry for cross-file module resolution
-4. **Resolve Headers** — Process `#include` directives
-5. **Compile C** — Compile local `.c` files to object files
-6. **Check** — Run semantic analysis and type checking
-7. **Generate IR** — Emit LLVM intermediate representation
+1. **Resolve Project Root** — Walk up from the input file looking for `lucis.yaml` or `.git`
+2. **Resolve Imports** — BFS import resolution starting from the entry point; only
+   files referenced by `use` are opened (no directory scanning)
+3. **Parse** — Parse each file using the ANTLR4 grammar
+4. **Register** — Build a module registry for cross-file symbol resolution
+5. **Resolve Headers** — Process `#include` directives and auto-discover C source files
+6. **Check** — Run semantic analysis and type checking on all units
+7. **Generate IR** — Emit LLVM intermediate representation for each unit
 8. **Optimize** — Apply LLVM optimization passes (if `-O` is specified)
 9. **Emit Objects** — Write `.o` object files to `.lucis/build/`
 10. **Link** — Invoke the system linker to produce the final native binary
@@ -346,16 +314,11 @@ lucis: unknown flag '--xyz'
 Unknown command-line flag. Check the flag spelling.
 
 ```
-lucis: no .lc files found in '/path/to/project'
+lucis: no input file specified and no lucis.yaml found
 ```
 
-No Lucis source files found in the directory containing your input file.
-
-```
-lucis: file 'module.lc' is missing a 'namespace' declaration
-```
-
-Every `.lc` file must begin with a `namespace` declaration.
+No `.lc` file provided and no `lucis.yaml` found in the current directory or
+any parent directory.
 
 ```
 lucis: cannot find header '<mylib.h>'. Check '-I' include paths
