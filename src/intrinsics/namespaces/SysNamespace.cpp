@@ -1534,5 +1534,74 @@ void registerSysNamespace(IntrinsicRegistry& reg, TypeRegistry& typeReg) {
         "while !lucis::sys::rdrand64(&val) {}\n"
         "```"));
 
+    // ── Endianness conversion ────────────────────────────────────
+    // Uses DataLayout to detect host endianness, then either applies
+    // llvm.bswap or returns identity.
+
+    auto makeEndianOp = [](const std::string& name,
+                           bool bswapOnLE,
+                           const std::string& desc) {
+        IntrinsicFunction fn;
+        fn.name = name;
+        fn.returnType = "_any";
+        fn.isGeneric = true;
+        fn.params.push_back({"_any", false});
+        fn.description = desc;
+
+        fn.lowering.kind = IntrinsicFunction::Lowering::InlineIR;
+        fn.lowering.emitIR = [name, bswapOnLE](
+            llvm::IRBuilder<>& builder,
+            llvm::Module* module,
+            llvm::LLVMContext& context,
+            const TypeRegistry& typeRegistry,
+            const std::vector<llvm::Value*>& args,
+            const std::vector<const TypeInfo*>& typeArgs) -> llvm::Value* {
+
+            auto& dl = module->getDataLayout();
+            auto* intTy = typeArgs[0]->toLLVMType(context, dl);
+            auto* val = builder.CreateIntCast(args[0], intTy, false, "cast");
+
+            bool needSwap = (dl.isLittleEndian() == bswapOnLE);
+            if (!needSwap) return val;
+
+            auto* callee = llvm::Intrinsic::getOrInsertDeclaration(
+                module, llvm::Intrinsic::bswap, {intTy});
+            return builder.CreateCall(callee, {val}, name.c_str());
+        };
+        return fn;
+    };
+
+    sys.functions.push_back(makeEndianOp("to_be",
+        true,
+        "Converts an integer from host byte order to big-endian.\n"
+        "On little-endian hosts this is a byte swap; on big-endian hosts a no-op.\n\n"
+        "```lucis\n"
+        "uint32 be = lucis::sys::to_be<uint32>(host_val);\n"
+        "```"));
+
+    sys.functions.push_back(makeEndianOp("to_le",
+        false,
+        "Converts an integer from host byte order to little-endian.\n"
+        "On little-endian hosts this is a no-op; on big-endian hosts a byte swap.\n\n"
+        "```lucis\n"
+        "uint32 le = lucis::sys::to_le<uint32>(host_val);\n"
+        "```"));
+
+    sys.functions.push_back(makeEndianOp("from_be",
+        true,
+        "Converts a big-endian integer to host byte order.\n"
+        "On little-endian hosts this is a byte swap; on big-endian hosts a no-op.\n\n"
+        "```lucis\n"
+        "uint32 host = lucis::sys::from_be<uint32>(be_val);\n"
+        "```"));
+
+    sys.functions.push_back(makeEndianOp("from_le",
+        false,
+        "Converts a little-endian integer to host byte order.\n"
+        "On little-endian hosts this is a no-op; on big-endian hosts a byte swap.\n\n"
+        "```lucis\n"
+        "uint32 host = lucis::sys::from_le<uint32>(le_val);\n"
+        "```"));
+
     reg.registerNamespace(std::move(sys));
 }

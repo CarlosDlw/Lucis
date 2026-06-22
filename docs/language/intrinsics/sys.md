@@ -91,6 +91,40 @@ int32 bs = lucis::sys::bswap<int32>(0x12345678);
 
 Reverses the byte order of `x`.
 
+### `lucis::sys::to_be\<T\>(x) -> T`
+
+```lucis
+uint32 be = lucis::sys::to_be<uint32>(0x12345678);
+// be == 0x78563412 on little-endian
+```
+
+Converts from host byte order to big-endian. On LE hosts this is a byte swap (`@llvm.bswap`); on BE hosts a no-op.
+
+### `lucis::sys::to_le\<T\>(x) -> T`
+
+```lucis
+uint32 le = lucis::sys::to_le<uint32>(0x12345678);
+// unchanged on little-endian
+```
+
+Converts from host byte order to little-endian. No-op on LE hosts.
+
+### `lucis::sys::from_be\<T\>(x) -> T`
+
+```lucis
+uint32 host = lucis::sys::from_be<uint32>(be_val);
+```
+
+Converts from big-endian to host byte order. Byte swap on LE hosts.
+
+### `lucis::sys::from_le\<T\>(x) -> T`
+
+```lucis
+uint32 host = lucis::sys::from_le<uint32>(le_val);
+```
+
+Converts from little-endian to host byte order. No-op on LE hosts.
+
 ### `lucis::sys::ctpop\<T\>(x) -> T`
 
 ```lucis

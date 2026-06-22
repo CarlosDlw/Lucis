@@ -37,6 +37,7 @@ use tests::structs_methods_extend::testStructsMethodsAndExtend;
 use tests::structs_pointers::testStructsPointers;
 use tests::sys_bitops::testSysBitOps;
 use tests::sys_cpu::testSysCPU;
+use tests::sys_endianness::testSysEndianness;
 use tests::sys_expect_lifetime::testSysExpectLifetime;
 use tests::sys_fence::testSysFence;
 use tests::sys_float_math::testSysFloatMath;
@@ -116,5 +117,6 @@ fn main() int32 {
     testSysExpectLifetime();
     testSysSaturating();
     testSysRdRand();
+    testSysEndianness();
     ret 0;
 }

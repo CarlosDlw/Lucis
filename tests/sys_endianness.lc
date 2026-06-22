@@ -1,0 +1,33 @@
+use std::log::println;
+use std::test::{ assertEqual };
+
+fn testSysEndianness() int32 {
+    println("[Testing sys:: endianness conversion intrinsics...]");
+
+    // to_be: host → big-endian (byte swap on LE)
+    uint32 val = 0x12345678u32;
+    uint32 be = lucis::sys::to_be<uint32>(val);
+    assertEqual(be, 0x78563412u32);
+
+    // from_be: big-endian → host (byte swap on LE)
+    uint32 le = lucis::sys::from_be<uint32>(be);
+    assertEqual(le, val);
+
+    // to_le: host → little-endian (no-op on LE)
+    uint32 le2 = lucis::sys::to_le<uint32>(val);
+    assertEqual(le2, val);
+
+    // from_le: little-endian → host (no-op on LE)
+    uint32 le3 = lucis::sys::from_le<uint32>(le2);
+    assertEqual(le3, val);
+
+    // Round-trip: from_be(to_be(x)) == x
+    uint16 v16 = 0xABCDu16;
+    assertEqual(lucis::sys::from_be<uint16>(lucis::sys::to_be<uint16>(v16)), v16);
+
+    uint64 v64 = 0xDEADBEEFCAFEu64;
+    assertEqual(lucis::sys::from_le<uint64>(lucis::sys::to_le<uint64>(v64)), v64);
+
+    println("✔ sys::endianness tests passed");
+    ret 0;
+}
