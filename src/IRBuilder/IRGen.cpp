@@ -7286,6 +7286,16 @@ std::any IRGen::visitIndexExpr(LucisParser::IndexExprContext* ctx) {
                                 { llvm::ConstantInt::get(i64Ty, 0), idx },
                                 fieldName + "_elem");
                             auto* elemTy = llvm::cast<llvm::ArrayType>(arrTy)->getElementType();
+                            for (size_t ai = 1; ai < indexExprs.size(); ai++) {
+                                auto* nextIdx = castValue(visit(indexExprs[ai]));
+                                if (nextIdx->getType() != i64Ty)
+                                    nextIdx = builder_->CreateIntCast(nextIdx, i64Ty, true);
+                                elemGep = builder_->CreateInBoundsGEP(
+                                    elemTy, elemGep,
+                                    { llvm::ConstantInt::get(i64Ty, 0), nextIdx },
+                                    fieldName + "_elem");
+                                elemTy = llvm::cast<llvm::ArrayType>(elemTy)->getElementType();
+                            }
                             return static_cast<llvm::Value*>(
                                 builder_->CreateLoad(elemTy, elemGep, fieldName + "_val"));
                         }
@@ -7822,7 +7832,9 @@ std::any IRGen::visitFieldAccessExpr(LucisParser::FieldAccessExprContext* ctx) {
                 return static_cast<llvm::Value*>(
                     llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
             }
-            auto* fieldLLTy = fieldTI->toLLVMType(*context_, module_->getDataLayout());
+            auto* fieldLLTy = buildFieldLLVMType(fieldTI,
+                pointeeTI->fields[fieldIdx].arrayDims,
+                pointeeTI->fields[fieldIdx].arraySizes);
             auto* structLLTy = llvm::StructType::getTypeByName(*context_, pointeeTI->name);
             if (!structLLTy) {
                 // Fallback: look up from LLVM module
@@ -7858,7 +7870,9 @@ std::any IRGen::visitFieldAccessExpr(LucisParser::FieldAccessExprContext* ctx) {
                 llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
         }
 
-        auto* fieldLLTy = fieldTI->toLLVMType(*context_, module_->getDataLayout());
+        auto* fieldLLTy = buildFieldLLVMType(fieldTI,
+            structTI->fields[fieldIdx].arrayDims,
+            structTI->fields[fieldIdx].arraySizes);
 
         if (structTI->kind == TypeKind::Union) {
             return static_cast<llvm::Value*>(
@@ -8007,7 +8021,9 @@ std::any IRGen::visitFieldAccessExpr(LucisParser::FieldAccessExprContext* ctx) {
                 llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
         }
 
-        auto* fieldLLTy = fieldTI->toLLVMType(*context_, module_->getDataLayout());
+        auto* fieldLLTy = buildFieldLLVMType(fieldTI,
+            structTI->fields[fieldIdx].arrayDims,
+            structTI->fields[fieldIdx].arraySizes);
 
         if (structTI->kind == TypeKind::Union) {
             return static_cast<llvm::Value*>(
@@ -8015,7 +8031,7 @@ std::any IRGen::visitFieldAccessExpr(LucisParser::FieldAccessExprContext* ctx) {
         }
 
         auto* fieldGep = builder_->CreateStructGEP(elemTy, elemPtr, fieldIdx,
-                                                    fieldName + "_ptr");
+                                                     fieldName + "_ptr");
         return static_cast<llvm::Value*>(
             builder_->CreateLoad(fieldLLTy, fieldGep, fieldName));
     }
@@ -8041,7 +8057,9 @@ std::any IRGen::visitFieldAccessExpr(LucisParser::FieldAccessExprContext* ctx) {
                     }
                 }
                 if (fieldIdx >= 0) {
-                    auto* fieldLLTy = fieldTI->toLLVMType(*context_, module_->getDataLayout());
+                    auto* fieldLLTy = buildFieldLLVMType(fieldTI,
+                        baseTI->fields[fieldIdx].arrayDims,
+                        baseTI->fields[fieldIdx].arraySizes);
                     auto* tmp = builder_->CreateAlloca(baseVal->getType(), nullptr, "chain_tmp");
                     builder_->CreateStore(baseVal, tmp);
                     if (baseTI->kind == TypeKind::Union) {
@@ -8083,7 +8101,9 @@ std::any IRGen::visitFieldAccessExpr(LucisParser::FieldAccessExprContext* ctx) {
                     }
                 }
                 if (fieldIdx >= 0) {
-                    auto* fieldLLTy = fieldTI->toLLVMType(*context_, module_->getDataLayout());
+                    auto* fieldLLTy = buildFieldLLVMType(fieldTI,
+                        structTI->fields[fieldIdx].arrayDims,
+                        structTI->fields[fieldIdx].arraySizes);
                     auto* structLLTy = llvm::StructType::getTypeByName(*context_, structTI->name);
                     if (!structLLTy)
                         structLLTy = static_cast<llvm::StructType*>(
@@ -8124,7 +8144,9 @@ std::any IRGen::visitFieldAccessExpr(LucisParser::FieldAccessExprContext* ctx) {
                     }
                 }
                 if (fieldIdx >= 0) {
-                    auto* fieldLLTy = fieldTI->toLLVMType(*context_, module_->getDataLayout());
+                    auto* fieldLLTy = buildFieldLLVMType(fieldTI,
+                        baseTI->fields[fieldIdx].arrayDims,
+                        baseTI->fields[fieldIdx].arraySizes);
                     auto* tmp = builder_->CreateAlloca(baseVal->getType(), nullptr, "expr_tmp");
                     builder_->CreateStore(baseVal, tmp);
                     if (baseTI->kind == TypeKind::Union) {
@@ -8180,7 +8202,9 @@ std::any IRGen::visitArrowAccessExpr(LucisParser::ArrowAccessExprContext* ctx) {
             llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
     }
 
-    auto* fieldLLTy = fieldTI->toLLVMType(*context_, module_->getDataLayout());
+    auto* fieldLLTy = buildFieldLLVMType(fieldTI,
+        structTI->fields[fieldIdx].arrayDims,
+        structTI->fields[fieldIdx].arraySizes);
 
     if (structTI->kind == TypeKind::Union) {
         // Union: all fields at offset 0
@@ -8192,6 +8216,16 @@ std::any IRGen::visitArrowAccessExpr(LucisParser::ArrowAccessExprContext* ctx) {
     auto* gep = builder_->CreateStructGEP(structTy, ptrVal, fieldIdx, fieldName + "_ptr");
 
     return static_cast<llvm::Value*>(builder_->CreateLoad(fieldLLTy, gep, fieldName));
+}
+
+llvm::Type* IRGen::buildFieldLLVMType(const TypeInfo* elemTI, unsigned arrayDims,
+                                      const std::vector<unsigned>& arraySizes) {
+    auto* ty = elemTI->toLLVMType(*context_, module_->getDataLayout());
+    if (arrayDims > 0 && !arraySizes.empty()) {
+        for (auto it = arraySizes.rbegin(); it != arraySizes.rend(); ++it)
+            ty = llvm::ArrayType::get(ty, *it);
+    }
+    return ty;
 }
 
 llvm::Type* IRGen::getEnumVariantPayloadType(const EnumVariantInfo& variantInfo) {
@@ -9511,6 +9545,35 @@ std::any IRGen::visitAddrOfExpr(LucisParser::AddrOfExprContext* ctx) {
                                                           "addr_of_field");
                     return static_cast<llvm::Value*>(gep);
                 }
+            }
+        }
+    }
+    // Case 4: &ptr->field — address of struct field via pointer
+    if (auto* arrow = dynamic_cast<LucisParser::ArrowAccessExprContext*>(innerExpr)) {
+        auto fieldName = arrow->IDENTIFIER()->getText();
+        auto* base = arrow->expression();
+        auto* ptrVal = castValue(visit(base));
+        auto* exprTI = resolveExprTypeInfo(base);
+        if (exprTI && exprTI->kind == TypeKind::Pointer && exprTI->pointeeType &&
+            (exprTI->pointeeType->kind == TypeKind::Struct ||
+             exprTI->pointeeType->kind == TypeKind::Union)) {
+            auto* structTI = exprTI->pointeeType;
+            int fieldIdx = -1;
+            for (size_t i = 0; i < structTI->fields.size(); i++) {
+                if (structTI->fields[i].name == fieldName) {
+                    fieldIdx = static_cast<int>(i);
+                    break;
+                }
+            }
+            if (fieldIdx >= 0) {
+                auto* structLLTy = llvm::StructType::getTypeByName(*context_, structTI->name);
+                if (!structLLTy)
+                    structLLTy = static_cast<llvm::StructType*>(
+                        structTI->toLLVMType(*context_, module_->getDataLayout()));
+                auto* gep = builder_->CreateStructGEP(structLLTy, ptrVal,
+                                                      static_cast<unsigned>(fieldIdx),
+                                                      "addr_of_arrow_field");
+                return static_cast<llvm::Value*>(gep);
             }
         }
     }
@@ -15465,6 +15528,34 @@ unsigned IRGen::resolveExprArrayDims(LucisParser::ExpressionContext* ctx) {
             auto it = fnReturnArrayDims_.find(emitName);
             if (it != fnReturnArrayDims_.end()) return it->second;
         }
+    }
+
+    if (auto* arrow = dynamic_cast<LucisParser::ArrowAccessExprContext*>(ctx)) {
+        auto* baseTI = resolveExprTypeInfo(arrow->expression());
+        if (baseTI && baseTI->kind == TypeKind::Pointer && baseTI->pointeeType &&
+            (baseTI->pointeeType->kind == TypeKind::Struct ||
+             baseTI->pointeeType->kind == TypeKind::Union)) {
+            auto* structTI = baseTI->pointeeType;
+            auto fieldName = arrow->IDENTIFIER()->getText();
+            for (size_t f = 0; f < structTI->fields.size(); f++) {
+                if (structTI->fields[f].name == fieldName)
+                    return structTI->fields[f].arrayDims;
+            }
+        }
+        return 0;
+    }
+
+    if (auto* field = dynamic_cast<LucisParser::FieldAccessExprContext*>(ctx)) {
+        auto* baseTI = resolveExprTypeInfo(field->expression());
+        if (baseTI && (baseTI->kind == TypeKind::Struct ||
+                       baseTI->kind == TypeKind::Union)) {
+            auto fieldName = field->IDENTIFIER()->getText();
+            for (size_t f = 0; f < baseTI->fields.size(); f++) {
+                if (baseTI->fields[f].name == fieldName)
+                    return baseTI->fields[f].arrayDims;
+            }
+        }
+        return 0;
     }
 
     if (auto* cu = dynamic_cast<LucisParser::CatchUnwrapExprContext*>(ctx)) {

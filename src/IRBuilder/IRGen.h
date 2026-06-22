@@ -459,6 +459,8 @@ private:
                                         llvm::Type* retType,
                                         llvm::ArrayRef<llvm::Type*> argTypes);
     llvm::Type*         getEnumVariantPayloadType(const EnumVariantInfo& variantInfo);
+    llvm::Type*         buildFieldLLVMType(const TypeInfo* elemTI, unsigned arrayDims,
+                                          const std::vector<unsigned>& arraySizes);
     llvm::Value*        buildEnumVariantValue(const TypeInfo* enumType,
                                              const EnumVariantInfo& variantInfo,
                                              const std::vector<llvm::Value*>& payloadValues);
