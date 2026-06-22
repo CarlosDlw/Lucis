@@ -3754,6 +3754,427 @@ std::any IRGen::visitArrowCompoundAssignStmt(
     return {};
 }
 
+// Shared helper: resolve an arrow-based lvalue chain to a store pointer.
+IRGen::ArrowLValue IRGen::resolveArrowLValue(
+    const std::vector<antlr4::tree::TerminalNode*>& identifiers,
+    const std::vector<antlr4::tree::TerminalNode*>& dotIdentifiers,
+    size_t numArrows,
+    size_t numBrackets,
+    const std::vector<LucisParser::ExpressionContext*>& indexExprs)
+{
+    auto* i64Ty = llvm::Type::getInt64Ty(*context_);
+    auto* ptrTy = llvm::PointerType::getUnqual(*context_);
+
+    if (identifiers.size() < 1 + numArrows) {
+        std::cerr << "lucis: malformed arrow lvalue\n";
+        return {};
+    }
+    auto varName = identifiers[0]->getText();
+    auto it = locals_.find(varName);
+    if (it == locals_.end()) {
+        std::cerr << "lucis: undefined variable '" << varName << "'\n";
+        return {};
+    }
+
+    llvm::Value* basePtr = it->second.alloca;
+    const TypeInfo* currentTI = it->second.typeInfo;
+
+    if (currentTI && currentTI->kind == TypeKind::Pointer && currentTI->pointeeType) {
+        basePtr = builder_->CreateLoad(ptrTy, basePtr, varName + "_ptr");
+        currentTI = currentTI->pointeeType;
+    }
+
+    for (size_t i = 0; i < dotIdentifiers.size(); i++) {
+        auto fieldName = identifiers[1 + i]->getText();
+        if (!currentTI || (currentTI->kind != TypeKind::Struct &&
+                           currentTI->kind != TypeKind::Union)) {
+            std::cerr << "lucis: cannot access field '" << fieldName
+                      << "' on non-struct type\n";
+            return {};
+        }
+        int idx = -1;
+        for (size_t f = 0; f < currentTI->fields.size(); f++) {
+            if (currentTI->fields[f].name == fieldName) {
+                idx = static_cast<int>(f);
+                break;
+            }
+        }
+        if (idx < 0) {
+            std::cerr << "lucis: '" << currentTI->name
+                      << "' has no field '" << fieldName << "'\n";
+            return {};
+        }
+        if (currentTI->kind == TypeKind::Union) {
+            currentTI = currentTI->fields[idx].typeInfo;
+        } else {
+            auto* curTy = currentTI->toLLVMType(*context_, module_->getDataLayout());
+            basePtr = builder_->CreateStructGEP(curTy, basePtr, idx, fieldName + "_ptr");
+            currentTI = currentTI->fields[idx].typeInfo;
+        }
+        if (currentTI && currentTI->kind == TypeKind::Pointer && currentTI->pointeeType) {
+            basePtr = builder_->CreateLoad(ptrTy, basePtr, fieldName + "_load");
+            currentTI = currentTI->pointeeType;
+        }
+    }
+
+    size_t firstArrowIdx = 1 + dotIdentifiers.size();
+    size_t lastArrowIdx = firstArrowIdx + numArrows - 1;
+
+    for (size_t i = firstArrowIdx; i < lastArrowIdx; i++) {
+        auto fieldName = identifiers[i]->getText();
+        if (!currentTI || (currentTI->kind != TypeKind::Struct &&
+                           currentTI->kind != TypeKind::Union)) {
+            std::cerr << "lucis: '->' requires pointer to struct, got '"
+                      << (currentTI ? currentTI->name : "?") << "'\n";
+            return {};
+        }
+        int idx = -1;
+        for (size_t f = 0; f < currentTI->fields.size(); f++) {
+            if (currentTI->fields[f].name == fieldName) {
+                idx = static_cast<int>(f);
+                break;
+            }
+        }
+        if (idx < 0) {
+            std::cerr << "lucis: '" << currentTI->name
+                      << "' has no field '" << fieldName << "'\n";
+            return {};
+        }
+        auto* curTy = currentTI->toLLVMType(*context_, module_->getDataLayout());
+        auto* gep = builder_->CreateStructGEP(curTy, basePtr, idx, fieldName + "_ptr");
+        currentTI = currentTI->fields[idx].typeInfo;
+        if (currentTI && currentTI->kind == TypeKind::Pointer && currentTI->pointeeType) {
+            basePtr = builder_->CreateLoad(ptrTy, gep, fieldName + "_load");
+            currentTI = currentTI->pointeeType;
+        } else {
+            basePtr = gep;
+        }
+    }
+
+    if (numArrows == 0) {
+        std::cerr << "lucis: arrow lvalue requires at least one arrow\n";
+        return {};
+    }
+
+    auto fieldName = identifiers[lastArrowIdx]->getText();
+    if (!currentTI || (currentTI->kind != TypeKind::Struct &&
+                       currentTI->kind != TypeKind::Union)) {
+        std::cerr << "lucis: '->' requires pointer to struct, got '"
+                  << (currentTI ? currentTI->name : "?") << "'\n";
+        return {};
+    }
+    int fieldIdx = -1;
+    const TypeInfo* fieldTI = nullptr;
+    for (size_t f = 0; f < currentTI->fields.size(); f++) {
+        if (currentTI->fields[f].name == fieldName) {
+            fieldIdx = static_cast<int>(f);
+            fieldTI = currentTI->fields[f].typeInfo;
+            break;
+        }
+    }
+    if (fieldIdx < 0) {
+        std::cerr << "lucis: '" << currentTI->name
+                  << "' has no field '" << fieldName << "'\n";
+        return {};
+    }
+
+    const auto& fi = currentTI->fields[fieldIdx];
+    llvm::Type* fieldTy = fieldTI->toLLVMType(*context_, module_->getDataLayout());
+    if (fi.arrayDims > 0 && !fi.arraySizes.empty()) {
+        llvm::Type* arrTy = fieldTy;
+        for (auto it = fi.arraySizes.rbegin(); it != fi.arraySizes.rend(); ++it)
+            arrTy = llvm::ArrayType::get(arrTy, *it);
+        fieldTy = arrTy;
+    }
+
+    llvm::Value* destPtr;
+    if (currentTI->kind == TypeKind::Union) {
+        destPtr = basePtr;
+    } else {
+        auto* curTy = currentTI->toLLVMType(*context_, module_->getDataLayout());
+        destPtr = builder_->CreateStructGEP(curTy, basePtr, fieldIdx, fieldName + "_ptr");
+    }
+
+    for (size_t ai = 0; ai < numBrackets; ai++) {
+        auto* idxVal = castValue(visit(indexExprs[ai]));
+        if (idxVal->getType() != i64Ty)
+            idxVal = builder_->CreateIntCast(idxVal, i64Ty, true);
+        if (!fieldTy->isArrayTy()) {
+            std::cerr << "lucis: indexing non-array field '" << fieldName << "'\n";
+            return {};
+        }
+        destPtr = builder_->CreateInBoundsGEP(fieldTy, destPtr,
+            { llvm::ConstantInt::get(i64Ty, 0), idxVal },
+            fieldName + "_elem");
+        fieldTy = llvm::cast<llvm::ArrayType>(fieldTy)->getElementType();
+        if (fieldTI && fieldTI->elementType)
+            fieldTI = fieldTI->elementType;
+    }
+
+    return { destPtr, fieldTy, fieldTI };
+}
+
+// ptr->field[i] = expr;  or  ptr->field1->field2[i] = expr;
+// General resolver for mixed dot/arrow/index lvalue chains.
+// identifiers = [var, field1, field2, ..., fieldN]
+// dots and arrows in source order — the function sorts them by token position
+// to correctly interleave dot and arrow accesses.
+IRGen::ArrowLValue IRGen::resolveArrowAnyLValue(
+    const std::vector<antlr4::tree::TerminalNode*>& identifiers,
+    const std::vector<antlr4::tree::TerminalNode*>& dots,
+    const std::vector<antlr4::tree::TerminalNode*>& arrows,
+    const std::vector<LucisParser::ExpressionContext*>& indexExprs)
+{
+    auto* i64Ty = llvm::Type::getInt64Ty(*context_);
+    auto* ptrTy = llvm::PointerType::getUnqual(*context_);
+
+    if (identifiers.empty()) {
+        std::cerr << "lucis: malformed arrow lvalue\n";
+        return {};
+    }
+    auto varName = identifiers[0]->getText();
+    auto it = locals_.find(varName);
+    if (it == locals_.end()) {
+        std::cerr << "lucis: undefined variable '" << varName << "'\n";
+        return {};
+    }
+
+    llvm::Value* basePtr = it->second.alloca;
+    const TypeInfo* currentTI = it->second.typeInfo;
+
+    if (currentTI && currentTI->kind == TypeKind::Pointer && currentTI->pointeeType) {
+        basePtr = builder_->CreateLoad(ptrTy, basePtr, varName + "_ptr");
+        currentTI = currentTI->pointeeType;
+    }
+
+    // Build merged list of (tokenIndex, isArrow) for all separators
+    std::vector<std::pair<size_t, bool>> ops;
+    for (auto* d : dots)
+        ops.emplace_back(d->getSymbol()->getTokenIndex(), false);
+    for (auto* a : arrows)
+        ops.emplace_back(a->getSymbol()->getTokenIndex(), true);
+    std::sort(ops.begin(), ops.end());
+
+    size_t numFieldAccesses = ops.size(); // each op has an identifier after it
+    if (identifiers.size() != 1 + numFieldAccesses) {
+        std::cerr << "lucis: mismatch between identifiers and operators in arrow lvalue\n";
+        return {};
+    }
+
+    // Process all field accesses except the last one
+    for (size_t i = 0; i + 1 < numFieldAccesses; i++) {
+        auto fieldName = identifiers[1 + i]->getText();
+        if (!currentTI || (currentTI->kind != TypeKind::Struct &&
+                           currentTI->kind != TypeKind::Union)) {
+            std::cerr << "lucis: cannot access field '" << fieldName
+                      << "' on non-struct type\n";
+            return {};
+        }
+        int idx = -1;
+        for (size_t f = 0; f < currentTI->fields.size(); f++) {
+            if (currentTI->fields[f].name == fieldName) {
+                idx = static_cast<int>(f);
+                break;
+            }
+        }
+        if (idx < 0) {
+            std::cerr << "lucis: '" << currentTI->name
+                      << "' has no field '" << fieldName << "'\n";
+            return {};
+        }
+
+        if (ops[i].second) {
+            // Arrow: deref pointer first, then GEP
+            if (!currentTI || (currentTI->kind != TypeKind::Struct &&
+                               currentTI->kind != TypeKind::Union)) {
+                std::cerr << "lucis: '->' requires struct type, got '"
+                          << (currentTI ? currentTI->name : "?") << "'\n";
+                return {};
+            }
+            auto* curTy = currentTI->toLLVMType(*context_, module_->getDataLayout());
+            auto* gep = builder_->CreateStructGEP(curTy, basePtr, idx, fieldName + "_ptr");
+            currentTI = currentTI->fields[idx].typeInfo;
+            if (currentTI && currentTI->kind == TypeKind::Pointer && currentTI->pointeeType) {
+                basePtr = builder_->CreateLoad(ptrTy, gep, fieldName + "_load");
+                currentTI = currentTI->pointeeType;
+            } else {
+                basePtr = gep;
+            }
+        } else {
+            // Dot: struct GEP with auto-deref for pointer fields
+            if (currentTI->kind == TypeKind::Union) {
+                currentTI = currentTI->fields[idx].typeInfo;
+            } else {
+                auto* curTy = currentTI->toLLVMType(*context_, module_->getDataLayout());
+                basePtr = builder_->CreateStructGEP(curTy, basePtr, idx, fieldName + "_ptr");
+                currentTI = currentTI->fields[idx].typeInfo;
+            }
+            if (currentTI && currentTI->kind == TypeKind::Pointer && currentTI->pointeeType) {
+                basePtr = builder_->CreateLoad(ptrTy, basePtr, fieldName + "_load");
+                currentTI = currentTI->pointeeType;
+            }
+        }
+    }
+
+    // Last field access
+    auto fieldName = identifiers.back()->getText();
+    if (!currentTI || (currentTI->kind != TypeKind::Struct &&
+                       currentTI->kind != TypeKind::Union)) {
+        std::cerr << "lucis: cannot access final field '" << fieldName
+                  << "' on non-struct type\n";
+        return {};
+    }
+    int fieldIdx = -1;
+    const TypeInfo* fieldTI = nullptr;
+    for (size_t f = 0; f < currentTI->fields.size(); f++) {
+        if (currentTI->fields[f].name == fieldName) {
+            fieldIdx = static_cast<int>(f);
+            fieldTI = currentTI->fields[f].typeInfo;
+            break;
+        }
+    }
+    if (fieldIdx < 0) {
+        std::cerr << "lucis: '" << currentTI->name
+                  << "' has no field '" << fieldName << "'\n";
+        return {};
+    }
+
+    const auto& fi = currentTI->fields[fieldIdx];
+    llvm::Type* fieldTy = fieldTI->toLLVMType(*context_, module_->getDataLayout());
+    if (fi.arrayDims > 0 && !fi.arraySizes.empty()) {
+        llvm::Type* arrTy = fieldTy;
+        for (auto it = fi.arraySizes.rbegin(); it != fi.arraySizes.rend(); ++it)
+            arrTy = llvm::ArrayType::get(arrTy, *it);
+        fieldTy = arrTy;
+    }
+
+    llvm::Value* destPtr;
+    if (currentTI->kind == TypeKind::Union) {
+        destPtr = basePtr;
+    } else {
+        auto* curTy = currentTI->toLLVMType(*context_, module_->getDataLayout());
+        destPtr = builder_->CreateStructGEP(curTy, basePtr, fieldIdx, fieldName + "_ptr");
+    }
+
+    // Array indices
+    for (size_t ai = 0; ai < indexExprs.size(); ai++) {
+        auto* idxVal = castValue(visit(indexExprs[ai]));
+        if (idxVal->getType() != i64Ty)
+            idxVal = builder_->CreateIntCast(idxVal, i64Ty, true);
+        if (!fieldTy->isArrayTy()) {
+            std::cerr << "lucis: indexing non-array field '" << fieldName << "'\n";
+            return {};
+        }
+        destPtr = builder_->CreateInBoundsGEP(fieldTy, destPtr,
+            { llvm::ConstantInt::get(i64Ty, 0), idxVal },
+            fieldName + "_idx" + std::to_string(ai));
+        fieldTy = fieldTy->getArrayElementType();
+    }
+    if (fieldTI && fieldTI->elementType)
+        fieldTI = fieldTI->elementType;
+
+    return { destPtr, fieldTy, fieldTI };
+}
+
+// General arrow lvalue assignment (dot/arrow/index chains)
+std::any IRGen::visitArrowAnyAssignStmt(LucisParser::ArrowAnyAssignStmtContext* ctx) {
+    auto identifiers = ctx->IDENTIFIER();
+    auto dots = ctx->DOT();
+    auto arrows = ctx->ARROW();
+    auto numBrackets = ctx->LBRACKET().size();
+    auto expressions = ctx->expression();
+
+    if (identifiers.size() < 2) {
+        std::cerr << "lucis: arrow assign needs at least one arrow\n";
+        return {};
+    }
+
+    size_t numIndexExprs = numBrackets;
+    std::vector<LucisParser::ExpressionContext*> indexExprs;
+    for (size_t i = 0; i < numIndexExprs; i++)
+        indexExprs.push_back(expressions[i]);
+    auto* rhsExpr = expressions[numIndexExprs];
+
+    auto lv = resolveArrowAnyLValue(identifiers, dots, arrows, indexExprs);
+    if (!lv.ptr) return {};
+
+    auto* val = castValue(visit(rhsExpr));
+    if (val->getType() != lv.ty) {
+        if (val->getType()->isIntegerTy() && lv.ty->isIntegerTy())
+            val = builder_->CreateIntCast(val, lv.ty, lv.fieldTI && lv.fieldTI->isSigned);
+        else if (val->getType()->isFloatingPointTy() && lv.ty->isFloatingPointTy())
+            val = builder_->CreateFPCast(val, lv.ty);
+    }
+    builder_->CreateStore(val, lv.ptr);
+    return {};
+}
+
+// General arrow lvalue compound assignment
+std::any IRGen::visitArrowAnyCompoundAssignStmt(
+    LucisParser::ArrowAnyCompoundAssignStmtContext* ctx) {
+    auto identifiers = ctx->IDENTIFIER();
+    auto dots = ctx->DOT();
+    auto arrows = ctx->ARROW();
+    auto numBrackets = ctx->LBRACKET().size();
+    auto expressions = ctx->expression();
+
+    if (identifiers.size() < 2) return {};
+
+    size_t numIndexExprs = numBrackets;
+    std::vector<LucisParser::ExpressionContext*> indexExprs;
+    for (size_t i = 0; i < numIndexExprs; i++)
+        indexExprs.push_back(expressions[i]);
+    auto* rhsExpr = expressions[numIndexExprs];
+
+    auto lv = resolveArrowAnyLValue(identifiers, dots, arrows, indexExprs);
+    if (!lv.ptr) return {};
+
+    auto* oldVal = builder_->CreateLoad(lv.ty, lv.ptr, "arrow_any_old");
+    auto* rhs = castValue(visit(rhsExpr));
+    if (rhs->getType() != lv.ty) {
+        if (rhs->getType()->isIntegerTy() && lv.ty->isIntegerTy())
+            rhs = builder_->CreateIntCast(rhs, lv.ty, lv.fieldTI && lv.fieldTI->isSigned);
+    }
+
+    bool isFloat = lv.ty->isFloatingPointTy();
+    auto opType = ctx->op->getType();
+    llvm::Value* result;
+    if (opType == LucisLexer::PLUS_ASSIGN)
+        result = isFloat ? builder_->CreateFAdd(oldVal, rhs) : builder_->CreateAdd(oldVal, rhs);
+    else if (opType == LucisLexer::MINUS_ASSIGN)
+        result = isFloat ? builder_->CreateFSub(oldVal, rhs) : builder_->CreateSub(oldVal, rhs);
+    else if (opType == LucisLexer::STAR_ASSIGN)
+        result = isFloat ? builder_->CreateFMul(oldVal, rhs) : builder_->CreateMul(oldVal, rhs);
+    else if (opType == LucisLexer::SLASH_ASSIGN)
+        result = isFloat ? builder_->CreateFDiv(oldVal, rhs)
+                         : (lv.fieldTI && lv.fieldTI->isSigned
+                                ? builder_->CreateSDiv(oldVal, rhs)
+                                : builder_->CreateUDiv(oldVal, rhs));
+    else if (opType == LucisLexer::PERCENT_ASSIGN)
+        result = isFloat ? builder_->CreateFRem(oldVal, rhs)
+                         : (lv.fieldTI && lv.fieldTI->isSigned
+                                ? builder_->CreateSRem(oldVal, rhs)
+                                : builder_->CreateURem(oldVal, rhs));
+    else if (opType == LucisLexer::AMP_ASSIGN)
+        result = builder_->CreateAnd(oldVal, rhs);
+    else if (opType == LucisLexer::PIPE_ASSIGN)
+        result = builder_->CreateOr(oldVal, rhs);
+    else if (opType == LucisLexer::CARET_ASSIGN)
+        result = builder_->CreateXor(oldVal, rhs);
+    else if (opType == LucisLexer::LSHIFT_ASSIGN)
+        result = builder_->CreateShl(oldVal, rhs);
+    else if (opType == LucisLexer::RSHIFT_ASSIGN)
+        result = (lv.fieldTI && lv.fieldTI->isSigned)
+                     ? builder_->CreateAShr(oldVal, rhs)
+                     : builder_->CreateLShr(oldVal, rhs);
+    else {
+        std::cerr << "lucis: unsupported arrow compound assign\n";
+        return {};
+    }
+    builder_->CreateStore(result, lv.ptr);
+    return {};
+}
+
 std::any IRGen::visitExprStmt(LucisParser::ExprStmtContext* ctx) {
     auto exprAny = visit(ctx->expression());
     auto* expr = ctx->expression();
@@ -7124,6 +7545,26 @@ std::any IRGen::visitIndexExpr(LucisParser::IndexExprContext* ctx) {
                 }
                 auto* elemPtr = builder_->CreateGEP(elemTy, ptrBase, idxVal, "idx_elem_ptr");
                 return static_cast<llvm::Value*>(builder_->CreateLoad(elemTy, elemPtr, "idx_elem"));
+            }
+
+            // Array-value indexing: chained field/expr returning array, e.g., m.hidden.bias[1]
+            if (baseVal && baseVal->getType()->isArrayTy()) {
+                auto* zero = llvm::ConstantInt::get(i64Ty, 0);
+                auto* tmp = builder_->CreateAlloca(baseVal->getType(), nullptr, "arr_val_tmp");
+                builder_->CreateStore(baseVal, tmp);
+                auto* elemPtr = builder_->CreateInBoundsGEP(
+                    baseVal->getType(), tmp, {zero, idxVal}, "arr_val_elem");
+                auto* elemTy = llvm::cast<llvm::ArrayType>(baseVal->getType())->getElementType();
+                for (size_t ai = 1; ai < indexExprs.size(); ai++) {
+                    auto* nextIdx = castValue(visit(indexExprs[ai]));
+                    if (nextIdx->getType() != i64Ty)
+                        nextIdx = builder_->CreateIntCast(nextIdx, i64Ty, true);
+                    elemPtr = builder_->CreateInBoundsGEP(
+                        elemTy, elemPtr, {zero, nextIdx}, "arr_val_elem");
+                    elemTy = llvm::cast<llvm::ArrayType>(elemTy)->getElementType();
+                }
+                return static_cast<llvm::Value*>(
+                    builder_->CreateLoad(elemTy, elemPtr, "arr_val"));
             }
         }
 

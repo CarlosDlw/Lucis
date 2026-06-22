@@ -129,6 +129,10 @@ public:
 
     virtual std::any visitArrowCompoundAssignStmt(LucisParser::ArrowCompoundAssignStmtContext *context) = 0;
 
+    virtual std::any visitArrowAnyAssignStmt(LucisParser::ArrowAnyAssignStmtContext *context) = 0;
+
+    virtual std::any visitArrowAnyCompoundAssignStmt(LucisParser::ArrowAnyCompoundAssignStmtContext *context) = 0;
+
     virtual std::any visitCallStmt(LucisParser::CallStmtContext *context) = 0;
 
     virtual std::any visitArgList(LucisParser::ArgListContext *context) = 0;

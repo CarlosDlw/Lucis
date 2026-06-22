@@ -67,6 +67,8 @@ public:
     std::any visitFieldIndexAssignStmt(LucisParser::FieldIndexAssignStmtContext* ctx) override;
     std::any visitArrowAssignStmt(LucisParser::ArrowAssignStmtContext* ctx) override;
     std::any visitArrowCompoundAssignStmt(LucisParser::ArrowCompoundAssignStmtContext* ctx) override;
+    std::any visitArrowAnyAssignStmt(LucisParser::ArrowAnyAssignStmtContext* ctx) override;
+    std::any visitArrowAnyCompoundAssignStmt(LucisParser::ArrowAnyCompoundAssignStmtContext* ctx) override;
     std::any visitCallStmt(LucisParser::CallStmtContext* ctx)           override;
     std::any visitAsmStmt(LucisParser::AsmStmtContext* ctx)             override;
     std::any visitLabelDef(LucisParser::LabelDefContext* ctx)           override;
@@ -461,6 +463,21 @@ private:
     llvm::Type*         getEnumVariantPayloadType(const EnumVariantInfo& variantInfo);
     llvm::Type*         buildFieldLLVMType(const TypeInfo* elemTI, unsigned arrayDims,
                                           const std::vector<unsigned>& arraySizes);
+    struct ArrowLValue {
+        llvm::Value* ptr = nullptr;
+        llvm::Type*  ty = nullptr;
+        const TypeInfo* fieldTI = nullptr;
+    };
+    ArrowLValue         resolveArrowLValue(
+        const std::vector<antlr4::tree::TerminalNode*>& identifiers,
+        const std::vector<antlr4::tree::TerminalNode*>& dotIdentifiers,
+        size_t numArrows, size_t numBrackets,
+        const std::vector<LucisParser::ExpressionContext*>& indexExprs);
+    ArrowLValue         resolveArrowAnyLValue(
+        const std::vector<antlr4::tree::TerminalNode*>& identifiers,
+        const std::vector<antlr4::tree::TerminalNode*>& dots,
+        const std::vector<antlr4::tree::TerminalNode*>& arrows,
+        const std::vector<LucisParser::ExpressionContext*>& indexExprs);
     llvm::Value*        buildEnumVariantValue(const TypeInfo* enumType,
                                              const EnumVariantInfo& variantInfo,
                                              const std::vector<llvm::Value*>& payloadValues);

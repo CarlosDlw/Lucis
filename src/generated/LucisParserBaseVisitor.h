@@ -235,6 +235,14 @@ public:
     return visitChildren(ctx);
   }
 
+  virtual std::any visitArrowAnyAssignStmt(LucisParser::ArrowAnyAssignStmtContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual std::any visitArrowAnyCompoundAssignStmt(LucisParser::ArrowAnyCompoundAssignStmtContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
   virtual std::any visitCallStmt(LucisParser::CallStmtContext *ctx) override {
     return visitChildren(ctx);
   }

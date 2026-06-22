@@ -160,6 +160,8 @@ statement
     | fieldCompoundAssignStmt
     | arrowAssignStmt
     | arrowCompoundAssignStmt
+    | arrowAnyAssignStmt
+    | arrowAnyCompoundAssignStmt
     | callStmt
     | exprStmt
     | returnStmt
@@ -308,6 +310,19 @@ arrowAssignStmt
 // ptr->field += 5;
 arrowCompoundAssignStmt
     : IDENTIFIER (DOT IDENTIFIER)* ARROW IDENTIFIER op=(PLUS_ASSIGN | MINUS_ASSIGN | STAR_ASSIGN | SLASH_ASSIGN
+        | PERCENT_ASSIGN | AMP_ASSIGN | PIPE_ASSIGN | CARET_ASSIGN
+        | LSHIFT_ASSIGN | RSHIFT_ASSIGN) expression SEMI
+    ;
+
+// General arrow lvalue assignment: ptr->field[i] = expr, ptr->f1->f2 = expr,
+// ptr->f1.f2->f3[i][j] = expr, etc.
+arrowAnyAssignStmt
+    : IDENTIFIER (DOT IDENTIFIER | ARROW IDENTIFIER)+ (LBRACKET expression RBRACKET)* ASSIGN expression SEMI
+    ;
+
+// General arrow lvalue compound assignment.
+arrowAnyCompoundAssignStmt
+    : IDENTIFIER (DOT IDENTIFIER | ARROW IDENTIFIER)+ (LBRACKET expression RBRACKET)* op=(PLUS_ASSIGN | MINUS_ASSIGN | STAR_ASSIGN | SLASH_ASSIGN
         | PERCENT_ASSIGN | AMP_ASSIGN | PIPE_ASSIGN | CARET_ASSIGN
         | LSHIFT_ASSIGN | RSHIFT_ASSIGN) expression SEMI
     ;
