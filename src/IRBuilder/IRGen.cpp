@@ -1106,9 +1106,10 @@ void IRGen::forwardDeclareFunction(LucisParser::FunctionDeclContext* ctx) {
     if (isMainWithArgs) {
         emitName = "lucis_user_main";
     } else if (funcName != "main") {
-        if (module_->getFunction(emitName) && moduleRegistry_)
-            emitName = ModuleRegistry::mangle(currentModulePath_, funcName);
-        else if (moduleRegistry_ && cBindings_ && cBindings_->findFunction(funcName))
+        // Stdlib/system files keep mangled names to avoid shadowing
+        // C library functions (e.g. stdio::printf must not collide with C printf).
+        bool isStdlib = (currentFile_.rfind("/usr/", 0) == 0);
+        if (isStdlib)
             emitName = ModuleRegistry::mangle(currentModulePath_, funcName);
     }
 
@@ -1197,9 +1198,8 @@ std::any IRGen::visitFunctionDecl(LucisParser::FunctionDeclContext* ctx) {
     if (isMainWithArgs) {
         emitName = "lucis_user_main";
     } else if (funcName != "main") {
-        if (module_->getFunction(emitName) && moduleRegistry_)
-            emitName = ModuleRegistry::mangle(currentModulePath_, funcName);
-        else if (moduleRegistry_ && cBindings_ && cBindings_->findFunction(funcName))
+        bool isStdlib = (currentFile_.rfind("/usr/", 0) == 0);
+        if (isStdlib)
             emitName = ModuleRegistry::mangle(currentModulePath_, funcName);
     }
 
@@ -1815,7 +1815,8 @@ void IRGen::registerCrossFileSymbols(LucisParser::ProgramContext* ctx) {
             }
 
             auto mangledName = sym->name;
-            if (module_->getFunction(mangledName) || (cBindings_ && cBindings_->findFunction(sym->name)))
+            bool isStdlib = (sym->sourceFile.rfind("/usr/", 0) == 0);
+            if (isStdlib)
                 mangledName = ModuleRegistry::mangle(sym->modulePath, sym->name);
             if (!module_->getFunction(mangledName))
                 declareExternFunction(mangledName, funcCtx);
@@ -1842,7 +1843,8 @@ void IRGen::registerCrossFileSymbols(LucisParser::ProgramContext* ctx) {
         }
 
         auto mangledName = sym->name;
-        if (module_->getFunction(mangledName) || (cBindings_ && cBindings_->findFunction(sym->name)))
+        bool isStdlib = (sym->sourceFile.find("/share/lucis/stdlib") != std::string::npos);
+        if (isStdlib)
             mangledName = ModuleRegistry::mangle(sourceNs, sym->name);
         if (!module_->getFunction(mangledName))
             declareExternFunction(mangledName, funcCtx);
@@ -9710,7 +9712,8 @@ std::any IRGen::visitStaticMethodCallExpr(
             if (sym && sym->kind == ExportedSymbol::Function) {
                 auto* funcDecl = static_cast<LucisParser::FunctionDeclContext*>(sym->decl);
                 auto mangledName = methodName;
-                if (module_->getFunction(mangledName) || (cBindings_ && cBindings_->findFunction(methodName)))
+                bool isStdlib = (sym->sourceFile.find("/share/lucis/stdlib") != std::string::npos);
+                if (isStdlib)
                     mangledName = ModuleRegistry::mangle(importIt->second, methodName);
                 if (!module_->getFunction(mangledName))
                     declareExternFunction(mangledName, funcDecl);

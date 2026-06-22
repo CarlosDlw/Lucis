@@ -149,9 +149,21 @@ bool ModuleRegistry::hasModule(const std::string& modulePath) const {
     return modules_.count(modulePath) > 0;
 }
 
-std::string ModuleRegistry::mangle(const std::string& /*modulePath*/,
+std::string ModuleRegistry::mangle(const std::string& modulePath,
                                     const std::string& name) {
-    return name;
+    if (name == "main") return "main";
+    std::string result;
+    bool lastSep = false;
+    for (auto& c : modulePath) {
+        if (c == '/' || c == ':' || c == '\\') {
+            if (!lastSep) { result += '_'; lastSep = true; }
+        } else {
+            result += c;
+            lastSep = false;
+        }
+    }
+    while (!result.empty() && result.back() == '_') result.pop_back();
+    return result + "__" + name;
 }
 
 std::vector<std::string> ModuleRegistry::allModules() const {
