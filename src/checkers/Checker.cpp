@@ -5520,7 +5520,7 @@ void Checker::checkStructDecl(LucisParser::StructDeclContext* decl) {
         if (!seen.insert(fieldName).second) {
             error(field, "duplicate field '" + fieldName +
                              "' in struct '" + name + "'");
-            return;
+            continue;
         }
         std::vector<unsigned> fieldSizes;
         {
@@ -5588,7 +5588,7 @@ void Checker::checkUnionDecl(LucisParser::UnionDeclContext* decl) {
         if (!seen.insert(fieldName).second) {
             error(field, "duplicate field '" + fieldName +
                              "' in union '" + name + "'");
-            return;
+            continue;
         }
         ti.fields.push_back({ fieldName, fieldTI });
     }
@@ -5627,9 +5627,9 @@ void Checker::checkEnumDecl(LucisParser::EnumDeclContext* decl) {
     for (auto* variantDecl : decl->enumVariant()) {
         auto variant = variantDecl->IDENTIFIER()->getText();
         if (!seen.insert(variant).second) {
-            error(decl, "duplicate enum variant '" + variant +
-                             "' in enum '" + name + "'");
-            return;
+            error(variantDecl, "duplicate enum variant '" + variant +
+                                "' in enum '" + name + "'");
+            continue;
         }
 
         ti.enumVariants.push_back(variant);
@@ -8322,7 +8322,7 @@ const TypeInfo* Checker::instantiateGenericStruct(
             error(field, "duplicate field '" + fieldName +
                          "' in generic struct '" + baseName + "'");
             instantiatingGenerics_.erase(mangledName);
-            return nullptr;
+            continue;
         }
         ti.fields.push_back({ fieldName, fieldTI });
     }
@@ -8439,7 +8439,7 @@ const TypeInfo* Checker::instantiateGenericUnion(
             error(field, "duplicate field '" + fieldName +
                          "' in generic union '" + baseName + "'");
             instantiatingGenerics_.erase(mangledName);
-            return nullptr;
+            continue;
         }
         ti.fields.push_back({ fieldName, fieldTI });
     }
@@ -8511,8 +8511,7 @@ const TypeInfo* Checker::instantiateGenericEnum(
         if (!seen.insert(variantName).second) {
             error(variantDecl, "duplicate enum variant '" + variantName +
                                "' in generic enum '" + baseName + "'");
-            instantiatingGenerics_.erase(mangledName);
-            return nullptr;
+            continue;
         }
 
         ti.enumVariants.push_back(variantName);
