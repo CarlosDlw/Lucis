@@ -13371,10 +13371,13 @@ std::any IRGen::visitCastExpr(LucisParser::CastExprContext* ctx) {
     if (srcTy == targetTy)
         return static_cast<llvm::Value*>(val);
 
+    auto* srcTI = resolveExprTypeInfo(ctx->expression());
+    bool srcSigned = srcTI ? srcTI->isSigned : false;
+
     // int -> int
     if (srcTy->isIntegerTy() && targetTy->isIntegerTy()) {
         return static_cast<llvm::Value*>(
-            builder_->CreateIntCast(val, targetTy, ti->isSigned, "cast"));
+            builder_->CreateIntCast(val, targetTy, srcSigned, "cast"));
     }
     // float -> float
     if (srcTy->isFloatingPointTy() && targetTy->isFloatingPointTy()) {
@@ -13388,8 +13391,8 @@ std::any IRGen::visitCastExpr(LucisParser::CastExprContext* ctx) {
     // int -> float
     if (srcTy->isIntegerTy() && targetTy->isFloatingPointTy()) {
         return static_cast<llvm::Value*>(
-            ti->isSigned ? builder_->CreateSIToFP(val, targetTy, "cast")
-                         : builder_->CreateUIToFP(val, targetTy, "cast"));
+            srcSigned ? builder_->CreateSIToFP(val, targetTy, "cast")
+                      : builder_->CreateUIToFP(val, targetTy, "cast"));
     }
     // float -> int
     if (srcTy->isFloatingPointTy() && targetTy->isIntegerTy()) {
