@@ -2813,7 +2813,8 @@ std::any IRGen::visitCompoundAssignStmt(LucisParser::CompoundAssignStmtContext* 
         result = builder_->CreateShl(cur, rhs);
         break;
     case LucisLexer::RSHIFT_ASSIGN:
-        result = builder_->CreateAShr(cur, rhs);
+        result = elemTI->isSigned ? builder_->CreateAShr(cur, rhs)
+                                  : builder_->CreateLShr(cur, rhs);
         break;
     default:
         result = cur;
@@ -3073,7 +3074,8 @@ std::any IRGen::visitFieldCompoundAssignStmt(
             result = builder_->CreateShl(cur, rhs);
             break;
         case LucisLexer::RSHIFT_ASSIGN:
-            result = builder_->CreateAShr(cur, rhs);
+            result = currentTI->isSigned ? builder_->CreateAShr(cur, rhs)
+                                         : builder_->CreateLShr(cur, rhs);
             break;
         default:
             result = cur;
@@ -3176,7 +3178,8 @@ std::any IRGen::visitFieldCompoundAssignStmt(
         result = builder_->CreateShl(cur, rhs);
         break;
     case LucisLexer::RSHIFT_ASSIGN:
-        result = builder_->CreateAShr(cur, rhs);
+        result = currentTI->isSigned ? builder_->CreateAShr(cur, rhs)
+                                     : builder_->CreateLShr(cur, rhs);
         break;
     default:
         result = cur;
@@ -9690,7 +9693,8 @@ std::any IRGen::visitDerefCompoundAssignStmt(LucisParser::DerefCompoundAssignStm
         result = builder_->CreateShl(cur, rhs);
         break;
     case LucisLexer::RSHIFT_ASSIGN:
-        result = builder_->CreateAShr(cur, rhs);
+        result = ptrTI->pointeeType->isSigned ? builder_->CreateAShr(cur, rhs)
+                                              : builder_->CreateLShr(cur, rhs);
         break;
     default:
         result = cur;
@@ -13004,6 +13008,7 @@ std::any IRGen::visitMulExpr(LucisParser::MulExprContext* ctx) {
     auto* rhs = castValue(visit(ctx->expression(1)));
     auto [l, r] = promoteArithmetic(lhs, rhs);
     bool isFloat = l->getType()->isFloatingPointTy();
+    auto* lhsTI = resolveExprTypeInfo(ctx->expression(0));
 
     // Division by zero check for integer / and %
     if (!isFloat && (ctx->op->getType() == LucisLexer::SLASH ||
@@ -13019,11 +13024,13 @@ std::any IRGen::visitMulExpr(LucisParser::MulExprContext* ctx) {
     case LucisLexer::SLASH:
         return static_cast<llvm::Value*>(
             isFloat ? builder_->CreateFDiv(l, r, "div")
-                    : builder_->CreateSDiv(l, r, "div"));
+                    : (lhsTI->isSigned ? builder_->CreateSDiv(l, r, "div")
+                                       : builder_->CreateUDiv(l, r, "div")));
     case LucisLexer::PERCENT:
         return static_cast<llvm::Value*>(
             isFloat ? builder_->CreateFRem(l, r, "mod")
-                    : builder_->CreateSRem(l, r, "mod"));
+                    : (lhsTI->isSigned ? builder_->CreateSRem(l, r, "mod")
+                                       : builder_->CreateURem(l, r, "mod")));
     default:
         return static_cast<llvm::Value*>(llvm::UndefValue::get(l->getType()));
     }
@@ -13169,7 +13176,11 @@ std::any IRGen::visitRshiftExpr(LucisParser::RshiftExprContext* ctx) {
     auto* lhs = castValue(visit(ctx->expression(0)));
     auto* rhs = castValue(visit(ctx->expression(1)));
     auto [l, r] = promoteArithmetic(lhs, rhs);
-    return static_cast<llvm::Value*>(builder_->CreateAShr(l, r, "shr"));
+    auto* lhsTI = resolveExprTypeInfo(ctx->expression(0));
+    bool signedShift = !lhsTI || lhsTI->isSigned;
+    return static_cast<llvm::Value*>(
+        signedShift ? builder_->CreateAShr(l, r, "shr")
+                    : builder_->CreateLShr(l, r, "shr"));
 }
 
 std::any IRGen::visitBitAndExpr(LucisParser::BitAndExprContext* ctx) {
