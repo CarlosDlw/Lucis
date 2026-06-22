@@ -707,6 +707,28 @@ Writes the FS base register (`wrfsbase`). Requires kernel support (`CR4.FSGSBASE
 
 ---
 
+## CPUID (x86)
+
+### `lucis::sys::cpuid(leaf, subleaf, &eax, &ebx, &ecx, &edx)`
+
+```lucis
+uint32 eax, ebx, ecx, edx;
+lucis::sys::cpuid(0, 0, &eax, &ebx, &ecx, &edx);
+// eax = max standard leaf, ebx/edx/ecx = "GenuineIntel" parts
+```
+
+Executes the x86 `CPUID` instruction. Writes the four output registers through the given pointers. Use `subleaf = 0` for leaves without sub-leaves.
+
+| Leaf | Subleaf | eax | ebx | ecx | edx |
+|------|---------|-----|-----|-----|-----|
+| 0 | 0 | Max standard leaf | Vendor ID[0:3] | Vendor ID[8:11] | Vendor ID[4:7] |
+| 1 | 0 | Version/Stepping | APIC/CLFLUSH | Feature flags 1 | Feature flags 0 |
+| 7 | 0 | Max sub-leaf | Extended features 0 | Extended features 1 | Extended features 2 |
+
+Unsupported targets write 0 to all outputs and return.
+
+---
+
 ## Hardware Random Number Generator
 
 Intel/AMD hardware RNG via the `RDRAND` instruction. Available on Ivy Bridge+ (Intel) and Excavator+ (AMD) processors. Unsupported CPUs will raise `SIGILL` — use `cpuid`-based detection before calling.

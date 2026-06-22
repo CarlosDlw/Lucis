@@ -1730,5 +1730,71 @@ void registerSysNamespace(IntrinsicRegistry& reg, TypeRegistry& typeReg) {
         sys.functions.push_back(std::move(fn));
     }
 
+    // ── CPUID (x86-64) ──────────────────────────────────────────
+    {
+        IntrinsicFunction fn;
+        fn.name = "cpuid";
+        fn.returnType = "void";
+        fn.params.push_back({"uint32", false}); // leaf
+        fn.params.push_back({"uint32", false}); // subleaf
+        fn.params.push_back({"_any", false});   // &eax
+        fn.params.push_back({"_any", false});   // &ebx
+        fn.params.push_back({"_any", false});   // &ecx
+        fn.params.push_back({"_any", false});   // &edx
+        fn.description =
+            "Executes the x86 CPUID instruction.\n"
+            "Writes eax, ebx, ecx, edx through the given pointers.\n"
+            "For basic leaves, pass 0 as subleaf.\n\n"
+            "```lucis\n"
+            "uint32 eax, ebx, ecx, edx;\n"
+            "lucis::sys::cpuid(0, 0, &eax, &ebx, &ecx, &edx);\n"
+            "// eax = max standard leaf, ebx/ecx/edx = vendor string\n"
+            "```";
+
+        fn.lowering.kind = IntrinsicFunction::Lowering::InlineIR;
+        fn.lowering.emitIR = [](
+            llvm::IRBuilder<>& builder,
+            llvm::Module* module,
+            llvm::LLVMContext& context,
+            const TypeRegistry& typeRegistry,
+            const std::vector<llvm::Value*>& args,
+            const std::vector<const TypeInfo*>& typeArgs) -> llvm::Value* {
+
+            const auto tripleStr = module->getTargetTriple().str();
+            auto* i32Ty = llvm::Type::getInt32Ty(context);
+
+            if (tripleStr.find("x86_64") != 0 && tripleStr.find("i386") != 0 &&
+                tripleStr.find("i686") != 0) {
+                auto* zero = llvm::ConstantInt::get(i32Ty, 0);
+                builder.CreateStore(zero, args[2]);
+                builder.CreateStore(zero, args[3]);
+                builder.CreateStore(zero, args[4]);
+                builder.CreateStore(zero, args[5]);
+                return llvm::UndefValue::get(llvm::Type::getVoidTy(context));
+            }
+
+            // Build asm: returns {i32,i32,i32,i32} = {eax,ebx,ecx,edx}
+            auto* structTy = llvm::StructType::get(context,
+                {i32Ty, i32Ty, i32Ty, i32Ty});
+            auto* ft = llvm::FunctionType::get(structTy,
+                {i32Ty, i32Ty}, false);  // inputs: leaf, subleaf
+
+            auto* asmFn = llvm::InlineAsm::get(ft,
+                "cpuid",
+                "={ax},={bx},={cx},={dx},0,2",
+                true, false, llvm::InlineAsm::AD_ATT);
+
+            auto* result = builder.CreateCall(asmFn,
+                {args[0], args[1]}, "cpuid");
+            builder.CreateStore(builder.CreateExtractValue(result, {0}), args[2]);
+            builder.CreateStore(builder.CreateExtractValue(result, {1}), args[3]);
+            builder.CreateStore(builder.CreateExtractValue(result, {2}), args[4]);
+            builder.CreateStore(builder.CreateExtractValue(result, {3}), args[5]);
+            return llvm::UndefValue::get(llvm::Type::getVoidTy(context));
+        };
+
+        sys.functions.push_back(std::move(fn));
+    }
+
     reg.registerNamespace(std::move(sys));
 }
