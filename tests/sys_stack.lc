@@ -7,18 +7,18 @@ fn testSysStack() int32 {
 
     // ── frame_address(0) ─────────────────────────────────────────
     usize fp = lucis::sys::frame_address(0);
-    assertTrue(fp != 0);
+    assertTrue(fp != 0u32);
 
     // ── return_address(0) ────────────────────────────────────────
     usize ra = lucis::sys::return_address(0);
-    assertTrue(ra != 0);
+    assertTrue(ra != 0u32);
 
     // fp and ra should be different (frame pointer ≠ return address)
     assertTrue(fp != ra);
 
     // ── stack_save() ─────────────────────────────────────────────
     usize sp = lucis::sys::stack_save();
-    assertTrue(sp != 0);
+    assertTrue(sp != 0u32);
 
     // sp should differ from both fp and ra
     assertTrue(sp != fp);

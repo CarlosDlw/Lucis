@@ -28,7 +28,7 @@ fn testIntegerLiteralFormats() int32 {
     assertEqual(binUpper, 255);
 
     // Coercion to target integer type
-    uint8 mask = 0xFF;
+    uint8 mask = 0xFFu8;
     int64 flags = 0b1010;
     int32 perms = 0o755;
     assertEqual(mask, 255);

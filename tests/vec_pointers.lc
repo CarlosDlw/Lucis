@@ -20,8 +20,8 @@ fn testVecPointers() int32 {
     vec<int32> a;
     fillVec<int32>(42, 5, &a);
     assertEqual(a.len(), 5);
-    assertEqual(a.at(0), 42);
-    assertEqual(a.at(4), 42);
+    assertEqual(a.at(0 as uint32), 42);
+    assertEqual(a.at(4 as uint32), 42);
 
     vec<int32> b;
     b.push(10);
@@ -29,9 +29,9 @@ fn testVecPointers() int32 {
     b.push(30);
     assignVec<int32>(99, 3, &b);
     assertEqual(b.len(), 3);
-    assertEqual(b.at(0), 99);
-    assertEqual(b.at(1), 99);
-    assertEqual(b.at(2), 99);
+    assertEqual(b.at(0 as uint32), 99);
+    assertEqual(b.at(1 as uint32), 99);
+    assertEqual(b.at(2 as uint32), 99);
 
     println("✔ vec pointer tests passed");
     ret 0;

@@ -18,7 +18,7 @@ fn testCStringTypes() int32 {
     assertEqual(roundtrip, "Hello from Lucis");
 
     // fromCStrLen should preserve explicit slice length from C string memory.
-    string sliced = fromCStrLen(cStr, 5);
+    string sliced = fromCStrLen(cStr, 5 as usize);
     assertEqual(sliced, "Hello");
 
     free(cStr as *void);

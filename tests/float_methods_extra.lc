@@ -51,7 +51,7 @@ fn testFloatMethodsExtra() int32 {
 
     assertEqual((180.0).toRadians().toString().contains("3.14"), true);
     assertEqual((3.141592653589793).toDegrees().toInt(), 180);
-    assertEqual((3.1415926535).toStringPrecision(2).contains("3.14"), true);
+    assertEqual((3.1415926535).toStringPrecision(2 as usize).contains("3.14"), true);
     assertEqual((1.0).toBits() > 0, true);
 
     println("✔ extra float method tests passed");

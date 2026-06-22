@@ -5,8 +5,8 @@ use std::test::{ assertEqual };
 fn testUintTypes() int32 {
     println("[Testing unsigned integer types...]");
 
-    uint1 u1 = 1;
-    uint1 u0 = 0;
+    uint1 u1 = 1u32;
+    uint1 u0 = 0u32;
 
     // Limits and basic identity
     assertEqual(u0, 0);
@@ -22,8 +22,8 @@ fn testUintTypes() int32 {
     assertEqual(u0 * u1, 0);
 
     // Comparisons
-    assertEqual(u1 == 1, true);
-    assertEqual(u0 == 0, true);
+    assertEqual(u1 == 1u32, true);
+    assertEqual(u0 == 0u32, true);
     assertEqual(u1 != u0, true);
     assertEqual(u1 > u0, true);
     assertEqual(u0 < u1, true);
@@ -35,9 +35,9 @@ fn testUintTypes() int32 {
 
     println("✔ uint1 tests passed");
 
-    uint8 u8Max = 255;
-    uint8 u8One = 1;
-    uint8 u8Two = 2;
+    uint8 u8Max = 255u32;
+    uint8 u8One = 1u32;
+    uint8 u8Two = 2u32;
 
     // Limits and basic identity
     assertEqual(u8Max, 255);
@@ -65,9 +65,9 @@ fn testUintTypes() int32 {
 
     println("✔ uint8 tests passed");
 
-    uint16 u16Max = 65535;
-    uint16 u16One = 1;
-    uint16 u16Two = 2;
+    uint16 u16Max = 65535u32;
+    uint16 u16One = 1u32;
+    uint16 u16Two = 2u32;
 
     // Limits and basic identity
     assertEqual(u16Max, 65535);
@@ -95,9 +95,9 @@ fn testUintTypes() int32 {
 
     println("✔ uint16 tests passed");
 
-    uint32 u32Max = 4294967295;
-    uint32 u32One = 1;
-    uint32 u32Two = 2;
+    uint32 u32Max = 4294967295u32;
+    uint32 u32One = 1u32;
+    uint32 u32Two = 2u32;
 
     // Limits and basic identity
     assertEqual(u32Max, 4294967295);
@@ -125,9 +125,9 @@ fn testUintTypes() int32 {
 
     println("✔ uint32 tests passed");
 
-    uint64 u64Max = 18446744073709551615;
-    uint64 u64One = 1;
-    uint64 u64Two = 2;
+    uint64 u64Max = 18446744073709551615u64;
+    uint64 u64One = 1u64;
+    uint64 u64Two = 2u64;
 
     // Limits and basic identity
     assertEqual(u64Max, 18446744073709551615);
@@ -150,9 +150,9 @@ fn testUintTypes() int32 {
 
     println("✔ uint64 tests passed");
 
-    uint128 u128A = 1;
-    uint128 u128B = 2;
-    uint128 u128Max = 340282366920938463463374607431768211455;
+    uint128 u128A = 1u128;
+    uint128 u128B = 2u128;
+    uint128 u128Max = 340282366920938463463374607431768211455u128;
 
     // Limits and basic identity
     assertEqual(u128A, 1);
@@ -177,8 +177,8 @@ fn testUintTypes() int32 {
 
     println("✔ uint128 tests passed");
 
-    usize uzA = 1;
-    usize uzB = 2;
+    usize uzA = 1u32;
+    usize uzB = 2u32;
 
     // Platform-sized integer checks (portable)
     assertEqual(typeof(uzA), "usize");

@@ -36,7 +36,7 @@ fn testCharTypes() int32 {
     assertEqual(upper.toLower(), 'a');
     assertEqual(digit.digitToInt(), 9);
     assertEqual(upper.toString(), "A");
-    assertEqual('x'.repeat(4), "xxxx");
+    assertEqual('x'.repeat(4 as usize), "xxxx");
 
     println("✔ char tests passed");
     ret 0;

@@ -17,7 +17,7 @@ fn testStringTypes() int32 {
     assertEqual(base.isEmpty(), false);
 
     // Access and search
-    assertEqual(base.at(0), 'H');
+    assertEqual(base.at(0 as usize), 'H');
     assertEqual(base.front(), 'H');
     assertEqual(base.back(), '!');
     assertEqual(base.contains("World"), true);
@@ -29,7 +29,7 @@ fn testStringTypes() int32 {
     assertEqual(base.count("l"), 3);
 
     // Extraction
-    assertEqual(base.substring(7, 5), "World");
+    assertEqual(base.substring(7 as usize, 5 as usize), "World");
     assertEqual(base.slice(0, 5), "Hello");
     assertEqual(base.slice(-6, -1), "World");
 
@@ -42,18 +42,18 @@ fn testStringTypes() int32 {
     assertEqual(base.toLower(), "hello, world!");
     assertEqual("hELLO".capitalize(), "HELLO");
     assertEqual("abc".reverse(), "cba");
-    assertEqual("ha".repeat(3), "hahaha");
+    assertEqual("ha".repeat(3 as usize), "hahaha");
     assertEqual("foo".concat("bar"), "foobar");
-    assertEqual("42".padLeft(5, '0'), "00042");
-    assertEqual("42".padRight(5, '_'), "42___");
+    assertEqual("42".padLeft(5 as usize, '0'), "00042");
+    assertEqual("42".padRight(5 as usize, '_'), "42___");
 
     // Replace and edit
     assertEqual("foo bar foo".replace("foo", "baz"), "baz bar baz");
     assertEqual("foo bar foo".replaceFirst("foo", "baz"), "baz bar foo");
     assertEqual("unhappy".removePrefix("un"), "happy");
     assertEqual("file.txt".removeSuffix(".txt"), "file");
-    assertEqual("abcdef".remove(2, 2), "abef");
-    assertEqual("abef".insert(2, "cd"), "abcdef");
+    assertEqual("abcdef".remove(2 as usize, 2 as usize), "abef");
+    assertEqual("abef".insert(2 as usize, "cd"), "abcdef");
 
     // Comparisons and predicates
     assertEqual("abc".compareTo("abc"), 0);

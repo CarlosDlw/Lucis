@@ -30,7 +30,7 @@ fn testArrayTypes() int32 {
     // Core array methods
     assertEqual(fixed.len(), 5);
     assertEqual(fixed.isEmpty(), false);
-    assertEqual(fixed.at(2), 3);
+    assertEqual(fixed.at(2 as usize), 3);
     assertEqual(fixed.first(), 1);
     assertEqual(fixed.last(), 5);
     assertEqual(fixed.contains(3), true);
@@ -51,7 +51,7 @@ fn testArrayTypes() int32 {
     [5]int32 copy = fixed.copy();
     assertEqual(copy.equals(fixed), true);
 
-    copy.swap(0, 4);
+    copy.swap(0 as usize, 4 as usize);
     assertEqual(copy[0], 5);
     assertEqual(copy[4], 1);
 
@@ -75,7 +75,7 @@ fn testArrayTypes() int32 {
     assertEqual(sortable[2], 10);
 
     // Slice and representation helpers
-    []int32 sub = fixed.slice(1, 4);
+    []int32 sub = fixed.slice(1 as usize, 4 as usize);
     assertEqual(sub.len(), 3);
     assertEqual(sub[0], 2);
     assertEqual(sub[2], 4);

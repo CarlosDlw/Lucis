@@ -5,8 +5,8 @@ use std::test::{ assertEqual };
 fn testIntTypes() int32 {
     println("[Testing integer types...]");
 
-    int1 x = 1;
-    int1 z = 0;
+    int1 x = 1 as int1;
+    int1 z = 0 as int1;
 
     // Limits and basic identity
     assertEqual(z, 0);
@@ -22,15 +22,15 @@ fn testIntTypes() int32 {
     assertEqual(z * x, 0);
 
     // Comparisons
-    assertEqual(x == 1, true);
-    assertEqual(z == 0, true);
+    assertEqual(x == 1 as int1, true);
+    assertEqual(z == 0 as int1, true);
     assertEqual(x != z, true);
     assertEqual(x > z, true);
     assertEqual(z < x, true);
 
     // Coercion to wider integer type
-    int8 widened = x;
-    assertEqual(widened, 1);
+    int8 widened = x as int8;
+    assertEqual(widened, 1i8);
     assertEqual(typeof(widened), "int8");
 
     println("✔ int1 tests passed");
