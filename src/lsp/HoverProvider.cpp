@@ -2183,12 +2183,57 @@ std::optional<HoverResult> HoverProvider::walkExprForHover(
 
     // ── Array literal: [expr, expr, ...] ────────────────────────────
     if (auto* al = dynamic_cast<LucisParser::ArrayLitExprContext*>(expr)) {
+        if (al->LBRACKET()->getSymbol() == hoveredToken ||
+            al->RBRACKET()->getSymbol() == hoveredToken) {
+            std::unordered_map<std::string, LocalVar> emptyLocals;
+            std::string tn = al->expression().empty() ? "void" :
+                "[]" + inferExprTypeName(al->expression()[0], emptyLocals, nullptr);
+            return makeResult(hoveredToken, "```lucis\n" + tn + "\n```");
+        }
         for (auto* e : al->expression()) {
             auto r = walkExprForHover(e, hoveredToken, tokenText,
                                        tree, bindings, cursorLine, project);
             if (r) return r;
         }
         return std::nullopt;
+    }
+
+    // ── Literal expressions: float, int, bool, char, string, etc. ──
+    // Show the inferred type when hovering on the literal value.
+    {
+        // Suffixed literals: 42u32, 1.0f64, 0xFFu8, etc.
+        std::unordered_map<std::string, LocalVar> emptyLocals;
+        if (dynamic_cast<LucisParser::SuffixedFloatLitExprContext*>(expr) ||
+            dynamic_cast<LucisParser::SuffixedIntLitExprContext*>(expr) ||
+            dynamic_cast<LucisParser::SuffixedHexLitExprContext*>(expr) ||
+            dynamic_cast<LucisParser::SuffixedOctLitExprContext*>(expr) ||
+            dynamic_cast<LucisParser::SuffixedBinLitExprContext*>(expr) ||
+            dynamic_cast<LucisParser::SuffixedLeadingDotFloatExprContext*>(expr) ||
+            dynamic_cast<LucisParser::SuffixedIntFloatExprContext*>(expr) ||
+            dynamic_cast<LucisParser::SuffixedFloatIntExprContext*>(expr)) {
+            return makeResult(hoveredToken,
+                "```lucis\n" + inferExprTypeName(expr, emptyLocals, nullptr) + "\n```");
+        }
+        if (dynamic_cast<LucisParser::FloatLitExprContext*>(expr))
+            return makeResult(hoveredToken, "```lucis\nfloat64\n```");
+        if (dynamic_cast<LucisParser::LeadingDotFloatLitExprContext*>(expr))
+            return makeResult(hoveredToken, "```lucis\nfloat64\n```");
+        if (auto* ii = dynamic_cast<LucisParser::IntLitExprContext*>(expr))
+            return makeResult(hoveredToken, "```lucis\nint32\n```");
+        if (auto* hx = dynamic_cast<LucisParser::HexLitExprContext*>(expr))
+            return makeResult(hoveredToken, "```lucis\nint32\n```");
+        if (auto* oc = dynamic_cast<LucisParser::OctLitExprContext*>(expr))
+            return makeResult(hoveredToken, "```lucis\nint32\n```");
+        if (auto* bn = dynamic_cast<LucisParser::BinLitExprContext*>(expr))
+            return makeResult(hoveredToken, "```lucis\nint32\n```");
+        if (auto* bl = dynamic_cast<LucisParser::BoolLitExprContext*>(expr))
+            return makeResult(hoveredToken, "```lucis\nbool\n```");
+        if (auto* cl = dynamic_cast<LucisParser::CharLitExprContext*>(expr))
+            return makeResult(hoveredToken, "```lucis\nchar\n```");
+        if (auto* sl = dynamic_cast<LucisParser::StrLitExprContext*>(expr))
+            return makeResult(hoveredToken, "```lucis\nstring\n```");
+        if (auto* cs = dynamic_cast<LucisParser::CStrLitExprContext*>(expr))
+            return makeResult(hoveredToken, "```lucis\n*char\n```");
     }
 
     // ── Plain identifier ─────────────────────────────────────────────
@@ -3091,6 +3136,128 @@ std::optional<HoverResult> HoverProvider::walkStmtForHover(
                                        tree, bindings, cursorLine, project);
             if (r) return r;
         }
+    }
+
+    // ── Arrow any assignment: ptr->field[i] = expr, or mixed dot/arrow chains ──
+    auto handleArrowAnyStmt = [&](auto* ctx) -> std::optional<HoverResult> {
+        if (!ctx) return std::nullopt;
+        auto ids = ctx->IDENTIFIER();
+        if (ids.empty()) return std::nullopt;
+        if (ids[0] && ids[0]->getSymbol() == hoveredToken)
+            return hoverIdent(ids[0]->getText(), hoveredToken, tree, bindings, cursorLine, project);
+
+        auto dots = ctx->DOT();
+        auto arrows = ctx->ARROW();
+
+        // Build merged operators sorted by token position
+        std::vector<std::pair<size_t, bool>> ops;
+        for (auto* d : dots) ops.emplace_back(d->getSymbol()->getTokenIndex(), false);
+        for (auto* a : arrows) ops.emplace_back(a->getSymbol()->getTokenIndex(), true);
+        std::sort(ops.begin(), ops.end());
+
+        // Build resolveFieldType lambda using the same lookup as fieldAssignStmt
+        auto resolveFieldType = [&](const std::string& ownerType,
+                                    const std::string& fieldName) -> std::string {
+            if (ownerType.empty()) return "";
+            // Strip pointer prefix for lookup
+            std::string lookupType = ownerType;
+            while (lookupType.size() >= 2 && lookupType[0] == '*' &&
+                   lookupType[1] == ' ') lookupType = lookupType.substr(2);
+
+            std::string base;
+            std::vector<std::string> args;
+            std::unordered_map<std::string, std::string> subst;
+            if (parseGenericInstance(lookupType, base, args)) lookupType = base;
+
+            if (auto* sd = findStructDecl(tree, lookupType)) {
+                if (!args.empty() && sd->typeParamList()) {
+                    auto tps = sd->typeParamList()->typeParam();
+                    for (size_t i = 0; i < std::min(args.size(), tps.size()); i++) {
+                        auto id = tps[i]->IDENTIFIER();
+                        if (!id.empty()) subst[id[0]->getText()] = args[i];
+                    }
+                }
+                for (auto* f : sd->structField())
+                    if (safeText(f->IDENTIFIER()) == fieldName)
+                        return substituteTypeParams(typeSpecToString(f->typeSpec()), subst);
+            }
+            if (auto* ud = findUnionDecl(tree, lookupType)) {
+                if (!args.empty() && ud->typeParamList()) {
+                    auto tps = ud->typeParamList()->typeParam();
+                    for (size_t i = 0; i < std::min(args.size(), tps.size()); i++) {
+                        auto id = tps[i]->IDENTIFIER();
+                        if (!id.empty()) subst[id[0]->getText()] = args[i];
+                    }
+                }
+                for (auto* f : ud->unionField())
+                    if (safeText(f->IDENTIFIER()) == fieldName)
+                        return substituteTypeParams(typeSpecToString(f->typeSpec()), subst);
+            }
+            if (auto* ti = typeRegistry_.lookup(lookupType)) {
+                if (ti->kind == TypeKind::Struct || ti->kind == TypeKind::Union)
+                    for (auto& f : ti->fields)
+                        if (f.name == fieldName && f.typeInfo) return f.typeInfo->name;
+            }
+            if (auto* cs = bindings.findStruct(lookupType))
+                for (auto& f : cs->fields)
+                    if (f.name == fieldName && f.typeInfo) return f.typeInfo->name;
+            return "";
+        };
+
+        // Walk the chain: resolve type from first identifier
+        auto* func = findEnclosingFunction(tree, cursorLine);
+        std::string currentType;
+        if (func) {
+            auto locals = collectLocals(func, cursorLine, tree, &bindings, project);
+            auto it = locals.find(ids[0]->getText());
+            if (it != locals.end()) currentType = it->second.typeName;
+        }
+
+        for (size_t i = 1; i < ids.size(); i++) {
+            auto* fid = ids[i];
+            if (!fid) continue;
+            std::string fieldName = fid->getText();
+
+            // Determine effective current type: arrow dereferences pointers
+            std::string effType = currentType;
+            size_t opIdx = i - 1;
+            if (opIdx < ops.size() && ops[opIdx].second) {
+                // ARROW: strip one pointer level
+                while (effType.size() >= 2 && effType[0] == '*' && effType[1] == ' ')
+                    effType = effType.substr(2);
+            }
+
+            std::string fieldType = resolveFieldType(effType, fieldName);
+
+            if (fid->getSymbol() == hoveredToken && !currentType.empty() && !fieldType.empty()) {
+                std::string owner = currentType;
+                if (ops[opIdx].second) {
+                    while (owner.size() >= 2 && owner[0] == '*' && owner[1] == ' ')
+                        owner = owner.substr(2);
+                }
+                std::string md = "```lucis\n(field) " + fieldType + " "
+                               + owner + "." + fieldName + "\n```";
+                return makeResult(fid->getSymbol(), md);
+            }
+
+            if (fieldType.empty()) break;
+            currentType = fieldType;
+        }
+
+        // Recurse into index expressions and RHS
+        for (auto* e : ctx->expression())
+            if (auto r = walkExprForHover(e, hoveredToken, tokenText, tree, bindings, cursorLine, project))
+                return r;
+        return std::nullopt;
+    };
+
+    if (auto* aaa = stmt->arrowAnyAssignStmt()) {
+        auto r = handleArrowAnyStmt(aaa);
+        if (r) return r;
+    }
+    if (auto* aac = stmt->arrowAnyCompoundAssignStmt()) {
+        auto r = handleArrowAnyStmt(aac);
+        if (r) return r;
     }
 
     return std::nullopt;
