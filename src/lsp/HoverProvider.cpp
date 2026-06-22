@@ -1439,7 +1439,7 @@ std::optional<HoverResult> HoverProvider::walkExprForHover(
                     if (v && v->getText() == variantName) {
                         std::string md = "```lucis\n(variant) " + fullType + "::" +
                                          variantName + "\n```";
-                        size_t declLine = ed->getStart()->getLine();
+                        size_t declLine = ed->getStart()->getLine() - 1;
                         md = appendDocToHover(md, docComments_, declLine);
                         return makeResult(hoveredToken, md);
                     }
@@ -3042,7 +3042,7 @@ std::optional<HoverResult> HoverProvider::walkStmtForHover(
                             }
                             ss << ")\n```";
                             std::string md = ss.str();
-                            md = appendDocToHover(md, docs, m->getStart()->getLine());
+                            md = appendDocToHover(md, docs, m->getStart()->getLine() - 1);
                             return makeResult(methodTok->getSymbol(), md);
                         };
 
@@ -3268,19 +3268,19 @@ std::optional<HoverResult> HoverProvider::hoverTypeName(
             if (sym->kind == ExportedSymbol::Struct) {
                 if (auto* sdc = dynamic_cast<LucisParser::StructDeclContext*>(sym->decl)) {
                     auto md = formatStructDecl(sdc);
-                    appendDocToHover(md, docCommentsForFile(sym->sourceFile), sym->line - 1);
+                    md = appendDocToHover(md, docCommentsForFile(sym->sourceFile), sym->line - 1);
                     return makeResult(token, md);
                 }
             } else if (sym->kind == ExportedSymbol::Enum) {
                 if (auto* edc = dynamic_cast<LucisParser::EnumDeclContext*>(sym->decl)) {
                     auto md = formatEnumDecl(edc);
-                    appendDocToHover(md, docCommentsForFile(sym->sourceFile), sym->line - 1);
+                    md = appendDocToHover(md, docCommentsForFile(sym->sourceFile), sym->line - 1);
                     return makeResult(token, md);
                 }
             } else if (sym->kind == ExportedSymbol::Union) {
                 if (auto* udc = dynamic_cast<LucisParser::UnionDeclContext*>(sym->decl)) {
                     auto md = formatUnionDecl(udc);
-                    appendDocToHover(md, docCommentsForFile(sym->sourceFile), sym->line - 1);
+                    md = appendDocToHover(md, docCommentsForFile(sym->sourceFile), sym->line - 1);
                     return makeResult(token, md);
                 }
             } else if (sym->kind == ExportedSymbol::TypeAlias) {
@@ -3564,7 +3564,7 @@ std::optional<HoverResult> HoverProvider::hoverMethodCall(
         }
         ss << ")\n```";
         std::string md = ss.str();
-        size_t declLine = m->getStart()->getLine();
+        size_t declLine = m->getStart()->getLine() - 1;
         md = appendDocToHover(md, docs, declLine);
         return makeResult(ctx->IDENTIFIER()->getSymbol(), md);
     };
@@ -3663,7 +3663,7 @@ std::optional<HoverResult> HoverProvider::hoverFieldAccess(
                     std::string md = "```lucis\n(field) "
                                    + substituteTypeParams(typeSpecToString(f->typeSpec()), subst)
                                    + " " + sName + "." + fieldName + "\n```";
-                    appendDocToHover(md, docComments_, sd->getStart()->getLine() - 1);
+                    md = appendDocToHover(md, docComments_, f->getStart()->getLine() - 1);
                     return makeResult(token, md);
                 }
             }
@@ -3690,7 +3690,7 @@ std::optional<HoverResult> HoverProvider::hoverFieldAccess(
                     std::string md = "```lucis\n(field) "
                                    + substituteTypeParams(typeSpecToString(f->typeSpec()), subst)
                                    + " " + uName + "." + fieldName + "\n```";
-                    appendDocToHover(md, docComments_, ud->getStart()->getLine() - 1);
+                    md = appendDocToHover(md, docComments_, f->getStart()->getLine() - 1);
                     return makeResult(token, md);
                 }
             }
@@ -3773,7 +3773,7 @@ std::optional<HoverResult> HoverProvider::hoverFieldAccess(
                             std::string md = "```lucis\n(field) "
                                            + substituteTypeParams(typeSpecToString(f->typeSpec()), subst)
                                            + " " + safeText(sd->IDENTIFIER()) + "." + fieldName + "\n```";
-                            appendDocToHover(md, docCommentsForFile(sym->sourceFile), sym->line - 1);
+                            md = appendDocToHover(md, docCommentsForFile(sym->sourceFile), f->getStart()->getLine() - 1);
                             return makeResult(token, md);
                         }
                     }
@@ -3799,7 +3799,7 @@ std::optional<HoverResult> HoverProvider::hoverFieldAccess(
                             std::string md = "```lucis\n(field) "
                                            + substituteTypeParams(typeSpecToString(f->typeSpec()), subst)
                                            + " " + safeText(ud->IDENTIFIER()) + "." + fieldName + "\n```";
-                            appendDocToHover(md, docCommentsForFile(sym->sourceFile), sym->line - 1);
+                            md = appendDocToHover(md, docCommentsForFile(sym->sourceFile), f->getStart()->getLine() - 1);
                             return makeResult(token, md);
                         }
                     }
@@ -3831,7 +3831,7 @@ std::optional<HoverResult> HoverProvider::hoverEnumAccess(
     auto* ed = findEnumDecl(tree, typeName);
     if (ed) {
         std::string md = "```lucis\n(variant) " + typeName + "::" + variantName + "\n```";
-        size_t declLine = ed->getStart()->getLine();
+        size_t declLine = ed->getStart()->getLine() - 1;
         md = appendDocToHover(md, docComments_, declLine);
         return makeResult(token, md);
     }
@@ -3861,7 +3861,7 @@ std::optional<HoverResult> HoverProvider::hoverEnumAccess(
                     std::string md = "```lucis\n(variant) " + typeName + "::" + variantName + "\n```";
                     // Read doc-comments from source file
                     if (!sym->sourceFile.empty()) {
-                        size_t declLine = enumCtx->getStart()->getLine();
+                        size_t declLine = enumCtx->getStart()->getLine() - 1;
                         md = appendDocToHover(md,
                             docCommentsForFile(sym->sourceFile),
                             declLine);
@@ -3948,7 +3948,7 @@ std::optional<HoverResult> HoverProvider::hoverStaticMethodCall(
                 }
                 ss << ")\n```";
                 std::string md = ss.str();
-                size_t declLine = m->getStart()->getLine();
+                size_t declLine = m->getStart()->getLine() - 1;
                 md = appendDocToHover(md, docComments_, declLine);
                 return makeResult(token, md);
             }
@@ -3999,7 +3999,7 @@ std::optional<HoverResult> HoverProvider::hoverStaticMethodCall(
                         std::string md = ss.str();
                         // Read doc-comments from the source file
                         if (!sym->sourceFile.empty()) {
-                            size_t declLine = m->getStart()->getLine();
+                            size_t declLine = m->getStart()->getLine() - 1;
                             md = appendDocToHover(md,
                                 docCommentsForFile(sym->sourceFile),
                                 declLine);
