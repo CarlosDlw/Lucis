@@ -7188,6 +7188,17 @@ std::any IRGen::visitIndexExpr(LucisParser::IndexExprContext* ctx) {
                                 { llvm::ConstantInt::get(i64Ty, 0), idx },
                                 fieldName + "_elem");
                             auto* elemTy = llvm::cast<llvm::ArrayType>(arrTy)->getElementType();
+                            // Handle chained indices for multi-dimensional arrays
+                            for (size_t ai = 1; ai < indexExprs.size(); ai++) {
+                                auto* nextIdx = castValue(visit(indexExprs[ai]));
+                                if (nextIdx->getType() != i64Ty)
+                                    nextIdx = builder_->CreateIntCast(nextIdx, i64Ty, true);
+                                elemGep = builder_->CreateInBoundsGEP(
+                                    elemTy, elemGep,
+                                    { llvm::ConstantInt::get(i64Ty, 0), nextIdx },
+                                    fieldName + "_elem");
+                                elemTy = llvm::cast<llvm::ArrayType>(elemTy)->getElementType();
+                            }
                             return static_cast<llvm::Value*>(
                                 builder_->CreateLoad(elemTy, elemGep, fieldName + "_val"));
                         }
