@@ -832,3 +832,48 @@ int64 result = lucis::sys::syscall6(0, 0, 0, 0, 0, 0, 0);
 ```
 
 Unused arguments should be passed as `0i64` (zero of type `int64`).
+
+---
+
+## Platform-Specific Hardware Access
+
+These intrinsics require kernel privileges (ring 0) or I/O permissions. On unsupported targets they return 0 / no-op. All use inline assembly on x86/x86-64.
+
+### I/O Ports
+
+| Function | Operation | Width |
+|----------|-----------|-------|
+| `inb(port)` | Read byte from port | 8-bit → `uint8` |
+| `inw(port)` | Read word from port | 16-bit → `uint16` |
+| `inl(port)` | Read dword from port | 32-bit → `uint32` |
+| `outb(port, val)` | Write byte to port | 8-bit |
+| `outw(port, val)` | Write word to port | 16-bit |
+| `outl(port, val)` | Write dword to port | 32-bit |
+
+### Interrupt Control
+
+| Function | Instruction | Effect |
+|----------|------------|--------|
+| `cli()` | `cli` | Disable maskable interrupts |
+| `sti()` | `sti` | Enable maskable interrupts |
+
+### Model-Specific Registers
+
+| Function | Instruction | Returns |
+|----------|------------|---------|
+| `rdmsr(msr)` | `rdmsr` | `uint64` |
+| `wrmsr(msr, val)` | `wrmsr` | void |
+
+### Control Registers
+
+| Function | Register | Description |
+|----------|----------|-------------|
+| `read_cr0()` / `write_cr0(v)` | CR0 | System control flags |
+| `read_cr2()` | CR2 | Page fault linear address |
+| `read_cr3()` / `write_cr3(v)` | CR3 | Page directory base |
+| `read_cr4()` / `write_cr4(v)` | CR4 | Extended control flags |
+
+```lucis
+// Kernel example: read CR2 after a page fault
+usize fault_addr = lucis::sys::read_cr2();
+```

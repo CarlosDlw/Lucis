@@ -1796,5 +1796,284 @@ void registerSysNamespace(IntrinsicRegistry& reg, TypeRegistry& typeReg) {
         sys.functions.push_back(std::move(fn));
     }
 
+    // ═══════════════════════════════════════════════════════════
+    // Tier 3 — Platform-specific hardware access (cross-target safe)
+    // ═══════════════════════════════════════════════════════════
+
+    auto isX86 = [](const std::string& triple) {
+        return triple.find("x86_64") == 0 || triple.find("i386") == 0 ||
+               triple.find("i686") == 0;
+    };
+
+    // ── I/O Ports ───────────────────────────────────────────────
+    auto makePortIn = [&](const std::string& name, const std::string& asmInsn,
+                           unsigned bits) {
+        IntrinsicFunction fn;
+        fn.name = name;
+        fn.returnType = bits == 8 ? "uint8" : bits == 16 ? "uint16" : "uint32";
+        fn.params.push_back({"uint16", false});
+        fn.description = "Reads " + std::to_string(bits) + " bits from an x86 I/O port.\n"
+            "Returns 0 on unsupported targets.\n\n"
+            "```lucis\n"
+            "uint" + std::to_string(bits) + " val = lucis::sys::" + name + "(0x60);\n"
+            "```";
+
+        fn.lowering.kind = IntrinsicFunction::Lowering::InlineIR;
+        fn.lowering.emitIR = [name, asmInsn, bits](
+            llvm::IRBuilder<>& builder, llvm::Module* module,
+            llvm::LLVMContext& context, const TypeRegistry&,
+            const std::vector<llvm::Value*>& args,
+            const std::vector<const TypeInfo*>&) -> llvm::Value* {
+
+            auto triple = module->getTargetTriple().str();
+            auto* retTy = llvm::Type::getIntNTy(context, bits);
+            if (triple.find("x86_64") != 0 && triple.find("i386") != 0 &&
+                triple.find("i686") != 0)
+                return llvm::ConstantInt::get(retTy, 0);
+
+            // in{b,w,l} reads from DX port into {AL,AX,EAX}
+            std::string constraints = "={ax},0,~{dirflag},~{fpsr},~{flags}";
+            auto* ft = llvm::FunctionType::get(retTy, {retTy}, false);
+            auto* asmFn = llvm::InlineAsm::get(ft, asmInsn, constraints,
+                true, false, llvm::InlineAsm::AD_ATT);
+            // Extend 16-bit port to register width for the "0" matching constraint
+            auto* portVal = builder.CreateZExt(args[0], retTy);
+            return builder.CreateCall(asmFn, {portVal}, name);
+        };
+        return fn;
+    };
+
+    auto makePortOut = [&](const std::string& name, const std::string& asmInsn,
+                            unsigned bits) {
+        IntrinsicFunction fn;
+        fn.name = name;
+        fn.returnType = "void";
+        fn.params.push_back({"uint16", false});
+        fn.params.push_back({bits == 8 ? "uint8" : bits == 16 ? "uint16" : "uint32", false});
+        fn.description = "Writes " + std::to_string(bits) + " bits to an x86 I/O port.\n"
+            "No-op on unsupported targets.\n\n"
+            "```lucis\n"
+            "lucis::sys::" + name + "(0x60, val);\n"
+            "```";
+
+        fn.lowering.kind = IntrinsicFunction::Lowering::InlineIR;
+        fn.lowering.emitIR = [asmInsn, bits](
+            llvm::IRBuilder<>& builder, llvm::Module* module,
+            llvm::LLVMContext& context, const TypeRegistry&,
+            const std::vector<llvm::Value*>& args,
+            const std::vector<const TypeInfo*>&) -> llvm::Value* {
+
+            auto triple = module->getTargetTriple().str();
+            if (triple.find("x86_64") != 0 && triple.find("i386") != 0 &&
+                triple.find("i686") != 0)
+                return llvm::UndefValue::get(llvm::Type::getVoidTy(context));
+
+            auto* retTy = llvm::Type::getIntNTy(context, bits);
+            // First arg = DX port (uint16), second arg = value
+            // out{b,w,l}: port in DX, value in {AL,AX,EAX}
+            std::string constraints = "0,{dx},~{dirflag},~{fpsr},~{flags}";
+            auto* ft = llvm::FunctionType::get(retTy,
+                {retTy, llvm::Type::getInt16Ty(context)}, false);
+            auto* asmFn = llvm::InlineAsm::get(ft, asmInsn, constraints,
+                true, false, llvm::InlineAsm::AD_ATT);
+            auto* zext = builder.CreateZExt(args[1], retTy);
+            builder.CreateCall(asmFn, {zext, args[0]});
+            return llvm::UndefValue::get(llvm::Type::getVoidTy(context));
+        };
+        return fn;
+    };
+
+    sys.functions.push_back(makePortIn("inb",  "inb $1, $0", 8));
+    sys.functions.push_back(makePortIn("inw",  "inw $1, $0", 16));
+    sys.functions.push_back(makePortIn("inl",  "inl $1, $0", 32));
+    sys.functions.push_back(makePortOut("outb", "outb $0, $1", 8));
+    sys.functions.push_back(makePortOut("outw", "outw $0, $1", 16));
+    sys.functions.push_back(makePortOut("outl", "outl $0, $1", 32));
+
+    // ── Interrupt control ───────────────────────────────────────
+    auto makeIntrOp = [&](const std::string& name, const std::string& asmInsn,
+                           const std::string& desc) {
+        IntrinsicFunction fn;
+        fn.name = name;
+        fn.returnType = "void";
+        fn.description = desc;
+
+        fn.lowering.kind = IntrinsicFunction::Lowering::InlineIR;
+        fn.lowering.emitIR = [name, asmInsn](
+            llvm::IRBuilder<>& builder, llvm::Module* module,
+            llvm::LLVMContext& context, const TypeRegistry&,
+            const std::vector<llvm::Value*>&,
+            const std::vector<const TypeInfo*>&) -> llvm::Value* {
+
+            auto triple = module->getTargetTriple().str();
+            if (triple.find("x86_64") != 0 && triple.find("i386") != 0 &&
+                triple.find("i686") != 0)
+                return llvm::UndefValue::get(llvm::Type::getVoidTy(context));
+
+            auto* ft = llvm::FunctionType::get(llvm::Type::getVoidTy(context), false);
+            auto* asmFn = llvm::InlineAsm::get(ft, asmInsn,
+                "~{dirflag},~{fpsr},~{flags}", true, false,
+                llvm::InlineAsm::AD_ATT);
+            builder.CreateCall(asmFn);
+            return llvm::UndefValue::get(llvm::Type::getVoidTy(context));
+        };
+        return fn;
+    };
+
+    sys.functions.push_back(makeIntrOp("cli", "cli",
+        "Disables maskable interrupts on x86 (clear interrupt flag).\n"
+        "No-op on unsupported targets.\n\n"
+        "```lucis\nlucis::sys::cli();\n```"));
+    sys.functions.push_back(makeIntrOp("sti", "sti",
+        "Enables maskable interrupts on x86 (set interrupt flag).\n"
+        "No-op on unsupported targets.\n\n"
+        "```lucis\nlucis::sys::sti();\n```"));
+
+    // ── MSR access ──────────────────────────────────────────────
+    auto makeMSROp = [&](const std::string& name, bool isRead,
+                          const std::string& desc) {
+        IntrinsicFunction fn;
+        fn.name = name;
+        fn.description = desc;
+
+        if (isRead) {
+            fn.returnType = "uint64";
+            fn.params.push_back({"uint32", false}); // msr index
+        } else {
+            fn.returnType = "void";
+            fn.params.push_back({"uint32", false}); // msr index
+            fn.params.push_back({"uint64", false}); // value
+        }
+
+        fn.lowering.kind = IntrinsicFunction::Lowering::InlineIR;
+        fn.lowering.emitIR = [name, isRead](
+            llvm::IRBuilder<>& builder, llvm::Module* module,
+            llvm::LLVMContext& context, const TypeRegistry&,
+            const std::vector<llvm::Value*>& args,
+            const std::vector<const TypeInfo*>&) -> llvm::Value* {
+
+            auto triple = module->getTargetTriple().str();
+            auto* i64Ty = llvm::Type::getInt64Ty(context);
+            auto* i32Ty = llvm::Type::getInt32Ty(context);
+
+            if (triple.find("x86_64") != 0)
+            return isRead ? static_cast<llvm::Value*>(llvm::ConstantInt::get(i64Ty, 0))
+                          : static_cast<llvm::Value*>(llvm::UndefValue::get(llvm::Type::getVoidTy(context)));
+
+            // rdmsr: ecx=msr, returns edx:eax as uint64
+            // wrmsr: ecx=msr, edx:eax=value
+            if (isRead) {
+                auto* structTy = llvm::StructType::get(context, {i64Ty});
+                auto* ft = llvm::FunctionType::get(structTy, {i32Ty}, false);
+                auto* asmFn = llvm::InlineAsm::get(ft,
+                    "rdmsr", "=A,0,~{dirflag},~{fpsr},~{flags}",
+                    true, false, llvm::InlineAsm::AD_ATT);
+                auto* result = builder.CreateCall(asmFn, {args[0]}, name);
+                return builder.CreateExtractValue(result, {0});
+            } else {
+                auto* ft = llvm::FunctionType::get(llvm::Type::getVoidTy(context),
+                    {i32Ty, i64Ty}, false);
+                auto* asmFn = llvm::InlineAsm::get(ft,
+                    "wrmsr", "{cx},A,~{dirflag},~{fpsr},~{flags}",
+                    true, false, llvm::InlineAsm::AD_ATT);
+                builder.CreateCall(asmFn, {args[0], args[1]});
+                return llvm::UndefValue::get(llvm::Type::getVoidTy(context));
+            }
+        };
+        return fn;
+    };
+
+    sys.functions.push_back(makeMSROp("rdmsr", true,
+        "Reads a 64-bit model-specific register (MSR) on x86-64.\n"
+        "Returns 0 on unsupported targets.\n\n"
+        "```lucis\n"
+        "uint64 val = lucis::sys::rdmsr(0xC0000080);  // EFER\n"
+        "```"));
+    sys.functions.push_back(makeMSROp("wrmsr", false,
+        "Writes a 64-bit model-specific register (MSR) on x86-64.\n"
+        "No-op on unsupported targets.\n\n"
+        "```lucis\n"
+        "lucis::sys::wrmsr(0xC0000080, val);  // EFER\n"
+        "```\n"
+        "⚠ Requires kernel privileges (ring 0) for most MSRs."));
+
+    // ── Control registers ───────────────────────────────────────
+    auto makeCROp = [&](const std::string& name, const std::string& reg,
+                         bool isRead, const std::string& desc) {
+        IntrinsicFunction fn;
+        fn.name = name;
+        fn.description = desc;
+
+        if (isRead) {
+            fn.returnType = "usize";
+        } else {
+            fn.returnType = "void";
+            fn.params.push_back({"usize", false});
+        }
+
+        fn.lowering.kind = IntrinsicFunction::Lowering::InlineIR;
+        fn.lowering.emitIR = [name, reg, isRead](
+            llvm::IRBuilder<>& builder, llvm::Module* module,
+            llvm::LLVMContext& context, const TypeRegistry&,
+            const std::vector<llvm::Value*>& args,
+            const std::vector<const TypeInfo*>&) -> llvm::Value* {
+
+            auto triple = module->getTargetTriple().str();
+            auto bits = module->getDataLayout().getPointerSizeInBits();
+            auto* usizeTy = llvm::Type::getIntNTy(context, bits);
+
+            if (triple.find("x86_64") != 0)
+            return isRead ? static_cast<llvm::Value*>(llvm::ConstantInt::get(usizeTy, 0))
+                          : static_cast<llvm::Value*>(llvm::UndefValue::get(llvm::Type::getVoidTy(context)));
+
+            std::string asmInsn = isRead ? ("mov %" + reg + ", $0")
+                                         : ("mov $0, %" + reg);
+            std::string constraints = isRead ? "=r,~{dirflag},~{fpsr},~{flags}"
+                                             : "r,~{dirflag},~{fpsr},~{flags}";
+            auto* retTy = isRead ? usizeTy
+                                 : llvm::Type::getVoidTy(context);
+            auto* ft = llvm::FunctionType::get(retTy,
+                isRead ? llvm::ArrayRef<llvm::Type*>()
+                       : llvm::ArrayRef<llvm::Type*>({usizeTy}),
+                false);
+            auto* asmFn = llvm::InlineAsm::get(ft, asmInsn, constraints,
+                true, false, llvm::InlineAsm::AD_ATT);
+
+            if (isRead)
+                return builder.CreateCall(asmFn, {}, name);
+            builder.CreateCall(asmFn, {args[0]});
+            return llvm::UndefValue::get(llvm::Type::getVoidTy(context));
+        };
+        return fn;
+    };
+
+    sys.functions.push_back(makeCROp("read_cr0", "cr0", true,
+        "Reads the x86 CR0 control register.\nReturns 0 on unsupported targets.\n\n"
+        "```lucis\nusize cr0 = lucis::sys::read_cr0();\n```"));
+    sys.functions.push_back(makeCROp("write_cr0", "cr0", false,
+        "Writes the x86 CR0 control register. No-op on unsupported targets.\n"
+        "⚠ Requires kernel privileges (ring 0).\n\n"
+        "```lucis\nlucis::sys::write_cr0(val);\n```"));
+    sys.functions.push_back(makeCROp("read_cr2", "cr2", true,
+        "Reads the x86 CR2 control register (page fault linear address).\n"
+        "Returns 0 on unsupported targets.\n\n"
+        "```lucis\nusize cr2 = lucis::sys::read_cr2();\n```"));
+    sys.functions.push_back(makeCROp("read_cr3", "cr3", true,
+        "Reads the x86 CR3 control register (page directory base).\n"
+        "Returns 0 on unsupported targets.\n\n"
+        "```lucis\nusize cr3 = lucis::sys::read_cr3();\n```"));
+    sys.functions.push_back(makeCROp("write_cr3", "cr3", false,
+        "Writes the x86 CR3 control register (page directory base).\n"
+        "No-op on unsupported targets.\n"
+        "⚠ Requires kernel privileges (ring 0).\n\n"
+        "```lucis\nlucis::sys::write_cr3(val);\n```"));
+    sys.functions.push_back(makeCROp("read_cr4", "cr4", true,
+        "Reads the x86 CR4 control register.\nReturns 0 on unsupported targets.\n\n"
+        "```lucis\nusize cr4 = lucis::sys::read_cr4();\n```"));
+    sys.functions.push_back(makeCROp("write_cr4", "cr4", false,
+        "Writes the x86 CR4 control register. No-op on unsupported targets.\n"
+        "⚠ Requires kernel privileges (ring 0).\n\n"
+        "```lucis\nlucis::sys::write_cr4(val);\n```"));
+
     reg.registerNamespace(std::move(sys));
 }

@@ -51,6 +51,7 @@ use tests::sys_rotate_abs::testSysRotateAbs;
 use tests::sys_saturating::testSysSaturating;
 use tests::sys_stack::testSysStack;
 use tests::sys_syscall::testSysSyscall;
+use tests::sys_tier3::testSysTier3;
 use tests::sys_volatile::testSysVolatile;
 use tests::tuples_full::testTuplesFull;
 use tests::type_aliases_full::testTypeAliasesFull;
@@ -122,5 +123,6 @@ fn main() int32 {
     testSysSaturating();
     testSysRdRand();
     testSysEndianness();
+    testSysTier3();
     ret 0;
 }

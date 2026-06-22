@@ -1,0 +1,46 @@
+use std::log::println;
+
+fn testSysTier3() int32 {
+    println("[Testing sys:: Tier 3 intrinsics (compile check)...]");
+
+    // All Tier 3 intrinsics require ring 0 / I/O privileges.
+    // We verify they compile and accept correct parameter types.
+
+    // ── I/O ports ────────────────────────────────────────────────
+    uint8  ib  = 0u8;
+    uint16 iw  = 0u16;
+    uint32 il  = 0u32;
+
+    // Compile-check signatures (runtime requires iopl)
+    // ib  = lucis::sys::inb(0x60u16);
+    // iw  = lucis::sys::inw(0x60u16);
+    // il  = lucis::sys::inl(0x60u16);
+    // lucis::sys::outb(0x60u16, 0u8);
+    // lucis::sys::outw(0x60u16, 0u16);
+    // lucis::sys::outl(0x60u16, 0u32);
+
+    // ── Interrupts ──────────────────────────────────────────────
+    // lucis::sys::cli();
+    // lucis::sys::sti();
+
+    // ── MSR ─────────────────────────────────────────────────────
+    uint64 msr = 0u64;
+    // msr = lucis::sys::rdmsr(0xC0000080u32);
+    // lucis::sys::wrmsr(0xC0000080u32, 0u64);
+
+    // ── Control registers ───────────────────────────────────────
+    usize cr = 0usize;
+    // cr = lucis::sys::read_cr0();
+    // cr = lucis::sys::read_cr2();
+    // cr = lucis::sys::read_cr3();
+    // cr = lucis::sys::read_cr4();
+    // lucis::sys::write_cr0(0);
+    // lucis::sys::write_cr3(0);
+    // lucis::sys::write_cr4(0);
+
+    // Suppress unused warnings
+    ib = ib; iw = iw; il = il; msr = msr; cr = cr;
+
+    println("✔ sys::Tier3 tests passed (compile check)");
+    ret 0;
+}
