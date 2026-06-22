@@ -7,7 +7,8 @@
 void ModuleRegistry::registerFile(const std::string& modulePath,
                                    const std::string& filePath,
                                    LucisParser::ProgramContext* tree,
-                                   std::shared_ptr<ParseResult> anchor) {
+                                   std::shared_ptr<ParseResult> anchor,
+                                   bool isStdlib) {
     auto& symbols = modules_[modulePath];
 
     for (auto* topLevel : tree->topLevelDecl()) {
@@ -17,6 +18,7 @@ void ModuleRegistry::registerFile(const std::string& modulePath,
             sym.name       = funcDecl->IDENTIFIER(0)->getText();
             sym.modulePath = modulePath;
             sym.sourceFile = filePath;
+            sym.isStdlib   = isStdlib;
             sym.line       = static_cast<unsigned>(funcDecl->getStart()->getLine());
             sym.column     = static_cast<unsigned>(funcDecl->getStart()->getCharPositionInLine());
             sym.decl       = funcDecl;
@@ -29,6 +31,7 @@ void ModuleRegistry::registerFile(const std::string& modulePath,
             sym.name       = structDecl->IDENTIFIER()->getText();
             sym.modulePath = modulePath;
             sym.sourceFile = filePath;
+            sym.isStdlib   = isStdlib;
             sym.line       = static_cast<unsigned>(structDecl->getStart()->getLine());
             sym.column     = static_cast<unsigned>(structDecl->getStart()->getCharPositionInLine());
             sym.decl       = structDecl;
@@ -41,6 +44,7 @@ void ModuleRegistry::registerFile(const std::string& modulePath,
             sym.name       = unionDecl->IDENTIFIER()->getText();
             sym.modulePath = modulePath;
             sym.sourceFile = filePath;
+            sym.isStdlib   = isStdlib;
             sym.line       = static_cast<unsigned>(unionDecl->getStart()->getLine());
             sym.column     = static_cast<unsigned>(unionDecl->getStart()->getCharPositionInLine());
             sym.decl       = unionDecl;
@@ -53,6 +57,7 @@ void ModuleRegistry::registerFile(const std::string& modulePath,
             sym.name       = enumDecl->IDENTIFIER()->getText();
             sym.modulePath = modulePath;
             sym.sourceFile = filePath;
+            sym.isStdlib   = isStdlib;
             sym.line       = static_cast<unsigned>(enumDecl->getStart()->getLine());
             sym.column     = static_cast<unsigned>(enumDecl->getStart()->getCharPositionInLine());
             sym.decl       = enumDecl;
@@ -65,6 +70,7 @@ void ModuleRegistry::registerFile(const std::string& modulePath,
             sym.name       = typeAlias->IDENTIFIER()->getText();
             sym.modulePath = modulePath;
             sym.sourceFile = filePath;
+            sym.isStdlib   = isStdlib;
             sym.line       = static_cast<unsigned>(typeAlias->getStart()->getLine());
             sym.column     = static_cast<unsigned>(typeAlias->getStart()->getCharPositionInLine());
             sym.decl       = typeAlias;
@@ -77,6 +83,7 @@ void ModuleRegistry::registerFile(const std::string& modulePath,
             sym.name       = extDecl->IDENTIFIER()->getText();
             sym.modulePath = modulePath;
             sym.sourceFile = filePath;
+            sym.isStdlib   = isStdlib;
             sym.line       = static_cast<unsigned>(extDecl->getStart()->getLine());
             sym.column     = static_cast<unsigned>(extDecl->getStart()->getCharPositionInLine());
             sym.decl       = extDecl;

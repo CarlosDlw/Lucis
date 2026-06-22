@@ -38,7 +38,8 @@ public:
     // Set module context for cross-file symbol resolution and mangling.
     void setModuleContext(const ModuleRegistry* registry,
                           const std::string& modulePath,
-                          const std::string& currentFile);
+                          const std::string& currentFile,
+                          bool isStdlib = false);
 
     // Set C bindings from parsed #include headers.
     void setCBindings(const CBindings* bindings);
@@ -280,6 +281,7 @@ private:
     const ModuleRegistry* moduleRegistry_ = nullptr;
     std::string currentModulePath_;
     std::string currentFile_;
+    bool isStdlib_ = false;
 
     // Phase 2: authoritative semantic database (populated by Checker)
     const semantic::SemanticDB* semanticDB_ = nullptr;

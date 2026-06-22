@@ -68,6 +68,20 @@ std::string LucisPipeline::getProjectRoot(const std::string& inputFile) {
     return dir.string();
 }
 
+bool LucisPipeline::isStdlibPath(const std::string& filePath,
+                                  const std::vector<std::string>& stdlibDirs) {
+    std::error_code ec;
+    auto canonical = fs::canonical(filePath, ec);
+    if (ec) return false;
+    for (auto& dir : stdlibDirs) {
+        auto base = fs::canonical(dir, ec);
+        if (ec) continue;
+        if (canonical.string().rfind(base.string() + "/", 0) == 0)
+            return true;
+    }
+    return false;
+}
+
 std::string LucisPipeline::filePathToModulePath(const std::string& filePath,
                                                   const std::string& projectRoot) {
     fs::path absPath = fs::canonical(filePath);
@@ -214,6 +228,7 @@ std::unique_ptr<PipelineResult> LucisPipeline::run(const Options& opts) {
         SourceUnit unit;
         unit.filePath    = filePath;
         unit.modulePath  = modulePath;
+        unit.isStdlib    = isStdlibPath(filePath, searchDirs);
         unit.parseResult = std::make_shared<ParseResult>(Parser::parse(filePath));
 
         if (unit.parseResult->hasErrors) {
@@ -270,7 +285,7 @@ std::unique_ptr<PipelineResult> LucisPipeline::run(const Options& opts) {
     progress(3, 5, "building module registry");
     result->registry = std::make_unique<ModuleRegistry>();
     for (auto& unit : result->units)
-        result->registry->registerFile(unit.modulePath, unit.filePath, unit.parseResult->tree, unit.parseResult);
+        result->registry->registerFile(unit.modulePath, unit.filePath, unit.parseResult->tree, unit.parseResult, unit.isStdlib);
     auto dupErrors = result->registry->validate();
     if (!dupErrors.empty()) {
         for (auto& err : dupErrors) printErrorLine(err);

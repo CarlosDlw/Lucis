@@ -13,6 +13,7 @@
 struct SourceUnit {
     std::string filePath;
     std::string modulePath;
+    bool isStdlib = false;
     std::shared_ptr<ParseResult> parseResult;
 };
 
@@ -49,6 +50,10 @@ public:
 
     // Compute project root from input file by walking up directory tree.
     static std::string getProjectRoot(const std::string& inputFile);
+
+    // Check whether a resolved file path is under a stdlib directory.
+    static bool isStdlibPath(const std::string& filePath,
+                              const std::vector<std::string>& stdlibDirs);
 
 private:
     static std::string filePathToModulePath(const std::string& filePath,

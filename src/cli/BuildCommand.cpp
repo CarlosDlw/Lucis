@@ -305,7 +305,7 @@ int BuildCommand::run(const ArgParser& parser) {
                           << "] " << unit.filePath << "\n";
 
             IRGen irGen;
-            irGen.setModuleContext(pipeline->registry.get(), unit.modulePath, unit.filePath);
+            irGen.setModuleContext(pipeline->registry.get(), unit.modulePath, unit.filePath, unit.isStdlib);
             irGen.setCBindings(pipeline->cBindings.get());
             irGen.setSemanticDB(pipeline->semanticDB.get());
             auto irMod = irGen.generate(unit.parseResult->tree, unit.filePath);

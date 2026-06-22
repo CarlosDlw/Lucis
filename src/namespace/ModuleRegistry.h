@@ -15,6 +15,7 @@ struct ExportedSymbol {
     std::string name;
     std::string modulePath;
     std::string sourceFile;
+    bool        isStdlib = false;
 
     // Location of the declaration (line 1-based, column 0-based).
     // Phase 4: replaces ParserRuleContext* for LSP navigation.
@@ -33,7 +34,8 @@ public:
     void registerFile(const std::string& modulePath,
                       const std::string& filePath,
                       LucisParser::ProgramContext* tree,
-                      std::shared_ptr<ParseResult> anchor);
+                      std::shared_ptr<ParseResult> anchor,
+                      bool isStdlib = false);
 
     std::vector<std::string> validate() const;
 
