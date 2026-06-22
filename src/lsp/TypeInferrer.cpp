@@ -27,7 +27,7 @@ LucisParser::StructDeclContext* TypeInferrer::findStruct(
     if (tree) {
         for (auto* tld : tree->topLevelDecl()) {
             auto* sd = tld->structDecl();
-            if (sd && safeText(sd->IDENTIFIER()) == name)
+            if (sd && safeText(sd->IDENTIFIER(0)) == name)
                 return sd;
         }
     }

@@ -455,7 +455,8 @@ void SemanticDB::save(const std::string& path) const {
                 << (ed->keyType ? ed->keyType->name : "-") << " "
                 << (ed->valueType ? ed->valueType->name : "-") << "\n";
         } else if (auto* sd = decl->as<StructDecl>()) {
-            out << "T " << name << " Struct\n";
+            out << "T " << name << " Struct "
+                << (sd->parentName.empty() ? "-" : sd->parentName) << "\n";
             for (const auto& f : sd->fields) {
                 out << "  F " << f.name << " "
                     << (f.type ? f.type->name : "void") << " "
@@ -632,6 +633,8 @@ std::unique_ptr<SemanticDB> SemanticDB::load(const std::string& path) {
             if (currentTypeKind == "Struct") {
                 currentStruct = std::make_unique<StructDecl>();
                 currentStruct->name = currentTypeName;
+                std::string parentName; ss >> parentName;
+                if (parentName != "-") currentStruct->parentName = parentName;
             } else if (currentTypeKind == "Union") {
                 currentUnion = std::make_unique<UnionDecl>();
                 currentUnion->name = currentTypeName;

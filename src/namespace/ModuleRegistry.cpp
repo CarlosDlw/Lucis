@@ -28,7 +28,7 @@ void ModuleRegistry::registerFile(const std::string& modulePath,
         else if (auto* structDecl = topLevel->structDecl()) {
             ExportedSymbol sym;
             sym.kind       = ExportedSymbol::Struct;
-            sym.name       = structDecl->IDENTIFIER()->getText();
+            sym.name       = structDecl->IDENTIFIER(0)->getText();
             sym.modulePath = modulePath;
             sym.sourceFile = filePath;
             sym.isStdlib   = isStdlib;

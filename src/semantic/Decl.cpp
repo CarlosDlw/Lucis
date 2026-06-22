@@ -313,6 +313,7 @@ std::unique_ptr<Decl> StructDecl::clone() const {
     c->dropTracked   = dropTracked;
     c->moveOnly      = moveOnly;
     c->genericParams = genericParams;
+    c->parentName    = parentName;
     cloneFields(c->fields, fields);
     cloneMethods(c->methods, methods);
     return c;

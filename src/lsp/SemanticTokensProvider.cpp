@@ -184,7 +184,7 @@ static void walkTree(IdentMap& map, antlr4::tree::ParseTree* node) {
 
     // ── struct ──
     else if (auto* ctx = dynamic_cast<LucisParser::StructDeclContext*>(node)) {
-        classifyIdent(map, ctx->IDENTIFIER(), SemanticTokenType::Struct,
+        classifyIdent(map, ctx->IDENTIFIER(0), SemanticTokenType::Struct,
                       static_cast<uint32_t>(SemanticTokenMod::Declaration) |
                       static_cast<uint32_t>(SemanticTokenMod::Definition));
         // Type params (T, U, ...) declared in the generic list

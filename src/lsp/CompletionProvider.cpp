@@ -490,7 +490,7 @@ findStructDeclForInference(const std::string &name, const FuncLookupCtx *flc) {
   if (flc->tree) {
     for (auto *tld : flc->tree->topLevelDecl()) {
       auto *sd = tld->structDecl();
-      if (sd && sd->IDENTIFIER() && safeText(sd->IDENTIFIER()) == name)
+      if (sd && !sd->IDENTIFIER().empty() && safeText(sd->IDENTIFIER(0)) == name)
         return sd;
     }
   }
@@ -2752,7 +2752,7 @@ void CompletionProvider::addLocalDecls(std::vector<CompletionItem> &items,
 
     // Structs
     if (auto *sd = tld->structDecl()) {
-      std::string name = safeText(sd->IDENTIFIER());
+      std::string name = safeText(sd->IDENTIFIER(0));
       if (!matchesPrefix(name, prefix))
         continue;
       CompletionItem item;
@@ -2994,7 +2994,7 @@ void CompletionProvider::addImportedSymbols(std::vector<CompletionItem> &items,
                 items.push_back(std::move(ci)); return;
               }
             } else if (auto* sd = tld->structDecl()) {
-              if (safeText(sd->IDENTIFIER()) == symName) {
+              if (safeText(sd->IDENTIFIER(0)) == symName) {
                 CompletionItem ci; ci.label = symName;
                 ci.kind = CompletionKind::Struct; ci.detail = "struct";
                 items.push_back(std::move(ci)); return;
@@ -4158,7 +4158,7 @@ void CompletionProvider::addUseCompletions(std::vector<CompletionItem> &items,
           if (auto* fd = tld->functionDecl()) {
             if (!fd->IDENTIFIER().empty()) name = safeText(fd->IDENTIFIER(0)); kind = 0;
           } else if (auto* sd = tld->structDecl()) {
-            name = safeText(sd->IDENTIFIER()); kind = 1;
+            name = safeText(sd->IDENTIFIER(0)); kind = 1;
           } else if (auto* ed = tld->enumDecl()) {
             name = safeText(ed->IDENTIFIER()); kind = 2;
           } else if (auto* ud = tld->unionDecl()) {
@@ -4203,7 +4203,7 @@ void CompletionProvider::addUseCompletions(std::vector<CompletionItem> &items,
               if (auto* fd = tld->functionDecl()) {
                 if (!fd->IDENTIFIER().empty()) name = safeText(fd->IDENTIFIER(0)); kind = 0;
               } else if (auto* sd = tld->structDecl()) {
-                name = safeText(sd->IDENTIFIER()); kind = 1;
+                name = safeText(sd->IDENTIFIER(0)); kind = 1;
               } else if (auto* ed = tld->enumDecl()) {
                 name = safeText(ed->IDENTIFIER()); kind = 2;
               } else if (auto* ud = tld->unionDecl()) {
@@ -4610,7 +4610,7 @@ void CompletionProvider::addTypeNames(std::vector<CompletionItem> &items,
   // Same-file structs, enums, unions, type aliases
   for (auto *tld : tree->topLevelDecl()) {
     if (auto *sd = tld->structDecl()) {
-      std::string name = safeText(sd->IDENTIFIER());
+      std::string name = safeText(sd->IDENTIFIER(0));
       if (!matchesPrefix(name, prefix))
         continue;
       items.push_back({name, CompletionKind::Struct, "struct " + name});
@@ -5386,7 +5386,7 @@ std::string CompletionProvider::resolveFieldType(
   if (tree) {
     for (auto *tld : tree->topLevelDecl()) {
       if (auto *sd = tld->structDecl()) {
-        if (!sd->IDENTIFIER() || safeText(sd->IDENTIFIER()) != receiverLookup)
+        if (sd->IDENTIFIER().empty() || safeText(sd->IDENTIFIER(0)) != receiverLookup)
           continue;
         if (!rArgs.empty() && sd->typeParamList()) {
           auto tps = sd->typeParamList()->typeParam();
@@ -5587,7 +5587,7 @@ CompletionProvider::findStructDecl(LucisParser::ProgramContext *tree,
                                    const std::string &name) {
   for (auto *tld : tree->topLevelDecl()) {
     if (auto *sd = tld->structDecl()) {
-      if (safeText(sd->IDENTIFIER()) == name)
+      if (safeText(sd->IDENTIFIER(0)) == name)
         return sd;
     }
   }

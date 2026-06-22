@@ -431,7 +431,7 @@ std::any IRGen::visitProgram(LucisParser::ProgramContext* ctx) {
     // Register struct, union, and enum types first
     for (auto* decl : ctx->topLevelDecl()) {
         if (auto* structDecl = decl->structDecl()) {
-            auto name = structDecl->IDENTIFIER()->getText();
+            auto name = structDecl->IDENTIFIER(0)->getText();
             auto* existing = typeRegistry_.lookup(name);
             bool needsCompletion =
                 existing && existing->kind == TypeKind::Struct && existing->fields.empty();
@@ -481,12 +481,12 @@ std::any IRGen::visitStructDecl(LucisParser::StructDeclContext* ctx) {
         for (auto* tp : tpl->typeParam())
             tmpl.typeParams.push_back(tp->IDENTIFIER(0)->getText());
         tmpl.decl = ctx;
-        auto name = ctx->IDENTIFIER()->getText();
+        auto name = ctx->IDENTIFIER(0)->getText();
         genericStructTemplates_[name] = std::move(tmpl);
         return {};
     }
 
-    auto structName = ctx->IDENTIFIER()->getText();
+    auto structName = ctx->IDENTIFIER(0)->getText();
 
     if (auto* existing = typeRegistry_.lookup(structName)) {
         bool alreadyComplete = existing->kind == TypeKind::Struct && !existing->fields.empty();
@@ -514,6 +514,28 @@ std::any IRGen::visitStructDecl(LucisParser::StructDeclContext* ctx) {
 
     // Collect field types
     std::vector<llvm::Type*> fieldTypes;
+
+    // ── Parent struct inheritance ─────────────────────────────────────
+    if (ctx->COLON() && ctx->IDENTIFIER().size() > 1) {
+        std::string parentName = ctx->IDENTIFIER(1)->getText();
+        auto* parentTI = typeRegistry_.lookup(parentName);
+        if (!parentTI || parentTI->kind != TypeKind::Struct || parentTI->fields.empty()) {
+            std::cerr << "lucis: parent struct '" << parentName << "' not resolved for struct '" << structName << "'\n";
+            return {};
+        }
+        ti.parentType = parentTI;
+
+        auto* parentLL = llvm::StructType::getTypeByName(*context_, parentName);
+        if (!parentLL || parentLL->isOpaque()) {
+            std::cerr << "lucis: parent LLVM type '" << parentName << "' not emitted yet for struct '" << structName << "'\n";
+            return {};
+        }
+        for (unsigned i = 0; i < parentLL->getNumElements(); i++)
+            fieldTypes.push_back(parentLL->getElementType(i));
+        for (auto& pf : parentTI->fields)
+            ti.fields.push_back(pf);
+    }
+
     for (auto* field : ctx->structField()) {
         auto* fieldTI = resolveTypeInfo(field->typeSpec());
         if (!fieldTI) {
@@ -1513,7 +1535,7 @@ void IRGen::registerCrossFileSymbols(LucisParser::ProgramContext* ctx) {
 
         for (auto* decl : ctx->topLevelDecl()) {
             if (auto* structDecl = decl->structDecl()) {
-                auto name = structDecl->IDENTIFIER()->getText();
+                auto name = structDecl->IDENTIFIER(0)->getText();
                 if (!typeRegistry_.lookup(name) && !genericStructTemplates_.count(name)) {
                     TypeInfo skeleton;
                     skeleton.name = name;

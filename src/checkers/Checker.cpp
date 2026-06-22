@@ -824,7 +824,7 @@ bool Checker::check(LucisParser::ProgramContext* tree) {
         // First pass: register struct/union skeletons so enum payloads can reference them
         for (auto* decl : tree->topLevelDecl()) {
             if (auto* sd = decl->structDecl()) {
-                auto name = sd->IDENTIFIER()->getText();
+                auto name = sd->IDENTIFIER(0)->getText();
                 if (!typeRegistry_.lookup(name) && !genericStructTemplates_.count(name)) {
                     TypeInfo skeleton;
                     skeleton.name = name;
@@ -1006,6 +1006,25 @@ bool Checker::check(LucisParser::ProgramContext* tree) {
                     // Pre-resolve field types before checking the struct
                     for (auto* field : sd->structField())
                         self(self, field->typeSpec(), ns);
+                    // Pre-resolve parent struct if inheriting
+                    if (sd->COLON() && sd->IDENTIFIER().size() > 1) {
+                        std::string parentName = sd->IDENTIFIER(1)->getText();
+                        auto* parentSym = moduleRegistry_->findSymbol(ns, parentName);
+                        if (!parentSym) {
+                            for (auto& candidateNs : moduleRegistry_->allModules()) {
+                                parentSym = moduleRegistry_->findSymbol(candidateNs, parentName);
+                                if (parentSym) break;
+                            }
+                        }
+                        if (parentSym && parentSym->kind == ExportedSymbol::Struct &&
+                            !genericStructTemplates_.count(parentName) &&
+                            !seenDeps.count(parentName)) {
+                            auto* parentDecl = static_cast<LucisParser::StructDeclContext*>(parentSym->decl);
+                            for (auto* pf : parentDecl->structField())
+                                self(self, pf->typeSpec(), parentSym->modulePath);
+                            checkStructDecl(parentDecl);
+                        }
+                    }
                     checkStructDecl(sd);
                     return;
                 }
@@ -5467,7 +5486,7 @@ void Checker::checkTypeAliasDecl(LucisParser::TypeAliasDeclContext* decl) {
 }
 
 void Checker::checkStructDecl(LucisParser::StructDeclContext* decl) {
-    auto name = decl->IDENTIFIER()->getText();
+    auto name = decl->IDENTIFIER(0)->getText();
 
     // Generic struct template — register as template, not as concrete type
     if (auto* tpl = decl->typeParamList()) {
@@ -5509,6 +5528,28 @@ void Checker::checkStructDecl(LucisParser::StructDeclContext* decl) {
 
     TypeInfo ti = skeleton;
     std::unordered_set<std::string> seen;
+
+    // ── Parent struct inheritance ─────────────────────────────────────
+    if (decl->COLON() && decl->IDENTIFIER().size() > 1) {
+        std::string parentName = decl->IDENTIFIER(1)->getText();
+
+        auto* parentTI = typeRegistry_.lookup(parentName);
+        if (!parentTI || parentTI->kind != TypeKind::Struct) {
+            error(decl, "parent type '" + parentName + "' not found or is not a struct");
+            return;
+        }
+        if (parentTI->isGenericInstance) {
+            error(decl, "cannot inherit from generic instance '" + parentName + "'; use the base type name");
+            return;
+        }
+
+        ti.parentType = parentTI;
+        for (auto& pf : parentTI->fields) {
+            seen.insert(pf.name);
+            ti.fields.push_back(pf);
+        }
+    }
+
     for (auto* field : decl->structField()) {
         unsigned fieldDims = 0;
         auto* fieldTI = resolveTypeSpec(field->typeSpec(), fieldDims);
@@ -9051,6 +9092,8 @@ std::unique_ptr<semantic::Decl> Checker::typeInfoToDecl(const TypeInfo& ti) {
         sd->modulePath = currentModulePath_;
         sd->dropTracked = ti.dropTracked;
         sd->moveOnly    = ti.moveOnly;
+        if (ti.parentType)
+            sd->parentName = ti.parentType->name;
         for (const auto& f : ti.fields)
             sd->fields.push_back(toSemanticField(f));
         return sd;

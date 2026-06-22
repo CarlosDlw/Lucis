@@ -351,7 +351,7 @@ std::optional<DefinitionResult> DefinitionProvider::resolveAtPosition(
 
         // Struct name
         if (auto* sd = tld->structDecl()) {
-            if (sd->IDENTIFIER() && sd->IDENTIFIER()->getSymbol() == hoveredToken)
+            if (!sd->IDENTIFIER().empty() && sd->IDENTIFIER(0)->getSymbol() == hoveredToken)
                 return makeResult(hoveredToken, filePath);
             // Field type specs
             for (auto* f : sd->structField()) {
@@ -534,7 +534,7 @@ std::optional<DefinitionResult> DefinitionProvider::resolveIdent(
     // 4) Struct
     auto* structDecl = findStructDecl(tree, name);
     if (structDecl)
-        return makeResult(structDecl->IDENTIFIER()->getSymbol(), filePath);
+        return makeResult(structDecl->IDENTIFIER(0)->getSymbol(), filePath);
 
     // 5) Enum
     auto* enumDecl = findEnumDecl(tree, name);
@@ -736,7 +736,7 @@ std::optional<DefinitionResult> DefinitionProvider::resolveTypeName(
 
     // Same-file struct/enum/union/typealias
     if (auto* sd = findStructDecl(tree, name))
-        return makeResult(sd->IDENTIFIER()->getSymbol(), filePath);
+        return makeResult(sd->IDENTIFIER(0)->getSymbol(), filePath);
     if (auto* ed = findEnumDecl(tree, name))
         return makeResult(ed->IDENTIFIER()->getSymbol(), filePath);
     if (auto* ud = findUnionDecl(tree, name))
@@ -1849,7 +1849,7 @@ DefinitionProvider::findStructDecl(LucisParser::ProgramContext* tree,
                                    const std::string& name) {
     for (auto* tld : tree->topLevelDecl()) {
         if (auto* sd = tld->structDecl())
-            if (safeText(sd->IDENTIFIER()) == name)
+            if (safeText(sd->IDENTIFIER(0)) == name)
                 return sd;
     }
     return nullptr;

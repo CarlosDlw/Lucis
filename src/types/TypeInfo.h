@@ -61,6 +61,7 @@ struct TypeInfo {
     bool        isSigned = false;       // meaningful for Integer only
     std::string builtinSuffix;  // suffix for C builtins: "i32", "u64", "f32", "str", "bool"
     std::vector<FieldInfo> fields;          // non-empty only for Struct
+    const TypeInfo* parentType = nullptr;   // non-null for structs with : Parent
     std::vector<std::string> enumVariants;  // non-empty only for Enum
     std::vector<EnumVariantInfo> enumVariantInfos; // detailed variant metadata for Enum
     const TypeInfo* pointeeType = nullptr;   // non-null only for Pointer

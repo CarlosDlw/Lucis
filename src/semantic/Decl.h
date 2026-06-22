@@ -151,6 +151,7 @@ struct StructDecl : Decl {
     std::vector<std::string> genericParams; // empty = non-generic
     std::vector<FieldInfo>   fields;
     std::vector<MethodInfo>  methods;       // merged from extend blocks
+    std::string parentName;                 // empty = no parent struct
 
     StructDecl() : Decl(DeclKind::Struct) {}
 
