@@ -200,6 +200,14 @@ int BuildCommand::run(const ArgParser& parser) {
         }
     }
 
+    // Invalidate cache when emit flags are active — cached objects
+    // can't satisfy emit requests (LLVM IR, assembly, bitcode, object-only).
+    if (buildCached && !tasks.empty()) {
+        buildCached = false;
+        if (!pipeOpts.quiet)
+            std::cerr << "lucis: [build] emit flags active, rebuilding\n";
+    }
+
     std::unique_ptr<PipelineResult> pipeline;
     std::vector<std::string> cachedObjectFiles;
     if (!buildCached) {
