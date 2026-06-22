@@ -331,7 +331,7 @@ int BuildCommand::run(const ArgParser& parser) {
 
         // ── Default emit output paths (when no -o given) ─────────────
         auto stem = fs::path(pipeOpts.inputFile).stem().string();
-        std::string emitOutDir = projRoot;
+        std::string emitOutDir = projRoot + "/build";
         if (useConfig && !cfg->outDir.empty())
             emitOutDir = (fs::path(projRoot) / cfg->outDir).string();
         auto defaultEmitPath = [&](const char* ext) -> std::string {
