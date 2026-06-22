@@ -525,7 +525,6 @@ int BuildCommand::run(const ArgParser& parser) {
                     }
                     for (auto& co : cObjectFiles)
                         allObjs.push_back(co);
-                    allObjs.push_back(CodeGen::builtinsLibraryPath());
 
                     pid_t ldPid = ::fork();
                     if (ldPid < 0) { std::cerr << "lucis: failed to fork for ld -r\n"; return 1; }
