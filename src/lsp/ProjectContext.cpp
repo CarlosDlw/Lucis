@@ -152,6 +152,44 @@ bool ProjectContext::build(const std::string& filePath) {
         units_.push_back(std::move(unit));
     }
 
+    // ── Discover all project .lc files beyond the BFS import chain ──────
+    // The BFS above only finds files transitively imported from the entry
+    // point. Scan source directories to pick up all remaining .lc files
+    // so that opening any file in the project sees complete symbol data.
+    {
+        std::vector<std::string> scanDirs;
+        scanDirs.push_back(projectRoot_);
+        for (auto& sp : sourcePaths_)
+            scanDirs.push_back((fs::path(projectRoot_) / sp).string());
+
+        for (auto& dir : scanDirs) {
+            std::error_code ec;
+            for (auto& entry : fs::recursive_directory_iterator(dir, ec)) {
+                if (ec) break;
+                if (!entry.is_regular_file()) continue;
+                if (entry.path().extension() != ".lc") continue;
+                auto canon = fs::canonical(entry.path(), ec).string();
+                if (ec) continue;
+                if (visited.count(canon)) continue;
+
+                SourceUnit unit;
+                unit.filePath   = canon;
+                unit.modulePath = fs::relative(canon, projectRoot_).replace_extension("").string();
+                for (auto& c : unit.modulePath) if (c == '\\') c = '/';
+
+                try {
+                    unit.parseResult = std::make_shared<ParseResult>(Parser::parse(canon));
+                } catch (...) { continue; }
+                if (!unit.parseResult->tree) continue;
+
+                registry_.registerFile(unit.modulePath, canon, unit.parseResult->tree, unit.parseResult);
+                fileModulePaths_[canon] = unit.modulePath;
+                visited.insert(canon);
+                units_.push_back(std::move(unit));
+            }
+        }
+    }
+
     valid_ = !units_.empty();
     return valid_;
 }
