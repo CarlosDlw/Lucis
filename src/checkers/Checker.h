@@ -141,6 +141,13 @@ private:
     };
     std::unordered_map<std::string, std::vector<StructMethodInfo>> structMethods_;
 
+    // Walk parent chain to find a method (struct inheritance)
+    const StructMethodInfo* findMethodInChain(const TypeInfo* ti,
+                                               const std::string& name) const;
+    // Collect ALL methods from parent chain (for completions)
+    std::vector<const StructMethodInfo*> collectMethodsInChain(
+        const TypeInfo* ti) const;
+
     // Dynamically created TypeInfos (for pointer types, function types, etc.)
     std::vector<std::unique_ptr<TypeInfo>> dynamicTypes_;
 

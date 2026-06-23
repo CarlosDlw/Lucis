@@ -277,6 +277,12 @@ private:
     std::unordered_map<std::string,
         std::unordered_map<std::string, MethodEntry>> staticStructMethods_;
 
+    // walk parent chain for method lookup
+    const TypeInfo* findMethodReturnInChain(const TypeInfo* ti,
+                                             const std::string& name) const;
+    MethodEntry* findMethodEntryInChain(const TypeInfo* ti,
+                                         const std::string& name);
+
     // Module context for cross-file resolution
     const ModuleRegistry* moduleRegistry_ = nullptr;
     std::string currentModulePath_;

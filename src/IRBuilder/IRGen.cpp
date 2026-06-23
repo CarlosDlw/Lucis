@@ -1066,6 +1066,30 @@ std::any IRGen::visitTypeAliasDecl(LucisParser::TypeAliasDeclContext* ctx) {
     return {};
 }
 
+const TypeInfo* IRGen::findMethodReturnInChain(const TypeInfo* ti,
+                                                const std::string& name) const {
+    for (auto* t = ti; t; t = t->parentType) {
+        auto smIt = structMethods_.find(t->name);
+        if (smIt == structMethods_.end()) continue;
+        auto mIt = smIt->second.find(name);
+        if (mIt != smIt->second.end())
+            return mIt->second.returnType;
+    }
+    return nullptr;
+}
+
+IRGen::MethodEntry* IRGen::findMethodEntryInChain(const TypeInfo* ti,
+                                                    const std::string& name) {
+    for (auto* t = ti; t; t = t->parentType) {
+        auto smIt = structMethods_.find(t->name);
+        if (smIt == structMethods_.end()) continue;
+        auto mIt = smIt->second.find(name);
+        if (mIt != smIt->second.end())
+            return &mIt->second;
+    }
+    return nullptr;
+}
+
 // ── Forward-declare a user function (signature only, no body) ───────────
 void IRGen::forwardDeclareFunction(LucisParser::FunctionDeclContext* ctx) {
     if (!ctx) return;
@@ -15993,14 +16017,11 @@ const TypeInfo* IRGen::resolveExprTypeInfo(LucisParser::ExpressionContext* ctx) 
             }
         }
 
-        // User-defined struct/union instance method lookup
+        // User-defined struct/union instance method lookup (walks parent chain)
         if (recvTI->kind == TypeKind::Struct || recvTI->kind == TypeKind::Union) {
-            auto smIt = structMethods_.find(recvTI->name);
-            if (smIt != structMethods_.end()) {
-                auto mIt = smIt->second.find(methodName);
-                if (mIt != smIt->second.end())
-                    return mIt->second.returnType;
-            }
+            auto* me = findMethodEntryInChain(recvTI, methodName);
+            if (me)
+                return me->returnType;
             // Function pointer field call
             for (auto& f : recvTI->fields) {
                 if (f.name == methodName && f.typeInfo) {
@@ -16031,12 +16052,9 @@ const TypeInfo* IRGen::resolveExprTypeInfo(LucisParser::ExpressionContext* ctx) 
 
         // Lookup in struct methods
         if (recvTI->kind == TypeKind::Struct || recvTI->kind == TypeKind::Union) {
-            auto smIt = structMethods_.find(recvTI->name);
-            if (smIt != structMethods_.end()) {
-                auto mIt = smIt->second.find(methodName);
-                if (mIt != smIt->second.end())
-                    return mIt->second.returnType;
-            }
+            auto* me = findMethodEntryInChain(recvTI, methodName);
+            if (me)
+                return me->returnType;
         }
 
         return nullptr;
@@ -16527,20 +16545,14 @@ void IRGen::emitScopeCallback(LucisParser::ScopeCallbackContext* ctx) {
 
         // ── Struct extend method ──────────────────────────────────────────────
         if (recvTI && recvTI->kind == TypeKind::Struct) {
-            auto smIt = structMethods_.find(recvTI->name);
-            if (smIt == structMethods_.end()) {
-                std::cerr << "lucis: #scope callback: type '" << recvTI->name
-                          << "' has no extend methods\n";
-                return;
-            }
-            auto mIt = smIt->second.find(methodName);
-            if (mIt == smIt->second.end()) {
+            auto* me = findMethodEntryInChain(recvTI, methodName);
+            if (!me) {
                 std::cerr << "lucis: #scope callback: unknown method '" << methodName
                           << "' on '" << recvTI->name << "'\n";
                 return;
             }
 
-            auto* fn = mIt->second.fn;
+            auto* fn = me->fn;
             std::vector<llvm::Value*> callArgs = { locIt->second.alloca };
 
             if (auto* argList = ctx->argList()) {
@@ -17249,13 +17261,11 @@ IRGen::visitMethodCallExpr(LucisParser::MethodCallExprContext* ctx) {
 
     // ── Non-extended method call (original path) ─────────────────────
 
-    // ── Struct method via `extend` block ────────────────────────────
+    // ── Struct method via `extend` block (walks parent chain) ────────
     if (receiverTI && receiverTI->kind == TypeKind::Struct) {
-        auto smIt = structMethods_.find(receiverTI->name);
-        if (smIt != structMethods_.end()) {
-            auto mIt = smIt->second.find(methodName);
-            if (mIt != smIt->second.end()) {
-                auto* fn = mIt->second.fn;
+        auto* me = findMethodEntryInChain(receiverTI, methodName);
+        if (me) {
+            auto* fn = me->fn;
 
                 // Collect argument values
                 std::vector<llvm::Value*> callArgs;
@@ -17372,7 +17382,6 @@ IRGen::visitMethodCallExpr(LucisParser::MethodCallExprContext* ctx) {
                 return static_cast<llvm::Value*>(result);
             }
         }
-    }
 
     // ── String method dispatch ───────────────────────────────────────
     if (receiverTI && receiverTI->kind == TypeKind::String && recvArrayDims == 0) {

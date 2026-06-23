@@ -3140,18 +3140,14 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
             return nullptr;
         }
 
-        auto smIt = structMethods_.find(pointee->name);
-        if (smIt != structMethods_.end()) {
-            for (auto& sm : smIt->second) {
-                if (sm.name == methodName && !sm.isStatic) {
-                    if (argTypes.size() != sm.paramTypes.size()) {
-                        error(expr, "method '" + methodName + "' expects " +
-                            std::to_string(sm.paramTypes.size()) +
-                            " arguments, got " + std::to_string(argTypes.size()));
-                    }
-                    return sm.returnType;
-                }
+        auto* sm = findMethodInChain(pointee, methodName);
+        if (sm && !sm->isStatic) {
+            if (argTypes.size() != sm->paramTypes.size()) {
+                error(expr, "method '" + methodName + "' expects " +
+                    std::to_string(sm->paramTypes.size()) +
+                    " arguments, got " + std::to_string(argTypes.size()));
             }
+            return sm->returnType;
         }
         error(expr, "struct '" + pointee->name +
                     "' has no method '" + methodName + "'");
@@ -3359,20 +3355,16 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
                     }
                 }
             }
-            // Struct method via `extend` block
-            auto smIt = structMethods_.find(receiverType->name);
-            if (smIt != structMethods_.end()) {
-                for (auto& sm : smIt->second) {
-                    if (sm.name == methodName && !sm.isStatic) {
-                        if (argTypes.size() != sm.paramTypes.size()) {
-                            error(expr, "method '" + methodName + "' expects " +
-                                std::to_string(sm.paramTypes.size()) +
-                                " arguments " + formatParamTypes(sm.paramTypes) +
-                                ", got " + std::to_string(argTypes.size()));
-                        }
-                        return sm.returnType;
-                    }
+            // Struct method via `extend` block (walks parent chain)
+            auto* sm = findMethodInChain(receiverType, methodName);
+            if (sm && !sm->isStatic) {
+                if (argTypes.size() != sm->paramTypes.size()) {
+                    error(expr, "method '" + methodName + "' expects " +
+                        std::to_string(sm->paramTypes.size()) +
+                        " arguments " + formatParamTypes(sm->paramTypes) +
+                        ", got " + std::to_string(argTypes.size()));
                 }
+                return sm->returnType;
             }
             error(expr, "struct '" + receiverType->name +
                         "' has no method '" + methodName + "'");
@@ -4337,16 +4329,12 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
                     return nullptr;
                 }
 
-                // Look up static method from struct methods
-                auto smIt = structMethods_.find(typeName);
-                if (smIt != structMethods_.end()) {
-                    for (auto& sm : smIt->second) {
-                        if (sm.name == methodName2 && sm.isStatic) {
-                            if (auto* argList = smc->argList())
-                                for (auto* a : argList->expression()) resolveExprType(a);
-                            return sm.returnType;
-                        }
-                    }
+                // Look up static method from struct methods (walks parent chain)
+                auto* sm = findMethodInChain(ti, methodName2);
+                if (sm && sm->isStatic) {
+                    if (auto* argList = smc->argList())
+                        for (auto* a : argList->expression()) resolveExprType(a);
+                    return sm->returnType;
                 }
                 error(expr, "type '" + nsName + "::" + typeName +
                              "' has no static method '" + methodName2 + "'");
@@ -4550,31 +4538,28 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
                                                             *inferred, expr);
                 if (!instanceTI) return nullptr;
 
-                auto smIt = structMethods_.find(instanceTI->name);
-                if (smIt == structMethods_.end()) {
-                    error(expr, "struct '" + instanceTI->name + "' has no static methods");
+                auto* sm = findMethodInChain(instanceTI, methodName);
+                if (!sm || !sm->isStatic) {
+                    error(expr, "struct '" + instanceTI->name + "' has no static method '" + methodName + "'");
                     return nullptr;
                 }
 
-                for (auto& sm : smIt->second) {
-                    if (sm.name == methodName && sm.isStatic) {
-                        for (size_t i = 0; i < argTypes.size(); i++) {
-                            if (!argTypes[i] || !sm.paramTypes[i]) continue;
-                            if (!isAssignable(sm.paramTypes[i], argTypes[i])) {
-                                error(expr, "static method '" + structName + "::" +
-                                    methodName + "' argument " +
-                                    std::to_string(i + 1) + " type mismatch: expected '" +
-                                    sm.paramTypes[i]->name + "', got '" +
-                                    argTypes[i]->name + "'");
-                            }
-                        }
-                        return sm.returnType;
+                if (argTypes.size() != sm->paramTypes.size()) {
+                    error(expr, "static method '" + structName + "::" + methodName + "' argument count mismatch: expected " +
+                        std::to_string(sm->paramTypes.size()) + ", got " + std::to_string(argTypes.size()));
+                    return nullptr;
+                }
+                for (size_t i = 0; i < argTypes.size(); i++) {
+                    if (!argTypes[i] || !sm->paramTypes[i]) continue;
+                    if (!isAssignable(sm->paramTypes[i], argTypes[i])) {
+                        error(expr, "static method '" + structName + "::" +
+                            methodName + "' argument " +
+                            std::to_string(i + 1) + " type mismatch: expected '" +
+                            sm->paramTypes[i]->name + "', got '" +
+                            argTypes[i]->name + "'");
                     }
                 }
-
-                error(expr, "struct '" + instanceTI->name +
-                            "' has no static method '" + methodName + "'");
-                return nullptr;
+                return sm->returnType;
             }
         }
 
@@ -4588,42 +4573,33 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
             return nullptr;
         }
 
-        auto smIt = structMethods_.find(structName);
-        if (smIt == structMethods_.end()) {
-            // Still resolve args so variables are marked as used
+        auto* sm = findMethodInChain(structType, methodName);
+        if (!sm || !sm->isStatic) {
             if (auto* argList = smc->argList())
                 for (auto* argExpr : argList->expression())
                     resolveExprType(argExpr);
-            error(expr, "struct '" + structName + "' has no methods");
+            error(expr, "struct '" + structName + "' has no static method '" + methodName + "'");
             return nullptr;
         }
 
-        for (auto& sm : smIt->second) {
-            if (sm.name == methodName && sm.isStatic) {
-                if (argTypes.size() != sm.paramTypes.size()) {
-                    error(expr, "static method '" + structName + "::" + methodName +
-                        "' expects " + std::to_string(sm.paramTypes.size()) +
-                        " arguments " + formatParamTypes(sm.paramTypes) +
-                        ", got " + std::to_string(argTypes.size()));
-                } else {
-                    for (size_t i = 0; i < argTypes.size(); i++) {
-                        if (!argTypes[i] || !sm.paramTypes[i]) continue;
-                        if (!isAssignable(sm.paramTypes[i], argTypes[i])) {
-                            error(expr, "static method '" + structName + "::" +
-                                methodName + "' argument " +
-                                std::to_string(i + 1) + " type mismatch: expected '" +
-                                sm.paramTypes[i]->name + "', got '" +
-                                argTypes[i]->name + "'");
-                        }
-                    }
+        if (argTypes.size() != sm->paramTypes.size()) {
+            error(expr, "static method '" + structName + "::" + methodName +
+                "' expects " + std::to_string(sm->paramTypes.size()) +
+                " arguments " + formatParamTypes(sm->paramTypes) +
+                ", got " + std::to_string(argTypes.size()));
+        } else {
+            for (size_t i = 0; i < argTypes.size(); i++) {
+                if (!argTypes[i] || !sm->paramTypes[i]) continue;
+                if (!isAssignable(sm->paramTypes[i], argTypes[i])) {
+                    error(expr, "static method '" + structName + "::" +
+                        methodName + "' argument " +
+                        std::to_string(i + 1) + " type mismatch: expected '" +
+                        sm->paramTypes[i]->name + "', got '" +
+                        argTypes[i]->name + "'");
                 }
-                return sm.returnType;
             }
         }
-
-        error(expr, "struct '" + structName +
-                    "' has no static method '" + methodName + "'");
-        return nullptr;
+        return sm->returnType;
     }
 
     // ── Generic function call: max<int32>(a, b) ─────────────────────
@@ -4748,21 +4724,12 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
 
         auto mangledName = mangleGenericName(structBaseName, typeArgs);
 
-        // Find the method in the instantiated struct
-        auto smIt = structMethods_.find(mangledName);
-        if (smIt == structMethods_.end()) {
-            error(expr, "struct '" + mangledName + "' has no methods");
+        // Find the method in the instantiated struct (walks parent chain)
+        auto* sm = findMethodInChain(instanceTI, methodName);
+        if (sm && sm->isStatic) {
             if (auto* argList = gsmc->argList())
                 for (auto* a : argList->expression()) resolveExprType(a);
-            return nullptr;
-        }
-
-        for (auto& sm : smIt->second) {
-            if (sm.name == methodName && sm.isStatic) {
-                if (auto* argList = gsmc->argList())
-                    for (auto* a : argList->expression()) resolveExprType(a);
-                return sm.returnType;
-            }
+            return sm->returnType;
         }
 
         error(expr, "struct '" + mangledName + "' has no static method '" + methodName + "'");
@@ -5867,6 +5834,30 @@ void Checker::checkExtendDecl(LucisParser::ExtendDeclContext* decl) {
     }
     // Phase 1: sync extend methods to SemanticDB
     syncToSemanticDB_Extend(structName, structMethods_[structName]);
+}
+
+const Checker::StructMethodInfo* Checker::findMethodInChain(
+    const TypeInfo* ti, const std::string& name) const {
+    for (auto* t = ti; t; t = t->parentType) {
+        auto it = structMethods_.find(t->name);
+        if (it == structMethods_.end()) continue;
+        for (auto& m : it->second) {
+            if (m.name == name) return &m;
+        }
+    }
+    return nullptr;
+}
+
+std::vector<const Checker::StructMethodInfo*> Checker::collectMethodsInChain(
+    const TypeInfo* ti) const {
+    std::vector<const StructMethodInfo*> result;
+    for (auto* t = ti; t; t = t->parentType) {
+        auto it = structMethods_.find(t->name);
+        if (it == structMethods_.end()) continue;
+        for (auto& m : it->second)
+            result.push_back(&m);
+    }
+    return result;
 }
 
 void Checker::checkExtendMethodBodies(LucisParser::ExtendDeclContext* decl) {
