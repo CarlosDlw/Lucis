@@ -1449,15 +1449,29 @@ static void collectLocalsFromStmts(
           out[varName] = {typeName, 0};
         }
       } else {
+        // Resolve auto type from last init declarator for propagation
+        std::string resolvedAutoType;
+        if (typeName == "auto") {
+          for (auto it = vd->varDeclarator().rbegin();
+               it != vd->varDeclarator().rend(); ++it) {
+            if ((*it)->expression()) {
+              resolvedAutoType = inferExprTypeName((*it)->expression(), out, flc);
+              break;
+            }
+          }
+        }
         for (auto* d : vd->varDeclarator()) {
+          std::string varType = typeName;
           std::string varName = safeText(d->IDENTIFIER());
-          if (typeName == "auto" && d->expression()) {
+          if (varType == "auto" && d->expression()) {
             auto inferred = inferExprTypeName(d->expression(), out, flc);
             if (!inferred.empty())
-              typeName = inferred;
+              varType = inferred;
+          } else if (varType == "auto" && !resolvedAutoType.empty()) {
+            varType = resolvedAutoType;
           }
           if (!varName.empty())
-            out[varName] = {typeName, 0};
+            out[varName] = {varType, 0};
         }
       }
 
