@@ -34,6 +34,7 @@ void BuildCommand::buildArgs(ArgParser& parser) const {
     parser.addFlag("emit-asm",  '\0', "Emit assembly (.s) to stdout or -o path");
     parser.addFlag("emit-bc",   '\0', "Emit LLVM bitcode (.bc)");
     parser.addFlag("emit-obj",  '\0', "Emit object file (.o)");
+    parser.addFlag("emit-bin",  '\0', "Emit raw binary (.bin) via objcopy");
     parser.addFlag("recursive", 'r', "Include all modules in emit output (works with --emit-*)");
     parser.addOption("opt", 'O', "LEVEL", "Optimization level: 0, 1, 2, 3, s, z, or fast (default: 0)");
     parser.addFlag("lto", '\0', "Enable Link Time Optimization");
@@ -127,7 +128,7 @@ int BuildCommand::run(const ArgParser& parser) {
 
     // ── Resolve emit tasks (CLI-only) ─────────────────────────────────────
     struct EmitTask {
-        enum Type { LLVM, ASM, BC, OBJ };
+        enum Type { LLVM, ASM, BC, OBJ, BIN };
         Type type;
         std::string outPath;
     };
@@ -142,7 +143,7 @@ int BuildCommand::run(const ArgParser& parser) {
         if (!outputFile.empty())
             t.outPath = outputFile;
         if (etype == EmitTask::OBJ) hasObjEmit = true;
-        else hasTextEmit = true;
+        else if (etype != EmitTask::BIN) hasTextEmit = true;
         tasks.push_back(t);
     };
 
@@ -150,6 +151,7 @@ int BuildCommand::run(const ArgParser& parser) {
     addEmitTask("asm",  EmitTask::ASM);
     addEmitTask("bc",   EmitTask::BC);
     addEmitTask("obj",  EmitTask::OBJ);
+    addEmitTask("bin",  EmitTask::BIN);
 
     for (size_t i = 0; i < tasks.size(); ++i) {
         for (size_t j = i + 1; j < tasks.size(); ++j) {
@@ -690,6 +692,22 @@ int BuildCommand::run(const ArgParser& parser) {
                 std::cerr << "lucis: [scripts:pos] command failed with exit code " << ret << "\n";
                 return 1;
             }
+        }
+    }
+
+    // ── Emit raw binary via objcopy ───────────────────────────────
+    for (auto& t : tasks) {
+        if (t.type != EmitTask::BIN) continue;
+        std::string binPath = t.outPath.empty()
+            ? (fs::path(outputFile).parent_path() / (fs::path(outputFile).stem().string() + ".bin")).string()
+            : t.outPath;
+        std::string cmd = "objcopy -O binary " + outputFile + " " + binPath;
+        if (!pipeOpts.quiet)
+            std::cerr << "lucis: [emit-bin] " << cmd << "\n";
+        int ret = system(cmd.c_str());
+        if (ret != 0) {
+            std::cerr << "lucis: objcopy failed with exit code " << ret << "\n";
+            return 1;
         }
     }
 
