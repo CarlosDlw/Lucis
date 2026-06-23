@@ -2169,6 +2169,16 @@ llvm::Value* IRGen::coerceValueToType(llvm::Value* value,
     return value;
 }
 
+// Convert pointer to intptr for bitwise/shift operations.
+// LLVM does not allow bitwise ops directly on pointer types.
+llvm::Value* IRGen::ptrToIntIfNeeded(llvm::Value* val) {
+    if (val->getType()->isPointerTy()) {
+        auto* i64Ty = llvm::Type::getInt64Ty(*context_);
+        return builder_->CreatePtrToInt(val, i64Ty, "ptr2int");
+    }
+    return val;
+}
+
 // int32 x = 42;   or   []int32 arr = [1, 2, 3];   or   Vec<int32> v = [1, 2, 3];
 std::any IRGen::visitVarDeclStmt(LucisParser::VarDeclStmtContext* ctx) {
     // ── Tuple destructuring: auto (x, y) = expr; ────────────────────
@@ -2925,20 +2935,20 @@ std::any IRGen::visitCompoundAssignStmt(LucisParser::CompoundAssignStmtContext* 
         result = isFloat ? builder_->CreateFRem(cur, rhs) : builder_->CreateSRem(cur, rhs);
         break;
     case LucisLexer::AMP_ASSIGN:
-        result = builder_->CreateAnd(cur, rhs);
+        result = builder_->CreateAnd(ptrToIntIfNeeded(cur), ptrToIntIfNeeded(rhs));
         break;
     case LucisLexer::PIPE_ASSIGN:
-        result = builder_->CreateOr(cur, rhs);
+        result = builder_->CreateOr(ptrToIntIfNeeded(cur), ptrToIntIfNeeded(rhs));
         break;
     case LucisLexer::CARET_ASSIGN:
-        result = builder_->CreateXor(cur, rhs);
+        result = builder_->CreateXor(ptrToIntIfNeeded(cur), ptrToIntIfNeeded(rhs));
         break;
     case LucisLexer::LSHIFT_ASSIGN:
-        result = builder_->CreateShl(cur, rhs);
+        result = builder_->CreateShl(ptrToIntIfNeeded(cur), ptrToIntIfNeeded(rhs));
         break;
     case LucisLexer::RSHIFT_ASSIGN:
-        result = elemTI->isSigned ? builder_->CreateAShr(cur, rhs)
-                                  : builder_->CreateLShr(cur, rhs);
+        result = elemTI->isSigned ? builder_->CreateAShr(ptrToIntIfNeeded(cur), ptrToIntIfNeeded(rhs))
+                                  : builder_->CreateLShr(ptrToIntIfNeeded(cur), ptrToIntIfNeeded(rhs));
         break;
     default:
         result = cur;
@@ -3201,20 +3211,20 @@ std::any IRGen::visitFieldCompoundAssignStmt(
             result = isFloat ? builder_->CreateFRem(cur, rhs) : builder_->CreateSRem(cur, rhs);
             break;
         case LucisLexer::AMP_ASSIGN:
-            result = builder_->CreateAnd(cur, rhs);
+            result = builder_->CreateAnd(ptrToIntIfNeeded(cur), ptrToIntIfNeeded(rhs));
             break;
         case LucisLexer::PIPE_ASSIGN:
-            result = builder_->CreateOr(cur, rhs);
+            result = builder_->CreateOr(ptrToIntIfNeeded(cur), ptrToIntIfNeeded(rhs));
             break;
         case LucisLexer::CARET_ASSIGN:
-            result = builder_->CreateXor(cur, rhs);
+            result = builder_->CreateXor(ptrToIntIfNeeded(cur), ptrToIntIfNeeded(rhs));
             break;
         case LucisLexer::LSHIFT_ASSIGN:
-            result = builder_->CreateShl(cur, rhs);
+            result = builder_->CreateShl(ptrToIntIfNeeded(cur), ptrToIntIfNeeded(rhs));
             break;
         case LucisLexer::RSHIFT_ASSIGN:
-            result = currentTI->isSigned ? builder_->CreateAShr(cur, rhs)
-                                         : builder_->CreateLShr(cur, rhs);
+            result = currentTI->isSigned ? builder_->CreateAShr(ptrToIntIfNeeded(cur), ptrToIntIfNeeded(rhs))
+                                         : builder_->CreateLShr(ptrToIntIfNeeded(cur), ptrToIntIfNeeded(rhs));
             break;
         default:
             result = cur;
@@ -3321,20 +3331,20 @@ std::any IRGen::visitFieldCompoundAssignStmt(
         result = isFloat ? builder_->CreateFRem(cur, rhs) : builder_->CreateSRem(cur, rhs);
         break;
     case LucisLexer::AMP_ASSIGN:
-        result = builder_->CreateAnd(cur, rhs);
+        result = builder_->CreateAnd(ptrToIntIfNeeded(cur), ptrToIntIfNeeded(rhs));
         break;
     case LucisLexer::PIPE_ASSIGN:
-        result = builder_->CreateOr(cur, rhs);
+        result = builder_->CreateOr(ptrToIntIfNeeded(cur), ptrToIntIfNeeded(rhs));
         break;
     case LucisLexer::CARET_ASSIGN:
-        result = builder_->CreateXor(cur, rhs);
+        result = builder_->CreateXor(ptrToIntIfNeeded(cur), ptrToIntIfNeeded(rhs));
         break;
     case LucisLexer::LSHIFT_ASSIGN:
-        result = builder_->CreateShl(cur, rhs);
+        result = builder_->CreateShl(ptrToIntIfNeeded(cur), ptrToIntIfNeeded(rhs));
         break;
     case LucisLexer::RSHIFT_ASSIGN:
-        result = currentTI->isSigned ? builder_->CreateAShr(cur, rhs)
-                                     : builder_->CreateLShr(cur, rhs);
+        result = currentTI->isSigned ? builder_->CreateAShr(ptrToIntIfNeeded(cur), ptrToIntIfNeeded(rhs))
+                                     : builder_->CreateLShr(ptrToIntIfNeeded(cur), ptrToIntIfNeeded(rhs));
         break;
     default:
         result = cur;
@@ -10407,20 +10417,20 @@ std::any IRGen::visitDerefCompoundAssignStmt(LucisParser::DerefCompoundAssignStm
         result = isFloat ? builder_->CreateFRem(cur, rhs) : builder_->CreateSRem(cur, rhs);
         break;
     case LucisLexer::AMP_ASSIGN:
-        result = builder_->CreateAnd(cur, rhs);
+        result = builder_->CreateAnd(ptrToIntIfNeeded(cur), ptrToIntIfNeeded(rhs));
         break;
     case LucisLexer::PIPE_ASSIGN:
-        result = builder_->CreateOr(cur, rhs);
+        result = builder_->CreateOr(ptrToIntIfNeeded(cur), ptrToIntIfNeeded(rhs));
         break;
     case LucisLexer::CARET_ASSIGN:
-        result = builder_->CreateXor(cur, rhs);
+        result = builder_->CreateXor(ptrToIntIfNeeded(cur), ptrToIntIfNeeded(rhs));
         break;
     case LucisLexer::LSHIFT_ASSIGN:
-        result = builder_->CreateShl(cur, rhs);
+        result = builder_->CreateShl(ptrToIntIfNeeded(cur), ptrToIntIfNeeded(rhs));
         break;
     case LucisLexer::RSHIFT_ASSIGN:
-        result = ptrTI->pointeeType->isSigned ? builder_->CreateAShr(cur, rhs)
-                                              : builder_->CreateLShr(cur, rhs);
+        result = ptrTI->pointeeType->isSigned ? builder_->CreateAShr(ptrToIntIfNeeded(cur), ptrToIntIfNeeded(rhs))
+                                              : builder_->CreateLShr(ptrToIntIfNeeded(cur), ptrToIntIfNeeded(rhs));
         break;
     default:
         result = cur;
@@ -13888,12 +13898,15 @@ std::any IRGen::visitLogicalOrExpr(LucisParser::LogicalOrExprContext* ctx) {
 
 std::any IRGen::visitBitNotExpr(LucisParser::BitNotExprContext* ctx) {
     auto* val = castValue(visit(ctx->expression()));
+    val = ptrToIntIfNeeded(val);
     return static_cast<llvm::Value*>(builder_->CreateNot(val, "bitnot"));
 }
 
 std::any IRGen::visitLshiftExpr(LucisParser::LshiftExprContext* ctx) {
     auto* lhs = castValue(visit(ctx->expression(0)));
     auto* rhs = castValue(visit(ctx->expression(1)));
+    lhs = ptrToIntIfNeeded(lhs);
+    rhs = ptrToIntIfNeeded(rhs);
     auto [l, r] = promoteArithmetic(lhs, rhs);
     return static_cast<llvm::Value*>(builder_->CreateShl(l, r, "shl"));
 }
@@ -13901,6 +13914,8 @@ std::any IRGen::visitLshiftExpr(LucisParser::LshiftExprContext* ctx) {
 std::any IRGen::visitRshiftExpr(LucisParser::RshiftExprContext* ctx) {
     auto* lhs = castValue(visit(ctx->expression(0)));
     auto* rhs = castValue(visit(ctx->expression(1)));
+    lhs = ptrToIntIfNeeded(lhs);
+    rhs = ptrToIntIfNeeded(rhs);
     auto [l, r] = promoteArithmetic(lhs, rhs);
     auto* lhsTI = resolveExprTypeInfo(ctx->expression(0));
     bool signedShift = !lhsTI || lhsTI->isSigned;
@@ -13912,6 +13927,8 @@ std::any IRGen::visitRshiftExpr(LucisParser::RshiftExprContext* ctx) {
 std::any IRGen::visitBitAndExpr(LucisParser::BitAndExprContext* ctx) {
     auto* lhs = castValue(visit(ctx->expression(0)));
     auto* rhs = castValue(visit(ctx->expression(1)));
+    lhs = ptrToIntIfNeeded(lhs);
+    rhs = ptrToIntIfNeeded(rhs);
     auto [l, r] = promoteArithmetic(lhs, rhs);
     return static_cast<llvm::Value*>(builder_->CreateAnd(l, r, "bitand"));
 }
@@ -13919,6 +13936,8 @@ std::any IRGen::visitBitAndExpr(LucisParser::BitAndExprContext* ctx) {
 std::any IRGen::visitBitXorExpr(LucisParser::BitXorExprContext* ctx) {
     auto* lhs = castValue(visit(ctx->expression(0)));
     auto* rhs = castValue(visit(ctx->expression(1)));
+    lhs = ptrToIntIfNeeded(lhs);
+    rhs = ptrToIntIfNeeded(rhs);
     auto [l, r] = promoteArithmetic(lhs, rhs);
     return static_cast<llvm::Value*>(builder_->CreateXor(l, r, "bitxor"));
 }
@@ -13926,6 +13945,8 @@ std::any IRGen::visitBitXorExpr(LucisParser::BitXorExprContext* ctx) {
 std::any IRGen::visitBitOrExpr(LucisParser::BitOrExprContext* ctx) {
     auto* lhs = castValue(visit(ctx->expression(0)));
     auto* rhs = castValue(visit(ctx->expression(1)));
+    lhs = ptrToIntIfNeeded(lhs);
+    rhs = ptrToIntIfNeeded(rhs);
     auto [l, r] = promoteArithmetic(lhs, rhs);
     return static_cast<llvm::Value*>(builder_->CreateOr(l, r, "bitor"));
 }

@@ -168,6 +168,7 @@ private:
     // ── Type queries ─────────────────────────────────────────────────
     bool isNumeric(const TypeInfo* ti);
     bool isInteger(const TypeInfo* ti);
+    bool isIntegerOrPointer(const TypeInfo* ti);
     bool isConditionType(const TypeInfo* ti);
     bool isAssignable(const TypeInfo* lhs, const TypeInfo* rhs);
     void checkNegativeToUnsigned(const TypeInfo* target,

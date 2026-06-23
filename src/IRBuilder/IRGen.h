@@ -378,6 +378,7 @@ private:
     llvm::Value* coerceValueToType(llvm::Value* value,
                                    llvm::Type* targetType,
                                    bool assumeSignedInt = true);
+    llvm::Value* ptrToIntIfNeeded(llvm::Value* val);
 
     // ── User-defined generics ──────────────────────────────────────────────
     // Generic struct and function template registries

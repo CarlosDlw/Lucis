@@ -2107,7 +2107,7 @@ void registerSysNamespace(IntrinsicRegistry& reg, TypeRegistry& typeReg) {
             auto* ft = llvm::FunctionType::get(voidTy, {ptrTy}, false);
             auto* asmFn = llvm::InlineAsm::get(ft,
                 asmInsn + " ($0)",
-                "*m,~{memory}",
+                "r,~{memory}",
                 true, false, llvm::InlineAsm::AD_ATT);
             builder.CreateCall(asmFn, {args[0]});
             return llvm::UndefValue::get(voidTy);

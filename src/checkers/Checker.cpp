@@ -1862,6 +1862,10 @@ bool Checker::isInteger(const TypeInfo* ti) {
     return ti && ti->kind == TypeKind::Integer;
 }
 
+bool Checker::isIntegerOrPointer(const TypeInfo* ti) {
+    return ti && (ti->kind == TypeKind::Integer || ti->kind == TypeKind::Pointer);
+}
+
 bool Checker::isConditionType(const TypeInfo* ti) {
     if (!ti) return true;  // null → unknown, don't flag
     return ti->kind == TypeKind::Bool ||
@@ -2758,7 +2762,7 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
     // ── Bitwise NOT ──────────────────────────────────────────────────
     if (auto* bnot = dynamic_cast<LucisParser::BitNotExprContext*>(expr)) {
         auto* operand = resolveExprType(bnot->expression());
-        if (operand && !isInteger(operand))
+        if (operand && !isIntegerOrPointer(operand))
             error(expr, "operator '~' requires integer operand, got '" +
                              operand->name + "'");
         return operand;
@@ -2772,10 +2776,10 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
         auto opText = mul->op->getText();
 
         if (opText == "%") {
-            if (lhs && !isInteger(lhs))
+            if (lhs && !isIntegerOrPointer(lhs))
                 error(expr, "operator '%' requires integer operands, got '" +
                                  lhs->name + "'");
-            if (rhs && !isInteger(rhs))
+            if (rhs && !isIntegerOrPointer(rhs))
                 error(expr, "operator '%' requires integer operands, got '" +
                                  rhs->name + "'");
         } else {
@@ -2854,10 +2858,10 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
         auto exprs = shift->expression();
         auto* lhs = resolveExprType(exprs[0]);
         auto* rhs = resolveExprType(exprs[1]);
-        if (lhs && !isInteger(lhs))
+        if (lhs && !isIntegerOrPointer(lhs))
             error(expr, "operator '" + opText +
                              "' requires integer operands, got '" + lhs->name + "'");
-        if (rhs && !isInteger(rhs))
+        if (rhs && !isIntegerOrPointer(rhs))
             error(expr, "operator '" + opText +
                              "' requires integer operands, got '" + rhs->name + "'");
         return lhs;
@@ -2919,10 +2923,10 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
         auto exprs = ba->expression();
         auto* lhs = resolveExprType(exprs[0]);
         auto* rhs = resolveExprType(exprs[1]);
-        if (lhs && !isInteger(lhs))
+        if (lhs && !isIntegerOrPointer(lhs))
             error(expr, "operator '&' requires integer operands, got '" +
                              lhs->name + "'");
-        if (rhs && !isInteger(rhs))
+        if (rhs && !isIntegerOrPointer(rhs))
             error(expr, "operator '&' requires integer operands, got '" +
                              rhs->name + "'");
         if (lhs && rhs) return lhs->bitWidth >= rhs->bitWidth ? lhs : rhs;
@@ -2933,10 +2937,10 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
         auto exprs = bx->expression();
         auto* lhs = resolveExprType(exprs[0]);
         auto* rhs = resolveExprType(exprs[1]);
-        if (lhs && !isInteger(lhs))
+        if (lhs && !isIntegerOrPointer(lhs))
             error(expr, "operator '^' requires integer operands, got '" +
                              lhs->name + "'");
-        if (rhs && !isInteger(rhs))
+        if (rhs && !isIntegerOrPointer(rhs))
             error(expr, "operator '^' requires integer operands, got '" +
                              rhs->name + "'");
         if (lhs && rhs) return lhs->bitWidth >= rhs->bitWidth ? lhs : rhs;
@@ -2947,10 +2951,10 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
         auto exprs = bo->expression();
         auto* lhs = resolveExprType(exprs[0]);
         auto* rhs = resolveExprType(exprs[1]);
-        if (lhs && !isInteger(lhs))
+        if (lhs && !isIntegerOrPointer(lhs))
             error(expr, "operator '|' requires integer operands, got '" +
                              lhs->name + "'");
-        if (rhs && !isInteger(rhs))
+        if (rhs && !isIntegerOrPointer(rhs))
             error(expr, "operator '|' requires integer operands, got '" +
                              rhs->name + "'");
         if (lhs && rhs) return lhs->bitWidth >= rhs->bitWidth ? lhs : rhs;
@@ -7093,13 +7097,13 @@ void Checker::checkCompoundAssignStmt(LucisParser::CompoundAssignStmtContext* st
         if (needsNumeric && varType && !isNumeric(varType))
             error(stmt, "operator '" + opText +
                              "' requires numeric variable, got '" + varType->name + "'");
-        if (needsInteger && varType && !isInteger(varType))
+        if (needsInteger && varType && !isIntegerOrPointer(varType))
             error(stmt, "operator '" + opText +
                              "' requires integer variable, got '" + varType->name + "'");
         if (needsNumeric && rhsType && !isNumeric(rhsType))
             error(stmt, "operator '" + opText +
                              "' requires numeric operand, got '" + rhsType->name + "'");
-        if (needsInteger && rhsType && !isInteger(rhsType))
+        if (needsInteger && rhsType && !isIntegerOrPointer(rhsType))
             error(stmt, "operator '" + opText +
                              "' requires integer operand, got '" + rhsType->name + "'");
         // Type compatibility between variable and RHS
@@ -7231,13 +7235,13 @@ void Checker::checkFieldCompoundAssignStmt(LucisParser::FieldCompoundAssignStmtC
         if (needsNumeric && currentType && !isNumeric(currentType))
             error(stmt, "operator '" + opText +
                              "' requires numeric field, got '" + currentType->name + "'");
-        if (needsInteger && currentType && !isInteger(currentType))
+        if (needsInteger && currentType && !isIntegerOrPointer(currentType))
             error(stmt, "operator '" + opText +
                              "' requires integer field, got '" + currentType->name + "'");
         if (needsNumeric && rhsType && !isNumeric(rhsType))
             error(stmt, "operator '" + opText +
                              "' requires numeric operand, got '" + rhsType->name + "'");
-        if (needsInteger && rhsType && !isInteger(rhsType))
+        if (needsInteger && rhsType && !isIntegerOrPointer(rhsType))
             error(stmt, "operator '" + opText +
                              "' requires integer operand, got '" + rhsType->name + "'");
         // Type compatibility between field and RHS
@@ -7435,7 +7439,7 @@ void Checker::checkArrowCompoundAssignStmt(LucisParser::ArrowCompoundAssignStmtC
         if (needsNumeric && rhsType && !isNumeric(rhsType))
             error(stmt, "operator '" + opText +
                              "' requires numeric operand, got '" + rhsType->name + "'");
-        if (needsInteger && rhsType && !isInteger(rhsType))
+        if (needsInteger && rhsType && !isIntegerOrPointer(rhsType))
             error(stmt, "operator '" + opText +
                              "' requires integer operand, got '" + rhsType->name + "'");
         // Type compatibility between field and RHS
@@ -7528,7 +7532,7 @@ void Checker::checkDerefCompoundAssignStmt(LucisParser::DerefCompoundAssignStmtC
     if (needsNumeric && rhsType && !isNumeric(rhsType))
         error(stmt, "operator '" + opText +
                          "' requires numeric operand, got '" + rhsType->name + "'");
-    if (needsInteger && rhsType && !isInteger(rhsType))
+    if (needsInteger && rhsType && !isIntegerOrPointer(rhsType))
         error(stmt, "operator '" + opText +
                          "' requires integer operand, got '" + rhsType->name + "'");
 
