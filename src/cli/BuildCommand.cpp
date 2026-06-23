@@ -59,6 +59,18 @@ int BuildCommand::run(const ArgParser& parser) {
     bool useConfig = resolved.useConfig;
     auto& cfg = resolved.config;
 
+    // ── Run pre-build scripts (before everything) ─────────────────
+    if (useConfig && !cfg->scripts.pre.empty()) {
+        for (auto& cmd : cfg->scripts.pre) {
+            std::cerr << "lucis: [scripts:pre] " << cmd << "\n";
+            int ret = system(cmd.c_str());
+            if (ret != 0) {
+                std::cerr << "lucis: [scripts:pre] command failed with exit code " << ret << "\n";
+                return 1;
+            }
+        }
+    }
+
     LucisPipeline::Options pipeOpts;
     pipeOpts.inputFile = resolved.filePath;
     pipeOpts.quiet     = parser.has("quiet");
@@ -218,34 +230,8 @@ int BuildCommand::run(const ArgParser& parser) {
     std::unique_ptr<PipelineResult> pipeline;
     std::vector<std::string> cachedObjectFiles;
     if (!buildCached) {
-        // ── Run pre-build scripts ──────────────────────────────────
-        if (useConfig && !cfg->scripts.pre.empty()) {
-            for (auto& cmd : cfg->scripts.pre) {
-                if (!pipeOpts.quiet)
-                    std::cerr << "lucis: [scripts:pre] " << cmd << "\n";
-                int ret = system(cmd.c_str());
-                if (ret != 0) {
-                    std::cerr << "lucis: [scripts:pre] command failed with exit code " << ret << "\n";
-                    return 1;
-                }
-            }
-        }
-
         pipeline = LucisPipeline::run(pipeOpts);
         if (!pipeline || pipeline->hasErrors) return 1;
-
-        // ── Run post-build scripts ─────────────────────────────────
-        if (useConfig && !cfg->scripts.pos.empty()) {
-            for (auto& cmd : cfg->scripts.pos) {
-                if (!pipeOpts.quiet)
-                    std::cerr << "lucis: [scripts:pos] " << cmd << "\n";
-                int ret = system(cmd.c_str());
-                if (ret != 0) {
-                    std::cerr << "lucis: [scripts:pos] command failed with exit code " << ret << "\n";
-                    return 1;
-                }
-            }
-        }
 
         if (pipeline->buildDir.empty()) pipeline->buildDir = pipelineBuildDir;
         std::string cacheDir = pipeline->buildDir + "/cache";
@@ -677,6 +663,19 @@ int BuildCommand::run(const ArgParser& parser) {
         std::cerr << "lucis: failed to link binary '" << outputFile << "'\n";
         return 1;
     }
+
+    // ── Run post-build scripts (after everything) ─────────────────
+    if (useConfig && !cfg->scripts.pos.empty()) {
+        for (auto& cmd : cfg->scripts.pos) {
+            std::cerr << "lucis: [scripts:pos] " << cmd << "\n";
+            int ret = system(cmd.c_str());
+            if (ret != 0) {
+                std::cerr << "lucis: [scripts:pos] command failed with exit code " << ret << "\n";
+                return 1;
+            }
+        }
+    }
+
     std::cout << "lucis: binary written to '" << outputFile << "'\n";
     return 0;
 }
