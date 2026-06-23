@@ -3580,6 +3580,63 @@ void CompletionProvider::addStructFields(std::vector<CompletionItem> &items,
           substituteTypeParams(typeSpecToString(field->typeSpec()), subst);
       items.push_back(std::move(ci));
     }
+    // Walk parent chain for inherited fields
+    {
+      std::string current = lookupName;
+      std::unordered_set<std::string> seenParents;
+      while (true) {
+        std::string parentName;
+        for (auto* tld2 : tree->topLevelDecl()) {
+          auto* psd = tld2->structDecl();
+          if (psd && safeText(psd->IDENTIFIER(0)) == current &&
+              psd->COLON() && psd->IDENTIFIER().size() > 1) {
+            parentName = safeText(psd->IDENTIFIER(1));
+            break;
+          }
+        }
+        if (parentName.empty() && project && project->isValid()) {
+          for (auto& mod : project->registry().allModules()) {
+            auto* psym = project->registry().findSymbol(mod, current);
+            if (psym && psym->kind == ExportedSymbol::Struct) {
+              auto* psd = dynamic_cast<LucisParser::StructDeclContext*>(psym->decl);
+              if (psd && psd->COLON() && psd->IDENTIFIER().size() > 1)
+                parentName = safeText(psd->IDENTIFIER(1));
+              break;
+            }
+          }
+        }
+        if (parentName.empty() || !seenParents.insert(parentName).second) break;
+        current = parentName;
+
+        auto* psd = findStructDecl(tree, parentName);
+        if (psd) {
+          for (auto* field : psd->structField()) {
+            CompletionItem ci2;
+            ci2.label = safeText(field->IDENTIFIER());
+            ci2.kind = CompletionKind::Field;
+            ci2.detail = typeSpecToString(field->typeSpec());
+            items.push_back(std::move(ci2));
+          }
+        } else if (project && project->isValid()) {
+          for (auto& mod : project->registry().allModules()) {
+            auto* psym = project->registry().findSymbol(mod, parentName);
+            if (psym && psym->kind == ExportedSymbol::Struct) {
+              auto* pdecl = dynamic_cast<LucisParser::StructDeclContext*>(psym->decl);
+              if (pdecl) {
+                for (auto* field : pdecl->structField()) {
+                  CompletionItem ci2;
+                  ci2.label = safeText(field->IDENTIFIER());
+                  ci2.kind = CompletionKind::Field;
+                  ci2.detail = typeSpecToString(field->typeSpec());
+                  items.push_back(std::move(ci2));
+                }
+              }
+              break;
+            }
+          }
+        }
+      }
+    }
     return;
   }
 
@@ -3630,6 +3687,41 @@ void CompletionProvider::addStructFields(std::vector<CompletionItem> &items,
           ci.detail =
               substituteTypeParams(typeSpecToString(field->typeSpec()), subst);
           items.push_back(std::move(ci));
+        }
+        // Walk parent chain for inherited fields
+        {
+          std::string current = lookupName;
+          std::unordered_set<std::string> seenParents;
+          while (project && project->isValid()) {
+            std::string parentName;
+            for (auto& mod : project->registry().allModules()) {
+              auto* psym = project->registry().findSymbol(mod, current);
+              if (psym && psym->kind == ExportedSymbol::Struct) {
+                auto* psd = dynamic_cast<LucisParser::StructDeclContext*>(psym->decl);
+                if (psd && psd->COLON() && psd->IDENTIFIER().size() > 1)
+                  parentName = safeText(psd->IDENTIFIER(1));
+                break;
+              }
+            }
+            if (parentName.empty() || !seenParents.insert(parentName).second) break;
+            current = parentName;
+            for (auto& mod : project->registry().allModules()) {
+              auto* psym = project->registry().findSymbol(mod, parentName);
+              if (psym && psym->kind == ExportedSymbol::Struct) {
+                auto* pdecl = dynamic_cast<LucisParser::StructDeclContext*>(psym->decl);
+                if (pdecl) {
+                  for (auto* field : pdecl->structField()) {
+                    CompletionItem ci2;
+                    ci2.label = safeText(field->IDENTIFIER());
+                    ci2.kind = CompletionKind::Field;
+                    ci2.detail = typeSpecToString(field->typeSpec());
+                    items.push_back(std::move(ci2));
+                  }
+                }
+                break;
+              }
+            }
+          }
         }
         return;
       }
