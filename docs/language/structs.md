@@ -30,15 +30,23 @@ Fields follow the standard type-first declaration syntax.
 
 ## Struct Literals
 
-Structs are instantiated using a literal syntax with named fields:
+Structs are instantiated using named or positional field syntax:
 
 ```
+// Named fields (order doesn't matter)
 Point p = Point { x: 10, y: 20 };
-println(p.x);   // 10
-println(p.y);   // 20
+
+// Positional fields (must match declaration order)
+Point q = Point { 10, 20 };
 ```
 
-All fields must be specified in the literal.
+With inherited structs, parent fields come first in positional order:
+```
+struct Animal { string name; int32 age; }
+struct Cat : Animal {}
+
+Cat c = Cat { "garfield", 7 };  // name, age
+```
 
 ---
 
@@ -238,6 +246,97 @@ println(p.isActive());     // true
 p.deactivate();
 println(p.isActive());     // false
 ```
+
+---
+
+## Struct Inheritance
+
+Structs can inherit fields and methods from a parent struct using the `:` syntax:
+
+```
+struct Animal {
+    string name;
+    int32 age;
+}
+
+extend Animal {
+    fn speak(&self) void {
+        printf("{s} makes a sound\n", self->name);
+    }
+}
+
+struct Cat : Animal {}
+struct Dog : Animal {}
+```
+
+### Inherited Fields
+
+All fields from the parent are flattened into the child. They are accessible directly:
+
+```
+Cat cat = Cat { name: "garfield", age: 7 };
+println(cat.name);   // "garfield"
+println(cat.age);    // 7
+```
+
+Struct literals accept values in field order (parent fields first):
+
+```
+Cat cat = Cat { "garfield", 7 };  // positional: name, age
+```
+
+Multi-level inheritance is supported:
+
+```
+struct Position { usize line; usize column; }
+struct Source : Position { string text; }
+struct Lexer  : Source   { usize pos; }
+
+// Lexer has: line, column (from Position), text (from Source), pos (own)
+```
+
+### Inherited Methods
+
+Methods defined via `extend` on a parent are automatically available on child types:
+
+```
+Cat cat = Cat { "garfield", 7 };
+cat.speak();  // "garfield makes a sound" — inherited from Animal
+```
+
+Child types can override parent methods by defining their own `extend` block:
+
+```
+extend Dog {
+    fn speak(&self) void {
+        printf("woof\n");
+    }
+}
+
+Dog dog = Dog { "fido", 5 };
+dog.speak();  // "woof" — overridden
+```
+
+### Static Method Inheritance
+
+Static methods are also inherited through the parent chain:
+
+```
+extend Animal {
+    fn create(string name) Animal {
+        return Animal { name: name, age: 0 };
+    }
+}
+
+Cat cat = Cat::create("whiskers");  // inherited from Animal
+```
+
+### LSP Support
+
+The language server provides full support for inherited members:
+- **Completions**: typing `cat.` suggests fields from both `Cat` and `Animal`
+- **Hover**: hovering over inherited methods shows the parent's documentation
+- **Go-to-definition**: jumps to the original declaration in the parent struct
 
 ---
 
