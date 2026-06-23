@@ -1,4 +1,5 @@
 use std::log::print;
+use std::conv::{ toHex, toBinary, toOctal };
 
 /**
  * Formats and prints a string to the standard output using a va_list.
@@ -62,6 +63,22 @@ fn vprintf(string format, va_list va) void {
                 case 'p' {
                     print(lucis::unsafe::va_arg_ptr(va));
                 }
+                case 'x' {
+                    uint64 v = lucis::unsafe::va_arg<uint64>(va);
+                    print(toHex(v));
+                }
+                case 'X' {
+                    uint64 v = lucis::unsafe::va_arg<uint64>(va);
+                    print(toHex(v).toUpper());
+                }
+                case 't' {
+                    uint64 v = lucis::unsafe::va_arg<uint64>(va);
+                    print(toBinary(v));
+                }
+                case 'o' {
+                    uint64 v = lucis::unsafe::va_arg<uint64>(va);
+                    print(toOctal(v));
+                }
             }
 
             // Consume characters until the closing brace
@@ -89,6 +106,10 @@ fn vprintf(string format, va_list va) void {
  *  - {f:N}: float64 with N decimal places
  *  - {b}: bool (prints "true" or "false")
  *  - {p}: ptr (prints the pointer)
+ *  - {x}: hex (prints the hex value)
+ *  - {X}: hex (prints the hex value, uppercase)
+ *  - {t}: binary (prints the binary value)
+ *  - {o}: octal (prints the octal value)
  *  - {{: prints a literal '{'
  *
  * @param format The format string

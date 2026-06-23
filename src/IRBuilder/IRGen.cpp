@@ -15779,6 +15779,12 @@ const TypeInfo* IRGen::resolveExprTypeInfo(LucisParser::ExpressionContext* ctx) 
                     return typeRegistry_.lookup("bool");
             }
 
+            // Builtins from std::conv and similar namespaces
+            if (fname == "toHex" || fname == "toBinary" || fname == "toOctal")
+                return typeRegistry_.lookup("string");
+            if (fname == "fromHex")
+                return typeRegistry_.lookup("uint64");
+
             auto fit = genericFuncTemplates_.find(fname);
             if (fit != genericFuncTemplates_.end()) {
                 std::vector<const TypeInfo*> argTypes;
@@ -17322,7 +17328,6 @@ IRGen::visitMethodCallExpr(LucisParser::MethodCallExprContext* ctx) {
                 for (auto* e : extArgExprs) consumeExprIfOwnedLocal(e);
                 return static_cast<llvm::Value*>(extResult);
             }
-        }
 
         // ── Struct field function pointer call ─────────────────────────
         for (auto& field : receiverTI->fields) {
@@ -17392,6 +17397,7 @@ IRGen::visitMethodCallExpr(LucisParser::MethodCallExprContext* ctx) {
                 return static_cast<llvm::Value*>(result);
             }
         }
+    }
 
     // ── String method dispatch ───────────────────────────────────────
     if (receiverTI && receiverTI->kind == TypeKind::String && recvArrayDims == 0) {
