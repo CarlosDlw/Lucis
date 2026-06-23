@@ -1995,14 +1995,6 @@ void Checker::checkNegativeToUnsigned(const TypeInfo* target,
     // Case 4: Explicit cast (expr as uint32) → user took responsibility
     if (dynamic_cast<LucisParser::CastExprContext*>(expr))
         return;
-
-    // Case 5: General signed → unsigned (function return, variable, etc.)
-    auto* rhsType = resolveExprType(expr);
-    if (rhsType && rhsType->kind == TypeKind::Integer && rhsType->isSigned) {
-        error(ctx, "cannot implicitly assign signed type '" + rhsType->name +
-                    "' to unsigned type '" + target->name +
-                    "'; use an explicit cast: 'expr as " + target->name + "'");
-    }
 }
 
 // ═══════════════════════════════════════════════════════════════════════
