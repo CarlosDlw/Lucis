@@ -1095,22 +1095,9 @@ bool Checker::check(LucisParser::ProgramContext* tree) {
             }
         }
 
-        // Phase B: structs and unions (may reference enums/aliases from phase A)
+        // Phase B: unions (no inheritance, single pass)
         for (auto* sym : extSyms) {
-            if (sym->kind == ExportedSymbol::Struct) {
-                if (genericStructTemplates_.count(sym->name))
-                    continue;
-                auto* existing = typeRegistry_.lookup(sym->name);
-                if (existing && !(existing->kind == TypeKind::Struct && existing->fields.empty() && existing->bitWidth == 0))
-                    continue;
-                auto* decl = static_cast<LucisParser::StructDeclContext*>(sym->decl);
-                for (auto* field : decl->structField())
-                    ensureTypeDependencyFromSpec(
-                        ensureTypeDependencyFromSpec, field->typeSpec(), currentModulePath_);
-                auto* recheck = typeRegistry_.lookup(sym->name);
-                if (!recheck || (recheck->kind == TypeKind::Struct && recheck->fields.empty() && recheck->bitWidth == 0))
-                    checkStructDecl(decl);
-            } else if (sym->kind == ExportedSymbol::Union) {
+            if (sym->kind == ExportedSymbol::Union) {
                 if (genericUnionTemplates_.count(sym->name))
                     continue;
                 auto* existing = typeRegistry_.lookup(sym->name);
@@ -1121,6 +1108,39 @@ bool Checker::check(LucisParser::ProgramContext* tree) {
                     ensureTypeDependencyFromSpec(
                         ensureTypeDependencyFromSpec, field->typeSpec(), currentModulePath_);
                 checkUnionDecl(decl);
+            }
+        }
+        
+        // Phase B: structs (retry loop for parent ordering)
+        std::unordered_set<std::string> processed;
+        bool madeProgress = true;
+        while (madeProgress) {
+            madeProgress = false;
+            for (auto* sym : extSyms) {
+                if (sym->kind == ExportedSymbol::Struct) {
+                    if (processed.count(sym->name)) continue;
+                    if (genericStructTemplates_.count(sym->name)) continue;
+                    auto* existing = typeRegistry_.lookup(sym->name);
+                    if (existing && !(existing->kind == TypeKind::Struct && existing->fields.empty() && existing->bitWidth == 0)) {
+                        processed.insert(sym->name);
+                        continue;
+                    }
+                    auto* decl = static_cast<LucisParser::StructDeclContext*>(sym->decl);
+
+                    if (decl->COLON() && decl->IDENTIFIER().size() > 1) {
+                        std::string parentName = decl->IDENTIFIER(1)->getText();
+                        auto* parentTI = typeRegistry_.lookup(parentName);
+                        if (!parentTI || parentTI->kind != TypeKind::Struct || parentTI->fields.empty())
+                            continue;
+                    }
+
+                    for (auto* field : decl->structField())
+                        ensureTypeDependencyFromSpec(
+                            ensureTypeDependencyFromSpec, field->typeSpec(), currentModulePath_);
+                    checkStructDecl(decl);
+                    processed.insert(sym->name);
+                    madeProgress = true;
+                }
             }
         }
         for (auto& [symName, ns] : userImports_) {
@@ -1863,6 +1883,13 @@ bool Checker::isAssignable(const TypeInfo* lhs, const TypeInfo* rhs) {
 
     // Same kind
     if (lhs->kind == rhs->kind) return true;
+
+    // Struct inheritance: Child is-assignable-to Parent
+    if (lhs->kind == TypeKind::Struct && rhs->kind == TypeKind::Struct) {
+        for (auto* ti = rhs; ti; ti = ti->parentType) {
+            if (ti == lhs) return true;
+        }
+    }
 
     return false;
 }
