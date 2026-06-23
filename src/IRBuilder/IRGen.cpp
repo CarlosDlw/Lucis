@@ -7175,6 +7175,13 @@ std::any IRGen::visitBoolLitExpr(LucisParser::BoolLitExprContext* ctx) {
         llvm::ConstantInt::get(llvm::Type::getInt1Ty(*context_), v ? 1 : 0));
 }
 
+static bool allHex(const std::string& s) {
+    return !s.empty() && s.find_first_not_of("0123456789abcdefABCDEF") == std::string::npos;
+}
+static bool allOct(const std::string& s) {
+    return !s.empty() && s.find_first_not_of("01234567") == std::string::npos;
+}
+
 static std::string utf8Encode(uint32_t cp) {
     std::string s;
     if (cp <= 0x7F) {
@@ -7289,7 +7296,10 @@ std::any IRGen::visitStrLitExpr(LucisParser::StrLitExprContext* ctx) {
                 case 'x': {
                     if (i + 2 < escaped.size()) {
                         auto hex = escaped.substr(i + 1, 2);
-                        str += static_cast<char>(std::stoi(hex, nullptr, 16));
+                        if (allHex(hex))
+                            str += static_cast<char>(std::stoi(hex, nullptr, 16));
+                        else
+                            std::cerr << "lucis: invalid hex escape \\x" << hex << "\n";
                         i += 2;
                     }
                     break;
@@ -7297,8 +7307,12 @@ std::any IRGen::visitStrLitExpr(LucisParser::StrLitExprContext* ctx) {
                 case 'u': {
                     if (i + 4 < escaped.size()) {
                         auto hex = escaped.substr(i + 1, 4);
-                        auto cp = static_cast<uint32_t>(std::stoul(hex, nullptr, 16));
-                        str += utf8Encode(cp);
+                        if (allHex(hex)) {
+                            auto cp = static_cast<uint32_t>(std::stoul(hex, nullptr, 16));
+                            str += utf8Encode(cp);
+                        } else {
+                            std::cerr << "lucis: invalid unicode escape \\u" << hex << "\n";
+                        }
                         i += 4;
                     }
                     break;
@@ -7306,8 +7320,12 @@ std::any IRGen::visitStrLitExpr(LucisParser::StrLitExprContext* ctx) {
                 case 'U': {
                     if (i + 8 < escaped.size()) {
                         auto hex = escaped.substr(i + 1, 8);
-                        auto cp = static_cast<uint32_t>(std::stoul(hex, nullptr, 16));
-                        str += utf8Encode(cp);
+                        if (allHex(hex)) {
+                            auto cp = static_cast<uint32_t>(std::stoul(hex, nullptr, 16));
+                            str += utf8Encode(cp);
+                        } else {
+                            std::cerr << "lucis: invalid unicode escape \\U" << hex << "\n";
+                        }
                         i += 8;
                     }
                     break;
@@ -7320,7 +7338,10 @@ std::any IRGen::visitStrLitExpr(LucisParser::StrLitExprContext* ctx) {
                             ++octLen;
                         }
                         auto oct = escaped.substr(i - octLen + 1, octLen);
-                        str += static_cast<char>(std::stoi(oct, nullptr, 8));
+                        if (allOct(oct))
+                            str += static_cast<char>(std::stoi(oct, nullptr, 8));
+                        else
+                            std::cerr << "lucis: invalid octal escape \\" << oct << "\n";
                     } else {
                         str += '\\';
                         str += next;
@@ -7372,15 +7393,22 @@ std::any IRGen::visitCStrLitExpr(LucisParser::CStrLitExprContext* ctx) {
                 case 'x':
                     if (i + 2 < escaped.size()) {
                         auto hex = escaped.substr(i + 1, 2);
-                        str += static_cast<char>(std::stoi(hex, nullptr, 16));
+                        if (allHex(hex))
+                            str += static_cast<char>(std::stoi(hex, nullptr, 16));
+                        else
+                            std::cerr << "lucis: invalid hex escape \\x" << hex << "\n";
                         i += 2;
                     }
                     break;
                 case 'u': {
                     if (i + 4 < escaped.size()) {
                         auto hex = escaped.substr(i + 1, 4);
-                        auto cp = static_cast<uint32_t>(std::stoul(hex, nullptr, 16));
-                        str += utf8Encode(cp);
+                        if (allHex(hex)) {
+                            auto cp = static_cast<uint32_t>(std::stoul(hex, nullptr, 16));
+                            str += utf8Encode(cp);
+                        } else {
+                            std::cerr << "lucis: invalid unicode escape \\u" << hex << "\n";
+                        }
                         i += 4;
                     }
                     break;
@@ -7388,8 +7416,12 @@ std::any IRGen::visitCStrLitExpr(LucisParser::CStrLitExprContext* ctx) {
                 case 'U': {
                     if (i + 8 < escaped.size()) {
                         auto hex = escaped.substr(i + 1, 8);
-                        auto cp = static_cast<uint32_t>(std::stoul(hex, nullptr, 16));
-                        str += utf8Encode(cp);
+                        if (allHex(hex)) {
+                            auto cp = static_cast<uint32_t>(std::stoul(hex, nullptr, 16));
+                            str += utf8Encode(cp);
+                        } else {
+                            std::cerr << "lucis: invalid unicode escape \\U" << hex << "\n";
+                        }
                         i += 8;
                     }
                     break;
@@ -7402,7 +7434,10 @@ std::any IRGen::visitCStrLitExpr(LucisParser::CStrLitExprContext* ctx) {
                             ++octLen;
                         }
                         auto oct = escaped.substr(i - octLen + 1, octLen);
-                        str += static_cast<char>(std::stoi(oct, nullptr, 8));
+                        if (allOct(oct))
+                            str += static_cast<char>(std::stoi(oct, nullptr, 8));
+                        else
+                            std::cerr << "lucis: invalid octal escape \\" << oct << "\n";
                     } else {
                         str += '\\';
                         str += next;
