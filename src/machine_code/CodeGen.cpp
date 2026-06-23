@@ -335,12 +335,17 @@ bool CodeGen::linkObjectFiles(const std::vector<std::string>& objectPaths,
 
 // ── Private helpers ──────────────────────────────────────────────────────────
 
-static bool emitToFile(llvm::Module* module, const std::string& outputPath, llvm::CodeGenFileType fileType, bool pic) {
+static bool emitToFile(llvm::Module* module, const std::string& outputPath, llvm::CodeGenFileType fileType, bool pic, const std::string& targetTripleStr = "") {
     llvm::InitializeNativeTarget();
     llvm::InitializeNativeTargetAsmParser();
     llvm::InitializeNativeTargetAsmPrinter();
 
-    llvm::Triple targetTriple(llvm::sys::getDefaultTargetTriple());
+    auto tripleStr = targetTripleStr.empty()
+        ? module->getTargetTriple().str()
+        : targetTripleStr;
+    if (tripleStr.empty())
+        tripleStr = llvm::sys::getDefaultTargetTriple();
+    llvm::Triple targetTriple(tripleStr);
 
     std::string lookupError;
     const auto* target = lookupTargetCompat(targetTriple, lookupError, 0);
@@ -378,17 +383,17 @@ static bool emitToFile(llvm::Module* module, const std::string& outputPath, llvm
     return true;
 }
 
-bool CodeGen::emitObjectFile(llvm::Module* module, const std::string& objectPath, bool pic) {
-    return emitToFile(module, objectPath, LUCIS_CGFT_OBJECT, pic);
+bool CodeGen::emitObjectFile(llvm::Module* module, const std::string& objectPath, bool pic, const std::string& targetTriple) {
+    return emitToFile(module, objectPath, LUCIS_CGFT_OBJECT, pic, targetTriple);
 }
 
-bool CodeGen::emitAssembly(llvm::Module* module, const std::string& assemblyPath, bool pic) {
+bool CodeGen::emitAssembly(llvm::Module* module, const std::string& assemblyPath, bool pic, const std::string& targetTriple) {
 #ifdef LLVM_VERSION_18_OR_NEWER
     auto type = llvm::CodeGenFileType::AssemblyFile;
 #else
     auto type = llvm::CGFT_AssemblyFile;
 #endif
-    return emitToFile(module, assemblyPath, type, pic);
+    return emitToFile(module, assemblyPath, type, pic, targetTriple);
 }
 
 #include <llvm/Bitcode/BitcodeWriter.h>

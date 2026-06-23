@@ -58,6 +58,10 @@ std::optional<LucisConfig> LucisConfig::load(const std::string& yamlPath) {
             cfg.build.staticLink= boolOrDefault(b, "static", false);
             cfg.build.shared    = boolOrDefault(b, "shared", false);
             cfg.build.fpic      = boolOrDefault(b, "fpic", true);
+            cfg.build.noStd     = boolOrDefault(b, "no_std", false);
+            cfg.build.target    = optOrDefault(b, "target", "");
+            cfg.build.codeModel = optOrDefault(b, "code_model", "");
+            cfg.build.entry     = optOrDefault(b, "entry", "");
         }
         {
             auto r = root["run"];
@@ -150,7 +154,8 @@ LucisConfig::validate(const std::string& yamlPath) {
         if (root["build"]["opt_level"].IsDefined() && !root["build"]["opt_level"].IsScalar())
             msgs.push_back({"build.opt_level", "expected scalar"});
         static const std::vector<std::string> buildKeys = {
-            "opt_level", "lto", "static", "shared", "fpic"
+            "opt_level", "lto", "static", "shared", "fpic",
+            "no_std", "target", "code_model", "entry"
         };
         checkUnknownKeys(root["build"], "build", buildKeys, msgs);
     }

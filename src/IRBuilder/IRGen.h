@@ -47,6 +47,12 @@ public:
     // Phase 2: set SemanticDB for authoritative type data (avoids re-walking AST)
     void setSemanticDB(const semantic::SemanticDB* db) { semanticDB_ = db; }
 
+    // Set custom target triple (freestanding/cross-compilation). Empty = use host default.
+    void setTargetTriple(const std::string& triple) { targetTriple_ = triple; }
+
+    // Disable stdlib/libruntime dependencies (kernel/freestanding)
+    void setNoStd(bool v) { noStd_ = v; }
+
     // ── Visitor overrides ───────────────────────────────────────────────────
     std::any visitProgram(LucisParser::ProgramContext* ctx)             override;
     std::any visitStructDecl(LucisParser::StructDeclContext* ctx)       override;
@@ -310,6 +316,10 @@ private:
 
     // C bindings from parsed #include headers
     const CBindings* cBindings_ = nullptr;
+
+    // Custom target triple (empty = use host default)
+    std::string targetTriple_;
+    bool noStd_ = false;
 
     // C enum constants: qualified name → integer value
     std::unordered_map<std::string, int64_t> cEnumConstants_;

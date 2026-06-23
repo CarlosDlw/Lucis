@@ -18,6 +18,10 @@ struct LucisConfig {
         bool staticLink;
         bool shared;
         bool fpic;
+        bool noStd;
+        std::string target;
+        std::string codeModel;
+        std::string entry;
     } build;
 
     struct RunSettings {

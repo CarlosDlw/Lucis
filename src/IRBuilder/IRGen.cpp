@@ -252,7 +252,10 @@ std::unique_ptr<IRModule> IRGen::generate(LucisParser::ProgramContext* tree,
     auto mod = std::make_unique<llvm::Module>(moduleName, *ctx);
     
     // Set target triple early to avoid LLVM warnings about overriding it later
-    mod->setTargetTriple(llvm::Triple(llvm::sys::getDefaultTargetTriple()));
+    auto triple = targetTriple_.empty()
+        ? llvm::sys::getDefaultTargetTriple()
+        : targetTriple_;
+    mod->setTargetTriple(llvm::Triple(triple));
     
     llvm::IRBuilder<> builder(*ctx);
 

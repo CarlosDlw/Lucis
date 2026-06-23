@@ -43,6 +43,9 @@ void BuildCommand::buildArgs(ArgParser& parser) const {
     parser.addOption("link-arg", '\0', "FLAG", "Pass argument directly to linker (repeatable)", true);
     parser.addOption("rpath",    '\0', "DIR", "Add runtime library search path", false);
     parser.addFlag("quiet", 'q', "Suppress pipeline logs");
+    parser.addFlag("no-std", '\0', "Build without standard library (freestanding/kernel)");
+    parser.addOption("target", '\0', "TRIPLE", "Target triple for cross-compilation (e.g. x86_64-unknown-none)");
+    parser.addOption("entry", '\0', "SYMBOL", "Set the entry point symbol (default: main)");
     parser.addOption("link", 'l', "LIB", "Link against a library (repeatable)", true);
     parser.addOption("lib-path", 'L', "DIR", "Add library search path (repeatable)", true);
     parser.addOption("include", 'I', "DIR", "Add include search path (repeatable)", true);
@@ -81,6 +84,16 @@ int BuildCommand::run(const ArgParser& parser) {
     }
 
     pipeOpts.sourcePaths = useConfig ? cfg->sourcePaths : std::vector<std::string>{"src/"};
+
+    // ── Target / no-std / entry ─────────────────────────────────────
+    pipeOpts.noStd = parser.has("no-std") ? true : (useConfig ? cfg->build.noStd : false);
+    pipeOpts.targetTriple = parser.get("target");
+    if (pipeOpts.targetTriple.empty() && useConfig)
+        pipeOpts.targetTriple = cfg->build.target;
+    pipeOpts.codeModel = useConfig ? cfg->build.codeModel : "";
+    pipeOpts.entryPoint = parser.get("entry");
+    if (pipeOpts.entryPoint.empty() && useConfig)
+        pipeOpts.entryPoint = cfg->build.entry;
 
     pipeOpts.userLinkerFlags = parser.getAll("link");
     if (useConfig && pipeOpts.userLinkerFlags.empty())
@@ -320,6 +333,8 @@ int BuildCommand::run(const ArgParser& parser) {
             irGen.setModuleContext(pipeline->registry.get(), unit.modulePath, unit.filePath, unit.isStdlib);
             irGen.setCBindings(pipeline->cBindings.get());
             irGen.setSemanticDB(pipeline->semanticDB.get());
+            irGen.setTargetTriple(pipeOpts.targetTriple);
+            irGen.setNoStd(pipeOpts.noStd);
             auto irMod = irGen.generate(unit.parseResult->tree, unit.filePath);
             if (!irMod) {
                 std::cerr << "lucis: IR generation failed for '" << unit.filePath << "'\n";

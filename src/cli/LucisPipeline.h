@@ -44,6 +44,10 @@ public:
         std::vector<std::string> stdlibPaths;
         std::vector<std::string> sourcePaths;
         bool quiet = false;
+        bool noStd = false;
+        std::string targetTriple;
+        std::string codeModel;
+        std::string entryPoint;
     };
 
     static std::unique_ptr<PipelineResult> run(const Options& opts);

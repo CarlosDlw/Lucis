@@ -34,7 +34,7 @@ build:
 	@if [ ! -f "$(BUILD_DIR)/Makefile" ] && [ ! -f "$(BUILD_DIR)/build.ninja" ]; then \
 		$(MAKE) configure; \
 	fi
-	@cmake --build $(BUILD_DIR) --parallel $(NPROC)
+	@cmake --build $(BUILD_DIR)
 
 ## install  — instala o compilador e a stdlib no sistema
 install: build
