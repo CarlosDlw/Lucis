@@ -5615,8 +5615,7 @@ static void collectLocalsFromStmts(
                     auto lt = baseName.find('<');
                     if (lt != std::string::npos) baseName = baseName.substr(0, lt);
                     auto* ed = findEnumDeclForInference(baseName, flc);
-                    if (ed) {
-                        for (auto* arm : me->matchArm()) {
+                    for (auto* arm : me->matchArm()) {
                             bool inArm = false;
                             if (arm->block() && cursorInsideNode(arm->block(), beforeLine)) {
                                 inArm = true;
@@ -5627,8 +5626,9 @@ static void collectLocalsFromStmts(
                                     inArm = true;
                             }
                             if (inArm) {
-                                std::unordered_map<std::string, std::string> subst;
-                                if (!matchedType.empty() && ed->typeParamList()) {
+                                if (ed) {
+                                    std::unordered_map<std::string, std::string> subst;
+                                    if (!matchedType.empty() && ed->typeParamList()) {
                                     std::string base;
                                     std::vector<std::string> args;
                                     if (parseGenericInstance(matchedType, base, args)) {
@@ -5766,6 +5766,17 @@ static void collectLocalsFromStmts(
             }
             if (tc->finallyClause())
                 collectLocalsFromBlock(tc->finallyClause()->block(), beforeLine, out, flc);
+        }
+        // Match expression as statement: collect locals from arm bodies
+        if (auto* es = stmt->exprStmt()) {
+            if (auto* me = dynamic_cast<LucisParser::MatchExprContext*>(es->expression())) {
+                for (auto* arm : me->matchArm()) {
+                    if (arm->block() && cursorInsideNode(arm->block(), beforeLine)) {
+                        collectLocalsFromBlock(arm->block(), beforeLine, out, flc);
+                        break;
+                    }
+                }
+            }
         }
         // Structural blocks — recurse into body to collect visible locals
         if (auto* nb = stmt->nakedBlockStmt())

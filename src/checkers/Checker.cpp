@@ -2501,12 +2501,20 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
                 }
             }
 
-            // Resolve body type
+            // Resolve body type — must happen before scope cleanup
             const TypeInfo* bodyType = nullptr;
             if (arm->block()) {
-                checkBlock(arm->block(), currentReturnType_);
-                // Infer type from last statement (or return statement)
+                auto savedLocals = locals_;
+                ++scopeDepth_;
+                bool terminated = false;
                 auto* block = arm->block();
+                for (auto* stmt : block->statement()) {
+                    if (terminated) break;
+                    checkStmt(stmt, currentReturnType_, terminated);
+                }
+                --scopeDepth_;
+
+                // Resolve type while variables are still in scope
                 auto stmts = block->statement();
                 if (!stmts.empty()) {
                     auto* lastStmt = stmts.back();
@@ -2524,6 +2532,8 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
                 } else {
                     bodyType = typeRegistry_.lookup("void");
                 }
+
+                locals_ = savedLocals;
             } else {
                 size_t bodyExprIdx = arm->IF() ? 1 : 0;
                 bodyType = resolveExprType(arm->expression(bodyExprIdx));

@@ -1485,7 +1485,7 @@ static void collectLocalsFromStmts(
         }
       }
 
-      // Match expression: inject pattern bindings
+      // Match expression: inject pattern bindings and collect block locals
       if (auto* me = dynamic_cast<LucisParser::MatchExprContext*>(vd->expression())) {
         auto matchedType = inferExprTypeName(me->expression(), out, flc);
         if (!matchedType.empty() && flc && flc->tree) {
@@ -1493,18 +1493,19 @@ static void collectLocalsFromStmts(
           auto lt = baseName.find('<');
           if (lt != std::string::npos) baseName = baseName.substr(0, lt);
           auto* ed = findEnumDeclForInference(baseName, flc);
-          if (ed) {
-            for (auto* arm : me->matchArm()) {
-              bool inArm = false;
-              if (arm->block() && cursorInsideNode(arm->block(), beforeLine)) {
+          for (auto* arm : me->matchArm()) {
+            bool inArm = false;
+            if (arm->block() && cursorInsideNode(arm->block(), beforeLine)) {
+              inArm = true;
+            } else if (!arm->block()) {
+              auto armExprs = arm->expression();
+              auto* bodyExpr = armExprs.empty() ? nullptr : armExprs.back();
+              if (bodyExpr && cursorInsideNode(bodyExpr, beforeLine))
                 inArm = true;
-              } else if (!arm->block()) {
-                auto armExprs = arm->expression();
-                auto* bodyExpr = armExprs.empty() ? nullptr : armExprs.back();
-                if (bodyExpr && cursorInsideNode(bodyExpr, beforeLine))
-                  inArm = true;
-              }
-              if (inArm) {
+            }
+            if (inArm) {
+              if (ed) {
+                // Enum match: inject variant payload bindings
                 std::unordered_map<std::string, std::string> subst;
                 if (!matchedType.empty() && ed->typeParamList()) {
                   std::string base;
@@ -1539,11 +1540,24 @@ static void collectLocalsFromStmts(
                     }
                   }
                 }
-                if (arm->block())
-                  collectLocalsFromBlock(arm->block(), beforeLine, out, flc);
-                break;
               }
+              // Collect locals from block body (for both enum and literal matches)
+              if (arm->block())
+                collectLocalsFromBlock(arm->block(), beforeLine, out, flc);
+              break;
             }
+          }
+        }
+      }
+    }
+
+    // Match expression as statement: collect locals from arm bodies
+    if (auto* es = stmt->exprStmt()) {
+      if (auto* me = dynamic_cast<LucisParser::MatchExprContext*>(es->expression())) {
+        for (auto* arm : me->matchArm()) {
+          if (arm->block() && cursorInsideNode(arm->block(), beforeLine)) {
+            collectLocalsFromBlock(arm->block(), beforeLine, out, flc);
+            break;
           }
         }
       }
