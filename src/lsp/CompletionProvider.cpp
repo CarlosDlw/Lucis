@@ -5048,7 +5048,7 @@ void CompletionProvider::addKeywords(std::vector<CompletionItem> &items,
        "throw",  "spawn",  "await",     "lock",   "defer",    "as",
        "match",  "or",     "is",     "in",     "sizeof",    "typeof", "true",     "false",
        "null",   "return", "asm",       "volatile",
-       "goto",   "intel"};
+       "goto",   "intel", "comptime"};
 
   for (auto *kw : keywords) {
     if (!matchesPrefix(kw, prefix))
