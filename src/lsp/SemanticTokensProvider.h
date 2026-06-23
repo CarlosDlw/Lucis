@@ -17,13 +17,14 @@ enum class SemanticTokenType : uint32_t {
     Method     = 6,
     Parameter  = 7,
     Variable   = 8,
-    Property   = 9,
-    Keyword    = 10,
-    Comment    = 11,
-    String     = 12,
-    Number     = 13,
-    Operator   = 14,
-    Macro      = 15,
+    Property      = 9,
+    Keyword       = 10,
+    Comment       = 11,
+    String        = 12,
+    Number        = 13,
+    Operator      = 14,
+    Macro         = 15,
+    EscapeSequence = 16,
 };
 
 // LSP Semantic Token Modifiers (bit flags)

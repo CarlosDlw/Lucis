@@ -18,7 +18,8 @@ const std::vector<std::string>& SemanticTokensProvider::tokenTypes() {
     static const std::vector<std::string> types = {
         "namespace", "type", "struct", "enum", "enumMember",
         "function", "method", "parameter", "variable", "property",
-        "keyword", "comment", "string", "number", "operator", "macro"
+        "keyword", "comment", "string", "number", "operator", "macro",
+        "escapeSequence"
     };
     return types;
 }
@@ -579,6 +580,75 @@ static void walkTree(IdentMap& map, antlr4::tree::ParseTree* node) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
+//  Escape-sequence scanning for string/char semantic tokens
+// ═══════════════════════════════════════════════════════════════════════
+
+static bool isHex(char c) {
+    return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
+}
+static bool isOct(char c) { return c >= '0' && c <= '7'; }
+
+// Return the total length of the escape starting at s[i] (s[i] must be '\\').
+static size_t escapeSeqLen(const std::string& s, size_t i) {
+    if (i + 1 >= s.size()) return 2;
+    char n = s[i + 1];
+    switch (n) {
+        case 'x': {
+            size_t j = i + 2;
+            while (j < s.size() && isHex(s[j]) && j - (i + 2) < 2) ++j;
+            return j - i;
+        }
+        case 'u':
+            return (i + 5 < s.size()) ? 6 : 2;
+        case 'U':
+            return (i + 9 < s.size()) ? 10 : 2;
+        default:
+            if (isOct(n)) {
+                size_t j = i + 2;
+                while (j < s.size() && isOct(s[j]) && j - (i + 1) < 3) ++j;
+                return j - i;
+            }
+            return 2; // \<char>
+    }
+}
+
+// Emit semantic sub-tokens for a string/char literal, splitting out escapes.
+static void emitStringSubTokens(std::vector<RawSemanticToken>& out,
+                                 uint32_t line, uint32_t col,
+                                 const std::string& text, size_t lexerType) {
+    // Determine prefix length (e.g. "c" for C_STR_LIT)
+    size_t pre = (lexerType == LucisLexer::C_STR_LIT) ? 1 : 0;
+
+    if (pre > 0) {
+        emit(out, line, col, static_cast<uint32_t>(pre), SemanticTokenType::String);
+        col += static_cast<uint32_t>(pre);
+    }
+
+    // opening quote
+    emit(out, line, col, 1, SemanticTokenType::String);
+    col += 1;
+
+    size_t end = text.size() - 1; // position of closing quote
+    for (size_t i = pre + 1; i < end; ) {
+        if (text[i] == '\\') {
+            size_t elen = escapeSeqLen(text, i);
+            emit(out, line, col, static_cast<uint32_t>(elen), SemanticTokenType::EscapeSequence);
+            i += elen;
+            col += static_cast<uint32_t>(elen);
+        } else {
+            size_t seg = i;
+            while (i < end && text[i] != '\\') ++i;
+            uint32_t segLen = static_cast<uint32_t>(i - seg);
+            emit(out, line, col, segLen, SemanticTokenType::String);
+            col += segLen;
+        }
+    }
+
+    // closing quote
+    emit(out, line, col, 1, SemanticTokenType::String);
+}
+
+// ═══════════════════════════════════════════════════════════════════════
 //  Collect comments (skipped by ANTLR lexer, so we scan manually)
 // ═══════════════════════════════════════════════════════════════════════
 
@@ -729,7 +799,7 @@ std::vector<uint32_t> SemanticTokensProvider::tokenize(const std::string& source
         }
         else if (type == LucisLexer::STR_LIT || type == LucisLexer::C_STR_LIT ||
                  type == LucisLexer::CHAR_LIT) {
-            emit(raw, line, col, len, SemanticTokenType::String);
+            emitStringSubTokens(raw, line, col, tok->getText(), type);
         }
         // Operators
         else if (isOperator(type)) {
