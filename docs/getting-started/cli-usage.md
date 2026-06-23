@@ -70,10 +70,11 @@ lucis init ../projects/hello
 
 ```
 lucis build [<file>] [-o <output>] [-O <level>] [--lto]
-               [--emit-llvm] [--emit-asm] [--emit-bc] [--emit-obj]
+               [--emit-llvm] [--emit-asm] [--emit-bc] [--emit-obj] [--emit-bin]
                [--static] [--shared] [--fPIC]
+               [--no-std] [--target <TRIPLE>] [--entry <SYMBOL>]
                [--link-arg <FLAG>] [--rpath <DIR>]
-               [-l <lib>] [-L <dir>] [-I <dir>] [-q]
+               [-l <lib>] [-L <dir>] [-I <dir>] [-q] [-r]
 ```
 
 Compiles the project to a native binary. If `<file>` is omitted, the compiler
@@ -83,14 +84,19 @@ to `<input-stem>.out`. If `binary` is set in `lucis.yaml`, that name is used
 verbatim (no `.out` appended). If `out_dir` is set, the binary is placed in
 that directory (relative to the project root).
 
-All emit flags (`--emit-llvm`, `--emit-asm`, `--emit-bc`, `--emit-obj`) are
+All emit flags (`--emit-llvm`, `--emit-asm`, `--emit-bc`, `--emit-obj`, `--emit-bin`) are
 **CLI-only** — they are not configured in `lucis.yaml`. Without `-o`, text emits
-(LLVM IR, assembly) print to **stdout**; bitcode and object emits use an
+(LLVM IR, assembly) print to **stdout**; bitcode, object, and binary emits use an
 auto-generated file path. With `-o`, all emits write to the given file.
 
-When at least one emit flag is active, the build stops after generating the
-requested output — no linking or binary is produced. With no emit flags, a
-normal binary is produced.
+The `--emit-bin` flag requires a full build + link to produce an ELF executable
+first, then runs `objcopy -O binary` to extract the raw binary. This is useful
+for freestanding/kernel targets that need a flat binary (e.g. for bootloaders).
+
+When at least one emit flag is active (except `--emit-bin`), the build stops after
+generating the requested output — no linking or binary is produced. `--emit-bin`
+always runs a full build + link before objcopy. With no emit flags, a normal
+binary is produced.
 
 | Flag | Description |
 |------|-------------|
@@ -101,6 +107,11 @@ normal binary is produced.
 | `--emit-asm` | Emit assembly (`.s`) to stdout or `-o` file |
 | `--emit-bc` | Emit LLVM bitcode (`.bc`) |
 | `--emit-obj` | Emit object file (`.o`) |
+| `--emit-bin` | Emit raw binary (`.bin`) via `objcopy -O binary` |
+| `-r, --recursive` | Include all modules in emit output (works with `--emit-*`) |
+| `--no-std` | Build without standard library (freestanding/kernel) |
+| `--target <TRIPLE>` | Set LLVM target triple (e.g. `x86_64-unknown-none`) |
+| `--entry <SYMBOL>` | Set the entry point symbol (default: `main`; passed as `-Wl,-e`) |
 | `--static` | Produce a statically linked executable |
 | `--shared` | Produce a shared library (`.so`, `.dll`) |
 | `--fPIC` | Generate position-independent code (PIC) |
@@ -253,6 +264,10 @@ build:                          # Build defaults (overridden by CLI flags)
   static: false                 # Static linking
   shared: false                 # Shared library
   fpic: true                    # Position-independent code
+  no_std: false                 # Build without standard library (freestanding)
+  target: ""                    # LLVM target triple for cross-compilation
+  code_model: ""                # Code model (e.g. "kernel")
+  entry: ""                     # Entry point symbol (default: main)
 
 run:                            # Run defaults (overridden by CLI flags)
   opt_level: O0
@@ -262,6 +277,10 @@ run:                            # Run defaults (overridden by CLI flags)
 linker:                         # Linker settings
   libs: []                      # Libraries to link (-l)
   lib_paths: []                 # Library search paths (-L)
+
+scripts:                        # Pre/post build hooks
+  pre: []                       # Shell commands to run before compilation
+  pos: []                       # Shell commands to run after successful link
 
 includes: []                    # Include paths for C FFI (-I)
 ```

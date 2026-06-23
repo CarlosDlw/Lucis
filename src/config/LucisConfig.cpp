@@ -225,6 +225,10 @@ bool LucisConfig::createDefault(const std::string& dir, const std::string& name)
     cfg.build.staticLink = false;
     cfg.build.shared     = false;
     cfg.build.fpic       = true;
+    cfg.build.noStd      = false;
+    cfg.build.target     = "";
+    cfg.build.codeModel  = "";
+    cfg.build.entry      = "";
 
     cfg.run.optLevel = "O0";
     cfg.run.lto      = false;
@@ -253,6 +257,10 @@ bool LucisConfig::save(const std::string& yamlPath) const {
         root["build"]["static"]    = build.staticLink;
         root["build"]["shared"]    = build.shared;
         root["build"]["fpic"]      = build.fpic;
+        root["build"]["no_std"]    = build.noStd;
+        root["build"]["target"]    = build.target;
+        root["build"]["code_model"] = build.codeModel;
+        root["build"]["entry"]     = build.entry;
 
         root["run"]["opt_level"] = run.optLevel;
         root["run"]["lto"]       = run.lto;
@@ -275,6 +283,9 @@ bool LucisConfig::save(const std::string& yamlPath) const {
 
         writeSeq(root["linker"], "libs", linker.libs);
         writeSeq(root["linker"], "lib_paths", linker.libPaths);
+
+        writeSeq(root["scripts"], "pre", scripts.pre);
+        writeSeq(root["scripts"], "pos", scripts.pos);
 
         // includes
         if (includes.empty())
