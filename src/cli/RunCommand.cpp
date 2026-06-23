@@ -7,6 +7,8 @@
 #include "LLVM_IR/IRModule.h"
 #include "LLVM_Optimizer/Optimizer.h"
 #include "machine_code/CodeGen.h"
+#include "comptime/ComptimeEngine.h"
+#include "generated/LucisParser.h"
 
 #include <iostream>
 #include <iomanip>
@@ -85,6 +87,21 @@ int RunCommand::run(const ArgParser& parser) {
     std::unique_ptr<llvm::LLVMContext> masterCtx;
     std::unique_ptr<llvm::Module>      masterMod;
 
+    // Set up comptime engine and register all comptime functions
+    ComptimeEngine comptimeEngine;
+    for (auto& unit : pipeline->units) {
+        if (!unit.parseResult || !unit.parseResult->tree) continue;
+        for (auto* tld : unit.parseResult->tree->topLevelDecl()) {
+            if (auto* func = tld->functionDecl()) {
+                if (func->COMPTIME()) {
+                    auto name = func->IDENTIFIER(0)->getText();
+                    comptimeEngine.registry().registerFunction(
+                        name, func, func->typeParamList() != nullptr);
+                }
+            }
+        }
+    }
+
     size_t irIdx = 0;
     for (auto& unit : pipeline->units) {
         ++irIdx;
@@ -96,6 +113,7 @@ int RunCommand::run(const ArgParser& parser) {
         irGen.setModuleContext(pipeline->registry.get(), unit.modulePath, unit.filePath, unit.isStdlib);
         irGen.setCBindings(pipeline->cBindings.get());
         irGen.setSemanticDB(pipeline->semanticDB.get());
+        irGen.setComptimeEngine(&comptimeEngine);
         auto irMod = irGen.generate(unit.parseResult->tree, unit.filePath);
         if (!irMod) {
             std::cerr << "lucis: IR generation failed for '" << unit.filePath << "'\n";

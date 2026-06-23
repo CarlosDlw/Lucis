@@ -11,7 +11,6 @@
 #include <llvm/IR/Verifier.h>
 #include <llvm/Transforms/Utils/Cloning.h>
 #include <llvm/ExecutionEngine/ExecutionEngine.h>
-#include <llvm/ExecutionEngine/GenericValue.h>
 #include <llvm/ExecutionEngine/MCJIT.h>
 #include <llvm/Support/TargetSelect.h>
 
@@ -64,9 +63,8 @@ ComptimeJIT::runJIT(llvm::Module* module,
     if (!module) return ComptimeValue::voidVal();
 
     std::string err;
-    // Clone module so EngineBuilder takes ownership of its own copy
-    auto cloned = llvm::CloneModule(*module);
-    llvm::EngineBuilder builder(std::move(cloned));
+    auto clone = llvm::CloneModule(*module);
+    llvm::EngineBuilder builder(std::move(clone));
     builder.setErrorStr(&err);
     builder.setEngineKind(llvm::EngineKind::JIT);
     impl_->engine.reset(builder.create());
@@ -75,28 +73,33 @@ ComptimeJIT::runJIT(llvm::Module* module,
         return ComptimeValue::voidVal();
     }
 
-    // Lookup function
-    auto* fn = impl_->engine->FindFunctionNamed(funcName.c_str());
-    if (!fn) {
+    // Lookup function address and call via function pointer
+    auto fnAddr = impl_->engine->getFunctionAddress(funcName);
+    if (!fnAddr) {
         std::cerr << "[comptime] function '" << funcName << "' not found in JIT\n";
         return ComptimeValue::voidVal();
     }
 
-    // Build argument vector
-    std::vector<llvm::GenericValue> gvArgs;
-    for (auto& arg : args) {
-        llvm::GenericValue gv;
-        if (arg.kind() == ComptimeValue::Kind::Int)
-            gv.IntVal = llvm::APInt(32, arg.asInt(), true);
-        else
-            gv.IntVal = llvm::APInt(32, 0, true);
-        gvArgs.push_back(gv);
+    // Cast to native function pointer based on arg count
+    // Currently only support 0-2 int32 args returning int32
+    if (args.size() == 0) {
+        using Fn = int32_t (*)();
+        auto* fn = reinterpret_cast<Fn>(fnAddr);
+        return ComptimeValue::intVal(fn());
+    } else if (args.size() == 1) {
+        using Fn = int32_t (*)(int32_t);
+        auto* fn = reinterpret_cast<Fn>(fnAddr);
+        return ComptimeValue::intVal(fn(static_cast<int32_t>(args[0].asInt())));
+    } else if (args.size() == 2) {
+        using Fn = int32_t (*)(int32_t, int32_t);
+        auto* fn = reinterpret_cast<Fn>(fnAddr);
+        return ComptimeValue::intVal(fn(
+            static_cast<int32_t>(args[0].asInt()),
+            static_cast<int32_t>(args[1].asInt())));
+    } else {
+        std::cerr << "[comptime] unsupported arg count: " << args.size() << "\n";
+        return ComptimeValue::voidVal();
     }
-
-    auto result = impl_->engine->runFunction(
-        static_cast<llvm::Function*>(fn), gvArgs);
-
-    return ComptimeValue::intVal(static_cast<int64_t>(result.IntVal.getSExtValue()));
 }
 
 ComptimeValue
