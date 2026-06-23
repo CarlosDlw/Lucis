@@ -2220,8 +2220,8 @@ std::any IRGen::visitVarDeclStmt(LucisParser::VarDeclStmtContext* ctx) {
 
     // Pre-compute the last initializer value for propagation to vars without init
     llvm::Value* lastInitVal = nullptr;
+    LucisParser::VarDeclaratorContext* lastInitDecl = nullptr;
     {
-        LucisParser::VarDeclaratorContext* lastInitDecl = nullptr;
         for (auto it = decls.rbegin(); it != decls.rend(); ++it) {
             if ((*it)->expression()) { lastInitDecl = *it; break; }
         }
@@ -2589,6 +2589,11 @@ std::any IRGen::visitVarDeclStmt(LucisParser::VarDeclStmtContext* ctx) {
                 } else {
                     builder_->CreateStore(llvm::Constant::getNullValue(type), alloca);
                 }
+                continue;
+            }
+
+            if (d == lastInitDecl && lastInitVal) {
+                builder_->CreateStore(lastInitVal, alloca);
                 continue;
             }
 
