@@ -7679,7 +7679,8 @@ void Checker::checkCallStmt(LucisParser::CallStmtContext* stmt) {
 
     // Guard against invalid ABI lowering for array values in std::log print calls.
     // Arrays do not map to scalar print builtins; require explicit conversion.
-    if (name == "print" || name == "println" || name == "eprint" || name == "eprintln") {
+    if ((name == "print" || name == "println" || name == "eprint" || name == "eprintln") &&
+        (imports_.isImported(name) || functions_.count(name))) {
         for (size_t i = 0; i < argExprs.size(); i++) {
             if (resolveExprArrayDims(argExprs[i]) > 0) {
                 error(stmt, "function '" + name + "' does not accept array arguments directly; "

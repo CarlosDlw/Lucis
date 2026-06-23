@@ -4529,8 +4529,9 @@ std::any IRGen::visitCallStmt(LucisParser::CallStmtContext* ctx) {
     }
 
     // ── print/println/eprint/eprintln (imported from std::log) ─────
-    if (funcName == "print" || funcName == "println" ||
-        funcName == "eprint" || funcName == "eprintln") {
+    if ((funcName == "print" || funcName == "println" ||
+         funcName == "eprint" || funcName == "eprintln") &&
+        (userImports_.count(funcName) || imports_.isImported(funcName))) {
       std::vector<llvm::Value*> args;
       std::vector<LucisParser::ExpressionContext*> argExprs;
       if (auto* argList = ctx->argList()) {
