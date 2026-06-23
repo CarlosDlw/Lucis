@@ -31,6 +31,11 @@ struct LucisConfig {
         std::vector<std::string> libPaths;
     } linker;
 
+    struct ScriptsConfig {
+        std::vector<std::string> pre;
+        std::vector<std::string> pos;
+    } scripts;
+
     std::vector<std::string> includes;
 
     static std::optional<LucisConfig> load(const std::string& yamlPath);

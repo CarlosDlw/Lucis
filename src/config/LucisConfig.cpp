@@ -70,6 +70,13 @@ std::optional<LucisConfig> LucisConfig::load(const std::string& yamlPath) {
             cfg.linker.libs     = toStringVec(l["libs"]);
             cfg.linker.libPaths = toStringVec(l["lib_paths"]);
         }
+        {
+            auto s = root["scripts"];
+            if (s.IsDefined() && s.IsMap()) {
+                cfg.scripts.pre = toStringVec(s["pre"]);
+                cfg.scripts.pos = toStringVec(s["pos"]);
+            }
+        }
 
         cfg.includes = toStringVec(root["includes"]);
 
@@ -162,9 +169,16 @@ LucisConfig::validate(const std::string& yamlPath) {
         checkUnknownKeys(root["linker"], "linker", linkerKeys, msgs);
     }
 
+    if (yamlIsMap(root["scripts"])) {
+        static const std::vector<std::string> scriptsKeys = {
+            "pre", "pos"
+        };
+        checkUnknownKeys(root["scripts"], "scripts", scriptsKeys, msgs);
+    }
+
     static const std::vector<std::string> topKeys = {
         "name", "version", "binary", "out_dir",
-        "source", "build", "run", "linker", "includes"
+        "source", "build", "run", "linker", "scripts", "includes"
     };
     checkUnknownKeys(root, "", topKeys, msgs);
 
