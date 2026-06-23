@@ -459,7 +459,6 @@ static bool parseCharLiteral(const std::string& tok, int64_t& val) {
         case 'n':  val = '\n'; return true;
         case 't':  val = '\t'; return true;
         case 'r':  val = '\r'; return true;
-        case '0':  val = '\0'; return true;
         case '\\': val = '\\'; return true;
         case '\'': val = '\''; return true;
         case '"':  val = '"';  return true;
@@ -467,14 +466,26 @@ static bool parseCharLiteral(const std::string& tok, int64_t& val) {
         case 'b':  val = '\b'; return true;
         case 'f':  val = '\f'; return true;
         case 'v':  val = '\v'; return true;
+        case 'e':  case 'E': val = 0x1B; return true;
+        case '?':  val = '?'; return true;
         default:
-            // Octal: \0nn
+            // Octal: \NNN (1-3 digits)
             if (inner[1] >= '0' && inner[1] <= '7') {
                 val = std::stoll(inner.substr(1), nullptr, 8);
                 return true;
             }
             // Hex: \xNN
             if (inner[1] == 'x' && inner.size() > 2) {
+                val = std::stoll(inner.substr(2), nullptr, 16);
+                return true;
+            }
+            // Unicode 16-bit: \uNNNN
+            if (inner[1] == 'u' && inner.size() > 2) {
+                val = std::stoll(inner.substr(2), nullptr, 16);
+                return true;
+            }
+            // Unicode 32-bit: \UNNNNNNNN
+            if (inner[1] == 'U' && inner.size() > 2) {
                 val = std::stoll(inner.substr(2), nullptr, 16);
                 return true;
             }

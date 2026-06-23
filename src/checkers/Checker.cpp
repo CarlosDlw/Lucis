@@ -302,8 +302,59 @@ std::optional<uint64_t> Checker::tryGetCStringLiteralLen(LucisParser::Expression
         for (size_t i = prefix.size() + 1; i + 1 < tok.size();) {
             if (tok[i] == '\\') {
                 if (i + 1 >= tok.size() - 1) return std::nullopt;
-                len += 1;
-                i += 2;
+                char next = tok[i + 1];
+                switch (next) {
+                    case 'n': case 'r': case 't': case '\\':
+                    case '"': case '\'': case 'a': case 'b':
+                    case 'f': case 'v': case 'e': case 'E':
+                    case '?':
+                        len += 1;
+                        i += 2;
+                        break;
+                    case 'x':
+                        if (i + 3 >= tok.size()) return std::nullopt;
+                        len += 1;
+                        i += 4;
+                        break;
+                    case 'u':
+                        if (i + 5 >= tok.size()) return std::nullopt;
+                        {
+                            auto hex = tok.substr(i + 2, 4);
+                            auto cp = static_cast<uint32_t>(std::stoul(hex, nullptr, 16));
+                            if (cp <= 0x7F) len += 1;
+                            else if (cp <= 0x7FF) len += 2;
+                            else if (cp <= 0xFFFF) len += 3;
+                            else len += 4;
+                        }
+                        i += 6;
+                        break;
+                    case 'U':
+                        if (i + 9 >= tok.size()) return std::nullopt;
+                        {
+                            auto hex = tok.substr(i + 2, 8);
+                            auto cp = static_cast<uint32_t>(std::stoul(hex, nullptr, 16));
+                            if (cp <= 0x7F) len += 1;
+                            else if (cp <= 0x7FF) len += 2;
+                            else if (cp <= 0xFFFF) len += 3;
+                            else len += 4;
+                        }
+                        i += 10;
+                        break;
+                    default:
+                        if (next >= '0' && next <= '7') {
+                            len += 1;
+                            i += 2;
+                            int octCnt = 1;
+                            while (octCnt < 3 && i + 1 < tok.size() && tok[i] >= '0' && tok[i] <= '7') {
+                                ++i;
+                                ++octCnt;
+                            }
+                        } else {
+                            len += 1;
+                            i += 2;
+                        }
+                        break;
+                }
             } else {
                 len += 1;
                 i += 1;

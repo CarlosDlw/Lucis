@@ -7175,6 +7175,26 @@ std::any IRGen::visitBoolLitExpr(LucisParser::BoolLitExprContext* ctx) {
         llvm::ConstantInt::get(llvm::Type::getInt1Ty(*context_), v ? 1 : 0));
 }
 
+static std::string utf8Encode(uint32_t cp) {
+    std::string s;
+    if (cp <= 0x7F) {
+        s += static_cast<char>(cp);
+    } else if (cp <= 0x7FF) {
+        s += static_cast<char>(0xC0 | (cp >> 6));
+        s += static_cast<char>(0x80 | (cp & 0x3F));
+    } else if (cp <= 0xFFFF) {
+        s += static_cast<char>(0xE0 | (cp >> 12));
+        s += static_cast<char>(0x80 | ((cp >> 6) & 0x3F));
+        s += static_cast<char>(0x80 | (cp & 0x3F));
+    } else if (cp <= 0x10FFFF) {
+        s += static_cast<char>(0xF0 | (cp >> 18));
+        s += static_cast<char>(0x80 | ((cp >> 12) & 0x3F));
+        s += static_cast<char>(0x80 | ((cp >> 6) & 0x3F));
+        s += static_cast<char>(0x80 | (cp & 0x3F));
+    }
+    return s;
+}
+
 std::any IRGen::visitCharLitExpr(LucisParser::CharLitExprContext* ctx) {
     auto raw = ctx->CHAR_LIT()->getText();
     auto inner = raw.substr(1, raw.size() - 2);
@@ -7187,19 +7207,53 @@ std::any IRGen::visitCharLitExpr(LucisParser::CharLitExprContext* ctx) {
         case '\\': ch = '\\'; break;
         case '\'': ch = '\''; break;
         case '"':  ch = '"';  break;
-        case '0':  ch = '\0'; break;
         case 'a':  ch = '\a'; break;
         case 'b':  ch = '\b'; break;
         case 'f':  ch = '\f'; break;
         case 'v':  ch = '\v'; break;
+        case 'e':  case 'E': ch = 0x1B; break;
+        case '?':  ch = '?'; break;
         case 'x': {
             auto hex = inner.substr(2);
             ch = static_cast<uint8_t>(std::stoul(hex, nullptr, 16));
             break;
         }
+        case 'u': {
+            auto hex = inner.substr(2);
+            auto cp = static_cast<uint32_t>(std::stoul(hex, nullptr, 16));
+            if (cp > 0xFF) {
+                std::cerr << "lucis: unicode escape \\u" << hex << " does not fit in char (max 0xFF)\n";
+                ch = 0;
+            } else {
+                ch = static_cast<uint8_t>(cp);
+            }
+            break;
+        }
+        case 'U': {
+            auto hex = inner.substr(2);
+            auto cp = static_cast<uint32_t>(std::stoul(hex, nullptr, 16));
+            if (cp > 0xFF) {
+                std::cerr << "lucis: unicode escape \\U" << hex << " does not fit in char (max 0xFF)\n";
+                ch = 0;
+            } else {
+                ch = static_cast<uint8_t>(cp);
+            }
+            break;
+        }
         default:
-            std::cerr << "lucis: unknown escape sequence '\\" << inner[1] << "'\n";
-            ch = inner[1];
+            if (inner[1] >= '0' && inner[1] <= '7') {
+                auto oct = inner.substr(1);
+                auto val = std::stoul(oct, nullptr, 8);
+                if (val > 255) {
+                    std::cerr << "lucis: octal escape \\" << oct << " exceeds byte range\n";
+                    ch = 0;
+                } else {
+                    ch = static_cast<uint8_t>(val);
+                }
+            } else {
+                std::cerr << "lucis: unknown escape sequence '\\" << inner[1] << "'\n";
+                ch = inner[1];
+            }
             break;
         }
     } else {
@@ -7226,21 +7280,51 @@ std::any IRGen::visitStrLitExpr(LucisParser::StrLitExprContext* ctx) {
                 case '\\': str += '\\'; break;
                 case '"':  str += '"';  break;
                 case '\'': str += '\''; break;
-                case '0':  str += '\0'; break;
                 case 'a':  str += '\a'; break;
                 case 'b':  str += '\b'; break;
                 case 'f':  str += '\f'; break;
                 case 'v':  str += '\v'; break;
-                case 'x':
+                case 'e':  case 'E': str += static_cast<char>(0x1B); break;
+                case '?':  str += '?'; break;
+                case 'x': {
                     if (i + 2 < escaped.size()) {
                         auto hex = escaped.substr(i + 1, 2);
                         str += static_cast<char>(std::stoi(hex, nullptr, 16));
                         i += 2;
                     }
                     break;
+                }
+                case 'u': {
+                    if (i + 4 < escaped.size()) {
+                        auto hex = escaped.substr(i + 1, 4);
+                        auto cp = static_cast<uint32_t>(std::stoul(hex, nullptr, 16));
+                        str += utf8Encode(cp);
+                        i += 4;
+                    }
+                    break;
+                }
+                case 'U': {
+                    if (i + 8 < escaped.size()) {
+                        auto hex = escaped.substr(i + 1, 8);
+                        auto cp = static_cast<uint32_t>(std::stoul(hex, nullptr, 16));
+                        str += utf8Encode(cp);
+                        i += 8;
+                    }
+                    break;
+                }
                 default:
-                    str += '\\';
-                    str += next;
+                    if (next >= '0' && next <= '7') {
+                        size_t octLen = 1;
+                        while (octLen < 3 && i + 1 < escaped.size() && escaped[i + 1] >= '0' && escaped[i + 1] <= '7') {
+                            ++i;
+                            ++octLen;
+                        }
+                        auto oct = escaped.substr(i - octLen + 1, octLen);
+                        str += static_cast<char>(std::stoi(oct, nullptr, 8));
+                    } else {
+                        str += '\\';
+                        str += next;
+                    }
                     break;
             }
         } else {
@@ -7279,11 +7363,12 @@ std::any IRGen::visitCStrLitExpr(LucisParser::CStrLitExprContext* ctx) {
                 case '\\': str += '\\'; break;
                 case '"':  str += '"';  break;
                 case '\'': str += '\''; break;
-                case '0':  str += '\0'; break;
                 case 'a':  str += '\a'; break;
                 case 'b':  str += '\b'; break;
                 case 'f':  str += '\f'; break;
                 case 'v':  str += '\v'; break;
+                case 'e':  case 'E': str += static_cast<char>(0x1B); break;
+                case '?':  str += '?'; break;
                 case 'x':
                     if (i + 2 < escaped.size()) {
                         auto hex = escaped.substr(i + 1, 2);
@@ -7291,9 +7376,37 @@ std::any IRGen::visitCStrLitExpr(LucisParser::CStrLitExprContext* ctx) {
                         i += 2;
                     }
                     break;
+                case 'u': {
+                    if (i + 4 < escaped.size()) {
+                        auto hex = escaped.substr(i + 1, 4);
+                        auto cp = static_cast<uint32_t>(std::stoul(hex, nullptr, 16));
+                        str += utf8Encode(cp);
+                        i += 4;
+                    }
+                    break;
+                }
+                case 'U': {
+                    if (i + 8 < escaped.size()) {
+                        auto hex = escaped.substr(i + 1, 8);
+                        auto cp = static_cast<uint32_t>(std::stoul(hex, nullptr, 16));
+                        str += utf8Encode(cp);
+                        i += 8;
+                    }
+                    break;
+                }
                 default:
-                    str += '\\';
-                    str += next;
+                    if (next >= '0' && next <= '7') {
+                        size_t octLen = 1;
+                        while (octLen < 3 && i + 1 < escaped.size() && escaped[i + 1] >= '0' && escaped[i + 1] <= '7') {
+                            ++i;
+                            ++octLen;
+                        }
+                        auto oct = escaped.substr(i - octLen + 1, octLen);
+                        str += static_cast<char>(std::stoi(oct, nullptr, 8));
+                    } else {
+                        str += '\\';
+                        str += next;
+                    }
                     break;
             }
         } else {

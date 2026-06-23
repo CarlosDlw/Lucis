@@ -155,15 +155,22 @@ String and character literals support these escape sequences:
 
 | Sequence | Meaning |
 |---|---|
-| `\n` | Newline |
-| `\t` | Tab |
-| `\r` | Carriage return |
-| `\\` | Backslash |
-| `\"` | Double quote |
-| `\'` | Single quote |
-| `\0` | Null character |
-| `\a` | Bell |
+| `\n` | Newline (line feed, 0x0A) |
+| `\r` | Carriage return (0x0D) |
+| `\t` | Horizontal tab (0x09) |
+| `\\` | Backslash (0x5C) |
+| `\"` | Double quote (0x22) |
+| `\'` | Single quote (0x27) |
+| `\0` .. `\377` | Octal byte value (1–3 octal digits, max `\377` = 255) |
+| `\a` | Bell/alert (0x07) |
+| `\b` | Backspace (0x08) |
+| `\f` | Form feed (0x0C) |
+| `\v` | Vertical tab (0x0B) |
+| `\e` / `\E` | Escape character (ESC, 0x1B) |
+| `\?` | Question mark (0x3F) |
 | `\xNN` | Hex byte (e.g., `\x41` = `'A'`) |
+| `\uNNNN` | Unicode 16-bit code point (UTF-8 encoded in strings; must fit in byte for chars) |
+| `\UNNNNNNNN` | Unicode 32-bit code point (UTF-8 encoded in strings; must fit in byte for chars) |
 
 ## See Also
 

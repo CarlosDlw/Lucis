@@ -117,9 +117,14 @@ BOOL_LIT  : 'true' | 'false';
 C_STR_LIT : 'c"' (~["\\\r\n] | '\\' .)* '"';
 STR_LIT   : '"' (~["\\\r\n] | '\\' .)* '"';
 
-// Character literal with escape sequences: 'a', '\n', '\x41'
-fragment CHAR_ESC : '\\' ('n' | 'r' | 't' | '\\' | '\'' | '"' | '0' | 'a' | 'b' | 'f' | 'v')
+// Character literal with escape sequences: 'a', '\n', '\x41', '\u0041', '\U00000041', '\e', '\?', '\377'
+fragment CHAR_ESC : '\\' ('n' | 'r' | 't' | '\\' | '\'' | '"' | 'a' | 'b' | 'f' | 'v' | 'e' | 'E' | '?')
                   | '\\x' [0-9a-fA-F] [0-9a-fA-F]
+                  | '\\u' [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F]
+                  | '\\U' [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F]
+                  | '\\' [0-3] [0-7] [0-7]
+                  | '\\' [0-7] [0-7]
+                  | '\\' [0-7]
                   ;
 CHAR_LIT  : '\'' ( CHAR_ESC | ~['\\r\n] ) '\'';
 
