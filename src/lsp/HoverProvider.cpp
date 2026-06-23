@@ -5576,8 +5576,9 @@ static void collectLocalsFromStmts(
                 // Resolve auto type from last init declarator for propagation
                 std::string resolvedAutoType;
                 if (baseTypeName == "auto") {
-                    for (auto it = vd->varDeclarator().rbegin();
-                         it != vd->varDeclarator().rend(); ++it) {
+                    auto decls = vd->varDeclarator();
+                    for (auto it = decls.rbegin();
+                         it != decls.rend(); ++it) {
                         if ((*it)->expression()) {
                             resolvedAutoType = inferExprTypeName((*it)->expression(), out, flc);
                             break;
