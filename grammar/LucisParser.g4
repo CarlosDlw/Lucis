@@ -248,8 +248,11 @@ exprStmt
 // Qualified type: LIB::Point p = ...;
 varDeclStmt
     : (IDENTIFIER SCOPE)? typeSpec LPAREN IDENTIFIER (COMMA IDENTIFIER)* RPAREN ASSIGN expression SEMI  // auto (x, y) = expr;
-    | (IDENTIFIER SCOPE)? typeSpec IDENTIFIER ASSIGN expression SEMI
-    | (IDENTIFIER SCOPE)? typeSpec IDENTIFIER SEMI
+    | (IDENTIFIER SCOPE)? typeSpec varDeclarator (COMMA varDeclarator)* SEMI
+    ;
+
+varDeclarator
+    : IDENTIFIER (ASSIGN expression)?
     ;
 
 // x = 42;  or  arr[i] = val;   arr[i][j] = val;

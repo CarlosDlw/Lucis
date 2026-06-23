@@ -2276,11 +2276,18 @@ std::optional<HoverResult> HoverProvider::walkStmtForHover(
             auto r = hoverTypeSpec(ts, hoveredToken, tree, bindings, project);
             if (r) return r;
         }
-        // Check the initializer expression
+        // Check initializer expressions (including multi-var)
         if (auto* initExpr = vd->expression()) {
             auto r = walkExprForHover(initExpr, hoveredToken, tokenText,
                                        tree, bindings, cursorLine, project);
             if (r) return r;
+        }
+        for (auto* d : vd->varDeclarator()) {
+            if (auto* initExpr = d->expression()) {
+                auto r = walkExprForHover(initExpr, hoveredToken, tokenText,
+                                           tree, bindings, cursorLine, project);
+                if (r) return r;
+            }
         }
     }
 
@@ -5562,18 +5569,20 @@ static void collectLocalsFromStmts(
                     out[ids[i]->getText()] = {elemType, 0};
                 }
             } else {
-                // ── Normal variable declaration ──────────────────────
-                std::string typeName;
+                // ── Normal variable declaration (multi-var) ──────────
+                std::string baseTypeName;
                 if (vd->typeSpec())
-                    typeName = safeText(vd->typeSpec());
-                // Resolve 'auto' to the inferred type from the initializer
-                if (typeName == "auto" && vd->expression()) {
-                    auto inferred = inferExprTypeName(vd->expression(), out, flc);
-                    if (!inferred.empty()) typeName = inferred;
+                    baseTypeName = safeText(vd->typeSpec());
+                for (auto* d : vd->varDeclarator()) {
+                    std::string typeName = baseTypeName;
+                    std::string varName = safeText(d->IDENTIFIER());
+                    if (typeName == "auto" && d->expression()) {
+                        auto inferred = inferExprTypeName(d->expression(), out, flc);
+                        if (!inferred.empty()) typeName = inferred;
+                    }
+                    if (!varName.empty())
+                        out[varName] = {typeName, 0};
                 }
-                std::string varName = !vd->IDENTIFIER().empty() ? safeIdAt(vd, 0) : "";
-                if (!varName.empty())
-                    out[varName] = {typeName, 0};
             }
 
             if (auto* cu = dynamic_cast<LucisParser::CatchUnwrapExprContext*>(vd->expression())) {

@@ -53,18 +53,18 @@ public:
     RuleScopeBlockStmt = 29, RuleScopeCallbackList = 30, RuleScopeCallback = 31, 
     RuleLabelDef = 32, RuleAsmStmt = 33, RuleAsmOutputList = 34, RuleAsmInputList = 35, 
     RuleAsmClobberList = 36, RuleAsmGotoLabelList = 37, RuleAsmOutput = 38, 
-    RuleAsmOperand = 39, RuleExprStmt = 40, RuleVarDeclStmt = 41, RuleAssignStmt = 42, 
-    RuleCompoundAssignStmt = 43, RuleFieldAssignStmt = 44, RuleFieldCompoundAssignStmt = 45, 
-    RuleIndexFieldAssignStmt = 46, RuleFieldIndexAssignStmt = 47, RuleDerefAssignStmt = 48, 
-    RuleDerefCompoundAssignStmt = 49, RuleArrowAssignStmt = 50, RuleArrowCompoundAssignStmt = 51, 
-    RuleArrowAnyAssignStmt = 52, RuleArrowAnyCompoundAssignStmt = 53, RuleCallStmt = 54, 
-    RuleArgList = 55, RuleReturnStmt = 56, RuleIfStmt = 57, RuleElseIfClause = 58, 
-    RuleElseClause = 59, RuleIfBody = 60, RuleForStmt = 61, RuleBreakStmt = 62, 
-    RuleContinueStmt = 63, RuleLoopStmt = 64, RuleWhileStmt = 65, RuleDoWhileStmt = 66, 
-    RuleLockStmt = 67, RuleTryCatchStmt = 68, RuleCatchClause = 69, RuleFinallyClause = 70, 
-    RuleThrowStmt = 71, RuleSwitchStmt = 72, RuleCaseClause = 73, RuleDefaultClause = 74, 
-    RuleMatchArm = 75, RulePattern = 76, RuleLiteralPattern = 77, RuleExpression = 78, 
-    RuleTypeSpec = 79, RuleFnTypeSpec = 80, RulePrimitiveType = 81
+    RuleAsmOperand = 39, RuleExprStmt = 40, RuleVarDeclStmt = 41, RuleVarDeclarator = 42, 
+    RuleAssignStmt = 43, RuleCompoundAssignStmt = 44, RuleFieldAssignStmt = 45, 
+    RuleFieldCompoundAssignStmt = 46, RuleIndexFieldAssignStmt = 47, RuleFieldIndexAssignStmt = 48, 
+    RuleDerefAssignStmt = 49, RuleDerefCompoundAssignStmt = 50, RuleArrowAssignStmt = 51, 
+    RuleArrowCompoundAssignStmt = 52, RuleArrowAnyAssignStmt = 53, RuleArrowAnyCompoundAssignStmt = 54, 
+    RuleCallStmt = 55, RuleArgList = 56, RuleReturnStmt = 57, RuleIfStmt = 58, 
+    RuleElseIfClause = 59, RuleElseClause = 60, RuleIfBody = 61, RuleForStmt = 62, 
+    RuleBreakStmt = 63, RuleContinueStmt = 64, RuleLoopStmt = 65, RuleWhileStmt = 66, 
+    RuleDoWhileStmt = 67, RuleLockStmt = 68, RuleTryCatchStmt = 69, RuleCatchClause = 70, 
+    RuleFinallyClause = 71, RuleThrowStmt = 72, RuleSwitchStmt = 73, RuleCaseClause = 74, 
+    RuleDefaultClause = 75, RuleMatchArm = 76, RulePattern = 77, RuleLiteralPattern = 78, 
+    RuleExpression = 79, RuleTypeSpec = 80, RuleFnTypeSpec = 81, RulePrimitiveType = 82
   };
 
   explicit LucisParser(antlr4::TokenStream *input);
@@ -126,6 +126,7 @@ public:
   class AsmOperandContext;
   class ExprStmtContext;
   class VarDeclStmtContext;
+  class VarDeclaratorContext;
   class AssignStmtContext;
   class CompoundAssignStmtContext;
   class FieldAssignStmtContext;
@@ -982,6 +983,8 @@ public:
     antlr4::tree::TerminalNode *SCOPE();
     std::vector<antlr4::tree::TerminalNode *> COMMA();
     antlr4::tree::TerminalNode* COMMA(size_t i);
+    std::vector<VarDeclaratorContext *> varDeclarator();
+    VarDeclaratorContext* varDeclarator(size_t i);
 
 
     virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
@@ -989,6 +992,21 @@ public:
   };
 
   VarDeclStmtContext* varDeclStmt();
+
+  class  VarDeclaratorContext : public antlr4::ParserRuleContext {
+  public:
+    VarDeclaratorContext(antlr4::ParserRuleContext *parent, size_t invokingState);
+    virtual size_t getRuleIndex() const override;
+    antlr4::tree::TerminalNode *IDENTIFIER();
+    antlr4::tree::TerminalNode *ASSIGN();
+    ExpressionContext *expression();
+
+
+    virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+   
+  };
+
+  VarDeclaratorContext* varDeclarator();
 
   class  AssignStmtContext : public antlr4::ParserRuleContext {
   public:

@@ -195,6 +195,10 @@ public:
     return visitChildren(ctx);
   }
 
+  virtual std::any visitVarDeclarator(LucisParser::VarDeclaratorContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
   virtual std::any visitAssignStmt(LucisParser::AssignStmtContext *ctx) override {
     return visitChildren(ctx);
   }

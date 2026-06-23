@@ -2192,433 +2192,417 @@ std::any IRGen::visitVarDeclStmt(LucisParser::VarDeclStmtContext* ctx) {
     }
 
     bool hasNsPrefix = ctx->SCOPE() != nullptr;
-    size_t identOffset = hasNsPrefix ? 1 : 0;
-    auto  name = ctx->IDENTIFIER(identOffset)->getText();
 
-    // ── Auto type inference: auto x = expr; ──────────────────────────
-    if (ctx->typeSpec() && ctx->typeSpec()->AUTO()) {
-        // auto always has an initializer (Checker enforces this)
-        auto  initVal = visit(ctx->expression());
-        auto* val     = castValue(initVal);
-        auto exprDims = resolveExprArrayDims(ctx->expression());
+    // ── Detect auto type ─────────────────────────────────────────────
+    bool isAutoType = (ctx->typeSpec() && ctx->typeSpec()->AUTO());
 
-        // Infer TypeInfo from the expression AST
-        auto* ti = resolveExprTypeInfo(ctx->expression());
-        if (!ti) {
-            // Fallback: infer from LLVM type
-            ti = typeRegistry_.lookup("int32");
+    // ── Resolve explicit type once ───────────────────────────────────
+    const TypeInfo* ti = nullptr;
+    unsigned dims = 0;
+    std::vector<unsigned> aliasArraySizes;
+    if (!isAutoType) {
+        ti = [&]() -> const TypeInfo* {
+            if (!currentGenericSubst_.empty())
+                return resolveTypeInfoWithSubst(ctx->typeSpec(), currentGenericSubst_);
+            return resolveTypeInfo(ctx->typeSpec());
+        }();
+        dims = countArrayDims(ctx->typeSpec());
+
+        if (dims == 0 && ti && !ti->arraySizes.empty() && ti->elementType) {
+            dims = static_cast<unsigned>(ti->arraySizes.size());
+            aliasArraySizes = ti->arraySizes;
+            ti = ti->elementType;
         }
+    }
 
-        // Check if the initializer is an array literal
-        if (auto* arrLit = dynamic_cast<LucisParser::ArrayLitExprContext*>(
-                ctx->expression())) {
-            auto elems = arrLit->expression();
-            if (!elems.empty()) {
-                auto* elemTI = resolveExprTypeInfo(elems[0]);
-                if (!elemTI) elemTI = typeRegistry_.lookup("int32");
-                auto* elemType = elemTI->toLLVMType(*context_,
-                                                     module_->getDataLayout());
+    // ── Iterate varDeclarators ──────────────────────────────────────
+    auto decls = ctx->varDeclarator();
+
+    // Pre-compute the last initializer value for propagation to vars without init
+    llvm::Value* lastInitVal = nullptr;
+    {
+        LucisParser::VarDeclaratorContext* lastInitDecl = nullptr;
+        for (auto it = decls.rbegin(); it != decls.rend(); ++it) {
+            if ((*it)->expression()) { lastInitDecl = *it; break; }
+        }
+        if (lastInitDecl) {
+            if (isAutoType) {
+                auto raw = visit(lastInitDecl->expression());
+                auto* val = castValue(raw);
+                auto* ti2 = resolveExprTypeInfo(lastInitDecl->expression());
+                if (!ti2) ti2 = typeRegistry_.lookup("int32");
+                auto* type = ti2 ? ti2->toLLVMType(*context_, module_->getDataLayout()) : val->getType();
+                auto* srcTI = resolveExprTypeInfo(lastInitDecl->expression());
+                bool srcSigned = !val->getType()->isIntegerTy(1);
+                if (srcTI && srcTI->kind == TypeKind::Integer) srcSigned = srcTI->isSigned;
+                lastInitVal = coerceValueToType(val, type, srcSigned);
+            } else if (ti && ti->kind != TypeKind::Extended) {
+                auto raw = visit(lastInitDecl->expression());
+                auto* val = castValue(raw);
+                auto* type = ti->toLLVMType(*context_, module_->getDataLayout());
+                auto* srcTI = resolveExprTypeInfo(lastInitDecl->expression());
+                bool srcSigned = !val->getType()->isIntegerTy(1);
+                if (srcTI && srcTI->kind == TypeKind::Integer) srcSigned = srcTI->isSigned;
+                lastInitVal = coerceValueToType(val, type, srcSigned);
+            }
+        }
+    }
+
+    for (auto* d : decls) {
+        auto name = d->IDENTIFIER()->getText();
+
+        if (isAutoType) {
+            if (!d->expression()) {
+                // Propagate last init value
+                auto* ti2 = typeRegistry_.lookup("int32");
+                auto* type = ti2->toLLVMType(*context_, module_->getDataLayout());
+                auto* alloca = builder_->CreateAlloca(type, nullptr, name);
+                if (lastInitVal)
+                    builder_->CreateStore(lastInitVal, alloca);
+                else
+                    builder_->CreateStore(llvm::Constant::getNullValue(type), alloca);
+                VarInfo vi{ alloca, ti2, 0 };
+                locals_[name] = std::move(vi);
+                continue;
+            }
+            auto  initVal  = visit(d->expression());
+            auto* val      = castValue(initVal);
+            auto  exprDims = resolveExprArrayDims(d->expression());
+
+            auto* ti2 = resolveExprTypeInfo(d->expression());
+            if (!ti2)
+                ti2 = typeRegistry_.lookup("int32");
+
+            if (auto* arrLit = dynamic_cast<LucisParser::ArrayLitExprContext*>(d->expression())) {
+                auto elems = arrLit->expression();
+                if (!elems.empty()) {
+                    auto* elemTI = resolveExprTypeInfo(elems[0]);
+                    if (!elemTI) elemTI = typeRegistry_.lookup("int32");
+                    auto* elemType = elemTI->toLLVMType(*context_, module_->getDataLayout());
+                    auto* targetTy = buildTargetArrayType(val->getType(), elemType);
+                    auto* alloca   = builder_->CreateAlloca(targetTy, nullptr, name);
+                    storeArrayElements(val, alloca, targetTy, elemTI, 1);
+                    locals_[name] = { alloca, elemTI, 1 };
+                    continue;
+                }
+            }
+
+            if (exprDims > 0 && val && val->getType()->isArrayTy()) {
+                auto* elemTI = ti2 ? ti2 : typeRegistry_.lookup("int32");
+                auto* elemType = elemTI->toLLVMType(*context_, module_->getDataLayout());
                 auto* targetTy = buildTargetArrayType(val->getType(), elemType);
                 auto* alloca   = builder_->CreateAlloca(targetTy, nullptr, name);
-                storeArrayElements(val, alloca, targetTy, elemTI, 1);
-                locals_[name] = { alloca, elemTI, 1 };
-                return {};
+                storeArrayElements(val, alloca, targetTy, elemTI, exprDims);
+                locals_[name] = { alloca, elemTI, exprDims };
+                continue;
             }
+
+            auto* type = ti2 ? ti2->toLLVMType(*context_, module_->getDataLayout())
+                             : val->getType();
+            auto* srcTI = resolveExprTypeInfo(d->expression());
+            bool srcSigned = true;
+            if (srcTI && srcTI->kind == TypeKind::Integer)
+                srcSigned = srcTI->isSigned;
+            else if (val->getType()->isIntegerTy(1))
+                srcSigned = false;
+            val = coerceValueToType(val, type, srcSigned);
+            auto* alloca = builder_->CreateAlloca(type, nullptr, name);
+            builder_->CreateStore(val, alloca);
+            VarInfo vi{ alloca, ti2, exprDims };
+            vi.isBorrowed = (ti2 && ti2->kind == TypeKind::String &&
+                     isBorrowedStringValueExpr(d->expression()));
+            locals_[name] = std::move(vi);
+            continue;
         }
 
-        if (exprDims > 0 && val && val->getType()->isArrayTy()) {
-            auto* elemTI = ti ? ti : typeRegistry_.lookup("int32");
-            auto* elemType = elemTI->toLLVMType(*context_, module_->getDataLayout());
-            auto* targetTy = buildTargetArrayType(val->getType(), elemType);
-            auto* alloca   = builder_->CreateAlloca(targetTy, nullptr, name);
-            storeArrayElements(val, alloca, targetTy, elemTI, exprDims);
-            locals_[name] = { alloca, elemTI, exprDims };
-            return {};
-        }
+        // ── Explicit type ────────────────────────────────────────────
+        if (!ti) continue;
 
-        // Scalar auto variable
-        auto* type = ti ? ti->toLLVMType(*context_, module_->getDataLayout())
-                        : val->getType();
-        auto* srcTI = resolveExprTypeInfo(ctx->expression());
-        bool srcSigned = true;
-        if (srcTI && srcTI->kind == TypeKind::Integer)
-            srcSigned = srcTI->isSigned;
-        else if (val->getType()->isIntegerTy(1))
-            srcSigned = false;
-        val = coerceValueToType(val, type, srcSigned);
-        auto* alloca = builder_->CreateAlloca(type, nullptr, name);
-        builder_->CreateStore(val, alloca);
-        VarInfo vi{ alloca, ti, exprDims };
-        vi.isBorrowed = (ti && ti->kind == TypeKind::String &&
-                 isBorrowedStringValueExpr(ctx->expression()));
-        locals_[name] = std::move(vi);
-        return {};
-    }
+        if (ti->kind == TypeKind::Extended) {
+            auto* ptrTy   = llvm::PointerType::getUnqual(*context_);
+            auto* usizeTy = module_->getDataLayout().getIntPtrType(*context_);
 
-    // ── Explicit type ────────────────────────────────────────────────
-    auto* ti   = [&]() -> const TypeInfo* {
-        if (!currentGenericSubst_.empty())
-            return resolveTypeInfoWithSubst(ctx->typeSpec(), currentGenericSubst_);
-        return resolveTypeInfo(ctx->typeSpec());
-    }();
-    auto  dims = countArrayDims(ctx->typeSpec());
-
-    // Handle type-alias arrays (e.g. type Matrix = [3][3]float32)
-    std::vector<unsigned> aliasArraySizes;
-    if (dims == 0 && !ti->arraySizes.empty() && ti->elementType) {
-        dims = static_cast<unsigned>(ti->arraySizes.size());
-        aliasArraySizes = ti->arraySizes;
-        ti = ti->elementType;  // use base element type for codegen
-    }
-
-    // Extended type (Vec<T>, Map<K,V>, Task<T>, Mutex) initialization
-    if (ti->kind == TypeKind::Extended) {
-        auto* ptrTy   = llvm::PointerType::getUnqual(*context_);
-        auto* usizeTy = module_->getDataLayout().getIntPtrType(*context_);
-
-        // Task<T> — initialized from spawn expression
-        if (ti->extendedKind == "Task") {
-            auto* alloca = builder_->CreateAlloca(ptrTy, nullptr, name);
-            locals_[name] = { alloca, ti, 0 };
-            if (ctx->expression()) {
-                auto  initVal = visit(ctx->expression());
-                auto* val     = castValue(initVal);
-                builder_->CreateStore(val, alloca);
-            } else {
-                builder_->CreateStore(
-                    llvm::ConstantPointerNull::get(ptrTy), alloca);
+            if (ti->extendedKind == "Task") {
+                auto* alloca = builder_->CreateAlloca(ptrTy, nullptr, name);
+                locals_[name] = { alloca, ti, 0 };
+                if (d->expression()) {
+                    auto  initVal2 = visit(d->expression());
+                    auto* val2     = castValue(initVal2);
+                    builder_->CreateStore(val2, alloca);
+                } else {
+                    builder_->CreateStore(
+                        llvm::ConstantPointerNull::get(ptrTy), alloca);
+                }
+                continue;
             }
-            return {};
-        }
 
-        // Mutex — initialized via lucis_mutexCreate()
-        if (ti->extendedKind == "Mutex") {
-            auto* alloca = builder_->CreateAlloca(ptrTy, nullptr, name);
-            locals_[name] = { alloca, ti, 0 };
-            auto callee = declareBuiltin("lucis_mutexCreate", ptrTy, {});
-            auto* mtx = builder_->CreateCall(callee, {}, "mutex");
-            builder_->CreateStore(mtx, alloca);
-            return {};
-        }
-
-        if (ti->extendedKind == "Map") {
-            // Map<K,V> — always init empty
-            auto* mapTy  = getOrCreateMapStructType();
-            auto  suffix  = ti->builtinSuffix;
-            auto* alloca = builder_->CreateAlloca(mapTy, nullptr, name);
-            locals_[name] = { alloca, ti, 0 };
-
-            if (suffix.size() > 4 &&
-                suffix.substr(suffix.size() - 3) == "raw") {
-                // Raw val: lucis_map_init_<ks>_raw needs val_size
-                auto* valLLTy = ti->valueType->toLLVMType(
-                    *context_, module_->getDataLayout());
-                auto valSz = module_->getDataLayout().getTypeAllocSize(valLLTy);
-                auto initFn = declareBuiltin(
-                    "lucis_map_init_" + suffix,
-                    llvm::Type::getVoidTy(*context_),
-                    { ptrTy, usizeTy });
-                builder_->CreateCall(initFn, {
-                    alloca,
-                    llvm::ConstantInt::get(usizeTy, valSz)
-                });
-            } else {
-                auto initFn = declareBuiltin(
-                    "lucis_map_init_" + suffix,
-                    llvm::Type::getVoidTy(*context_),
-                    { ptrTy });
-                builder_->CreateCall(initFn, { alloca });
+            if (ti->extendedKind == "Mutex") {
+                auto* alloca = builder_->CreateAlloca(ptrTy, nullptr, name);
+                locals_[name] = { alloca, ti, 0 };
+                auto callee = declareBuiltin("lucis_mutexCreate", ptrTy, {});
+                auto* mtx = builder_->CreateCall(callee, {}, "mutex");
+                builder_->CreateStore(mtx, alloca);
+                continue;
             }
-            return {};
-        }
 
-        if (ti->extendedKind == "Set") {
-            // Set<T> — init, then add elements from array literal if present
-            auto* setTy  = getOrCreateSetStructType();
+            if (ti->extendedKind == "Map") {
+                auto* mapTy  = getOrCreateMapStructType();
+                auto  suffix = ti->builtinSuffix;
+                auto* alloca = builder_->CreateAlloca(mapTy, nullptr, name);
+                locals_[name] = { alloca, ti, 0 };
+
+                if (suffix.size() > 4 && suffix.substr(suffix.size() - 3) == "raw") {
+                    auto* valLLTy = ti->valueType->toLLVMType(*context_, module_->getDataLayout());
+                    auto valSz = module_->getDataLayout().getTypeAllocSize(valLLTy);
+                    auto initFn = declareBuiltin("lucis_map_init_" + suffix,
+                        llvm::Type::getVoidTy(*context_), { ptrTy, usizeTy });
+                    builder_->CreateCall(initFn, { alloca, llvm::ConstantInt::get(usizeTy, valSz) });
+                } else {
+                    auto initFn = declareBuiltin("lucis_map_init_" + suffix,
+                        llvm::Type::getVoidTy(*context_), { ptrTy });
+                    builder_->CreateCall(initFn, { alloca });
+                }
+                continue;
+            }
+
+            if (ti->extendedKind == "Set") {
+                auto* setTy  = getOrCreateSetStructType();
+                if (!ti->elementType) {
+                    std::cerr << "lucis: internal error: Set missing elementType\n";
+                    continue;
+                }
+                auto  suffix = getVecSuffix(ti->elementType);
+                auto* alloca = builder_->CreateAlloca(setTy, nullptr, name);
+                locals_[name] = { alloca, ti, 0 };
+
+                auto* elemLLTy = ti->elementType->toLLVMType(*context_, module_->getDataLayout());
+                if (suffix == "raw") {
+                    auto elemSz = module_->getDataLayout().getTypeAllocSize(elemLLTy);
+                    auto initFn = declareBuiltin("lucis_set_init_raw",
+                        llvm::Type::getVoidTy(*context_), { ptrTy, usizeTy });
+                    builder_->CreateCall(initFn, { alloca, llvm::ConstantInt::get(usizeTy, elemSz) });
+                } else {
+                    auto initFn = declareBuiltin("lucis_set_init_" + suffix,
+                        llvm::Type::getVoidTy(*context_), { ptrTy });
+                    builder_->CreateCall(initFn, { alloca });
+                }
+
+                if (d->expression()) {
+                    auto* arrLit = dynamic_cast<LucisParser::ArrayLitExprContext*>(d->expression());
+                    if (arrLit && !arrLit->expression().empty()) {
+                        if (suffix == "raw") {
+                            auto addFn = declareBuiltin("lucis_set_add_raw",
+                                llvm::Type::getInt32Ty(*context_), { ptrTy, ptrTy });
+                            for (auto* e : arrLit->expression()) {
+                                auto* val2 = castValue(visit(e));
+                                auto* tmp = builder_->CreateAlloca(elemLLTy);
+                                builder_->CreateStore(val2, tmp);
+                                builder_->CreateCall(addFn, { alloca, tmp });
+                                consumeExprIfOwnedLocal(e);
+                            }
+                        } else {
+                            auto addFn = declareBuiltin("lucis_set_add_" + suffix,
+                                llvm::Type::getInt32Ty(*context_), { ptrTy, elemLLTy });
+                            for (auto* e : arrLit->expression()) {
+                                auto* val2 = castValue(visit(e));
+                                if (val2->getType() != elemLLTy) {
+                                    if (val2->getType()->isIntegerTy() && elemLLTy->isIntegerTy())
+                                        val2 = builder_->CreateIntCast(val2, elemLLTy, ti->elementType->isSigned);
+                                }
+                                builder_->CreateCall(addFn, { alloca, val2 });
+                                consumeExprIfOwnedLocal(e);
+                            }
+                        }
+                    }
+                }
+                continue;
+            }
+
+            // Vec<T>
+            auto* vecTy  = getOrCreateVecStructType();
             if (!ti->elementType) {
-                std::cerr << "lucis: internal error: Set missing elementType\n";
-                return {};
+                std::cerr << "lucis: internal error: Vec missing elementType\n";
+                continue;
             }
-            auto  suffix = getVecSuffix(ti->elementType);
-            auto* alloca = builder_->CreateAlloca(setTy, nullptr, name);
+            auto suffix = getVecSuffix(ti->elementType);
+
+            auto* alloca = builder_->CreateAlloca(vecTy, nullptr, name);
             locals_[name] = { alloca, ti, 0 };
 
-            auto* elemLLTy = ti->elementType->toLLVMType(
-                *context_, module_->getDataLayout());
-            if (suffix == "raw") {
-                auto elemSz = module_->getDataLayout().getTypeAllocSize(elemLLTy);
-                auto initFn = declareBuiltin("lucis_set_init_raw",
-                    llvm::Type::getVoidTy(*context_), { ptrTy, usizeTy });
-                builder_->CreateCall(initFn, {
-                    alloca, llvm::ConstantInt::get(usizeTy, elemSz)
-                });
-            } else {
-                auto initFn = declareBuiltin(
-                    "lucis_set_init_" + suffix,
-                    llvm::Type::getVoidTy(*context_),
-                    { ptrTy });
+            if (!d->expression()) {
+                auto initFn = declareBuiltin("lucis_vec_init_" + suffix,
+                    llvm::Type::getVoidTy(*context_), { ptrTy });
                 builder_->CreateCall(initFn, { alloca });
+                continue;
             }
 
-            // If initializer is an array literal, add each element
-            if (ctx->expression()) {
-                auto* arrLit = dynamic_cast<LucisParser::ArrayLitExprContext*>(
-                    ctx->expression());
-                if (arrLit && !arrLit->expression().empty()) {
+            auto* arrLit = dynamic_cast<LucisParser::ArrayLitExprContext*>(d->expression());
+
+            if (arrLit) {
+                std::vector<llvm::Value*> vals;
+                for (auto* e : arrLit->expression()) {
+                    vals.push_back(castValue(visit(e)));
+                    consumeExprIfOwnedLocal(e);
+                }
+
+                auto* elemLLTy = ti->elementType->toLLVMType(*context_, module_->getDataLayout());
+
+                if (vals.empty()) {
+                    auto initFn = declareBuiltin("lucis_vec_init_" + suffix,
+                        llvm::Type::getVoidTy(*context_), { ptrTy });
+                    builder_->CreateCall(initFn, { alloca });
+                } else {
                     if (suffix == "raw") {
-                        auto addFn = declareBuiltin("lucis_set_add_raw",
-                            llvm::Type::getInt32Ty(*context_),
-                            { ptrTy, ptrTy });
-                        for (auto* e : arrLit->expression()) {
-                            auto* val = castValue(visit(e));
+                        auto& dl       = module_->getDataLayout();
+                        auto  elemSz   = dl.getTypeAllocSize(elemLLTy);
+                        auto* elemSzVal = llvm::ConstantInt::get(usizeTy, elemSz);
+
+                        auto initCapFn = declareBuiltin("lucis_vec_init_cap_raw",
+                            llvm::Type::getVoidTy(*context_), { ptrTy, usizeTy, usizeTy });
+                        builder_->CreateCall(initCapFn, { alloca,
+                            llvm::ConstantInt::get(usizeTy, vals.size()), elemSzVal });
+
+                        auto pushFn = declareBuiltin("lucis_vec_push_raw",
+                            llvm::Type::getVoidTy(*context_), { ptrTy, ptrTy, usizeTy });
+                        for (auto* v : vals) {
                             auto* tmp = builder_->CreateAlloca(elemLLTy);
-                            builder_->CreateStore(val, tmp);
-                            builder_->CreateCall(addFn, { alloca, tmp });
-                            consumeExprIfOwnedLocal(e);
+                            builder_->CreateStore(v, tmp);
+                            builder_->CreateCall(pushFn, { alloca, tmp, elemSzVal });
                         }
                     } else {
-                        auto addFn = declareBuiltin(
-                            "lucis_set_add_" + suffix,
-                            llvm::Type::getInt32Ty(*context_),
-                            { ptrTy, elemLLTy });
-                        for (auto* e : arrLit->expression()) {
-                            auto* val = castValue(visit(e));
-                            if (val->getType() != elemLLTy) {
-                                if (val->getType()->isIntegerTy() && elemLLTy->isIntegerTy())
-                                    val = builder_->CreateIntCast(val, elemLLTy,
-                                                                  ti->elementType->isSigned);
+                        auto initCapFn = declareBuiltin("lucis_vec_init_cap_" + suffix,
+                            llvm::Type::getVoidTy(*context_), { ptrTy, usizeTy });
+                        builder_->CreateCall(initCapFn, { alloca,
+                            llvm::ConstantInt::get(usizeTy, vals.size()) });
+
+                        auto pushFn = declareBuiltin("lucis_vec_push_" + suffix,
+                            llvm::Type::getVoidTy(*context_), { ptrTy, elemLLTy });
+                        for (auto* v : vals) {
+                            if (v->getType() != elemLLTy) {
+                                if (v->getType()->isIntegerTy() && elemLLTy->isIntegerTy())
+                                    v = builder_->CreateIntCast(v, elemLLTy, ti->elementType->isSigned);
                             }
-                            builder_->CreateCall(addFn, { alloca, val });
-                            consumeExprIfOwnedLocal(e);
+                            builder_->CreateCall(pushFn, { alloca, v });
                         }
                     }
                 }
-            }
-            return {};
-        }
-
-        // Vec<T> initialized from array literal or function call
-        auto* vecTy   = getOrCreateVecStructType();
-        if (!ti->elementType) {
-            std::cerr << "lucis: internal error: Vec missing elementType\n";
-            return {};
-        }
-        auto  suffix  = getVecSuffix(ti->elementType);
-
-        auto* alloca = builder_->CreateAlloca(vecTy, nullptr, name);
-        locals_[name] = { alloca, ti, 0 };
-
-        // No initializer — default to empty vec
-        if (!ctx->expression()) {
-            auto initFn = declareBuiltin(
-                "lucis_vec_init_" + suffix,
-                llvm::Type::getVoidTy(*context_),
-                { ptrTy });
-            builder_->CreateCall(initFn, { alloca });
-            return {};
-        }
-
-        // Check if the initializer is an array literal
-        auto* arrLit = dynamic_cast<LucisParser::ArrayLitExprContext*>(
-                ctx->expression());
-
-        if (arrLit) {
-            // Collect element values
-            std::vector<llvm::Value*> vals;
-            for (auto* e : arrLit->expression()) {
-                vals.push_back(castValue(visit(e)));
-                consumeExprIfOwnedLocal(e);
-            }
-
-            auto* elemLLTy = ti->elementType->toLLVMType(
-                *context_, module_->getDataLayout());
-
-            if (vals.empty()) {
-                // Empty vec: call init
-                auto initFn = declareBuiltin(
-                    "lucis_vec_init_" + suffix,
-                    llvm::Type::getVoidTy(*context_),
-                    { ptrTy });
-                builder_->CreateCall(initFn, { alloca });
             } else {
-                // Non-empty vec: init with capacity, then push each
-                if (suffix == "raw") {
-                    auto& dl       = module_->getDataLayout();
-                    auto  elemSz   = dl.getTypeAllocSize(elemLLTy);
-                    auto* elemSzVal = llvm::ConstantInt::get(usizeTy, elemSz);
+                auto initVal2 = visit(d->expression());
+                auto* val2 = castValue(initVal2);
+                builder_->CreateStore(val2, alloca);
+            }
+            continue;
+        }
 
-                    auto initCapFn = declareBuiltin(
-                        "lucis_vec_init_cap_raw",
-                        llvm::Type::getVoidTy(*context_),
-                        { ptrTy, usizeTy, usizeTy });
-                    builder_->CreateCall(initCapFn, {
-                        alloca,
-                        llvm::ConstantInt::get(usizeTy, vals.size()),
-                        elemSzVal
-                    });
+        if (dims > 0 && (!ti || ti->kind != TypeKind::Pointer)) {
+            auto* elemType = ti->toLLVMType(*context_, module_->getDataLayout());
 
-                    auto pushFn = declareBuiltin(
-                        "lucis_vec_push_raw",
-                        llvm::Type::getVoidTy(*context_),
-                        { ptrTy, ptrTy, usizeTy });
-                    for (auto* v : vals) {
-                        auto* tmp = builder_->CreateAlloca(elemLLTy);
-                        builder_->CreateStore(v, tmp);
-                        builder_->CreateCall(pushFn, { alloca, tmp, elemSzVal });
-                    }
-                } else {
-                    auto initCapFn = declareBuiltin(
-                        "lucis_vec_init_cap_" + suffix,
-                        llvm::Type::getVoidTy(*context_),
-                        { ptrTy, usizeTy });
-                    builder_->CreateCall(initCapFn, {
-                        alloca,
-                        llvm::ConstantInt::get(usizeTy, vals.size())
-                    });
-
-                    auto pushFn = declareBuiltin(
-                        "lucis_vec_push_" + suffix,
-                        llvm::Type::getVoidTy(*context_),
-                        { ptrTy, elemLLTy });
-                    for (auto* v : vals) {
-                        if (v->getType() != elemLLTy) {
-                            if (v->getType()->isIntegerTy() && elemLLTy->isIntegerTy())
-                                v = builder_->CreateIntCast(v, elemLLTy,
-                                                            ti->elementType->isSigned);
-                        }
-                        builder_->CreateCall(pushFn, { alloca, v });
+            if (!d->expression()) {
+                auto* spec = ctx->typeSpec();
+                std::vector<unsigned> sizes;
+                while (!spec->typeSpec().empty() && spec->INT_LIT()) {
+                    sizes.push_back(std::stoul(spec->INT_LIT()->getText()));
+                    spec = spec->typeSpec(0);
+                }
+                if (sizes.empty() && !aliasArraySizes.empty())
+                    sizes = aliasArraySizes;
+                if (sizes.empty()) {
+                    std::cerr << "lucis: array variable '" << name
+                              << "' requires explicit dimensions\n";
+                    continue;
+                }
+                for (auto sz : sizes) {
+                    if (sz == 0) {
+                        std::cerr << "lucis: array dimension cannot be zero\n";
+                        continue;
                     }
                 }
+                llvm::Type* arrTy = elemType;
+                for (auto it = sizes.rbegin(); it != sizes.rend(); ++it)
+                    arrTy = llvm::ArrayType::get(arrTy, *it);
+                auto* alloca = builder_->CreateAlloca(arrTy, nullptr, name);
+                {
+                    uint64_t totalBytes = module_->getDataLayout().getTypeAllocSize(arrTy);
+                    if (totalBytes > 64) {
+                        auto* sizeVal = llvm::ConstantInt::get(
+                            llvm::Type::getInt64Ty(*context_), totalBytes);
+                        builder_->CreateMemSet(alloca, builder_->getInt8(0),
+                                              sizeVal, llvm::MaybeAlign(1));
+                    } else {
+                        builder_->CreateStore(llvm::Constant::getNullValue(arrTy), alloca);
+                    }
+                }
+                locals_[name] = { alloca, ti, dims };
+                continue;
             }
+
+            auto  initVal = visit(d->expression());
+            auto* val     = castValue(initVal);
+
+            if (!val->getType()->isArrayTy()) {
+                auto* spec = ctx->typeSpec();
+                std::vector<unsigned> sizes;
+                while (!spec->typeSpec().empty() && spec->INT_LIT()) {
+                    sizes.push_back(std::stoul(spec->INT_LIT()->getText()));
+                    spec = spec->typeSpec(0);
+                }
+                if (sizes.empty() && !aliasArraySizes.empty())
+                    sizes = aliasArraySizes;
+                llvm::Type* arrTy = elemType;
+                for (auto it = sizes.rbegin(); it != sizes.rend(); ++it)
+                    arrTy = llvm::ArrayType::get(arrTy, *it);
+                auto* alloca = builder_->CreateAlloca(arrTy, nullptr, name);
+                builder_->CreateStore(llvm::Constant::getNullValue(arrTy), alloca);
+                locals_[name] = { alloca, ti, dims };
+                continue;
+            }
+
+            auto* targetTy = buildTargetArrayType(val->getType(), elemType);
+            auto* alloca   = builder_->CreateAlloca(targetTy, nullptr, name);
+            storeArrayElements(val, alloca, targetTy, ti, dims);
+            locals_[name] = { alloca, ti, dims };
         } else {
-            // Function call or other expression returning Vec struct
-            auto initVal = visit(ctx->expression());
-            auto* val = castValue(initVal);
+            // Scalar variable
+            auto* type   = ti->toLLVMType(*context_, module_->getDataLayout());
+            auto* alloca = builder_->CreateAlloca(type, nullptr, name);
+            unsigned trackedDims = (ti && ti->kind == TypeKind::Pointer) ? dims : 0;
+            std::vector<unsigned> pointerArraySizes;
+            if (ti && ti->kind == TypeKind::Pointer && ctx->typeSpec() &&
+                ctx->typeSpec()->STAR() && !ctx->typeSpec()->typeSpec().empty()) {
+                auto* inner = ctx->typeSpec()->typeSpec(0);
+                while (inner && inner->LBRACKET()) {
+                    if (!inner->INT_LIT()) break;
+                    pointerArraySizes.push_back(std::stoul(inner->INT_LIT()->getText()));
+                    if (inner->typeSpec().empty()) break;
+                    inner = inner->typeSpec(0);
+                }
+            }
+            VarInfo vi{ alloca, ti, trackedDims };
+            vi.isBorrowed = (ti && ti->kind == TypeKind::String &&
+                     isBorrowedStringValueExpr(d->expression()));
+            vi.fixedArraySizes = std::move(pointerArraySizes);
+            locals_[name] = std::move(vi);
+
+            if (!d->expression()) {
+                if (lastInitVal) {
+                    builder_->CreateStore(lastInitVal, alloca);
+                } else {
+                    builder_->CreateStore(llvm::Constant::getNullValue(type), alloca);
+                }
+                continue;
+            }
+
+            auto  initVal = visit(d->expression());
+            auto* val     = castValue(initVal);
+            auto* srcTI   = resolveExprTypeInfo(d->expression());
+
+            bool srcSigned = !val->getType()->isIntegerTy(1);
+            if (srcTI && srcTI->kind == TypeKind::Integer)
+                srcSigned = srcTI->isSigned;
+            val = coerceValueToType(val, type, srcSigned);
+
             builder_->CreateStore(val, alloca);
         }
-
-        return {};
-    }
-
-    if (dims > 0 && (!ti || ti->kind != TypeKind::Pointer)) {
-        // Array variable initialization
-        auto* elemType = ti->toLLVMType(*context_, module_->getDataLayout());
-
-        if (!ctx->expression()) {
-            // No initializer — zero-initialize the array
-            // Walk typeSpec to collect fixed-size dimensions [N]
-            auto* spec = ctx->typeSpec();
-            std::vector<unsigned> sizes;
-            while (!spec->typeSpec().empty() && spec->INT_LIT()) {
-                sizes.push_back(std::stoul(spec->INT_LIT()->getText()));
-                spec = spec->typeSpec(0);
-            }
-            // Fallback for type-alias arrays
-            if (sizes.empty() && !aliasArraySizes.empty())
-                sizes = aliasArraySizes;
-            if (sizes.empty()) {
-                std::cerr << "lucis: array variable '" << name
-                          << "' requires explicit dimensions\n";
-                return {};
-            }
-            // Validate no zero dimensions
-            for (auto sz : sizes) {
-                if (sz == 0) {
-                    std::cerr << "lucis: array dimension cannot be zero\n";
-                    return {};
-                }
-            }
-            // Build nested array type from innermost to outermost
-            llvm::Type* arrTy = elemType;
-            for (auto it = sizes.rbegin(); it != sizes.rend(); ++it)
-                arrTy = llvm::ArrayType::get(arrTy, *it);
-            auto* alloca = builder_->CreateAlloca(arrTy, nullptr, name);
-            {
-                uint64_t totalBytes = module_->getDataLayout().getTypeAllocSize(arrTy);
-                if (totalBytes > 64) {
-                    // Use memset for large arrays — storing a large zeroinitializer
-                    // constant causes LLVM SelectionDAG to expand it into thousands
-                    // of individual stores, hanging the backend codegen.
-                    auto* sizeVal = llvm::ConstantInt::get(
-                        llvm::Type::getInt64Ty(*context_), totalBytes);
-                    builder_->CreateMemSet(alloca, builder_->getInt8(0),
-                                          sizeVal, llvm::MaybeAlign(1));
-                } else {
-                    builder_->CreateStore(llvm::Constant::getNullValue(arrTy), alloca);
-                }
-            }
-            locals_[name] = { alloca, ti, dims };
-            return {};
-        }
-
-        auto  initVal = visit(ctx->expression());
-        auto* val     = castValue(initVal);
-
-        if (!val->getType()->isArrayTy()) {
-            // Initializer is not an array type (e.g. [] empty literal) —
-            // use the declared type dimensions from the type spec
-            auto* spec = ctx->typeSpec();
-            std::vector<unsigned> sizes;
-            while (!spec->typeSpec().empty() && spec->INT_LIT()) {
-                sizes.push_back(std::stoul(spec->INT_LIT()->getText()));
-                spec = spec->typeSpec(0);
-            }
-            if (sizes.empty() && !aliasArraySizes.empty())
-                sizes = aliasArraySizes;
-            llvm::Type* arrTy = elemType;
-            for (auto it = sizes.rbegin(); it != sizes.rend(); ++it)
-                arrTy = llvm::ArrayType::get(arrTy, *it);
-            auto* alloca = builder_->CreateAlloca(arrTy, nullptr, name);
-            builder_->CreateStore(llvm::Constant::getNullValue(arrTy), alloca);
-            locals_[name] = { alloca, ti, dims };
-            return {};
-        }
-
-        auto* targetTy = buildTargetArrayType(val->getType(), elemType);
-        auto* alloca   = builder_->CreateAlloca(targetTy, nullptr, name);
-        storeArrayElements(val, alloca, targetTy, ti, dims);
-
-        locals_[name] = { alloca, ti, dims };
-    } else {
-        // Scalar variable (existing flow)
-        auto* type   = ti->toLLVMType(*context_, module_->getDataLayout());
-        auto* alloca = builder_->CreateAlloca(type, nullptr, name);
-        // For pointer-to-array declarations (e.g. *[N]T), keep array depth
-        // as metadata for method/index inference, but keep storage scalar.
-        unsigned trackedDims = (ti && ti->kind == TypeKind::Pointer) ? dims : 0;
-        std::vector<unsigned> pointerArraySizes;
-        if (ti && ti->kind == TypeKind::Pointer && ctx->typeSpec() &&
-            ctx->typeSpec()->STAR() && !ctx->typeSpec()->typeSpec().empty()) {
-            auto* inner = ctx->typeSpec()->typeSpec(0);
-            while (inner && inner->LBRACKET()) {
-                if (!inner->INT_LIT()) break;
-                pointerArraySizes.push_back(std::stoul(inner->INT_LIT()->getText()));
-                if (inner->typeSpec().empty()) break;
-                inner = inner->typeSpec(0);
-            }
-        }
-        VarInfo vi{ alloca, ti, trackedDims };
-        vi.isBorrowed = (ti && ti->kind == TypeKind::String &&
-                 isBorrowedStringValueExpr(ctx->expression()));
-        vi.fixedArraySizes = std::move(pointerArraySizes);
-        locals_[name] = std::move(vi);
-
-        if (!ctx->expression()) {
-            // No initializer — zero-initialize
-            builder_->CreateStore(llvm::Constant::getNullValue(type), alloca);
-            return {};
-        }
-
-        auto  initVal = visit(ctx->expression());
-        auto* val     = castValue(initVal);
-        auto* srcTI   = resolveExprTypeInfo(ctx->expression());
-
-        bool srcSigned = !val->getType()->isIntegerTy(1);
-        if (srcTI && srcTI->kind == TypeKind::Integer)
-            srcSigned = srcTI->isSigned;
-        val = coerceValueToType(val, type, srcSigned);
-
-        builder_->CreateStore(val, alloca);
     }
 
     return {};

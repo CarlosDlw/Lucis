@@ -1442,14 +1442,24 @@ static void collectLocalsFromStmts(
       std::string typeName;
       if (vd->typeSpec())
         typeName = safeText(vd->typeSpec());
-      if (typeName == "auto" && vd->expression()) {
-        auto inferred = inferExprTypeName(vd->expression(), out, flc);
-        if (!inferred.empty())
-          typeName = inferred;
+
+      if (vd->LPAREN()) {
+        for (auto* id : vd->IDENTIFIER()) {
+          std::string varName = id->getText();
+          out[varName] = {typeName, 0};
+        }
+      } else {
+        for (auto* d : vd->varDeclarator()) {
+          std::string varName = safeText(d->IDENTIFIER());
+          if (typeName == "auto" && d->expression()) {
+            auto inferred = inferExprTypeName(d->expression(), out, flc);
+            if (!inferred.empty())
+              typeName = inferred;
+          }
+          if (!varName.empty())
+            out[varName] = {typeName, 0};
+        }
       }
-      if (vd->IDENTIFIER().empty())
-        continue;
-      out[safeIdAt(vd, 0)] = {typeName, 0};
 
       if (auto *cu = dynamic_cast<LucisParser::CatchUnwrapExprContext *>(
               vd->expression())) {

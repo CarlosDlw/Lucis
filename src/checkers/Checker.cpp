@@ -6751,205 +6751,206 @@ void Checker::checkVarDeclStmt(LucisParser::VarDeclStmtContext* stmt) {
 
     // ── Detect module prefix (qualified type: LIB::Point) ────────
     bool hasNsPrefix = stmt->SCOPE() != nullptr;
-    size_t identOffset = hasNsPrefix ? 1 : 0;
-    std::string nsPrefix = hasNsPrefix && stmt->IDENTIFIER().size() > 0 ? stmt->IDENTIFIER(0)->getText() : "";
-
-    auto name = stmt->IDENTIFIER().size() > identOffset ? stmt->IDENTIFIER(identOffset)->getText() : "";
-
-    {
-        auto it = locals_.find(name);
-        if (it != locals_.end() && it->second.scopeDepth == scopeDepth_) {
-            error(stmt, "variable '" + name + "' already declared in this scope");
-            return;
-        }
-    }
+    std::string nsPrefix = hasNsPrefix && stmt->IDENTIFIER().size() > 0
+        ? stmt->IDENTIFIER(0)->getText() : "";
 
     // ── Detect auto type ─────────────────────────────────────────────
     bool isAutoType = stmt->typeSpec() && stmt->typeSpec()->AUTO() != nullptr;
 
-    if (isAutoType) {
-        // auto MUST have an initializer
-        if (!stmt->expression()) {
-            error(stmt, "type 'auto' requires an initializer expression");
-            return;
-        }
-
-        // Infer the type from the initializer expression
-        auto* initType = resolveExprType(stmt->expression());
-
-        // Reject cases where the type cannot be inferred
-        if (!initType) {
-            error(stmt, "cannot infer type: initializer expression has no "
-                        "determinable type");
-            return;
-        }
-
-        // Reject void type inference
-        if (initType->kind == TypeKind::Void) {
-            error(stmt, "cannot infer type: initializer expression has "
-                        "type 'void'");
-            return;
-        }
-
-        // Determine array dimensions from the initializer
-        unsigned arrayDims = 0;
-        if (auto* arrLit = dynamic_cast<LucisParser::ArrayLitExprContext*>(
-                stmt->expression())) {
-            if (!arrLit->expression().empty()) {
-                arrayDims = 1;
-            }
-        } else {
-            // Check if the initializer is a known array variable
-            arrayDims = resolveExprArrayDims(stmt->expression());
-        }
-
-        // Infer pointer type from &var
-        if (auto* addr = dynamic_cast<LucisParser::AddrOfExprContext*>(
-                stmt->expression())) {
-            if (auto* ident = dynamic_cast<LucisParser::IdentExprContext*>(addr->expression())) {
-                auto varName = ident->IDENTIFIER()->getText();
-                auto it = locals_.find(varName);
-                if (it != locals_.end() && initType &&
-                    initType->kind == TypeKind::Pointer) {
-                    // initType is already the pointer type from resolveExprType
-                }
-            }
-        }
-
-        VarInfo vi{initType, arrayDims, true, false, nullptr};
-        if (stmt->IDENTIFIER().size() > identOffset && stmt->IDENTIFIER(identOffset)->getSymbol())
-            vi.declToken = stmt->IDENTIFIER(identOffset)->getSymbol();
-        vi.scopeDepth = scopeDepth_;
-        updateOwnershipOnInitialization(vi, stmt->expression());
-        locals_[name] = vi;
-        markExprAsMoved(stmt->expression(), stmt);
-        trackVarBufferFromExpr(name, stmt->expression(), initType);
-        trackVarNumericRangeFromExpr(name, stmt->expression(), initType);
-        return;
-    }
-
-    // ── Explicit type ────────────────────────────────────────────────
+    // ── Resolve type for explicit types ──────────────────────────────
+    const TypeInfo* typeInfo = nullptr;
     unsigned arrayDims = 0;
-    auto* typeInfo = [&]() -> const TypeInfo* {
-        if (!activeTypeSubst_.empty())
-            return resolveTypeSpecWithSubst(stmt->typeSpec(), activeTypeSubst_, arrayDims);
-        if (hasNsPrefix) {
-            // Look up the type in the specified module
-            auto* ts = stmt->typeSpec();
-            if (ts && ts->IDENTIFIER()) {
-                auto typeName = ts->IDENTIFIER()->getText();
-                if (moduleRegistry_) {
-                    auto* sym = moduleRegistry_->findSymbol(nsPrefix, typeName);
-                    if (!sym) {
-                        error(stmt, "'" + nsPrefix + "::" + typeName + "' is not exported");
+    if (!isAutoType) {
+        typeInfo = [&]() -> const TypeInfo* {
+            if (!activeTypeSubst_.empty())
+                return resolveTypeSpecWithSubst(stmt->typeSpec(), activeTypeSubst_, arrayDims);
+            if (hasNsPrefix) {
+                auto* ts = stmt->typeSpec();
+                if (ts && ts->IDENTIFIER()) {
+                    auto typeName = ts->IDENTIFIER()->getText();
+                    if (moduleRegistry_) {
+                        auto* sym = moduleRegistry_->findSymbol(nsPrefix, typeName);
+                        if (!sym) {
+                            error(stmt, "'" + nsPrefix + "::" + typeName + "' is not exported");
+                            return nullptr;
+                        }
+                    }
+                    auto* ti = typeRegistry_.lookup(typeName);
+                    if (!ti) {
+                        error(stmt, "type '" + typeName + "' from module '" + nsPrefix +
+                                     "' is not imported; add 'use " + nsPrefix + "::" + typeName + ";'");
                         return nullptr;
                     }
+                    return ti;
                 }
-                auto* ti = typeRegistry_.lookup(typeName);
-                if (!ti) {
-                    error(stmt, "type '" + typeName + "' from module '" + nsPrefix +
-                                 "' is not imported; add 'use " + nsPrefix + "::" + typeName + ";'");
-                    return nullptr;
-                }
-                return ti;
             }
-        }
-        return resolveTypeSpec(stmt->typeSpec(), arrayDims);
-    }();
-    if (!typeInfo) return;
-
-    // Declaration without initializer: int32 x;
-    if (!stmt->expression()) {
-        // Extended types (Vec, Map, Set), Structs, and Arrays are implicitly
-        // zero-initialized by the compiler — suppress "used before initialized".
-        bool autoInit = (typeInfo->kind == TypeKind::Extended ||
-                         typeInfo->kind == TypeKind::Struct ||
-                         arrayDims > 0);
-        VarInfo vi{typeInfo, arrayDims, autoInit, false, nullptr};
-        if (stmt->IDENTIFIER().size() > identOffset && stmt->IDENTIFIER(identOffset)->getSymbol())
-            vi.declToken = stmt->IDENTIFIER(identOffset)->getSymbol();
-        vi.scopeDepth = scopeDepth_;
-        vi.ownership = autoInit && isDropTrackedType(typeInfo, arrayDims)
-            ? VarInfo::OwnershipState::Owned
-            : VarInfo::OwnershipState::BorrowedImm;
-        locals_[name] = vi;
-        return;
+            return resolveTypeSpec(stmt->typeSpec(), arrayDims);
+        }();
+        if (!typeInfo) return;
     }
 
-    // Validate initializer expression
-    auto* initType = resolveExprType(stmt->expression());
+    // ── Iterate varDeclarators ──────────────────────────────────────
+    auto decls = stmt->varDeclarator();
+    if (decls.empty()) return;
 
-    // Allow array literal → vec/set conversion (but NOT for Map)
-    if (typeInfo->kind == TypeKind::Extended &&
-        dynamic_cast<LucisParser::ArrayLitExprContext*>(stmt->expression())) {
-        if (typeInfo->extendedKind == "Map") {
-            error(stmt, "Map cannot be initialized with a literal; "
-                        "use method 'set' to add entries");
+    // Find the last declarator that has an initializer (propagation source)
+    LucisParser::VarDeclaratorContext* lastInitDecl = nullptr;
+    for (auto it = decls.rbegin(); it != decls.rend(); ++it) {
+        if ((*it)->expression()) { lastInitDecl = *it; break; }
+    }
+
+    // For auto, infer type from the first declarator that has an init
+    if (isAutoType && !typeInfo) {
+        for (auto* d : decls) {
+            if (d->expression()) {
+                auto* initType = resolveExprType(d->expression());
+                if (!initType || initType->kind == TypeKind::Void) {
+                    error(d, "cannot infer auto type for variable '" +
+                             d->IDENTIFIER()->getText() + "'");
+                    return;
+                }
+                typeInfo = initType;
+                if (auto* arrLit = dynamic_cast<LucisParser::ArrayLitExprContext*>(d->expression())) {
+                    if (!arrLit->expression().empty()) arrayDims = 1;
+                } else {
+                    arrayDims = resolveExprArrayDims(d->expression());
+                }
+                break;
+            }
+        }
+        if (!typeInfo) {
+            error(stmt, "type 'auto' requires at least one initializer expression");
             return;
         }
-        // Array literal initializing an extended type — validate element types
-        auto* arrExpr = dynamic_cast<LucisParser::ArrayLitExprContext*>(
-            stmt->expression());
-        auto elems = arrExpr->expression();
-        for (auto* e : elems) {
-            auto* et = resolveExprType(e);
-            if (et && typeInfo->elementType &&
-                !isAssignable(typeInfo->elementType, et)) {
-                error(e, "element type mismatch: expected '" +
-                         typeInfo->elementType->name + "', got '" +
-                         et->name + "'");
-            }
-        }
-    } else if (initType && typeInfo && !isAssignable(typeInfo, initType)) {
-        error(stmt, "type mismatch: cannot assign '" + initType->name +
-                         "' to variable '" + name + "' of type '" +
-                         typeInfo->name + "'");
-    } else if (initType && typeInfo) {
-        // Check array dimension mismatch between declared type and initializer
-        bool isArrayLit = dynamic_cast<LucisParser::ArrayLitExprContext*>(stmt->expression()) != nullptr;
-        if (arrayDims == 0 && isArrayLit) {
-            error(stmt, "type mismatch: cannot assign array literal to non-array variable '" +
-                             name + "'");
-        } else if (arrayDims > 0 && !isArrayLit) {
-            // Check if the initializer is clearly a scalar (int/float/bool/char/string literal)
-            bool isScalarLit =
-                dynamic_cast<LucisParser::IntLitExprContext*>(stmt->expression()) ||
-                dynamic_cast<LucisParser::HexLitExprContext*>(stmt->expression()) ||
-                dynamic_cast<LucisParser::OctLitExprContext*>(stmt->expression()) ||
-                dynamic_cast<LucisParser::BinLitExprContext*>(stmt->expression()) ||
-                dynamic_cast<LucisParser::FloatLitExprContext*>(stmt->expression()) ||
-                dynamic_cast<LucisParser::LeadingDotFloatLitExprContext*>(stmt->expression()) ||
-                dynamic_cast<LucisParser::BoolLitExprContext*>(stmt->expression()) ||
-                dynamic_cast<LucisParser::CharLitExprContext*>(stmt->expression()) ||
-                dynamic_cast<LucisParser::StrLitExprContext*>(stmt->expression()) ||
-                dynamic_cast<LucisParser::CStrLitExprContext*>(stmt->expression()) ||
-                dynamic_cast<LucisParser::SuffixedIntLitExprContext*>(stmt->expression()) ||
-                dynamic_cast<LucisParser::SuffixedHexLitExprContext*>(stmt->expression()) ||
-                dynamic_cast<LucisParser::SuffixedOctLitExprContext*>(stmt->expression()) ||
-                dynamic_cast<LucisParser::SuffixedBinLitExprContext*>(stmt->expression()) ||
-                dynamic_cast<LucisParser::SuffixedFloatLitExprContext*>(stmt->expression()) ||
-                dynamic_cast<LucisParser::SuffixedFloatIntExprContext*>(stmt->expression()) ||
-                dynamic_cast<LucisParser::SuffixedIntFloatExprContext*>(stmt->expression()) ||
-                dynamic_cast<LucisParser::SuffixedLeadingDotFloatExprContext*>(stmt->expression());
-            if (isScalarLit) {
-                error(stmt, "type mismatch: cannot assign scalar to array variable '" +
-                                 name + "'");
-            }
-        }
     }
 
-    // Check: assigning a negative constant to an unsigned integer type
-    checkNegativeToUnsigned(typeInfo, stmt->expression(), stmt);
+    for (auto* d : decls) {
+        auto varName = d->IDENTIFIER()->getText();
 
-    VarInfo vi{typeInfo, arrayDims, true, false, nullptr};
-    if (stmt->IDENTIFIER().size() > identOffset && stmt->IDENTIFIER(identOffset)->getSymbol())
-        vi.declToken = stmt->IDENTIFIER(identOffset)->getSymbol();
-    vi.scopeDepth = scopeDepth_;
-    updateOwnershipOnInitialization(vi, stmt->expression());
-    locals_[name] = vi;
-    markExprAsMoved(stmt->expression(), stmt);
-    trackVarBufferFromExpr(name, stmt->expression(), typeInfo);
-    trackVarNumericRangeFromExpr(name, stmt->expression(), typeInfo);
+        // Check redeclaration in same scope
+        auto it = locals_.find(varName);
+        if (it != locals_.end() && it->second.scopeDepth == scopeDepth_) {
+            error(d, "variable '" + varName + "' already declared in this scope");
+            continue;
+        }
+
+        if (isAutoType) {
+            // auto: use own init, or propagate from last init
+            if (!d->expression()) {
+                if (!lastInitDecl) {
+                    error(d, "type 'auto' requires an initializer for '" + varName + "'");
+                    continue;
+                }
+                VarInfo vi{typeInfo, arrayDims, true, false, nullptr};
+                vi.declToken = d->IDENTIFIER()->getSymbol();
+                vi.scopeDepth = scopeDepth_;
+                updateOwnershipOnInitialization(vi, lastInitDecl->expression());
+                locals_[varName] = vi;
+                continue;
+            }
+            auto* initType = resolveExprType(d->expression());
+            if (!initType) {
+                error(d, "cannot infer type for '" + varName + "'");
+                continue;
+            }
+            if (initType->kind == TypeKind::Void) {
+                error(d, "cannot infer type: initializer for '" + varName +
+                         "' has type 'void'");
+                continue;
+            }
+            VarInfo vi{initType, arrayDims, true, false, nullptr};
+            vi.declToken = d->IDENTIFIER()->getSymbol();
+            vi.scopeDepth = scopeDepth_;
+            updateOwnershipOnInitialization(vi, d->expression());
+            locals_[varName] = vi;
+            markExprAsMoved(d->expression(), stmt);
+            trackVarBufferFromExpr(varName, d->expression(), initType);
+            trackVarNumericRangeFromExpr(varName, d->expression(), initType);
+            continue;
+        }
+
+        // Explicit type: without own initializer — may receive propagated value
+        if (!d->expression()) {
+            bool hasPropagated = (lastInitDecl != nullptr);
+            bool autoInit = hasPropagated ||
+                (typeInfo->kind == TypeKind::Extended ||
+                 typeInfo->kind == TypeKind::Struct ||
+                 arrayDims > 0);
+            VarInfo vi{typeInfo, arrayDims, autoInit, false, nullptr};
+            vi.declToken = d->IDENTIFIER()->getSymbol();
+            vi.scopeDepth = scopeDepth_;
+            vi.ownership = autoInit && isDropTrackedType(typeInfo, arrayDims)
+                ? VarInfo::OwnershipState::Owned
+                : VarInfo::OwnershipState::BorrowedImm;
+            locals_[varName] = vi;
+            continue;
+        }
+
+        // Explicit type with initializer — validate
+        auto* initType = resolveExprType(d->expression());
+
+        if (typeInfo->kind == TypeKind::Extended &&
+            dynamic_cast<LucisParser::ArrayLitExprContext*>(d->expression())) {
+            if (typeInfo->extendedKind == "Map") {
+                error(d, "Map cannot be initialized with a literal; "
+                         "use method 'set' to add entries");
+                continue;
+            }
+            auto* arrExpr = dynamic_cast<LucisParser::ArrayLitExprContext*>(d->expression());
+            for (auto* e : arrExpr->expression()) {
+                auto* et = resolveExprType(e);
+                if (et && typeInfo->elementType &&
+                    !isAssignable(typeInfo->elementType, et)) {
+                    error(e, "element type mismatch: expected '" +
+                             typeInfo->elementType->name + "', got '" + et->name + "'");
+                }
+            }
+        } else if (initType && !isAssignable(typeInfo, initType)) {
+            error(d, "type mismatch: cannot assign '" + initType->name +
+                      "' to variable '" + varName + "' of type '" + typeInfo->name + "'");
+        } else if (initType) {
+            bool isArrayLit = dynamic_cast<LucisParser::ArrayLitExprContext*>(d->expression()) != nullptr;
+            if (arrayDims == 0 && isArrayLit) {
+                error(d, "type mismatch: cannot assign array literal to non-array variable '" +
+                          varName + "'");
+            } else if (arrayDims > 0 && !isArrayLit) {
+                bool isScalarLit =
+                    dynamic_cast<LucisParser::IntLitExprContext*>(d->expression()) ||
+                    dynamic_cast<LucisParser::HexLitExprContext*>(d->expression()) ||
+                    dynamic_cast<LucisParser::OctLitExprContext*>(d->expression()) ||
+                    dynamic_cast<LucisParser::BinLitExprContext*>(d->expression()) ||
+                    dynamic_cast<LucisParser::FloatLitExprContext*>(d->expression()) ||
+                    dynamic_cast<LucisParser::LeadingDotFloatLitExprContext*>(d->expression()) ||
+                    dynamic_cast<LucisParser::BoolLitExprContext*>(d->expression()) ||
+                    dynamic_cast<LucisParser::CharLitExprContext*>(d->expression()) ||
+                    dynamic_cast<LucisParser::StrLitExprContext*>(d->expression()) ||
+                    dynamic_cast<LucisParser::CStrLitExprContext*>(d->expression()) ||
+                    dynamic_cast<LucisParser::SuffixedIntLitExprContext*>(d->expression()) ||
+                    dynamic_cast<LucisParser::SuffixedHexLitExprContext*>(d->expression()) ||
+                    dynamic_cast<LucisParser::SuffixedOctLitExprContext*>(d->expression()) ||
+                    dynamic_cast<LucisParser::SuffixedBinLitExprContext*>(d->expression()) ||
+                    dynamic_cast<LucisParser::SuffixedFloatLitExprContext*>(d->expression()) ||
+                    dynamic_cast<LucisParser::SuffixedFloatIntExprContext*>(d->expression()) ||
+                    dynamic_cast<LucisParser::SuffixedIntFloatExprContext*>(d->expression()) ||
+                    dynamic_cast<LucisParser::SuffixedLeadingDotFloatExprContext*>(d->expression());
+                if (isScalarLit) {
+                    error(d, "type mismatch: cannot assign scalar to array variable '" +
+                              varName + "'");
+                }
+            }
+        }
+
+        checkNegativeToUnsigned(typeInfo, d->expression(), d);
+
+        VarInfo vi{typeInfo, arrayDims, true, false, nullptr};
+        vi.declToken = d->IDENTIFIER()->getSymbol();
+        vi.scopeDepth = scopeDepth_;
+        updateOwnershipOnInitialization(vi, d->expression());
+        locals_[varName] = vi;
+        markExprAsMoved(d->expression(), stmt);
+        trackVarBufferFromExpr(varName, d->expression(), typeInfo);
+        trackVarNumericRangeFromExpr(varName, d->expression(), typeInfo);
+    }
 }
 
 void Checker::checkAssignStmt(LucisParser::AssignStmtContext* stmt) {

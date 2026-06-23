@@ -69,10 +69,16 @@ static void collectLocalsFromStmts(
         if (auto* vd = stmt->varDeclStmt()) {
             std::string typeName;
             if (vd->typeSpec()) typeName = safeText(vd->typeSpec());
-            if (!vd->IDENTIFIER().empty()) {
-                auto* id = vd->IDENTIFIER(0);
-                std::string varName = id->getText();
-                out[varName] = {typeName, 0, id->getSymbol()};
+            if (vd->LPAREN()) {
+                for (auto* id : vd->IDENTIFIER()) {
+                    std::string varName = id->getText();
+                    out[varName] = {typeName, 0, id->getSymbol()};
+                }
+            } else {
+                for (auto* d : vd->varDeclarator()) {
+                    std::string varName = safeText(d->IDENTIFIER());
+                    out[varName] = {typeName, 0, d->IDENTIFIER()->getSymbol()};
+                }
             }
 
             if (auto* cu = dynamic_cast<LucisParser::CatchUnwrapExprContext*>(vd->expression())) {
@@ -1287,11 +1293,18 @@ std::optional<DefinitionResult> DefinitionProvider::walkStmtForDef(
         if (auto r = resolveTypeSpecToken(vd->typeSpec(), hoveredToken, tree,
                                           bindings, filePath, project))
             return r;
-        // Initializer expression
+        // Initializer expression (top-level and per-declarator)
         if (auto* initExpr = vd->expression()) {
             if (auto r = walkExprForDef(initExpr, hoveredToken, tokenText, tree,
                                         bindings, cursorLine, filePath, project))
                 return r;
+        }
+        for (auto* d : vd->varDeclarator()) {
+            if (auto* initExpr = d->expression()) {
+                if (auto r = walkExprForDef(initExpr, hoveredToken, tokenText, tree,
+                                            bindings, cursorLine, filePath, project))
+                    return r;
+            }
         }
         return std::nullopt;
     }
