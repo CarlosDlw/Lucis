@@ -6125,10 +6125,14 @@ std::any IRGen::visitReturnStmt(LucisParser::ReturnStmtContext* ctx) {
     }
 
     // Emit deferred and auto cleanups before returning.
-    // If returning a local collection by value, skip its auto-free.
+    // If returning an owned value, consume the source so auto-cleanup
+    // doesn't free it (skipVar handles bare local names; consume handles
+    // field accesses like `tok.lexeme`).
     std::string skipVar;
     if (auto* ident = dynamic_cast<LucisParser::IdentExprContext*>(ctx->expression())) {
         skipVar = ident->IDENTIFIER()->getText();
+    } else {
+        consumeExprIfOwnedLocal(ctx->expression());
     }
     emitAllCleanups(skipVar);
 
