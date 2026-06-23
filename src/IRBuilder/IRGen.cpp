@@ -4575,16 +4575,29 @@ std::any IRGen::visitCallStmt(LucisParser::CallStmtContext* ctx) {
         std::string suffix;
         if (argTypeInfo && !argTypeInfo->builtinSuffix.empty())
           suffix = argTypeInfo->builtinSuffix;
-        else if (argType->isIntegerTy(1))      suffix = "bool";
-        else if (argType->isIntegerTy(8))      suffix = "i8";
-        else if (argType->isIntegerTy(16))     suffix = "i16";
-        else if (argType->isIntegerTy(32))     suffix = "i32";
-        else if (argType->isIntegerTy(64))     suffix = "i64";
-        else if (argType->isIntegerTy(128))    suffix = "i128";
-        else if (argType->isFloatTy())         suffix = "f32";
-        else if (argType->isDoubleTy())        suffix = "f64";
-        else if (argType->isPointerTy())       suffix = "ptr";
-        else                                   suffix = "i32";
+        else if (!argTypeInfo && ai < argExprs.size()) {
+          // Try to infer type from cast expression (unwrapping parens)
+          auto* e = argExprs[ai];
+          while (auto* paren = dynamic_cast<LucisParser::ParenExprContext*>(e))
+            e = paren->expression();
+          if (auto* cast = dynamic_cast<LucisParser::CastExprContext*>(e)) {
+            auto* castTI = resolveTypeInfo(cast->typeSpec());
+            if (castTI && !castTI->builtinSuffix.empty())
+              suffix = castTI->builtinSuffix;
+          }
+        }
+        if (suffix.empty()) {
+          if (argType->isIntegerTy(1))      suffix = "bool";
+          else if (argType->isIntegerTy(8))      suffix = "i8";
+          else if (argType->isIntegerTy(16))     suffix = "i16";
+          else if (argType->isIntegerTy(32))     suffix = "i32";
+          else if (argType->isIntegerTy(64))     suffix = "i64";
+          else if (argType->isIntegerTy(128))    suffix = "i128";
+          else if (argType->isFloatTy())         suffix = "f32";
+          else if (argType->isDoubleTy())        suffix = "f64";
+          else if (argType->isPointerTy())       suffix = "ptr";
+          else                                   suffix = "i32";
+        }
 
         auto cFuncName = "lucis_" + funcName + "_" + suffix;
         llvm::Value* callArg = arg;
