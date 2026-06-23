@@ -695,7 +695,7 @@ int BuildCommand::run(const ArgParser& parser) {
         }
     }
 
-    // ── Emit raw binary via objcopy ───────────────────────────────
+    // ── Emit raw binary via objcopy (after poscmds, on final ELF) ─
     for (auto& t : tasks) {
         if (t.type != EmitTask::BIN) continue;
         std::string binPath = t.outPath.empty()
