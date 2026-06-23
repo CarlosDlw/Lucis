@@ -200,9 +200,12 @@ std::unique_ptr<PipelineResult> LucisPipeline::run(const Options& opts) {
     fs::create_directories(result->buildDir);
 
         // Build search directories: stdlib paths + import resolver fallbacks
-    std::vector<std::string> searchDirs = opts.stdlibPaths;
-    for (auto& p : ImportResolver::stdlibSearchPaths())
-        searchDirs.push_back(p);
+    std::vector<std::string> searchDirs;
+    if (!opts.noStd) {
+        searchDirs = opts.stdlibPaths;
+        for (auto& p : ImportResolver::stdlibSearchPaths())
+            searchDirs.push_back(p);
+    }
 
     // ── Step 2: resolve imports transitively (BFS) ─────────────────────────
     progress(2, 5, "resolving import tree");
@@ -297,7 +300,7 @@ std::unique_ptr<PipelineResult> LucisPipeline::run(const Options& opts) {
     progress(4, 5, "resolving C includes and auto-link");
     result->cBindings = std::make_unique<CBindings>();
     result->cTypeReg  = std::make_unique<TypeRegistry>();
-    {
+    if (!opts.noStd) {
         CHeaderResolver resolver(*result->cTypeReg, *result->cBindings, opts.includePaths);
         for (auto& unit : result->units) {
             auto* tree = unit.parseResult->tree;

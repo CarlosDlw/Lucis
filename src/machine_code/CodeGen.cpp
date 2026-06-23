@@ -141,6 +141,7 @@ static bool tryLinkMulti(const char*                      linker,
                           const std::vector<std::string>& extraLibPaths,
                           bool withSanitizers,
                           bool quiet,
+                          bool noStd = false,
                           const std::string& entryPoint = "") {
     bool isStatic = false;
     for (const auto& flag : extraLinkerFlags) {
@@ -173,8 +174,14 @@ static bool tryLinkMulti(const char*                      linker,
         // Add object files
         for (auto& obj : objectPaths)
             argv.push_back(obj.c_str());
-        
-        argv.push_back(builtinsPath.c_str());
+
+        if (noStd) {
+            argv.push_back("-nostartfiles");
+            argv.push_back("-nostdlib");
+            argv.push_back("-static");
+        } else {
+            argv.push_back(builtinsPath.c_str());
+        }
 
         if (withSanitizers) {
 #ifdef LUCIS_RUNTIME_DIAGNOSTICS
@@ -189,17 +196,19 @@ static bool tryLinkMulti(const char*                      linker,
         }
 
         // Add libraries
-        if (isStatic) {
-            argv.push_back("-Wl,--start-group");
-            argv.push_back("-lm");
-            argv.push_back("-lz");
-            argv.push_back("-lpthread");
-            argv.push_back("-lc");
-            argv.push_back("-Wl,--end-group");
-        } else {
-            argv.push_back("-lm");
-            argv.push_back("-lz");
-            argv.push_back("-lpthread");
+        if (!noStd) {
+            if (isStatic) {
+                argv.push_back("-Wl,--start-group");
+                argv.push_back("-lm");
+                argv.push_back("-lz");
+                argv.push_back("-lpthread");
+                argv.push_back("-lc");
+                argv.push_back("-Wl,--end-group");
+            } else {
+                argv.push_back("-lm");
+                argv.push_back("-lz");
+                argv.push_back("-lpthread");
+            }
         }
 
         for (auto& lf : extraLinkerFlags)
@@ -329,13 +338,14 @@ bool CodeGen::linkObjectFiles(const std::vector<std::string>& objectPaths,
                                const std::vector<std::string>& extraLibPaths,
                                bool withSanitizers,
                                bool quiet,
-                               const std::string& entryPoint) {
+                               const std::string& entryPoint,
+                               bool noStd) {
     auto builtinsPath = findBuiltinsPath();
 
     bool linked = tryLinkMulti("clang", objectPaths, builtinsPath, outputPath,
-                               extraLinkerFlags, extraLibPaths, withSanitizers, quiet, entryPoint)
+                               extraLinkerFlags, extraLibPaths, withSanitizers, quiet, noStd, entryPoint)
                || tryLinkMulti("gcc",   objectPaths, builtinsPath, outputPath,
-                               extraLinkerFlags, extraLibPaths, withSanitizers, quiet, entryPoint);
+                               extraLinkerFlags, extraLibPaths, withSanitizers, quiet, noStd, entryPoint);
 
     if (!linked) {
         std::cerr << "lucis: linking failed — ensure clang or gcc is installed\n";

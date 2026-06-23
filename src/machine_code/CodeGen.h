@@ -27,7 +27,8 @@ public:
                                 const std::vector<std::string>& extraLibPaths = {},
                                 bool withSanitizers = true,
                                 bool quiet = false,
-                                const std::string& entryPoint = "");
+                                const std::string& entryPoint = "",
+                                bool noStd = false);
 
     // Compile a C source file into an object file using the system C compiler.
     static bool compileCSource(const std::string& cSourcePath,

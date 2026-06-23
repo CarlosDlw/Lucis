@@ -674,8 +674,9 @@ int BuildCommand::run(const ArgParser& parser) {
     if (!CodeGen::linkObjectFiles(objectFiles, outputFile,
                                     finalLinkerFlags,
                                     libPaths,
-                                    !useStatic, pipeOpts.quiet,
-                                    pipeOpts.entryPoint)) {
+                                    !useStatic && !pipeOpts.noStd, pipeOpts.quiet,
+                                    pipeOpts.entryPoint,
+                                    pipeOpts.noStd)) {
         std::cerr << "lucis: failed to link binary '" << outputFile << "'\n";
         return 1;
     }
