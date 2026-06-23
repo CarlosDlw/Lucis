@@ -14,6 +14,7 @@
 #include "types/ExtendedTypeRegistry.h"
 #include "types/BuiltinRegistry.h"
 #include "intrinsics/IntrinsicRegistry.h"
+#include "comptime/ComptimeRegistry.h"
 #include "namespace/ModuleRegistry.h"
 #include "lsp/Diagnostic.h"
 #include "semantic/SemanticDB.h"
@@ -53,6 +54,7 @@ private:
     ExtendedTypeRegistry     extTypeRegistry_;
     BuiltinRegistry          builtinRegistry_;
     IntrinsicRegistry        intrinsicRegistry_;
+    ComptimeRegistry         comptimeRegistry_;
 
     // Variable info tracked per-function scope
     struct VarInfo {

@@ -2173,6 +2173,10 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
         if (fit != functions_.end())
             return fit->second;
 
+        // Comptime functions referenced as values
+        if (comptimeRegistry_.isComptime(name))
+            return typeRegistry_.lookup("int32");
+
         // C enum constants from #include headers
         auto ceit = cEnumConstants_.find(name);
         if (ceit != cEnumConstants_.end())
@@ -3674,6 +3678,18 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
                 analyzeUnsafeCBufferCall(calleeName, expr, argExprs);
             applyCallOwnershipEffects(calleeName, argExprs, expr);
             return calleeType->returnType;
+        }
+
+        // Comptime function call — resolve return type from declaration
+        if (!calleeName.empty() && comptimeRegistry_.isComptime(calleeName)) {
+            applyCallOwnershipEffects(calleeName, argExprs, expr);
+            auto* decl = static_cast<LucisParser::FunctionDeclContext*>(
+                comptimeRegistry_.lookup(calleeName));
+            if (decl && decl->typeSpec()) {
+                unsigned dims = 0;
+                return resolveTypeSpec(decl->typeSpec(), dims);
+            }
+            return typeRegistry_.lookup("int32");
         }
 
         // Builtin function via registry
@@ -5281,6 +5297,8 @@ bool Checker::isKnownFunction(const std::string& name) const {
     if (functions_.count(name)) return true;
     // 1b. Local generic function template
     if (genericFuncTemplates_.count(name)) return true;
+    // 1c. Comptime function
+    if (comptimeRegistry_.isComptime(name)) return true;
     // 2. Builtin
     if (globalBuiltins_.count(name)) return true;
     // 3. Std import
@@ -5937,6 +5955,14 @@ void Checker::registerFunctionSignature(LucisParser::FunctionDeclContext* func) 
     }
     auto funcName = func->IDENTIFIER(0)->getText();
 
+    // Comptime functions: register in comptime registry, skip normal registration
+    if (func->COMPTIME()) {
+        comptimeRegistry_.registerFunction(funcName,
+            static_cast<void*>(func),
+            func->typeParamList() != nullptr);
+        return;
+    }
+
     // Generic function template — register as template, not as a concrete function
     if (auto* tpl = func->typeParamList()) {
         if (genericFuncTemplates_.count(funcName)) {
@@ -6021,6 +6047,13 @@ void Checker::registerFunctionSignature(LucisParser::FunctionDeclContext* func) 
 void Checker::checkFunction(LucisParser::FunctionDeclContext* func) {
     // Generic function templates are not checked directly — only their instantiations are.
     if (func->typeParamList()) return;
+
+    // Comptime functions: register and skip body checking (evaluated at compile time)
+    if (func->COMPTIME()) {
+        auto funcName = func->IDENTIFIER(0)->getText();
+        comptimeRegistry_.registerFunction(funcName, func);
+        return;
+    }
 
     unsigned retDims = 0;
     auto* retType = resolveTypeSpec(func->typeSpec(), retDims);

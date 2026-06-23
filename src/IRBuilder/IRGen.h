@@ -20,6 +20,7 @@
 #include "types/MethodRegistry.h"
 #include "types/ExtendedTypeRegistry.h"
 #include "intrinsics/IntrinsicRegistry.h"
+#include "comptime/ComptimeEngine.h"
 #include "ffi/ABIInfo.h"
 #include "semantic/SemanticDB.h"
 
@@ -52,6 +53,9 @@ public:
 
     // Disable stdlib/libruntime dependencies (kernel/freestanding)
     void setNoStd(bool v) { noStd_ = v; }
+
+    // Set comptime engine for compile-time function evaluation
+    void setComptimeEngine(ComptimeEngine* engine) { comptimeEngine_ = engine; }
 
     // ── Visitor overrides ───────────────────────────────────────────────────
     std::any visitProgram(LucisParser::ProgramContext* ctx)             override;
@@ -316,6 +320,9 @@ private:
 
     // C bindings from parsed #include headers
     const CBindings* cBindings_ = nullptr;
+
+    // Comptime engine for compile-time function evaluation
+    ComptimeEngine* comptimeEngine_ = nullptr;
 
     // Custom target triple (empty = use host default)
     std::string targetTriple_;

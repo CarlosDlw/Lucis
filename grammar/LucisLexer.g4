@@ -8,6 +8,7 @@ UNION     : 'union';
 ENUM      : 'enum';
 NULL_LIT  : 'null';
 FN        : 'fn';
+COMPTIME  : 'comptime' | 'cmpt';
 TYPE      : 'type';
 AS        : 'as';
 IS        : 'is';

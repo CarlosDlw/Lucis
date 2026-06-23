@@ -1192,6 +1192,9 @@ std::any IRGen::visitFunctionDecl(LucisParser::FunctionDeclContext* ctx) {
     // Generic function templates are handled on-demand at call sites
     if (ctx->typeParamList()) return {};
 
+    // Comptime functions are not compiled to runtime code
+    if (ctx->COMPTIME()) return {};
+
     auto* retInfo    = resolveTypeInfo(ctx->typeSpec());
     if (!retInfo) return {};
     auto* returnType = retInfo->toLLVMType(*context_, module_->getDataLayout());
@@ -10514,6 +10517,34 @@ std::any IRGen::visitFnCallExpr(LucisParser::FnCallExprContext* ctx) {
     // Check if base is a simple identifier
     if (auto* identBase = dynamic_cast<LucisParser::IdentExprContext*>(baseExpr)) {
         calleeName = identBase->IDENTIFIER()->getText();
+
+        // ── Comptime function call ────────────────────────────────────
+        if (comptimeEngine_ && comptimeEngine_->isReady() &&
+            comptimeEngine_->registry().isComptime(calleeName)) {
+            // Get argument values as LLVM constants
+            std::vector<llvm::Value*> argVals;
+            if (auto* argList = ctx->argList()) {
+                for (auto* exprCtx : argList->expression())
+                    argVals.push_back(castValue(visit(exprCtx)));
+            }
+            // Convert to ComptimeValue and evaluate
+            std::vector<ComptimeValue> cvArgs;
+            for (auto* av : argVals) {
+                if (auto* ci = llvm::dyn_cast<llvm::ConstantInt>(av))
+                    cvArgs.push_back(ComptimeValue::intVal(
+                        ci->getSExtValue()));
+                else
+                    return static_cast<llvm::Value*>(av); // non-constant, fallback
+            }
+            auto* decl = comptimeEngine_->registry().lookup(calleeName);
+            auto result = comptimeEngine_->evaluate(decl, cvArgs);
+            if (result.kind() == ComptimeValue::Kind::Int) {
+                return static_cast<llvm::Value*>(
+                    llvm::ConstantInt::get(
+                        llvm::Type::getInt32Ty(*context_),
+                        result.asInt(), true));
+            }
+        }
 
         // ── Global builtins (value-returning: toInt, toFloat, toBool, toString) ──
         if (globalBuiltins_.count(calleeName)) {

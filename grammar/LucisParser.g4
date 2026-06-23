@@ -107,7 +107,7 @@ externParam
 // fn max<T>(T a, T b) T { ... }
 // fn makePoint() LIB::Point { ... }
 functionDecl
-    : FN IDENTIFIER typeParamList? LPAREN paramList? RPAREN (IDENTIFIER SCOPE)? typeSpec block
+    : COMPTIME? FN IDENTIFIER typeParamList? LPAREN paramList? RPAREN (IDENTIFIER SCOPE)? typeSpec block
     ;
 
 // extend Point { ... }
