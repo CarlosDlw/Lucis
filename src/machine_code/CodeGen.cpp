@@ -140,7 +140,8 @@ static bool tryLinkMulti(const char*                      linker,
                           const std::vector<std::string>& extraLinkerFlags,
                           const std::vector<std::string>& extraLibPaths,
                           bool withSanitizers,
-                          bool quiet) {
+                          bool quiet,
+                          const std::string& entryPoint = "") {
     bool isStatic = false;
     for (const auto& flag : extraLinkerFlags) {
         if (flag == "-static") {
@@ -162,6 +163,10 @@ static bool tryLinkMulti(const char*                      linker,
             }
         }
         
+        std::string entryArg;
+        if (!entryPoint.empty())
+            entryArg = "-Wl,-e," + entryPoint;
+
         std::vector<const char*> argv;
         argv.push_back(linker);
 
@@ -203,6 +208,9 @@ static bool tryLinkMulti(const char*                      linker,
         if (std::string(linker) == "clang")
             argv.push_back("-Wno-override-module");
         
+        if (!entryArg.empty())
+            argv.push_back(entryArg.c_str());
+
         argv.push_back("-o");
         argv.push_back(outputPath.c_str());
         argv.push_back(nullptr);
@@ -263,7 +271,8 @@ bool CodeGen::compileCSource(const std::string& cSourcePath,
                     if (devNull > STDERR_FILENO) ::close(devNull);
                 }
             }
-            std::vector<const char*> argv;
+        // Child process
+        std::vector<const char*> argv;
             argv.push_back(cc);
             argv.push_back("-c");
             argv.push_back(cSourcePath.c_str());
@@ -319,13 +328,14 @@ bool CodeGen::linkObjectFiles(const std::vector<std::string>& objectPaths,
                                const std::vector<std::string>& extraLinkerFlags,
                                const std::vector<std::string>& extraLibPaths,
                                bool withSanitizers,
-                               bool quiet) {
+                               bool quiet,
+                               const std::string& entryPoint) {
     auto builtinsPath = findBuiltinsPath();
 
     bool linked = tryLinkMulti("clang", objectPaths, builtinsPath, outputPath,
-                               extraLinkerFlags, extraLibPaths, withSanitizers, quiet)
+                               extraLinkerFlags, extraLibPaths, withSanitizers, quiet, entryPoint)
                || tryLinkMulti("gcc",   objectPaths, builtinsPath, outputPath,
-                               extraLinkerFlags, extraLibPaths, withSanitizers, quiet);
+                               extraLinkerFlags, extraLibPaths, withSanitizers, quiet, entryPoint);
 
     if (!linked) {
         std::cerr << "lucis: linking failed — ensure clang or gcc is installed\n";
