@@ -2075,5 +2075,69 @@ void registerSysNamespace(IntrinsicRegistry& reg, TypeRegistry& typeReg) {
         "⚠ Requires kernel privileges (ring 0).\n\n"
         "```lucis\nlucis::sys::write_cr4(val);\n```"));
 
+    // ── hlt: halt CPU until next interrupt ─────────────────
+    sys.functions.push_back(makeIntrOp("hlt", "hlt",
+        "Halts the CPU until the next interrupt arrives.\n"
+        "⚠ Requires kernel privileges (ring 0).\n\n"
+        "```lucis\nlucis::sys::hlt();\n```"));
+
+    // ── lgdt / lidt / invlpg: table/MMU operations ─────────
+    auto makeTableOp = [&](const std::string& name, const std::string& asmInsn,
+                            const std::string& desc) {
+        IntrinsicFunction fn;
+        fn.name = name;
+        fn.returnType = "void";
+        fn.params.push_back({"_any", false});
+        fn.description = desc;
+
+        fn.lowering.kind = IntrinsicFunction::Lowering::InlineIR;
+        fn.lowering.emitIR = [name, asmInsn](
+            llvm::IRBuilder<>& builder, llvm::Module* module,
+            llvm::LLVMContext& context, const TypeRegistry&,
+            const std::vector<llvm::Value*>& args,
+            const std::vector<const TypeInfo*>&) -> llvm::Value* {
+
+            auto triple = module->getTargetTriple().str();
+            if (triple.find("x86_64") != 0 && triple.find("i386") != 0 &&
+                triple.find("i686") != 0)
+                return llvm::UndefValue::get(llvm::Type::getVoidTy(context));
+
+            auto* voidTy = llvm::Type::getVoidTy(context);
+            auto* ptrTy = llvm::PointerType::getUnqual(context);
+            auto* ft = llvm::FunctionType::get(voidTy, {ptrTy}, false);
+            auto* asmFn = llvm::InlineAsm::get(ft,
+                asmInsn + " ($0)",
+                "*m,~{memory}",
+                true, false, llvm::InlineAsm::AD_ATT);
+            builder.CreateCall(asmFn, {args[0]});
+            return llvm::UndefValue::get(voidTy);
+        };
+        return fn;
+    };
+
+    sys.functions.push_back(makeTableOp("lgdt", "lgdt",
+        R"(Loads the Global Descriptor Table Register (GDTR) on x86-64.
+⚠ Requires kernel privileges (ring 0).
+
+```lucis
+lucis::sys::lgdt(&descriptor);
+```)"));
+
+    sys.functions.push_back(makeTableOp("lidt", "lidt",
+        R"(Loads the Interrupt Descriptor Table Register (IDTR) on x86-64.
+⚠ Requires kernel privileges (ring 0).
+
+```lucis
+lucis::sys::lidt(&descriptor);
+```)"));
+
+    sys.functions.push_back(makeTableOp("invlpg", "invlpg",
+        R"(Invalidates the TLB entry for the given virtual address on x86-64.
+⚠ Requires kernel privileges (ring 0).
+
+```lucis
+lucis::sys::invlpg(&address);
+```)"));
+
     reg.registerNamespace(std::move(sys));
 }
