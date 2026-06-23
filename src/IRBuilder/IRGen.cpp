@@ -4576,7 +4576,6 @@ std::any IRGen::visitCallStmt(LucisParser::CallStmtContext* ctx) {
         if (argTypeInfo && !argTypeInfo->builtinSuffix.empty())
           suffix = argTypeInfo->builtinSuffix;
         else if (!argTypeInfo && ai < argExprs.size()) {
-          // Try to infer type from cast expression (unwrapping parens)
           auto* e = argExprs[ai];
           while (auto* paren = dynamic_cast<LucisParser::ParenExprContext*>(e))
             e = paren->expression();
@@ -4584,6 +4583,8 @@ std::any IRGen::visitCallStmt(LucisParser::CallStmtContext* ctx) {
             auto* castTI = resolveTypeInfo(cast->typeSpec());
             if (castTI && !castTI->builtinSuffix.empty())
               suffix = castTI->builtinSuffix;
+          } else if (dynamic_cast<LucisParser::CharLitExprContext*>(e)) {
+            suffix = "char";
           }
         }
         if (suffix.empty()) {
