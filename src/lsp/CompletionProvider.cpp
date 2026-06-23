@@ -3793,6 +3793,106 @@ void CompletionProvider::addExtendMethods(std::vector<CompletionItem> &items,
       }
     }
   }
+
+  // Walk parent chain: collect methods from parent types too
+  if (project && project->isValid()) {
+    std::string current = lookupName;
+    std::unordered_set<std::string> seen;
+
+    while (true) {
+      // Find struct declaration to get parent name
+      std::string parentName;
+      const ExportedSymbol* sym = nullptr;
+      for (auto& mod : project->registry().allModules()) {
+        sym = project->registry().findSymbol(mod, current);
+        if (sym && sym->kind == ExportedSymbol::Struct) break;
+      }
+      if (sym && sym->kind == ExportedSymbol::Struct) {
+        auto* sd = dynamic_cast<LucisParser::StructDeclContext*>(sym->decl);
+        if (sd && sd->COLON() && sd->IDENTIFIER().size() > 1)
+          parentName = safeText(sd->IDENTIFIER(1));
+      }
+      // Also check same-file for struct with parent
+      if (parentName.empty()) {
+        for (auto* tld : tree->topLevelDecl()) {
+          auto* sd = tld->structDecl();
+          if (sd && safeText(sd->IDENTIFIER(0)) == current &&
+              sd->COLON() && sd->IDENTIFIER().size() > 1) {
+            parentName = safeText(sd->IDENTIFIER(1));
+            break;
+          }
+        }
+      }
+      if (parentName.empty() || !seen.insert(parentName).second)
+        break;
+
+      current = parentName;
+
+      // Same-file extend blocks for parent
+      for (auto* tld : tree->topLevelDecl()) {
+        auto* ext = tld->extendDecl();
+        if (!ext || safeText(ext->IDENTIFIER()) != parentName) continue;
+        for (auto* m : ext->extendMethod()) {
+          if (m->AMPERSAND() == nullptr) continue;
+          CompletionItem ci;
+          std::string mName = safeIdAt(m, 0);
+          ci.label = mName;
+          ci.kind = CompletionKind::Method;
+          ci.detail = formatMethodSignature(m);
+          ci.documentation = "```lucis\n" + ci.detail + "\n```";
+          auto methodParams = m->param();
+          if (!methodParams.empty()) {
+            std::string snippet = mName + "(";
+            for (size_t i = 0; i < methodParams.size(); i++) {
+              if (i > 0) snippet += ", ";
+              snippet += "${" + std::to_string(i + 1) + ":" +
+                         safeText(methodParams[i]->IDENTIFIER()) + "}";
+            }
+            snippet += ")";
+            ci.insertText = snippet;
+            ci.insertTextFormat = InsertTextFormat::Snippet;
+          } else {
+            ci.insertText = mName + "()";
+          }
+          items.push_back(std::move(ci));
+        }
+      }
+
+      // Cross-file extend blocks for parent
+      for (auto& ns : project->registry().allModules()) {
+        auto syms = project->registry().getModuleSymbols(ns);
+        for (auto* psym : syms) {
+          if (psym->kind != ExportedSymbol::ExtendBlock) continue;
+          auto* ext = dynamic_cast<LucisParser::ExtendDeclContext*>(psym->decl);
+          if (!ext || safeText(ext->IDENTIFIER()) != parentName) continue;
+          for (auto* m : ext->extendMethod()) {
+            if (m->AMPERSAND() == nullptr) continue;
+            CompletionItem ci;
+            std::string mName = safeIdAt(m, 0);
+            ci.label = mName;
+            ci.kind = CompletionKind::Method;
+            ci.detail = formatMethodSignature(m);
+            ci.documentation = "```lucis\n" + ci.detail + "\n```";
+            auto methodParams = m->param();
+            if (!methodParams.empty()) {
+              std::string snippet = mName + "(";
+              for (size_t i = 0; i < methodParams.size(); i++) {
+                if (i > 0) snippet += ", ";
+                snippet += "${" + std::to_string(i + 1) + ":" +
+                           safeText(methodParams[i]->IDENTIFIER()) + "}";
+              }
+              snippet += ")";
+              ci.insertText = snippet;
+              ci.insertTextFormat = InsertTextFormat::Snippet;
+            } else {
+              ci.insertText = mName + "()";
+            }
+            items.push_back(std::move(ci));
+          }
+        }
+      }
+    }
+  }
 }
 
 // ─── Built-in type methods (int.abs, string.len, vec.push, etc.) ────
