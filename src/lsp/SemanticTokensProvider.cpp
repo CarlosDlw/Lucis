@@ -25,7 +25,8 @@ const std::vector<std::string>& SemanticTokensProvider::tokenTypes() {
 
 const std::vector<std::string>& SemanticTokensProvider::tokenModifiers() {
     static const std::vector<std::string> mods = {
-        "declaration", "definition", "readonly", "static", "defaultLibrary"
+        "declaration", "definition", "readonly", "static", "defaultLibrary",
+        "comptime"
     };
     return mods;
 }
@@ -61,7 +62,7 @@ static bool isKeyword(size_t tokenType) {
         case LucisLexer::MATCH:  case LucisLexer::WILDCARD:
         case LucisLexer::INLINE_BLOCK: case LucisLexer::SCOPE_BLOCK:
         case LucisLexer::ASM:    case LucisLexer::VOLATILE: case LucisLexer::GOTO:
-case LucisLexer::INTEL:
+        case LucisLexer::INTEL:  case LucisLexer::COMPTIME:
             return true;
         default:
             return false;
@@ -244,10 +245,13 @@ static void walkTree(IdentMap& map, antlr4::tree::ParseTree* node) {
 
     // ── function decl ──
     else if (auto* ctx = dynamic_cast<LucisParser::FunctionDeclContext*>(node)) {
-        if (!ctx->IDENTIFIER().empty())
-            classifyIdent(map, ctx->IDENTIFIER(0), SemanticTokenType::Function,
-                          static_cast<uint32_t>(SemanticTokenMod::Declaration) |
-                          static_cast<uint32_t>(SemanticTokenMod::Definition));
+        if (!ctx->IDENTIFIER().empty()) {
+            uint32_t mods = static_cast<uint32_t>(SemanticTokenMod::Declaration) |
+                            static_cast<uint32_t>(SemanticTokenMod::Definition);
+            if (ctx->COMPTIME())
+                mods |= static_cast<uint32_t>(SemanticTokenMod::Comptime);
+            classifyIdent(map, ctx->IDENTIFIER(0), SemanticTokenType::Function, mods);
+        }
         // Generic type params
         if (ctx->typeParamList()) {
             for (auto* tp : ctx->typeParamList()->typeParam()) {

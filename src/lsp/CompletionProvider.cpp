@@ -5904,7 +5904,10 @@ std::string CompletionProvider::inferVarType(const std::string &varName,
 
 std::string
 CompletionProvider::formatFuncSignature(LucisParser::FunctionDeclContext *func) {
-  std::string sig = "fn " + safeIdAt(func, 0) + "(";
+  std::string sig;
+  if (func->COMPTIME())
+    sig = "comptime ";
+  sig += "fn " + safeIdAt(func, 0) + "(";
   if (auto *params = func->paramList()) {
     bool first = true;
     for (auto *p : params->param()) {

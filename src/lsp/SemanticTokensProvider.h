@@ -34,6 +34,7 @@ enum class SemanticTokenMod : uint32_t {
     Readonly    = 1 << 2,
     Static      = 1 << 3,
     DefaultLib  = 1 << 4,
+    Comptime    = 1 << 5,
 };
 
 // A single classified token before delta-encoding.

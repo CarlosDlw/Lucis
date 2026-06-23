@@ -5935,6 +5935,8 @@ std::string HoverProvider::typeSpecToString(LucisParser::TypeSpecContext* ctx) {
 std::string HoverProvider::formatFunctionDecl(LucisParser::FunctionDeclContext* func) {
     std::ostringstream ss;
     ss << "```lucis\n";
+    if (func->COMPTIME())
+        ss << "comptime ";
     ss << "fn " << safeIdAt(func, 0) << "(";
     if (auto* params = func->paramList()) {
         bool first = true;
