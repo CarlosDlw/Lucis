@@ -929,21 +929,8 @@ bool Checker::check(LucisParser::ProgramContext* tree) {
             }
         }
 
-        // Register skeletons for ALL structs from ALL modules (transitive deps)
-        for (auto& mod : moduleRegistry_->allModules()) {
-            for (auto* sym : moduleRegistry_->getModuleSymbols(mod)) {
-                if (sym->kind == ExportedSymbol::Struct &&
-                    !typeRegistry_.lookup(sym->name) &&
-                    !genericStructTemplates_.count(sym->name)) {
-                    TypeInfo skeleton;
-                    skeleton.name = sym->name;
-                    skeleton.kind = TypeKind::Struct;
-                    skeleton.bitWidth = 0;
-                    skeleton.isSigned = false;
-                    typeRegistry_.registerType(std::move(skeleton));
-                }
-            }
-        }
+        // The topological sort below handles full registration.
+        // Skeletons are registered by checkStructDecl internally.
 
         // Imported function signatures may reference generic types (e.g. Result<T>)
         // that were not explicitly imported via `use`. Ensure those type templates
@@ -1111,69 +1098,103 @@ bool Checker::check(LucisParser::ProgramContext* tree) {
             }
         }
         
-        // Phase B: structs (retry loop for parent ordering)
-        std::unordered_set<std::string> processed;
-        bool madeProgress = true;
-        while (madeProgress) {
-            madeProgress = false;
+        // Phase B: structs (retry loop for parent ordering, covers both
+        // same-module external symbols and cross-module imported symbols)
+        {
+            // Collect all structs: same-module + imported + transitive parents
+            struct PendingStruct {
+                LucisParser::StructDeclContext* decl;
+                std::string ns;
+            };
+            std::unordered_map<std::string, PendingStruct> pendingMap;
             for (auto* sym : extSyms) {
-                if (sym->kind == ExportedSymbol::Struct) {
-                    if (processed.count(sym->name)) continue;
-                    if (genericStructTemplates_.count(sym->name)) continue;
-                    auto* existing = typeRegistry_.lookup(sym->name);
+                if (sym->kind == ExportedSymbol::Struct && !genericStructTemplates_.count(sym->name)) {
+                    pendingMap[sym->name] = {
+                        static_cast<LucisParser::StructDeclContext*>(sym->decl),
+                        currentModulePath_
+                    };
+                }
+            }
+            for (auto& [symName, ns] : userImports_) {
+                auto* sym = moduleRegistry_->findSymbol(ns, symName);
+                if (sym && sym->kind == ExportedSymbol::Struct && !genericStructTemplates_.count(symName)) {
+                    pendingMap[symName] = {
+                        static_cast<LucisParser::StructDeclContext*>(sym->decl), ns
+                    };
+                }
+            }
+            // Add transitive parent dependencies
+            bool added = true;
+            while (added) {
+                added = false;
+                for (auto& [name, ps] : pendingMap) {
+                    if (ps.decl->COLON() && ps.decl->IDENTIFIER().size() > 1) {
+                        std::string parentName = ps.decl->IDENTIFIER(1)->getText();
+                        if (!pendingMap.count(parentName)) {
+                            auto* parentSym = moduleRegistry_->findSymbol(ps.ns, parentName);
+                            if (!parentSym) {
+                                for (auto& mod : moduleRegistry_->allModules()) {
+                                    parentSym = moduleRegistry_->findSymbol(mod, parentName);
+                                    if (parentSym) break;
+                                }
+                            }
+                            if (parentSym && parentSym->kind == ExportedSymbol::Struct
+                                && !genericStructTemplates_.count(parentName)) {
+                                pendingMap[parentName] = {
+                                    static_cast<LucisParser::StructDeclContext*>(parentSym->decl),
+                                    parentSym->modulePath
+                                };
+                                added = true;
+                            }
+                        }
+                    }
+                }
+            }
+
+            std::unordered_set<std::string> processed;
+            bool madeProgress = true;
+            while (madeProgress) {
+                madeProgress = false;
+                for (auto& [name, ps] : pendingMap) {
+                    if (processed.count(name)) continue;
+                    auto* existing = typeRegistry_.lookup(name);
                     if (existing && !(existing->kind == TypeKind::Struct && existing->fields.empty() && existing->bitWidth == 0)) {
-                        processed.insert(sym->name);
+                        processed.insert(name);
                         continue;
                     }
-                    auto* decl = static_cast<LucisParser::StructDeclContext*>(sym->decl);
 
-                    if (decl->COLON() && decl->IDENTIFIER().size() > 1) {
-                        std::string parentName = decl->IDENTIFIER(1)->getText();
+                    if (ps.decl->COLON() && ps.decl->IDENTIFIER().size() > 1) {
+                        std::string parentName = ps.decl->IDENTIFIER(1)->getText();
                         auto* parentTI = typeRegistry_.lookup(parentName);
                         if (!parentTI || parentTI->kind != TypeKind::Struct || parentTI->fields.empty())
                             continue;
                     }
 
-                    for (auto* field : decl->structField())
+                    for (auto* field : ps.decl->structField())
                         ensureTypeDependencyFromSpec(
-                            ensureTypeDependencyFromSpec, field->typeSpec(), currentModulePath_);
-                    checkStructDecl(decl);
-                    processed.insert(sym->name);
+                            ensureTypeDependencyFromSpec, field->typeSpec(), ps.ns);
+                    checkStructDecl(ps.decl);
+                    processed.insert(name);
                     madeProgress = true;
                 }
             }
         }
+
+        // Phase B unions: user imports (no inheritance, single pass)
         for (auto& [symName, ns] : userImports_) {
             auto* sym = moduleRegistry_->findSymbol(ns, symName);
-            if (!sym) continue;
-            if (sym->kind == ExportedSymbol::Struct) {
-                if (genericStructTemplates_.count(sym->name))
-                    continue;
-                auto* existing = typeRegistry_.lookup(sym->name);
-                if (existing && !(existing->kind == TypeKind::Struct && existing->fields.empty() && existing->bitWidth == 0))
-                    continue;
-                auto* decl = static_cast<LucisParser::StructDeclContext*>(sym->decl);
-                for (auto* field : decl->structField())
-                    ensureTypeDependencyFromSpec(
-                        ensureTypeDependencyFromSpec, field->typeSpec(), ns);
-                // Re-check: dependency resolution may have already fully registered this type
-                auto* recheck = typeRegistry_.lookup(sym->name);
-                if (!recheck || (recheck->kind == TypeKind::Struct && recheck->fields.empty() && recheck->bitWidth == 0))
-                    checkStructDecl(decl);
-            } else if (sym->kind == ExportedSymbol::Union) {
-                if (genericUnionTemplates_.count(sym->name))
-                    continue;
-                auto* existing = typeRegistry_.lookup(sym->name);
-                if (existing && !(existing->kind == TypeKind::Union && existing->fields.empty() && existing->bitWidth == 0))
-                    continue;
-                auto* decl = static_cast<LucisParser::UnionDeclContext*>(sym->decl);
-                for (auto* field : decl->unionField())
-                    ensureTypeDependencyFromSpec(
-                        ensureTypeDependencyFromSpec, field->typeSpec(), ns);
-                auto* recheck = typeRegistry_.lookup(sym->name);
-                if (!recheck || (recheck->kind == TypeKind::Union && recheck->fields.empty() && recheck->bitWidth == 0))
-                    checkUnionDecl(decl);
-            }
+            if (!sym || sym->kind != ExportedSymbol::Union) continue;
+            if (genericUnionTemplates_.count(sym->name)) continue;
+            auto* existing = typeRegistry_.lookup(sym->name);
+            if (existing && !(existing->kind == TypeKind::Union && existing->fields.empty() && existing->bitWidth == 0))
+                continue;
+            auto* decl = static_cast<LucisParser::UnionDeclContext*>(sym->decl);
+            for (auto* field : decl->unionField())
+                ensureTypeDependencyFromSpec(
+                    ensureTypeDependencyFromSpec, field->typeSpec(), ns);
+            auto* recheck = typeRegistry_.lookup(sym->name);
+            if (!recheck || (recheck->kind == TypeKind::Union && recheck->fields.empty() && recheck->bitWidth == 0))
+                checkUnionDecl(decl);
         }
 
         // Phase B.5: extend blocks for imported structs (auto-resolved)

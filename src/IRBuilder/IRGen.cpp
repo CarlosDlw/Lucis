@@ -526,10 +526,14 @@ std::any IRGen::visitStructDecl(LucisParser::StructDeclContext* ctx) {
         ti.parentType = parentTI;
 
         auto* parentLL = llvm::StructType::getTypeByName(*context_, parentName);
-        if (!parentLL || parentLL->isOpaque()) {
-            std::cerr << "lucis: parent LLVM type '" << parentName << "' not emitted yet for struct '" << structName << "'\n";
+        if (!parentLL) {
+            parentLL = llvm::StructType::create(*context_, parentName);
+        }
+        if (parentLL->isOpaque()) {
+            // Parent not yet emitted — deferred; the enclosing topological sort will retry
             return {};
         }
+        for (unsigned i = 0; i < parentLL->getNumElements(); i++)
         for (unsigned i = 0; i < parentLL->getNumElements(); i++)
             fieldTypes.push_back(parentLL->getElementType(i));
         for (auto& pf : parentTI->fields)
@@ -1515,6 +1519,81 @@ void IRGen::registerCrossFileSymbols(LucisParser::ProgramContext* ctx) {
         if (!typeRegistry_.lookup(sym->name) && !genericEnumTemplates_.count(sym->name)) {
             auto* enumCtx = dynamic_cast<LucisParser::EnumDeclContext*>(sym->decl);
             if (enumCtx) visitEnumDecl(enumCtx);
+        }
+    }
+
+    // Pre-register imported structs with inherited parents in dependency order
+    {
+        struct Pending {
+            LucisParser::StructDeclContext* decl;
+            std::string ns;
+        };
+        std::unordered_map<std::string, Pending> pending;
+        for (auto& [symName, sourceNs] : userImports_) {
+            auto* sym = moduleRegistry_->findSymbol(sourceNs, symName);
+            if (sym && sym->kind == ExportedSymbol::Struct &&
+                !genericStructTemplates_.count(symName)) {
+                pending[symName] = { static_cast<LucisParser::StructDeclContext*>(sym->decl), sourceNs };
+            }
+        }
+        // Add transitive parents
+        bool addedParents = true;
+        while (addedParents) {
+            addedParents = false;
+            for (auto& [name, p] : pending) {
+                if (p.decl->COLON() && p.decl->IDENTIFIER().size() > 1) {
+                    std::string parentName = p.decl->IDENTIFIER(1)->getText();
+                    if (!pending.count(parentName)) {
+                        auto* parentSym = moduleRegistry_->findSymbol(p.ns, parentName);
+                        if (!parentSym) {
+                            for (auto& mod : moduleRegistry_->allModules()) {
+                                parentSym = moduleRegistry_->findSymbol(mod, parentName);
+                                if (parentSym) break;
+                            }
+                        }
+                        if (parentSym && parentSym->kind == ExportedSymbol::Struct
+                            && !genericStructTemplates_.count(parentName)) {
+                            pending[parentName] = {
+                                static_cast<LucisParser::StructDeclContext*>(parentSym->decl),
+                                parentSym->modulePath
+                            };
+                            addedParents = true;
+                        }
+                    }
+                }
+            }
+        }
+        // Pre-register skeletons
+        for (auto& [name, p] : pending) {
+            if (!typeRegistry_.lookup(name) && !genericStructTemplates_.count(name)) {
+                TypeInfo skeleton;
+                skeleton.name = name;
+                skeleton.kind = TypeKind::Struct;
+                skeleton.bitWidth = 0;
+                skeleton.isSigned = false;
+                typeRegistry_.registerType(skeleton);
+            }
+            if (!llvm::StructType::getTypeByName(*context_, name))
+                llvm::StructType::create(*context_, name);
+        }
+        // Process in dependency order
+        std::unordered_set<std::string> done;
+        bool madeProgress = true;
+        while (madeProgress) {
+            madeProgress = false;
+            for (auto& [name, p] : pending) {
+                if (done.count(name)) continue;
+                if (typeRegistry_.lookup(name) && !llvm::StructType::getTypeByName(*context_, name)) continue;
+                if (p.decl->COLON() && p.decl->IDENTIFIER().size() > 1) {
+                    std::string parentName = p.decl->IDENTIFIER(1)->getText();
+                    auto* parentTI = typeRegistry_.lookup(parentName);
+                    if (!parentTI || parentTI->kind != TypeKind::Struct || parentTI->fields.empty())
+                        continue;
+                }
+                visitStructDecl(p.decl);
+                done.insert(name);
+                madeProgress = true;
+            }
         }
     }
 
