@@ -856,6 +856,22 @@ These intrinsics require kernel privileges (ring 0) or I/O permissions. On unsup
 |----------|------------|--------|
 | `cli()` | `cli` | Disable maskable interrupts |
 | `sti()` | `sti` | Enable maskable interrupts |
+| `hlt()` | `hlt` | Halt CPU until next interrupt |
+
+### Descriptor Tables
+
+| Function | Instruction | Effect |
+|----------|------------|--------|
+| `lgdt(ptr)` | `lgdt` | Load Global Descriptor Table Register |
+| `lidt(ptr)` | `lidt` | Load Interrupt Descriptor Table Register |
+
+`ptr` must point to a 6-byte (for `lgdt`) or 6-byte (for `lidt`) descriptor in memory.
+
+### TLB Control
+
+| Function | Instruction | Effect |
+|----------|------------|--------|
+| `invlpg(addr)` | `invlpg` | Invalidate TLB entry for virtual address |
 
 ### Model-Specific Registers
 
