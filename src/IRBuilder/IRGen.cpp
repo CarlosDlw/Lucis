@@ -8324,6 +8324,8 @@ std::any IRGen::visitStructPosInitExpr(LucisParser::StructPosInitExprContext* ct
         agg = builder_->CreateInsertValue(agg, val, {static_cast<unsigned>(i)});
     }
 
+    for (auto* e : ctx->expression()) consumeExprIfOwnedLocal(e);
+
     return static_cast<llvm::Value*>(agg);
 }
 
@@ -16924,8 +16926,33 @@ void IRGen::consumeLocalByName(const std::string& name) {
 
 void IRGen::consumeExprIfOwnedLocal(LucisParser::ExpressionContext* expr) {
     if (!expr) return;
-    if (auto* ident = dynamic_cast<LucisParser::IdentExprContext*>(expr))
+    if (auto* ident = dynamic_cast<LucisParser::IdentExprContext*>(expr)) {
         consumeLocalByName(ident->IDENTIFIER()->getText());
+        return;
+    }
+    // Field access: token.lexeme → null out the string field in the source struct
+    if (auto* fa = dynamic_cast<LucisParser::FieldAccessExprContext*>(expr)) {
+        auto fieldName = fa->IDENTIFIER()->getText();
+        auto* baseExpr = fa->expression();
+        if (auto* baseIdent = dynamic_cast<LucisParser::IdentExprContext*>(baseExpr)) {
+            auto it = locals_.find(baseIdent->IDENTIFIER()->getText());
+            if (it != locals_.end() && it->second.typeInfo &&
+                it->second.typeInfo->kind == TypeKind::Struct) {
+                auto* structLLTy = it->second.typeInfo->toLLVMType(*context_, module_->getDataLayout());
+                for (size_t fieldIdx = 0; fieldIdx < it->second.typeInfo->fields.size(); fieldIdx++) {
+                    auto& field = it->second.typeInfo->fields[fieldIdx];
+                    if (field.name == fieldName && field.typeInfo &&
+                        field.typeInfo->kind == TypeKind::String && field.arrayDims == 0) {
+                        auto* fieldPtr = builder_->CreateStructGEP(structLLTy, it->second.alloca,
+                            fieldIdx, fieldName + "_gep");
+                        auto* nullFieldTy = field.typeInfo->toLLVMType(*context_, module_->getDataLayout());
+                        builder_->CreateStore(llvm::Constant::getNullValue(nullFieldTy), fieldPtr);
+                        return;
+                    }
+                }
+            }
+        }
+    }
 }
 
 std::any
