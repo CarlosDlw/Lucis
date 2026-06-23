@@ -401,12 +401,12 @@ public:
     StructDeclContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
     antlr4::tree::TerminalNode *STRUCT();
-    std::vector<antlr4::tree::TerminalNode *> IDENTIFIER();
-    antlr4::tree::TerminalNode* IDENTIFIER(size_t i);
+    antlr4::tree::TerminalNode *IDENTIFIER();
     antlr4::tree::TerminalNode *LBRACE();
     antlr4::tree::TerminalNode *RBRACE();
     TypeParamListContext *typeParamList();
     antlr4::tree::TerminalNode *COLON();
+    TypeSpecContext *typeSpec();
     std::vector<StructFieldContext *> structField();
     StructFieldContext* structField(size_t i);
 

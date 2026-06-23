@@ -824,7 +824,7 @@ bool Checker::check(LucisParser::ProgramContext* tree) {
         // First pass: register struct/union skeletons so enum payloads can reference them
         for (auto* decl : tree->topLevelDecl()) {
             if (auto* sd = decl->structDecl()) {
-                auto name = sd->IDENTIFIER(0)->getText();
+                auto name = sd->IDENTIFIER()->getText();
                 if (!typeRegistry_.lookup(name) && !genericStructTemplates_.count(name)) {
                     TypeInfo skeleton;
                     skeleton.name = name;
@@ -993,25 +993,28 @@ bool Checker::check(LucisParser::ProgramContext* tree) {
                     // Pre-resolve field types before checking the struct
                     for (auto* field : sd->structField())
                         self(self, field->typeSpec(), ns);
-                    // Pre-resolve parent struct if inheriting
-                    if (sd->COLON() && sd->IDENTIFIER().size() > 1) {
-                        std::string parentName = sd->IDENTIFIER(1)->getText();
-                        auto* parentSym = moduleRegistry_->findSymbol(ns, parentName);
-                        if (!parentSym) {
-                            for (auto& candidateNs : moduleRegistry_->allModules()) {
-                                parentSym = moduleRegistry_->findSymbol(candidateNs, parentName);
-                                if (parentSym) break;
-                            }
-                        }
-                        if (parentSym && parentSym->kind == ExportedSymbol::Struct &&
-                            !genericStructTemplates_.count(parentName) &&
-                            !seenDeps.count(parentName)) {
-                            auto* parentDecl = static_cast<LucisParser::StructDeclContext*>(parentSym->decl);
-                            for (auto* pf : parentDecl->structField())
-                                self(self, pf->typeSpec(), parentSym->modulePath);
-                            checkStructDecl(parentDecl);
+            // Pre-resolve parent struct if inheriting
+            if (sd->COLON() && sd->typeSpec()) {
+                unsigned parentDims = 0;
+                auto* parentTI = resolveTypeSpec(sd->typeSpec(), parentDims);
+                if (parentTI && parentTI->kind == TypeKind::Struct &&
+                    !genericStructTemplates_.count(parentTI->name) &&
+                    !seenDeps.count(parentTI->name)) {
+                    auto* parentSym = moduleRegistry_->findSymbol(ns, parentTI->name);
+                    if (!parentSym) {
+                        for (auto& candidateNs : moduleRegistry_->allModules()) {
+                            parentSym = moduleRegistry_->findSymbol(candidateNs, parentTI->name);
+                            if (parentSym) break;
                         }
                     }
+                    if (parentSym && parentSym->kind == ExportedSymbol::Struct) {
+                        auto* parentDecl = static_cast<LucisParser::StructDeclContext*>(parentSym->decl);
+                        for (auto* pf : parentDecl->structField())
+                            self(self, pf->typeSpec(), parentSym->modulePath);
+                        checkStructDecl(parentDecl);
+                    }
+                }
+            }
                     checkStructDecl(sd);
                     return;
                 }
@@ -1128,9 +1131,11 @@ bool Checker::check(LucisParser::ProgramContext* tree) {
             while (added) {
                 added = false;
                 for (auto& [name, ps] : pendingMap) {
-                    if (ps.decl->COLON() && ps.decl->IDENTIFIER().size() > 1) {
-                        std::string parentName = ps.decl->IDENTIFIER(1)->getText();
-                        if (!pendingMap.count(parentName)) {
+                    if (ps.decl->COLON() && ps.decl->typeSpec()) {
+                        unsigned parentDims = 0;
+                        auto* parentTI = resolveTypeSpec(ps.decl->typeSpec(), parentDims);
+                        std::string parentName = parentTI ? parentTI->name : "";
+                        if (!parentName.empty() && !pendingMap.count(parentName)) {
                             auto* parentSym = moduleRegistry_->findSymbol(ps.ns, parentName);
                             if (!parentSym) {
                                 for (auto& mod : moduleRegistry_->allModules()) {
@@ -1163,12 +1168,12 @@ bool Checker::check(LucisParser::ProgramContext* tree) {
                         continue;
                     }
 
-                    if (ps.decl->COLON() && ps.decl->IDENTIFIER().size() > 1) {
-                        std::string parentName = ps.decl->IDENTIFIER(1)->getText();
-                        auto* parentTI = typeRegistry_.lookup(parentName);
-                        if (!parentTI || parentTI->kind != TypeKind::Struct || parentTI->fields.empty())
-                            continue;
-                    }
+            if (ps.decl->COLON() && ps.decl->typeSpec()) {
+                unsigned parentDims = 0;
+                auto* parentTI = resolveTypeSpec(ps.decl->typeSpec(), parentDims);
+                if (!parentTI || parentTI->kind != TypeKind::Struct || parentTI->fields.empty())
+                    continue;
+            }
 
                     for (auto* field : ps.decl->structField())
                         ensureTypeDependencyFromSpec(
@@ -5501,7 +5506,7 @@ void Checker::checkTypeAliasDecl(LucisParser::TypeAliasDeclContext* decl) {
 }
 
 void Checker::checkStructDecl(LucisParser::StructDeclContext* decl) {
-    auto name = decl->IDENTIFIER(0)->getText();
+    auto name = decl->IDENTIFIER()->getText();
 
     // Generic struct template — register as template, not as concrete type
     if (auto* tpl = decl->typeParamList()) {
@@ -5545,16 +5550,11 @@ void Checker::checkStructDecl(LucisParser::StructDeclContext* decl) {
     std::unordered_set<std::string> seen;
 
     // ── Parent struct inheritance ─────────────────────────────────────
-    if (decl->COLON() && decl->IDENTIFIER().size() > 1) {
-        std::string parentName = decl->IDENTIFIER(1)->getText();
-
-        auto* parentTI = typeRegistry_.lookup(parentName);
+    if (decl->COLON() && decl->typeSpec()) {
+        unsigned parentDims = 0;
+        auto* parentTI = resolveTypeSpec(decl->typeSpec(), parentDims);
         if (!parentTI || parentTI->kind != TypeKind::Struct) {
-            error(decl, "parent type '" + parentName + "' not found or is not a struct");
-            return;
-        }
-        if (parentTI->isGenericInstance) {
-            error(decl, "cannot inherit from generic instance '" + parentName + "'; use the base type name");
+            error(decl, "parent type not found or is not a struct");
             return;
         }
 

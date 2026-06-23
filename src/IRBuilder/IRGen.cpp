@@ -431,7 +431,7 @@ std::any IRGen::visitProgram(LucisParser::ProgramContext* ctx) {
     // Register struct, union, and enum types first
     for (auto* decl : ctx->topLevelDecl()) {
         if (auto* structDecl = decl->structDecl()) {
-            auto name = structDecl->IDENTIFIER(0)->getText();
+            auto name = structDecl->IDENTIFIER()->getText();
             auto* existing = typeRegistry_.lookup(name);
             bool needsCompletion =
                 existing && existing->kind == TypeKind::Struct && existing->fields.empty();
@@ -481,12 +481,12 @@ std::any IRGen::visitStructDecl(LucisParser::StructDeclContext* ctx) {
         for (auto* tp : tpl->typeParam())
             tmpl.typeParams.push_back(tp->IDENTIFIER(0)->getText());
         tmpl.decl = ctx;
-        auto name = ctx->IDENTIFIER(0)->getText();
+        auto name = ctx->IDENTIFIER()->getText();
         genericStructTemplates_[name] = std::move(tmpl);
         return {};
     }
 
-    auto structName = ctx->IDENTIFIER(0)->getText();
+    auto structName = ctx->IDENTIFIER()->getText();
 
     if (auto* existing = typeRegistry_.lookup(structName)) {
         bool alreadyComplete = existing->kind == TypeKind::Struct && !existing->fields.empty();
@@ -514,26 +514,22 @@ std::any IRGen::visitStructDecl(LucisParser::StructDeclContext* ctx) {
 
     // Collect field types
     std::vector<llvm::Type*> fieldTypes;
-
     // ── Parent struct inheritance ─────────────────────────────────────
-    if (ctx->COLON() && ctx->IDENTIFIER().size() > 1) {
-        std::string parentName = ctx->IDENTIFIER(1)->getText();
-        auto* parentTI = typeRegistry_.lookup(parentName);
+    if (ctx->COLON() && ctx->typeSpec()) {
+        auto* parentTI = resolveTypeInfo(ctx->typeSpec());
         if (!parentTI || parentTI->kind != TypeKind::Struct || parentTI->fields.empty()) {
-            std::cerr << "lucis: parent struct '" << parentName << "' not resolved for struct '" << structName << "'\n";
+            std::cerr << "lucis: parent struct not resolved for struct '" << structName << "'\n";
             return {};
         }
         ti.parentType = parentTI;
 
-        auto* parentLL = llvm::StructType::getTypeByName(*context_, parentName);
+        auto* parentLL = llvm::StructType::getTypeByName(*context_, parentTI->name);
         if (!parentLL) {
-            parentLL = llvm::StructType::create(*context_, parentName);
+            parentLL = llvm::StructType::create(*context_, parentTI->name);
         }
         if (parentLL->isOpaque()) {
-            // Parent not yet emitted — deferred; the enclosing topological sort will retry
             return {};
         }
-        for (unsigned i = 0; i < parentLL->getNumElements(); i++)
         for (unsigned i = 0; i < parentLL->getNumElements(); i++)
             fieldTypes.push_back(parentLL->getElementType(i));
         for (auto& pf : parentTI->fields)
@@ -1565,9 +1561,10 @@ void IRGen::registerCrossFileSymbols(LucisParser::ProgramContext* ctx) {
         while (addedParents) {
             addedParents = false;
             for (auto& [name, p] : pending) {
-                if (p.decl->COLON() && p.decl->IDENTIFIER().size() > 1) {
-                    std::string parentName = p.decl->IDENTIFIER(1)->getText();
-                    if (!pending.count(parentName)) {
+                if (p.decl->COLON() && p.decl->typeSpec()) {
+                    auto* parentTI = resolveTypeInfo(p.decl->typeSpec());
+                    std::string parentName = parentTI ? parentTI->name : "";
+                    if (!parentName.empty() && !pending.count(parentName)) {
                         auto* parentSym = moduleRegistry_->findSymbol(p.ns, parentName);
                         if (!parentSym) {
                             for (auto& mod : moduleRegistry_->allModules()) {
@@ -1608,9 +1605,8 @@ void IRGen::registerCrossFileSymbols(LucisParser::ProgramContext* ctx) {
             for (auto& [name, p] : pending) {
                 if (done.count(name)) continue;
                 if (typeRegistry_.lookup(name) && !llvm::StructType::getTypeByName(*context_, name)) continue;
-                if (p.decl->COLON() && p.decl->IDENTIFIER().size() > 1) {
-                    std::string parentName = p.decl->IDENTIFIER(1)->getText();
-                    auto* parentTI = typeRegistry_.lookup(parentName);
+                if (p.decl->COLON() && p.decl->typeSpec()) {
+                    auto* parentTI = resolveTypeInfo(p.decl->typeSpec());
                     if (!parentTI || parentTI->kind != TypeKind::Struct || parentTI->fields.empty())
                         continue;
                 }
@@ -1638,7 +1634,7 @@ void IRGen::registerCrossFileSymbols(LucisParser::ProgramContext* ctx) {
 
         for (auto* decl : ctx->topLevelDecl()) {
             if (auto* structDecl = decl->structDecl()) {
-                auto name = structDecl->IDENTIFIER(0)->getText();
+                auto name = structDecl->IDENTIFIER()->getText();
                 if (!typeRegistry_.lookup(name) && !genericStructTemplates_.count(name)) {
                     TypeInfo skeleton;
                     skeleton.name = name;

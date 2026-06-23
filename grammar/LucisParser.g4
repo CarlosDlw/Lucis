@@ -73,7 +73,7 @@ enumPayloadField
 // struct Point { int32 x; int32 y; }
 // struct Node<T> { T value; *Node<T> next; }
 structDecl
-    : STRUCT IDENTIFIER typeParamList? (COLON IDENTIFIER)? LBRACE structField* RBRACE
+    : STRUCT IDENTIFIER typeParamList? (COLON typeSpec)? LBRACE structField* RBRACE
     ;
 
 structField

@@ -326,9 +326,9 @@ void lucisparserParserInitialize() {
   	296,298,1,0,0,0,297,261,1,0,0,0,297,265,1,0,0,0,297,280,1,0,0,0,298,17,
   	1,0,0,0,299,300,5,99,0,0,300,301,5,111,0,0,301,302,3,158,79,0,302,19,
   	1,0,0,0,303,304,5,3,0,0,304,306,5,99,0,0,305,307,3,38,19,0,306,305,1,
-  	0,0,0,306,307,1,0,0,0,307,310,1,0,0,0,308,309,5,111,0,0,309,311,5,99,
-  	0,0,310,308,1,0,0,0,310,311,1,0,0,0,311,312,1,0,0,0,312,316,5,118,0,0,
-  	313,315,3,22,11,0,314,313,1,0,0,0,315,318,1,0,0,0,316,314,1,0,0,0,316,
+  	0,0,0,306,307,1,0,0,0,307,310,1,0,0,0,308,309,5,111,0,0,309,311,3,158,
+  	79,0,310,308,1,0,0,0,310,311,1,0,0,0,311,312,1,0,0,0,312,316,5,118,0,
+  	0,313,315,3,22,11,0,314,313,1,0,0,0,315,318,1,0,0,0,316,314,1,0,0,0,316,
   	317,1,0,0,0,317,319,1,0,0,0,318,316,1,0,0,0,319,320,5,119,0,0,320,21,
   	1,0,0,0,321,322,3,158,79,0,322,323,5,99,0,0,323,324,5,110,0,0,324,23,
   	1,0,0,0,325,326,5,4,0,0,326,328,5,99,0,0,327,329,3,38,19,0,328,327,1,
@@ -1998,12 +1998,8 @@ tree::TerminalNode* LucisParser::StructDeclContext::STRUCT() {
   return getToken(LucisParser::STRUCT, 0);
 }
 
-std::vector<tree::TerminalNode *> LucisParser::StructDeclContext::IDENTIFIER() {
-  return getTokens(LucisParser::IDENTIFIER);
-}
-
-tree::TerminalNode* LucisParser::StructDeclContext::IDENTIFIER(size_t i) {
-  return getToken(LucisParser::IDENTIFIER, i);
+tree::TerminalNode* LucisParser::StructDeclContext::IDENTIFIER() {
+  return getToken(LucisParser::IDENTIFIER, 0);
 }
 
 tree::TerminalNode* LucisParser::StructDeclContext::LBRACE() {
@@ -2020,6 +2016,10 @@ LucisParser::TypeParamListContext* LucisParser::StructDeclContext::typeParamList
 
 tree::TerminalNode* LucisParser::StructDeclContext::COLON() {
   return getToken(LucisParser::COLON, 0);
+}
+
+LucisParser::TypeSpecContext* LucisParser::StructDeclContext::typeSpec() {
+  return getRuleContext<LucisParser::TypeSpecContext>(0);
 }
 
 std::vector<LucisParser::StructFieldContext *> LucisParser::StructDeclContext::structField() {
@@ -2077,7 +2077,7 @@ LucisParser::StructDeclContext* LucisParser::structDecl() {
       setState(308);
       match(LucisParser::COLON);
       setState(309);
-      match(LucisParser::IDENTIFIER);
+      typeSpec(0);
     }
     setState(312);
     match(LucisParser::LBRACE);

@@ -362,8 +362,8 @@ std::optional<HoverResult> HoverProvider::hover(const std::string& source,
 
         // ── Struct declaration name ─────────────────────────────────
         if (auto* sd = tld->structDecl()) {
-            if (sd->IDENTIFIER().empty()) continue;
-            if (sd->IDENTIFIER(0)->getSymbol() == hoveredToken) {
+            if (sd->IDENTIFIER()) continue;
+            if (sd->IDENTIFIER()->getSymbol() == hoveredToken) {
                 return makeResult(hoveredToken, withDoc(formatStructDecl(sd), sd->getStart()->getLine() - 1));
             }
             // Hover on field names inside struct
@@ -1346,13 +1346,13 @@ std::optional<HoverResult> HoverProvider::walkExprForHover(
                         auto* sd = dynamic_cast<LucisParser::StructDeclContext*>(sym->decl);
                         if (!sd) continue;
                         if (!structName.empty() &&
-                            safeText(sd->IDENTIFIER(0)) != structName)
+                            safeText(sd->IDENTIFIER()) != structName)
                             continue;
                         for (auto* f : sd->structField()) {
                             if (safeText(f->IDENTIFIER()) == fieldName) {
                                 std::string md = "```lucis\n(field) "
                                     + typeSpecToString(f->typeSpec()) + " "
-                                    + safeText(sd->IDENTIFIER(0)) + "."
+                                    + safeText(sd->IDENTIFIER()) + "."
                                     + fieldName + "\n```";
                                 return makeResult(token, md);
                             }
@@ -3813,7 +3813,7 @@ std::optional<HoverResult> HoverProvider::hoverFieldAccess(
     // Search user structs for this field
     for (auto* tld : tree->topLevelDecl()) {
         if (auto* sd = tld->structDecl()) {
-            std::string sName = safeText(sd->IDENTIFIER(0));
+            std::string sName = safeText(sd->IDENTIFIER());
             if (!lookupReceiverType.empty() && sName != lookupReceiverType)
                 continue;
 
@@ -3924,7 +3924,7 @@ std::optional<HoverResult> HoverProvider::hoverFieldAccess(
                     auto* sd = dynamic_cast<LucisParser::StructDeclContext*>(sym->decl);
                     if (!sd) continue;
                     if (!lookupReceiverType.empty() &&
-                        safeText(sd->IDENTIFIER(0)) != lookupReceiverType)
+                        safeText(sd->IDENTIFIER()) != lookupReceiverType)
                         continue;
 
                     subst.clear();
@@ -3939,7 +3939,7 @@ std::optional<HoverResult> HoverProvider::hoverFieldAccess(
                         if (safeText(f->IDENTIFIER()) == fieldName) {
                             std::string md = "```lucis\n(field) "
                                            + substituteTypeParams(typeSpecToString(f->typeSpec()), subst)
-                                           + " " + safeText(sd->IDENTIFIER(0)) + "." + fieldName + "\n```";
+                                           + " " + safeText(sd->IDENTIFIER()) + "." + fieldName + "\n```";
                             md = appendDocToHover(md, docCommentsForFile(sym->sourceFile), f->getStart()->getLine() - 1);
                             return makeResult(token, md);
                         }
@@ -4462,7 +4462,7 @@ static LucisParser::StructDeclContext* findStructDeclForInference(
     if (flc->tree) {
         for (auto* tld : flc->tree->topLevelDecl()) {
             auto* sd = tld->structDecl();
-            if (sd && !sd->IDENTIFIER().empty() && safeText(sd->IDENTIFIER(0)) == name)
+            if (sd && sd->IDENTIFIER() && safeText(sd->IDENTIFIER()) == name)
                 return sd;
         }
     }
@@ -5833,7 +5833,7 @@ HoverProvider::findStructDecl(LucisParser::ProgramContext* tree,
                               const std::string& name) {
     for (auto* tld : tree->topLevelDecl()) {
         if (auto* sd = tld->structDecl()) {
-            if (safeText(sd->IDENTIFIER(0)) == name)
+            if (safeText(sd->IDENTIFIER()) == name)
                 return sd;
         }
     }
@@ -5941,7 +5941,7 @@ std::string HoverProvider::formatExternDecl(LucisParser::ExternDeclContext* ext)
 
 std::string HoverProvider::formatStructDecl(LucisParser::StructDeclContext* decl) {
     std::ostringstream ss;
-    ss << "```lucis\nstruct " << safeText(decl->IDENTIFIER(0));
+    ss << "```lucis\nstruct " << safeText(decl->IDENTIFIER());
     if (auto* tpl = decl->typeParamList()) {
         ss << "<";
         bool first = true;
@@ -5954,8 +5954,8 @@ std::string HoverProvider::formatStructDecl(LucisParser::StructDeclContext* decl
         }
         ss << ">";
     }
-    if (decl->COLON() && decl->IDENTIFIER().size() > 1)
-        ss << " : " << safeText(decl->IDENTIFIER(1));
+    if (decl->COLON() && decl->typeSpec())
+        ss << " : " << typeSpecToString(decl->typeSpec());
     ss << " {\n";
     for (auto* f : decl->structField()) {
         ss << "    " << typeSpecToString(f->typeSpec()) << " "
