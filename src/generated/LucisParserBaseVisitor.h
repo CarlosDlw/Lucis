@@ -199,6 +199,14 @@ public:
     return visitChildren(ctx);
   }
 
+  virtual std::any visitConstDeclStmt(LucisParser::ConstDeclStmtContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual std::any visitConstDeclarator(LucisParser::ConstDeclaratorContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
   virtual std::any visitAssignStmt(LucisParser::AssignStmtContext *ctx) override {
     return visitChildren(ctx);
   }

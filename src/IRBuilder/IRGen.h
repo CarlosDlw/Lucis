@@ -69,6 +69,7 @@ public:
     std::any visitUseItem(LucisParser::UseItemContext* ctx)             override;
     std::any visitUseGroup(LucisParser::UseGroupContext* ctx)           override;
     std::any visitUseEnumWildcard(LucisParser::UseEnumWildcardContext* ctx) override;
+    std::any visitConstDeclStmt(LucisParser::ConstDeclStmtContext* ctx) override;
     std::any visitVarDeclStmt(LucisParser::VarDeclStmtContext* ctx)     override;
     std::any visitAssignStmt(LucisParser::AssignStmtContext* ctx)       override;
     std::any visitCompoundAssignStmt(LucisParser::CompoundAssignStmtContext* ctx) override;
@@ -214,6 +215,17 @@ private:
         std::vector<unsigned> fixedArraySizes; // declared [N] sizes (incl. pointer-to-array)
     };
     std::unordered_map<std::string, VarInfo> locals_;
+
+    // Top-level consts: name → {LLVM global, TypeInfo}
+    struct TopLevelConst {
+        llvm::GlobalVariable* global;
+        const TypeInfo*       typeInfo;
+        unsigned              arrayDims = 0;
+    };
+    std::unordered_map<std::string, TopLevelConst> topLevelConsts_;
+
+    // Const declarators pending runtime initialization: (decl, global)
+    std::vector<std::pair<LucisParser::ConstDeclaratorContext*, llvm::GlobalVariable*>> pendingConstDecls_;
 
     // Labels declared in the current function, mapped to their BasicBlock
     std::unordered_map<std::string, llvm::BasicBlock*> labels_;
@@ -379,6 +391,10 @@ private:
 
     // Forward-declare a user function (signature only, no body)
     void forwardDeclareFunction(LucisParser::FunctionDeclContext* decl);
+    
+    // Generate initialization function for top-level consts
+    void generateConstInitFunction();
+    
     std::string resolveCallTarget(const std::string& name) const;
 
     // Recursively coerce scalars/aggregates to a target LLVM type.

@@ -9,6 +9,7 @@ ENUM      : 'enum';
 NULL_LIT  : 'null';
 FN        : 'fn';
 COMPTIME  : 'comptime' | 'cmpt';
+CONST     : 'const';
 TYPE      : 'type';
 AS        : 'as';
 IS        : 'is';

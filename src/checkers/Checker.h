@@ -86,8 +86,12 @@ private:
         uint64_t minUSize = 0;
         uint64_t maxUSize = 0;
         bool pointerEscaped = false;
+        bool isConst = false;  // true if declared with `const`
     };
     std::unordered_map<std::string, VarInfo> locals_;
+
+    // Top-level const variables, persisted across function-scope clears
+    std::unordered_map<std::string, VarInfo> globalVars_;
 
     // Labels declared in the current function (for asm goto validation)
     std::unordered_set<std::string> currentFunctionLabels_;
@@ -197,6 +201,7 @@ private:
                     std::unordered_set<std::string>* initCapture = nullptr);
     void checkStmt(LucisParser::StatementContext* stmt, const TypeInfo* retType, bool& terminated);
     void checkVarDeclStmt(LucisParser::VarDeclStmtContext* stmt);
+    void checkConstDeclStmt(LucisParser::ConstDeclStmtContext* stmt);
     void checkAssignStmt(LucisParser::AssignStmtContext* stmt);
     void checkCompoundAssignStmt(LucisParser::CompoundAssignStmtContext* stmt);
     void checkFieldAssignStmt(LucisParser::FieldAssignStmtContext* stmt);

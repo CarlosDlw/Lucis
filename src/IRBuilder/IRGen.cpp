@@ -6,6 +6,7 @@
 #include <llvm/IR/Intrinsics.h>
 #include <llvm/IR/Verifier.h>
 #include <llvm/IR/InlineAsm.h>
+#include <llvm/Transforms/Utils/ModuleUtils.h>
 
 #include <vector>
 #include <unordered_map>
@@ -459,6 +460,11 @@ std::any IRGen::visitProgram(LucisParser::ProgramContext* ctx) {
         if (decl->externDecl())
             visit(decl);
     }
+    // Collect and process top-level const declarations
+    for (auto* decl : ctx->topLevelDecl()) {
+        if (auto* constDecl = decl->constDeclStmt())
+            visit(constDecl);
+    }
     // Register struct methods via `extend` blocks
     for (auto* decl : ctx->topLevelDecl()) {
         if (decl->extendDecl())
@@ -474,7 +480,51 @@ std::any IRGen::visitProgram(LucisParser::ProgramContext* ctx) {
         if (decl->functionDecl())
             visit(decl);
     }
+    
+    // Generate initialization function for top-level consts
+    if (!pendingConstDecls_.empty()) {
+        generateConstInitFunction();
+    }
+    
     return {};
+}
+
+void IRGen::generateConstInitFunction() {
+    // Create function: void __lucis_const_init()
+    auto* voidTy = llvm::Type::getVoidTy(*context_);
+    auto* funcTy = llvm::FunctionType::get(voidTy, {}, false);
+    auto* initFunc = llvm::Function::Create(
+        funcTy,
+        llvm::GlobalValue::PrivateLinkage,
+        "__lucis_const_init",
+        module_
+    );
+
+    // Create entry block
+    auto* entryBlock = llvm::BasicBlock::Create(*context_, "entry", initFunc);
+    builder_->SetInsertPoint(entryBlock);
+
+    auto* prevFunc = currentFunction_;
+    currentFunction_ = initFunc;
+
+    // Evaluate each const declarator and store its value
+    for (auto& [decl, global] : pendingConstDecls_) {
+        if (!decl->expression()) continue;
+
+        auto* exprVal = std::any_cast<llvm::Value*>(visit(decl->expression()));
+        if (!exprVal) continue;
+
+        // Store the evaluated value into the global variable
+        builder_->CreateStore(exprVal, global);
+    }
+
+    // Return from init function
+    builder_->CreateRetVoid();
+
+    currentFunction_ = prevFunc;
+
+    // Register with global constructors using appendToGlobalCtors
+    llvm::appendToGlobalCtors(*module_, initFunc, 0);
 }
 
 std::any IRGen::visitStructDecl(LucisParser::StructDeclContext* ctx) {
@@ -2179,7 +2229,52 @@ llvm::Value* IRGen::ptrToIntIfNeeded(llvm::Value* val) {
         auto* i64Ty = llvm::Type::getInt64Ty(*context_);
         return builder_->CreatePtrToInt(val, i64Ty, "ptr2int");
     }
-    return val;
+     return val;
+}
+
+// const NAME = VALUE; or const NAME: TYPE = VALUE;
+std::any IRGen::visitConstDeclStmt(LucisParser::ConstDeclStmtContext* ctx) {
+    auto decls = ctx->constDeclarator();
+    if (decls.empty()) return nullptr;
+
+    for (auto* d : decls) {
+        auto name = d->IDENTIFIER()->getText();
+
+        if (!d->expression()) continue;
+
+        // Determine type: explicit or inferred from expression
+        const TypeInfo* typeInfo = nullptr;
+        unsigned dims = 0;
+
+        if (d->typeSpec()) {
+            typeInfo = resolveTypeInfo(d->typeSpec());
+        } else {
+            // Infer type from expression
+            typeInfo = resolveExprTypeInfo(d->expression());
+        }
+
+        if (!typeInfo) continue;
+
+        // Create a global variable with zero initializer (will be set by init function)
+        auto* llvmType = typeInfo->toLLVMType(*context_, module_->getDataLayout());
+        auto* global = new llvm::GlobalVariable(
+            *module_,
+            llvmType,
+            false,  // isConstant = false (allow init function to write)
+            llvm::GlobalValue::PrivateLinkage,
+            llvm::Constant::getNullValue(llvmType),
+            "const_" + name
+        );
+
+        // Store in topLevelConsts_ for init function
+        TopLevelConst tlc{global, typeInfo, dims};
+        topLevelConsts_[name] = tlc;
+
+        // Track this const declarator with its global for initialization
+        pendingConstDecls_.push_back({d, global});
+    }
+
+    return nullptr;
 }
 
 // int32 x = 42;   or   []int32 arr = [1, 2, 3];   or   Vec<int32> v = [1, 2, 3];
@@ -7461,6 +7556,15 @@ std::any IRGen::visitIdentExpr(LucisParser::IdentExprContext* ctx) {
         auto* alloca = it->second.alloca;
         return static_cast<llvm::Value*>(
             builder_->CreateLoad(alloca->getAllocatedType(), alloca, name));
+    }
+
+    // ── Top-level const: load from global ─────────────────────────────────
+    auto cit = topLevelConsts_.find(name);
+    if (cit != topLevelConsts_.end()) {
+        auto* global = cit->second.global;
+        auto* llvmType = global->getValueType();
+        return static_cast<llvm::Value*>(
+            builder_->CreateLoad(llvmType, global, name));
     }
 
     // ── Variadic parameter: return data pointer ─────────────────────────
@@ -15582,6 +15686,11 @@ const TypeInfo* IRGen::resolveExprTypeInfo(LucisParser::ExpressionContext* ctx) 
         auto name = ident->IDENTIFIER()->getText();
         auto it = locals_.find(name);
         if (it != locals_.end()) return it->second.typeInfo;
+        
+        // Check top-level consts
+        auto cit = topLevelConsts_.find(name);
+        if (cit != topLevelConsts_.end()) return cit->second.typeInfo;
+        
         auto git = cGlobals_.find(name);
         if (git != cGlobals_.end()) return git->second.type;
         return nullptr;

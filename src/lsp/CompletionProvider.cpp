@@ -1551,6 +1551,20 @@ static void collectLocalsFromStmts(
       }
     }
 
+    // Const declarations: collect const variables
+    if (auto* cd = stmt->constDeclStmt()) {
+        for (auto* d : cd->constDeclarator()) {
+            std::string typeName;
+            if (d->typeSpec())
+                typeName = safeText(d->typeSpec());
+            else if (d->expression())
+                typeName = inferExprTypeName(d->expression(), out, flc);
+            std::string constName = safeText(d->IDENTIFIER());
+            if (!constName.empty())
+                out[constName] = {typeName, 0};
+        }
+    }
+
     // Match expression as statement: collect locals from arm bodies
     if (auto* es = stmt->exprStmt()) {
       if (auto* me = dynamic_cast<LucisParser::MatchExprContext*>(es->expression())) {
@@ -5048,7 +5062,7 @@ void CompletionProvider::addKeywords(std::vector<CompletionItem> &items,
        "throw",  "spawn",  "await",     "lock",   "defer",    "as",
        "match",  "or",     "is",     "in",     "sizeof",    "typeof", "true",     "false",
        "null",   "return", "asm",       "volatile",
-       "goto",   "intel", "comptime"};
+       "goto",   "intel", "comptime", "const"};
 
   for (auto *kw : keywords) {
     if (!matchesPrefix(kw, prefix))
@@ -5728,20 +5742,36 @@ std::string CompletionProvider::resolveFieldType(
 
 std::unordered_map<std::string, CompletionProvider::LocalVar>
 CompletionProvider::collectLocals(LucisParser::FunctionDeclContext *func,
-                                  size_t beforeLine,
-                                  LucisParser::ProgramContext *tree,
-                                  const CBindings *bindings,
-                                  const ProjectContext *project) {
+                                   size_t beforeLine,
+                                   LucisParser::ProgramContext *tree,
+                                   const CBindings *bindings,
+                                   const ProjectContext *project) {
   std::unordered_map<std::string, LocalVar> result;
 
   FuncLookupCtx flc;
   flc.tree = tree;
   flc.bindings = bindings;
   flc.builtinReg = &builtinRegistry_;
-        flc.intrinsicReg = &intrinsicRegistry_;
+  flc.intrinsicReg = &intrinsicRegistry_;
   flc.extTypeReg = &extTypeRegistry_;
   flc.methodReg = &methodRegistry_;
   flc.project = project;
+
+  // Collect top-level consts (available everywhere)
+  for (auto *tld : tree->topLevelDecl()) {
+    if (auto *cd = tld->constDeclStmt()) {
+      for (auto *d : cd->constDeclarator()) {
+        std::string typeName;
+        if (d->typeSpec())
+          typeName = safeText(d->typeSpec());
+        else if (d->expression())
+          typeName = inferExprTypeName(d->expression(), result, &flc);
+        std::string constName = safeText(d->IDENTIFIER());
+        if (!constName.empty())
+          result[constName] = {typeName, 0};
+      }
+    }
+  }
 
   if (auto *params = func->paramList()) {
     for (auto *p : params->param()) {

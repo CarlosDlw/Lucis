@@ -63,7 +63,7 @@ static bool isKeyword(size_t tokenType) {
         case LucisLexer::MATCH:  case LucisLexer::WILDCARD:
         case LucisLexer::INLINE_BLOCK: case LucisLexer::SCOPE_BLOCK:
         case LucisLexer::ASM:    case LucisLexer::VOLATILE: case LucisLexer::GOTO:
-        case LucisLexer::INTEL:  case LucisLexer::COMPTIME:
+        case LucisLexer::INTEL:  case LucisLexer::COMPTIME: case LucisLexer::CONST:
             return true;
         default:
             return false;
@@ -316,6 +316,17 @@ static void walkTree(IdentMap& map, antlr4::tree::ParseTree* node) {
         for (auto* id : ctx->IDENTIFIER())
             classifyIdent(map, id, SemanticTokenType::Variable,
                           static_cast<uint32_t>(SemanticTokenMod::Declaration));
+    }
+
+    // ── const declarations ──
+    else if (auto* ctx = dynamic_cast<LucisParser::ConstDeclStmtContext*>(node)) {
+        for (auto* decl : ctx->constDeclarator()) {
+            auto* id = decl->IDENTIFIER();
+            if (id)
+                classifyIdent(map, id, SemanticTokenType::Variable,
+                              static_cast<uint32_t>(SemanticTokenMod::Declaration) |
+                              static_cast<uint32_t>(SemanticTokenMod::Readonly));
+        }
     }
 
     // ── for-in variable ──

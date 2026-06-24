@@ -47,6 +47,7 @@ topLevelDecl
     | extendDecl
     | externDecl
     | functionDecl
+    | constDeclStmt
     ;
 
 // type BinOp = fn(int32, int32) -> int32;
@@ -149,6 +150,7 @@ block
 statement
     : labelDef
     | useDecl
+    | constDeclStmt
     | varDeclStmt
     | assignStmt
     | compoundAssignStmt
@@ -253,6 +255,16 @@ varDeclStmt
 
 varDeclarator
     : IDENTIFIER (ASSIGN expression)?
+    ;
+
+// const NAME = VALUE;   or   const NAME: TYPE = VALUE;
+constDeclStmt
+    : CONST constDeclarator (COMMA constDeclarator)* SEMI
+    ;
+
+constDeclarator
+    : IDENTIFIER (ASSIGN expression)?
+    | IDENTIFIER COLON typeSpec (ASSIGN expression)?
     ;
 
 // x = 42;  or  arr[i] = val;   arr[i][j] = val;

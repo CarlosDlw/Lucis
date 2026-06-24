@@ -1395,10 +1395,35 @@ bool Checker::check(LucisParser::ProgramContext* tree) {
         }
     }
 
+    // Pass 4.5: pre-register all top-level const names (for forward references)
+    for (auto* decl : tree->topLevelDecl()) {
+        if (auto* cd = decl->constDeclStmt()) {
+            auto decls = cd->constDeclarator();
+            for (auto* d : decls) {
+                auto name = d->IDENTIFIER()->getText();
+                VarInfo vi{typeRegistry_.lookup("int32"), 0, true, false, nullptr};
+                vi.isConst = true;
+                vi.scopeDepth = 0;
+                locals_[name] = vi;
+                globalVars_[name] = vi;
+            }
+        }
+    }
+
+    // Pass 4.5b: resolve expressions and real types for top-level consts
+    for (auto* decl : tree->topLevelDecl()) {
+        if (auto* cd = decl->constDeclStmt()) {
+            checkConstDeclStmt(cd);
+        }
+    }
+
     // Pass 5: check function bodies
     for (auto* decl : tree->topLevelDecl()) {
         if (auto* func = decl->functionDecl()) {
             locals_.clear();
+            // Restore top-level consts into function scope
+            for (auto& [name, vi] : globalVars_)
+                locals_[name] = vi;
             checkFunction(func);
         }
     }
@@ -5942,6 +5967,8 @@ void Checker::checkExtendMethodBodies(LucisParser::ExtendDeclContext* decl) {
 
     for (auto* method : decl->extendMethod()) {
         locals_.clear();
+        for (auto& [name, vi] : globalVars_)
+            locals_[name] = vi;
 
         unsigned retDims = 0;
         auto* retType = resolveTypeSpec(method->typeSpec(), retDims);
@@ -6384,7 +6411,9 @@ void Checker::checkStmt(LucisParser::StatementContext* stmt,
         return;
     }
 
-    if (auto* varDecl = stmt->varDeclStmt()) {
+    if (auto* constDecl = stmt->constDeclStmt()) {
+        checkConstDeclStmt(constDecl);
+    } else if (auto* varDecl = stmt->varDeclStmt()) {
         checkVarDeclStmt(varDecl);
     } else if (auto* assign = stmt->assignStmt()) {
         checkAssignStmt(assign);
@@ -6800,6 +6829,63 @@ void Checker::checkForClassicStmt(LucisParser::ForClassicStmtContext* stmt,
 //  Statement checks
 // ═══════════════════════════════════════════════════════════════════════
 
+void Checker::checkConstDeclStmt(LucisParser::ConstDeclStmtContext* stmt) {
+    auto decls = stmt->constDeclarator();
+    if (decls.empty()) return;
+
+    for (auto* d : decls) {
+        auto name = d->IDENTIFIER()->getText();
+        auto it = locals_.find(name);
+        if (it == locals_.end()) continue;
+
+        if (d->COLON() && d->typeSpec()) {
+            // Explicit type: const NAME: TYPE = VALUE;
+            unsigned dims = 0;
+            auto* ti = resolveTypeSpec(d->typeSpec(), dims);
+            if (!ti) continue;
+
+            if (d->expression()) {
+                auto* initTI = resolveExprType(d->expression());
+                if (initTI) {
+                    if (ti->kind == TypeKind::Integer && initTI->kind == TypeKind::Integer) {
+                        // allow int-to-int coercions
+                    } else if (ti->name != initTI->name) {
+                        error(d, "type mismatch: cannot initialize '" + name +
+                                 "' of type '" + ti->name + "' with expression of type '" +
+                                 initTI->name + "'");
+                        continue;
+                    }
+                }
+            }
+            it->second.type = ti;
+            it->second.arrayDims = dims;
+            it->second.initialized = (d->expression() != nullptr);
+            it->second.declToken = d->IDENTIFIER()->getSymbol();
+            globalVars_[name] = it->second;
+        } else if (d->expression()) {
+            // Auto type: const NAME = VALUE;
+            auto* initTI = resolveExprType(d->expression());
+            if (!initTI || initTI->kind == TypeKind::Void) {
+                error(d, "cannot infer type for constant '" + name + "'");
+                continue;
+            }
+
+            unsigned dims = 0;
+            if (auto* arrLit = dynamic_cast<LucisParser::ArrayLitExprContext*>(d->expression())) {
+                if (!arrLit->expression().empty()) dims = 1;
+            } else {
+                dims = resolveExprArrayDims(d->expression());
+            }
+
+            it->second.type = initTI;
+            it->second.arrayDims = dims;
+            it->second.initialized = true;
+            it->second.declToken = d->IDENTIFIER()->getSymbol();
+            globalVars_[name] = it->second;
+        }
+    }
+}
+
 void Checker::checkVarDeclStmt(LucisParser::VarDeclStmtContext* stmt) {
     // ── Tuple destructuring: auto (x, y) = expr; ─────────────────────
     if (stmt->LPAREN()) {
@@ -7046,6 +7132,11 @@ void Checker::checkAssignStmt(LucisParser::AssignStmtContext* stmt) {
 
     if (it == locals_.end()) {
         error(stmt, "undefined variable '" + name + "'");
+        return;
+    }
+
+    if (it->second.isConst) {
+        error(stmt, "cannot assign to constant '" + name + "'");
         return;
     }
 
@@ -8132,6 +8223,9 @@ void Checker::warnUnusedLocals(LucisParser::FunctionDeclContext* func) {
 void Checker::warnUnusedLocals(antlr4::ParserRuleContext* ctx) {
     for (auto& [name, info] : locals_) {
         if (!info.used && name != "_") {
+            // Skip warning for top-level constants (they may be used externally)
+            if (info.isConst && info.scopeDepth == 0)
+                continue;
             if (info.declToken) {
                 warningToken(info.declToken, info.declToken,
                              "variable '" + name + "' is declared but never used");

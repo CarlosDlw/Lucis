@@ -111,6 +111,10 @@ public:
 
     virtual std::any visitVarDeclarator(LucisParser::VarDeclaratorContext *context) = 0;
 
+    virtual std::any visitConstDeclStmt(LucisParser::ConstDeclStmtContext *context) = 0;
+
+    virtual std::any visitConstDeclarator(LucisParser::ConstDeclaratorContext *context) = 0;
+
     virtual std::any visitAssignStmt(LucisParser::AssignStmtContext *context) = 0;
 
     virtual std::any visitCompoundAssignStmt(LucisParser::CompoundAssignStmtContext *context) = 0;

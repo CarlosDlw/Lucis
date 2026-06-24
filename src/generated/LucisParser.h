@@ -13,32 +13,32 @@ class  LucisParser : public antlr4::Parser {
 public:
   enum {
     USE = 1, RET = 2, STRUCT = 3, UNION = 4, ENUM = 5, NULL_LIT = 6, FN = 7, 
-    COMPTIME = 8, TYPE = 9, AS = 10, IS = 11, SIZEOF = 12, TYPEOF = 13, 
-    IF = 14, ELSE = 15, FOR = 16, IN = 17, LOOP = 18, WHILE = 19, DO = 20, 
-    BREAK = 21, CONTINUE = 22, SWITCH = 23, CASE = 24, DEFAULT = 25, SPAWN = 26, 
-    AWAIT = 27, LOCK = 28, EXTEND = 29, TRY = 30, CATCH = 31, FINALLY = 32, 
-    THROW = 33, DEFER = 34, MATCH = 35, OR = 36, EXTERN = 37, ASM = 38, 
-    VOLATILE = 39, GOTO = 40, INTEL = 41, AUTO = 42, VEC = 43, MAP = 44, 
-    SET = 45, TUPLE = 46, ARROW = 47, INCLUDE_SYS = 48, INCLUDE_LOCAL = 49, 
-    INLINE_BLOCK = 50, SCOPE_BLOCK = 51, NULLCOAL = 52, SPREAD = 53, RANGE_INCL = 54, 
-    RANGE = 55, INT1 = 56, INT8 = 57, INT16 = 58, INT32 = 59, INT64 = 60, 
-    INT128 = 61, INTINF = 62, ISIZE = 63, UINT1 = 64, UINT8 = 65, UINT16 = 66, 
-    UINT32 = 67, UINT64 = 68, UINT128 = 69, USIZE = 70, FLOAT32 = 71, FLOAT64 = 72, 
-    FLOAT80 = 73, FLOAT128 = 74, DOUBLE = 75, BOOL = 76, CHAR = 77, VOID = 78, 
-    STRING = 79, CSTRING = 80, SUFFIXED_HEX = 81, SUFFIXED_OCT = 82, SUFFIXED_BIN = 83, 
-    SUFFIXED_INT = 84, SUFFIXED_INT_FLOAT = 85, SUFFIXED_FLOAT = 86, SUFFIXED_FLOAT_INT = 87, 
-    SUFFIXED_DOT_FLOAT = 88, HEX_LIT = 89, OCT_LIT = 90, BIN_LIT = 91, INT_LIT = 92, 
-    FLOAT_LIT = 93, BOOL_LIT = 94, C_STR_LIT = 95, STR_LIT = 96, CHAR_LIT = 97, 
-    ATTR_ERROR = 98, WILDCARD = 99, IDENTIFIER = 100, PLUS_ASSIGN = 101, 
-    MINUS_ASSIGN = 102, STAR_ASSIGN = 103, SLASH_ASSIGN = 104, PERCENT_ASSIGN = 105, 
-    AMP_ASSIGN = 106, PIPE_ASSIGN = 107, CARET_ASSIGN = 108, LSHIFT_ASSIGN = 109, 
-    RSHIFT_ASSIGN = 110, SEMI = 111, COLON = 112, SCOPE = 113, COMMA = 114, 
-    DOT = 115, ASSIGN = 116, LPAREN = 117, RPAREN = 118, LBRACE = 119, RBRACE = 120, 
-    LBRACKET = 121, RBRACKET = 122, STAR = 123, AMPERSAND = 124, MINUS = 125, 
-    PLUS = 126, SLASH = 127, PERCENT = 128, EQ = 129, NEQ = 130, LTE = 131, 
-    GTE = 132, LT = 133, GT = 134, LAND = 135, LOR = 136, NOT = 137, INCR = 138, 
-    DECR = 139, LSHIFT = 140, PIPE = 141, CARET = 142, TILDE = 143, QUESTION = 144, 
-    WS = 145, LINE_COMMENT = 146, BLOCK_COMMENT = 147
+    COMPTIME = 8, CONST = 9, TYPE = 10, AS = 11, IS = 12, SIZEOF = 13, TYPEOF = 14, 
+    IF = 15, ELSE = 16, FOR = 17, IN = 18, LOOP = 19, WHILE = 20, DO = 21, 
+    BREAK = 22, CONTINUE = 23, SWITCH = 24, CASE = 25, DEFAULT = 26, SPAWN = 27, 
+    AWAIT = 28, LOCK = 29, EXTEND = 30, TRY = 31, CATCH = 32, FINALLY = 33, 
+    THROW = 34, DEFER = 35, MATCH = 36, OR = 37, EXTERN = 38, ASM = 39, 
+    VOLATILE = 40, GOTO = 41, INTEL = 42, AUTO = 43, VEC = 44, MAP = 45, 
+    SET = 46, TUPLE = 47, ARROW = 48, INCLUDE_SYS = 49, INCLUDE_LOCAL = 50, 
+    INLINE_BLOCK = 51, SCOPE_BLOCK = 52, NULLCOAL = 53, SPREAD = 54, RANGE_INCL = 55, 
+    RANGE = 56, INT1 = 57, INT8 = 58, INT16 = 59, INT32 = 60, INT64 = 61, 
+    INT128 = 62, INTINF = 63, ISIZE = 64, UINT1 = 65, UINT8 = 66, UINT16 = 67, 
+    UINT32 = 68, UINT64 = 69, UINT128 = 70, USIZE = 71, FLOAT32 = 72, FLOAT64 = 73, 
+    FLOAT80 = 74, FLOAT128 = 75, DOUBLE = 76, BOOL = 77, CHAR = 78, VOID = 79, 
+    STRING = 80, CSTRING = 81, SUFFIXED_HEX = 82, SUFFIXED_OCT = 83, SUFFIXED_BIN = 84, 
+    SUFFIXED_INT = 85, SUFFIXED_INT_FLOAT = 86, SUFFIXED_FLOAT = 87, SUFFIXED_FLOAT_INT = 88, 
+    SUFFIXED_DOT_FLOAT = 89, HEX_LIT = 90, OCT_LIT = 91, BIN_LIT = 92, INT_LIT = 93, 
+    FLOAT_LIT = 94, BOOL_LIT = 95, C_STR_LIT = 96, STR_LIT = 97, CHAR_LIT = 98, 
+    ATTR_ERROR = 99, WILDCARD = 100, IDENTIFIER = 101, PLUS_ASSIGN = 102, 
+    MINUS_ASSIGN = 103, STAR_ASSIGN = 104, SLASH_ASSIGN = 105, PERCENT_ASSIGN = 106, 
+    AMP_ASSIGN = 107, PIPE_ASSIGN = 108, CARET_ASSIGN = 109, LSHIFT_ASSIGN = 110, 
+    RSHIFT_ASSIGN = 111, SEMI = 112, COLON = 113, SCOPE = 114, COMMA = 115, 
+    DOT = 116, ASSIGN = 117, LPAREN = 118, RPAREN = 119, LBRACE = 120, RBRACE = 121, 
+    LBRACKET = 122, RBRACKET = 123, STAR = 124, AMPERSAND = 125, MINUS = 126, 
+    PLUS = 127, SLASH = 128, PERCENT = 129, EQ = 130, NEQ = 131, LTE = 132, 
+    GTE = 133, LT = 134, GT = 135, LAND = 136, LOR = 137, NOT = 138, INCR = 139, 
+    DECR = 140, LSHIFT = 141, PIPE = 142, CARET = 143, TILDE = 144, QUESTION = 145, 
+    WS = 146, LINE_COMMENT = 147, BLOCK_COMMENT = 148
   };
 
   enum {
@@ -54,17 +54,18 @@ public:
     RuleLabelDef = 32, RuleAsmStmt = 33, RuleAsmOutputList = 34, RuleAsmInputList = 35, 
     RuleAsmClobberList = 36, RuleAsmGotoLabelList = 37, RuleAsmOutput = 38, 
     RuleAsmOperand = 39, RuleExprStmt = 40, RuleVarDeclStmt = 41, RuleVarDeclarator = 42, 
-    RuleAssignStmt = 43, RuleCompoundAssignStmt = 44, RuleFieldAssignStmt = 45, 
-    RuleFieldCompoundAssignStmt = 46, RuleIndexFieldAssignStmt = 47, RuleFieldIndexAssignStmt = 48, 
-    RuleDerefAssignStmt = 49, RuleDerefCompoundAssignStmt = 50, RuleArrowAssignStmt = 51, 
-    RuleArrowCompoundAssignStmt = 52, RuleArrowAnyAssignStmt = 53, RuleArrowAnyCompoundAssignStmt = 54, 
-    RuleCallStmt = 55, RuleArgList = 56, RuleReturnStmt = 57, RuleIfStmt = 58, 
-    RuleElseIfClause = 59, RuleElseClause = 60, RuleIfBody = 61, RuleForStmt = 62, 
-    RuleBreakStmt = 63, RuleContinueStmt = 64, RuleLoopStmt = 65, RuleWhileStmt = 66, 
-    RuleDoWhileStmt = 67, RuleLockStmt = 68, RuleTryCatchStmt = 69, RuleCatchClause = 70, 
-    RuleFinallyClause = 71, RuleThrowStmt = 72, RuleSwitchStmt = 73, RuleCaseClause = 74, 
-    RuleDefaultClause = 75, RuleMatchArm = 76, RulePattern = 77, RuleLiteralPattern = 78, 
-    RuleExpression = 79, RuleTypeSpec = 80, RuleFnTypeSpec = 81, RulePrimitiveType = 82
+    RuleConstDeclStmt = 43, RuleConstDeclarator = 44, RuleAssignStmt = 45, 
+    RuleCompoundAssignStmt = 46, RuleFieldAssignStmt = 47, RuleFieldCompoundAssignStmt = 48, 
+    RuleIndexFieldAssignStmt = 49, RuleFieldIndexAssignStmt = 50, RuleDerefAssignStmt = 51, 
+    RuleDerefCompoundAssignStmt = 52, RuleArrowAssignStmt = 53, RuleArrowCompoundAssignStmt = 54, 
+    RuleArrowAnyAssignStmt = 55, RuleArrowAnyCompoundAssignStmt = 56, RuleCallStmt = 57, 
+    RuleArgList = 58, RuleReturnStmt = 59, RuleIfStmt = 60, RuleElseIfClause = 61, 
+    RuleElseClause = 62, RuleIfBody = 63, RuleForStmt = 64, RuleBreakStmt = 65, 
+    RuleContinueStmt = 66, RuleLoopStmt = 67, RuleWhileStmt = 68, RuleDoWhileStmt = 69, 
+    RuleLockStmt = 70, RuleTryCatchStmt = 71, RuleCatchClause = 72, RuleFinallyClause = 73, 
+    RuleThrowStmt = 74, RuleSwitchStmt = 75, RuleCaseClause = 76, RuleDefaultClause = 77, 
+    RuleMatchArm = 78, RulePattern = 79, RuleLiteralPattern = 80, RuleExpression = 81, 
+    RuleTypeSpec = 82, RuleFnTypeSpec = 83, RulePrimitiveType = 84
   };
 
   explicit LucisParser(antlr4::TokenStream *input);
@@ -127,6 +128,8 @@ public:
   class ExprStmtContext;
   class VarDeclStmtContext;
   class VarDeclaratorContext;
+  class ConstDeclStmtContext;
+  class ConstDeclaratorContext;
   class AssignStmtContext;
   class CompoundAssignStmtContext;
   class FieldAssignStmtContext;
@@ -312,6 +315,7 @@ public:
     ExtendDeclContext *extendDecl();
     ExternDeclContext *externDecl();
     FunctionDeclContext *functionDecl();
+    ConstDeclStmtContext *constDeclStmt();
 
 
     virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
@@ -671,6 +675,7 @@ public:
     virtual size_t getRuleIndex() const override;
     LabelDefContext *labelDef();
     UseDeclContext *useDecl();
+    ConstDeclStmtContext *constDeclStmt();
     VarDeclStmtContext *varDeclStmt();
     AssignStmtContext *assignStmt();
     CompoundAssignStmtContext *compoundAssignStmt();
@@ -1008,6 +1013,41 @@ public:
   };
 
   VarDeclaratorContext* varDeclarator();
+
+  class  ConstDeclStmtContext : public antlr4::ParserRuleContext {
+  public:
+    ConstDeclStmtContext(antlr4::ParserRuleContext *parent, size_t invokingState);
+    virtual size_t getRuleIndex() const override;
+    antlr4::tree::TerminalNode *CONST();
+    std::vector<ConstDeclaratorContext *> constDeclarator();
+    ConstDeclaratorContext* constDeclarator(size_t i);
+    antlr4::tree::TerminalNode *SEMI();
+    std::vector<antlr4::tree::TerminalNode *> COMMA();
+    antlr4::tree::TerminalNode* COMMA(size_t i);
+
+
+    virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+   
+  };
+
+  ConstDeclStmtContext* constDeclStmt();
+
+  class  ConstDeclaratorContext : public antlr4::ParserRuleContext {
+  public:
+    ConstDeclaratorContext(antlr4::ParserRuleContext *parent, size_t invokingState);
+    virtual size_t getRuleIndex() const override;
+    antlr4::tree::TerminalNode *IDENTIFIER();
+    antlr4::tree::TerminalNode *ASSIGN();
+    ExpressionContext *expression();
+    antlr4::tree::TerminalNode *COLON();
+    TypeSpecContext *typeSpec();
+
+
+    virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+   
+  };
+
+  ConstDeclaratorContext* constDeclarator();
 
   class  AssignStmtContext : public antlr4::ParserRuleContext {
   public:

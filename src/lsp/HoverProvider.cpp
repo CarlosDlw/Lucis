@@ -564,7 +564,7 @@ std::optional<HoverResult> HoverProvider::hoverIdent(
         LucisParser::ProgramContext* tree, const CBindings& bindings,
         size_t cursorLine, const ProjectContext* project) {
 
-    // 1) Local variable / parameter in enclosing function
+    // 1) Local variable / parameter / constant in enclosing function
     auto* func = findEnclosingFunction(tree, cursorLine);
     if (func) {
         auto locals = collectLocals(func, cursorLine, tree, &bindings, project);
@@ -574,6 +574,23 @@ std::optional<HoverResult> HoverProvider::hoverIdent(
             for (unsigned i = 0; i < it->second.arrayDims; i++)
                 dims += "[]";
             std::string kind = it->second.isParameter ? "parameter" : "variable";
+            // Check if this is a top-level constant (not parameter, has type)
+            if (!it->second.isParameter && !it->second.typeName.empty()) {
+                // Check if it's a top-level const by looking at the tree
+                bool isConst = false;
+                for (auto* tld : tree->topLevelDecl()) {
+                    if (auto* cd = tld->constDeclStmt()) {
+                        for (auto* d : cd->constDeclarator()) {
+                            if (safeText(d->IDENTIFIER()) == name) {
+                                isConst = true;
+                                break;
+                            }
+                        }
+                        if (isConst) break;
+                    }
+                }
+                if (isConst) kind = "constant";
+            }
             std::string md = formatTypedHover(kind,
                                               dims + it->second.typeName,
                                               name,
@@ -2283,6 +2300,33 @@ std::optional<HoverResult> HoverProvider::walkStmtForHover(
             if (r) return r;
         }
         for (auto* d : vd->varDeclarator()) {
+            if (auto* initExpr = d->expression()) {
+                auto r = walkExprForHover(initExpr, hoveredToken, tokenText,
+                                           tree, bindings, cursorLine, project);
+                if (r) return r;
+            }
+        }
+    }
+
+    // Check const declarations
+    if (auto* cd = stmt->constDeclStmt()) {
+        for (auto* d : cd->constDeclarator()) {
+            // Hover on const identifier
+            if (d->IDENTIFIER() && d->IDENTIFIER()->getSymbol() == hoveredToken) {
+                std::string typeName;
+                if (d->typeSpec())
+                    typeName = safeText(d->typeSpec());
+                else if (d->expression())
+                    typeName = inferExprTypeName(d->expression(), {}, nullptr);
+                std::string dims = "";
+                std::string md = formatTypedHover("constant", dims + typeName,
+                                                  safeText(d->IDENTIFIER()), bindings);
+                return makeResult(hoveredToken, md);
+            }
+            if (auto* ts = d->typeSpec()) {
+                auto r = hoverTypeSpec(ts, hoveredToken, tree, bindings, project);
+                if (r) return r;
+            }
             if (auto* initExpr = d->expression()) {
                 auto r = walkExprForHover(initExpr, hoveredToken, tokenText,
                                            tree, bindings, cursorLine, project);
@@ -5599,6 +5643,20 @@ static void collectLocalsFromStmts(
                 }
             }
 
+    // Const declarations: collect const variables
+    if (auto* cd = stmt->constDeclStmt()) {
+        for (auto* d : cd->constDeclarator()) {
+            std::string typeName;
+            if (d->typeSpec())
+                typeName = safeText(d->typeSpec());
+            else if (d->expression())
+                typeName = inferExprTypeName(d->expression(), out, flc);
+            std::string constName = safeText(d->IDENTIFIER());
+            if (!constName.empty())
+                out[constName] = {typeName, 0};
+        }
+    }
+
             if (auto* cu = dynamic_cast<LucisParser::CatchUnwrapExprContext*>(vd->expression())) {
                 if (cursorInsideNode(cu->block(), beforeLine)) {
                     auto itType = inferCatchUnwrapItType(cu->expression(), flc ? flc->tree : nullptr, out, flc);
@@ -5810,10 +5868,26 @@ HoverProvider::collectLocals(LucisParser::FunctionDeclContext* func,
     flc.tree       = tree;
     flc.bindings   = bindings;
     flc.builtinReg = &builtinRegistry_;
-        flc.intrinsicReg = &intrinsicRegistry_;
+    flc.intrinsicReg = &intrinsicRegistry_;
     flc.extTypeReg = &extTypeRegistry_;
     flc.methodReg  = &methodRegistry_;
     flc.project    = project;
+
+    // Collect top-level consts (available everywhere)
+    for (auto* tld : tree->topLevelDecl()) {
+        if (auto* cd = tld->constDeclStmt()) {
+            for (auto* d : cd->constDeclarator()) {
+                std::string typeName;
+                if (d->typeSpec())
+                    typeName = safeText(d->typeSpec());
+                else if (d->expression())
+                    typeName = inferExprTypeName(d->expression(), result, &flc);
+                std::string constName = safeText(d->IDENTIFIER());
+                if (!constName.empty())
+                    result[constName] = {typeName, 0, false};
+            }
+        }
+    }
 
     // Collect parameters
     if (auto* params = func->paramList()) {
