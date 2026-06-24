@@ -9760,10 +9760,17 @@ std::any IRGen::visitStaticMethodCallExpr(
                     *context_, module_->getDataLayout());
                 auto* actualTy = args[i]->getType();
                 if (actualTy == llvmExpectedTy) continue;
-                if (actualTy->isIntegerTy() && llvmExpectedTy->isIntegerTy() &&
+                
+                // Pointer to integer conversion (e.g., ptr -> int64 for syscalls)
+                if (actualTy->isPointerTy() && llvmExpectedTy->isIntegerTy()) {
+                    args[i] = builder_->CreatePtrToInt(args[i], llvmExpectedTy, "ptr2int");
+                }
+                // Integer widening
+                else if (actualTy->isIntegerTy() && llvmExpectedTy->isIntegerTy() &&
                     actualTy->getIntegerBitWidth() < llvmExpectedTy->getIntegerBitWidth())
                     args[i] = builder_->CreateIntCast(
                         args[i], llvmExpectedTy, expectedType->isSigned, "widen");
+                // Float widening
                 else if (actualTy->isFloatingPointTy() && llvmExpectedTy->isFloatingPointTy() &&
                          actualTy->getPrimitiveSizeInBits() < llvmExpectedTy->getPrimitiveSizeInBits())
                     args[i] = builder_->CreateFPCast(args[i], llvmExpectedTy, "fwiden");
@@ -22173,10 +22180,17 @@ std::any IRGen::visitGenericQualifiedFnCallExpr(
                     *context_, module_->getDataLayout());
                 auto* actualTy = args[i]->getType();
                 if (actualTy == llvmExpectedTy) continue;
-                if (actualTy->isIntegerTy() && llvmExpectedTy->isIntegerTy() &&
+                
+                // Pointer to integer conversion (e.g., ptr -> int64 for syscalls)
+                if (actualTy->isPointerTy() && llvmExpectedTy->isIntegerTy()) {
+                    args[i] = builder_->CreatePtrToInt(args[i], llvmExpectedTy, "ptr2int");
+                }
+                // Integer widening
+                else if (actualTy->isIntegerTy() && llvmExpectedTy->isIntegerTy() &&
                     actualTy->getIntegerBitWidth() < llvmExpectedTy->getIntegerBitWidth())
                     args[i] = builder_->CreateIntCast(
                         args[i], llvmExpectedTy, expectedType->isSigned, "widen");
+                // Float widening
                 else if (actualTy->isFloatingPointTy() && llvmExpectedTy->isFloatingPointTy() &&
                          actualTy->getPrimitiveSizeInBits() < llvmExpectedTy->getPrimitiveSizeInBits())
                     args[i] = builder_->CreateFPCast(args[i], llvmExpectedTy, "fwiden");
