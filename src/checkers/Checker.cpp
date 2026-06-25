@@ -7385,6 +7385,18 @@ void Checker::checkCompoundAssignStmt(LucisParser::CompoundAssignStmtContext* st
     auto* rhsType = resolveExprType(stmt->expression());
     auto opText = stmt->op->getText();
 
+    // Null-coalescing assignment: ptr ??= default
+    if (opText == "??=") {
+        if (varType && varType->kind != TypeKind::Pointer)
+            error(stmt, "'??=' requires pointer variable, got '" +
+                             varType->name + "'");
+        if (rhsType && varType && !isAssignable(varType, rhsType))
+            error(stmt, "'??=' type mismatch: variable type '" +
+                             varType->name + "', cannot use '" +
+                             rhsType->name + "'");
+        return;
+    }
+
     bool isPtrArith = varType && varType->kind == TypeKind::Pointer &&
                       (opText == "+=" || opText == "-=");
 
@@ -7522,6 +7534,18 @@ void Checker::checkFieldCompoundAssignStmt(LucisParser::FieldCompoundAssignStmtC
 
     auto* rhsType = resolveExprType(stmt->expression());
     auto opText = stmt->op->getText();
+
+    // Null-coalescing assignment: obj.field ??= default
+    if (opText == "??=") {
+        if (currentType && currentType->kind != TypeKind::Pointer)
+            error(stmt, "'??=' requires pointer field, got '" +
+                             currentType->name + "'");
+        if (rhsType && currentType && !isAssignable(currentType, rhsType))
+            error(stmt, "'??=' type mismatch: field type '" +
+                             currentType->name + "', cannot use '" +
+                             rhsType->name + "'");
+        return;
+    }
 
     bool isPtrArith = currentType && currentType->kind == TypeKind::Pointer &&
                       (opText == "+=" || opText == "-=");
@@ -7721,6 +7745,18 @@ void Checker::checkArrowCompoundAssignStmt(LucisParser::ArrowCompoundAssignStmtC
     auto* rhsType = resolveExprType(stmt->expression());
     auto opText = stmt->op->getText();
 
+    // Null-coalescing assignment: ptr->field ??= default
+    if (opText == "??=") {
+        if (fieldType && fieldType->kind != TypeKind::Pointer)
+            error(stmt, "'??=' requires pointer field, got '" +
+                             fieldType->name + "'");
+        if (rhsType && fieldType && !isAssignable(fieldType, rhsType))
+            error(stmt, "'??=' type mismatch: field type '" +
+                             fieldType->name + "', cannot use '" +
+                             rhsType->name + "'");
+        return;
+    }
+
     bool isPtrArith = fieldType && fieldType->kind == TypeKind::Pointer &&
                       (opText == "+=" || opText == "-=");
 
@@ -7821,6 +7857,18 @@ void Checker::checkDerefCompoundAssignStmt(LucisParser::DerefCompoundAssignStmtC
 
     auto* rhsType = resolveExprType(stmt->expression(stmt->IDENTIFIER() ? 0 : 1));
     auto opText = stmt->op->getText();
+
+    // Null-coalescing assignment: *ptr ??= default
+    if (opText == "??=") {
+        if (targetType && targetType->kind != TypeKind::Pointer)
+            error(stmt, "'??=' requires pointer target (deref of pointer-to-pointer), got '" +
+                             targetType->name + "'");
+        if (rhsType && targetType && !isAssignable(targetType, rhsType))
+            error(stmt, "'??=' type mismatch: target type '" +
+                             targetType->name + "', cannot use '" +
+                             rhsType->name + "'");
+        return;
+    }
 
     bool needsNumeric = (opText == "+=" || opText == "-=" ||
                          opText == "*=" || opText == "/=");

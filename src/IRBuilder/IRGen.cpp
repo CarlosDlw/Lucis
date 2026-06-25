@@ -3000,6 +3000,21 @@ std::any IRGen::visitCompoundAssignStmt(LucisParser::CompoundAssignStmtContext* 
         }
     }
 
+    // ── Null-coalescing assignment: ptr ??= default ──────────────
+    if (ctx->op->getType() == LucisLexer::NULLCOAL_ASSIGN) {
+        auto* isNull = builder_->CreateICmpEQ(
+            cur, llvm::ConstantPointerNull::get(llvm::PointerType::getUnqual(*context_)),
+            "ncoal_isnull");
+        auto* thenBB = llvm::BasicBlock::Create(*context_, "ncoal.store", currentFunction_);
+        auto* mergeBB = llvm::BasicBlock::Create(*context_, "ncoal.end", currentFunction_);
+        builder_->CreateCondBr(isNull, thenBB, mergeBB);
+        builder_->SetInsertPoint(thenBB);
+        builder_->CreateStore(rhs, alloca);
+        builder_->CreateBr(mergeBB);
+        builder_->SetInsertPoint(mergeBB);
+        return {};
+    }
+
     bool isFloat = varTy->isFloatingPointTy();
     llvm::Value* result = nullptr;
 
@@ -3281,6 +3296,21 @@ std::any IRGen::visitFieldCompoundAssignStmt(
             }
         }
 
+        // ── Null-coalescing: ptr ??= default ──────────────────
+        if (ctx->op->getType() == LucisLexer::NULLCOAL_ASSIGN) {
+            auto* isNull = builder_->CreateICmpEQ(
+                cur, llvm::ConstantPointerNull::get(llvm::PointerType::getUnqual(*context_)),
+                "ncoal_isnull");
+            auto* thenBB = llvm::BasicBlock::Create(*context_, "ncoal.store", currentFunction_);
+            auto* mergeBB = llvm::BasicBlock::Create(*context_, "ncoal.end", currentFunction_);
+            builder_->CreateCondBr(isNull, thenBB, mergeBB);
+            builder_->SetInsertPoint(thenBB);
+            builder_->CreateStore(rhs, currentPtr);
+            builder_->CreateBr(mergeBB);
+            builder_->SetInsertPoint(mergeBB);
+            return {};
+        }
+
         bool isFloat = currentTy->isFloatingPointTy();
         llvm::Value* result = nullptr;
         // Pointer arithmetic on pointer field: field += int / field -= int
@@ -3395,6 +3425,21 @@ std::any IRGen::visitFieldCompoundAssignStmt(
             else
                 rhs = builder_->CreateFPExt(rhs, currentTy);
         }
+    }
+
+    // ── Null-coalescing: ptr ??= default ──────────────────
+    if (ctx->op->getType() == LucisLexer::NULLCOAL_ASSIGN) {
+        auto* isNull = builder_->CreateICmpEQ(
+            cur, llvm::ConstantPointerNull::get(llvm::PointerType::getUnqual(*context_)),
+            "ncoal_isnull");
+        auto* thenBB = llvm::BasicBlock::Create(*context_, "ncoal.store", currentFunction_);
+        auto* mergeBB = llvm::BasicBlock::Create(*context_, "ncoal.end", currentFunction_);
+        builder_->CreateCondBr(isNull, thenBB, mergeBB);
+        builder_->SetInsertPoint(thenBB);
+        builder_->CreateStore(rhs, currentPtr);
+        builder_->CreateBr(mergeBB);
+        builder_->SetInsertPoint(mergeBB);
+        return {};
     }
 
     bool isFloat = currentTy->isFloatingPointTy();
@@ -3980,6 +4025,21 @@ std::any IRGen::visitArrowCompoundAssignStmt(
                       currentTI->fields[fieldIdx].typeInfo->isSigned);
     }
 
+    // ── Null-coalescing: ptr->field ??= default ──────────────────
+    if (ctx->op->getType() == LucisLexer::NULLCOAL_ASSIGN) {
+        auto* isNull = builder_->CreateICmpEQ(
+            oldVal, llvm::ConstantPointerNull::get(llvm::PointerType::getUnqual(*context_)),
+            "ncoal_isnull");
+        auto* thenBB = llvm::BasicBlock::Create(*context_, "ncoal.store", currentFunction_);
+        auto* mergeBB = llvm::BasicBlock::Create(*context_, "ncoal.end", currentFunction_);
+        builder_->CreateCondBr(isNull, thenBB, mergeBB);
+        builder_->SetInsertPoint(thenBB);
+        builder_->CreateStore(rhs, gep);
+        builder_->CreateBr(mergeBB);
+        builder_->SetInsertPoint(mergeBB);
+        return {};
+    }
+
     llvm::Value* result;
     auto opType = ctx->op->getType();
     bool isFloat = fieldTy->isFloatingPointTy();
@@ -4423,6 +4483,21 @@ std::any IRGen::visitArrowAnyCompoundAssignStmt(
     if (rhs->getType() != lv.ty) {
         if (rhs->getType()->isIntegerTy() && lv.ty->isIntegerTy())
             rhs = builder_->CreateIntCast(rhs, lv.ty, lv.fieldTI && lv.fieldTI->isSigned);
+    }
+
+    // ── Null-coalescing: arrow_any ??= default ──────────────────
+    if (ctx->op->getType() == LucisLexer::NULLCOAL_ASSIGN) {
+        auto* isNull = builder_->CreateICmpEQ(
+            oldVal, llvm::ConstantPointerNull::get(llvm::PointerType::getUnqual(*context_)),
+            "ncoal_isnull");
+        auto* thenBB = llvm::BasicBlock::Create(*context_, "ncoal.store", currentFunction_);
+        auto* mergeBB = llvm::BasicBlock::Create(*context_, "ncoal.end", currentFunction_);
+        builder_->CreateCondBr(isNull, thenBB, mergeBB);
+        builder_->SetInsertPoint(thenBB);
+        builder_->CreateStore(rhs, lv.ptr);
+        builder_->CreateBr(mergeBB);
+        builder_->SetInsertPoint(mergeBB);
+        return {};
     }
 
     bool isFloat = lv.ty->isFloatingPointTy();
@@ -10663,6 +10738,21 @@ std::any IRGen::visitDerefCompoundAssignStmt(LucisParser::DerefCompoundAssignStm
             else
                 rhs = builder_->CreateFPExt(rhs, pointeeTy);
         }
+    }
+
+    // ── Null-coalescing: *ptr ??= default (ptr must be pointer-to-pointer) ─
+    if (ctx->op->getType() == LucisLexer::NULLCOAL_ASSIGN) {
+        auto* isNull = builder_->CreateICmpEQ(
+            cur, llvm::ConstantPointerNull::get(llvm::PointerType::getUnqual(*context_)),
+            "ncoal_isnull");
+        auto* thenBB = llvm::BasicBlock::Create(*context_, "ncoal.store", currentFunction_);
+        auto* mergeBB = llvm::BasicBlock::Create(*context_, "ncoal.end", currentFunction_);
+        builder_->CreateCondBr(isNull, thenBB, mergeBB);
+        builder_->SetInsertPoint(thenBB);
+        builder_->CreateStore(rhs, ptrVal);
+        builder_->CreateBr(mergeBB);
+        builder_->SetInsertPoint(mergeBB);
+        return {};
     }
 
     bool isFloat = pointeeTy->isFloatingPointTy();

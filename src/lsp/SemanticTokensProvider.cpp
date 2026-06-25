@@ -96,7 +96,7 @@ static bool isOperator(size_t tokenType) {
         case LucisLexer::PERCENT_ASSIGN: case LucisLexer::AMP_ASSIGN:
         case LucisLexer::PIPE_ASSIGN: case LucisLexer::CARET_ASSIGN:
         case LucisLexer::LSHIFT_ASSIGN: case LucisLexer::RSHIFT_ASSIGN:
-        case LucisLexer::NULLCOAL: case LucisLexer::SPREAD:
+        case LucisLexer::NULLCOAL_ASSIGN: case LucisLexer::NULLCOAL: case LucisLexer::SPREAD:
         case LucisLexer::RANGE: case LucisLexer::RANGE_INCL:
         case LucisLexer::QUESTION:
             return true;

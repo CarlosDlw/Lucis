@@ -58,6 +58,7 @@ INCLUDE_LOCAL  : '#include' [ \t]+ '"' ~["\r\n]+ '"';
 INLINE_BLOCK  : '#inline';
 SCOPE_BLOCK   : '#scope';
 
+NULLCOAL_ASSIGN: '??=';
 NULLCOAL  : '??';
 SPREAD    : '...';
 RANGE_INCL: '..=';

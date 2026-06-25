@@ -272,11 +272,11 @@ assignStmt
     : IDENTIFIER (LBRACKET expression RBRACKET)* ASSIGN expression SEMI
     ;
 
-// x += 5;  x -= 3;  etc.
+// x += 5;  x -= 3;  etc.  x ??= default;
 compoundAssignStmt
     : IDENTIFIER op=(PLUS_ASSIGN | MINUS_ASSIGN | STAR_ASSIGN | SLASH_ASSIGN
         | PERCENT_ASSIGN | AMP_ASSIGN | PIPE_ASSIGN | CARET_ASSIGN
-        | LSHIFT_ASSIGN | RSHIFT_ASSIGN) expression SEMI
+        | LSHIFT_ASSIGN | RSHIFT_ASSIGN | NULLCOAL_ASSIGN) expression SEMI
     ;
 
 // p.x = 42;
@@ -284,11 +284,11 @@ fieldAssignStmt
     : IDENTIFIER (DOT IDENTIFIER)+ ASSIGN expression SEMI
     ;
 
-// p.x += 5;  data.algo.pos.x -= 10;
+// p.x += 5;  data.algo.pos.x -= 10;  obj.field ??= default;
 fieldCompoundAssignStmt
     : IDENTIFIER (DOT IDENTIFIER)+ op=(PLUS_ASSIGN | MINUS_ASSIGN | STAR_ASSIGN | SLASH_ASSIGN
         | PERCENT_ASSIGN | AMP_ASSIGN | PIPE_ASSIGN | CARET_ASSIGN
-        | LSHIFT_ASSIGN | RSHIFT_ASSIGN) expression SEMI
+        | LSHIFT_ASSIGN | RSHIFT_ASSIGN | NULLCOAL_ASSIGN) expression SEMI
     ;
 
 // arr[i].field = 42;
@@ -307,14 +307,14 @@ derefAssignStmt
     | STAR LPAREN expression RPAREN ASSIGN expression SEMI
     ;
 
-// *p += 1;   or   *(p + 1) -= 2;
+// *p += 1;   or   *(p + 1) -= 2;   *ptr ??= default;
 derefCompoundAssignStmt
     : STAR IDENTIFIER op=(PLUS_ASSIGN | MINUS_ASSIGN | STAR_ASSIGN | SLASH_ASSIGN
         | PERCENT_ASSIGN | AMP_ASSIGN | PIPE_ASSIGN | CARET_ASSIGN
-        | LSHIFT_ASSIGN | RSHIFT_ASSIGN) expression SEMI
+        | LSHIFT_ASSIGN | RSHIFT_ASSIGN | NULLCOAL_ASSIGN) expression SEMI
     | STAR LPAREN expression RPAREN op=(PLUS_ASSIGN | MINUS_ASSIGN | STAR_ASSIGN | SLASH_ASSIGN
         | PERCENT_ASSIGN | AMP_ASSIGN | PIPE_ASSIGN | CARET_ASSIGN
-        | LSHIFT_ASSIGN | RSHIFT_ASSIGN) expression SEMI
+        | LSHIFT_ASSIGN | RSHIFT_ASSIGN | NULLCOAL_ASSIGN) expression SEMI
     ;
 
 // ptr->field = 42;
@@ -322,11 +322,11 @@ arrowAssignStmt
     : IDENTIFIER (DOT IDENTIFIER)* ARROW IDENTIFIER ASSIGN expression SEMI
     ;
 
-// ptr->field += 5;
+// ptr->field += 5;  ptr->field ??= default;
 arrowCompoundAssignStmt
     : IDENTIFIER (DOT IDENTIFIER)* ARROW IDENTIFIER op=(PLUS_ASSIGN | MINUS_ASSIGN | STAR_ASSIGN | SLASH_ASSIGN
         | PERCENT_ASSIGN | AMP_ASSIGN | PIPE_ASSIGN | CARET_ASSIGN
-        | LSHIFT_ASSIGN | RSHIFT_ASSIGN) expression SEMI
+        | LSHIFT_ASSIGN | RSHIFT_ASSIGN | NULLCOAL_ASSIGN) expression SEMI
     ;
 
 // General arrow lvalue assignment: ptr->field[i] = expr, ptr->f1->f2 = expr,
@@ -339,7 +339,7 @@ arrowAnyAssignStmt
 arrowAnyCompoundAssignStmt
     : IDENTIFIER (DOT IDENTIFIER | ARROW IDENTIFIER)+ (LBRACKET expression RBRACKET)* op=(PLUS_ASSIGN | MINUS_ASSIGN | STAR_ASSIGN | SLASH_ASSIGN
         | PERCENT_ASSIGN | AMP_ASSIGN | PIPE_ASSIGN | CARET_ASSIGN
-        | LSHIFT_ASSIGN | RSHIFT_ASSIGN) expression SEMI
+        | LSHIFT_ASSIGN | RSHIFT_ASSIGN | NULLCOAL_ASSIGN) expression SEMI
     ;
 
 // println(x);
