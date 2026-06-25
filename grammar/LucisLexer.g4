@@ -95,25 +95,35 @@ VOID      : 'void';
 STRING    : 'string';
 CSTRING   : 'cstring';  // alias for *char
 
+// Literal digit separator fragments (must appear before literal rules)
+fragment DIGIT     : [0-9];
+fragment HEX_DIGIT : [0-9a-fA-F];
+fragment OCT_DIGIT : [0-7];
+fragment BIN_DIGIT : [01];
+fragment DIGITS        : DIGIT     (('_'? DIGIT)*);
+fragment HEX_DIGITS    : HEX_DIGIT (('_'? HEX_DIGIT)*);
+fragment OCT_DIGITS    : OCT_DIGIT (('_'? OCT_DIGIT)*);
+fragment BIN_DIGITS    : BIN_DIGIT (('_'? BIN_DIGIT)*);
+
 // Literals (suffixed forms before bare forms so ANTLR picks the longer match)
-SUFFIXED_HEX   : '0' [xX] [0-9a-fA-F]+ [iu] ('8' | '16' | '32' | '64' | '128' | 'size' | 'inf');
-SUFFIXED_OCT   : '0' [oO] [0-7]+ [iu] ('8' | '16' | '32' | '64' | '128' | 'size' | 'inf');
-SUFFIXED_BIN   : '0' [bB] [01]+ [iu] ('8' | '16' | '32' | '64' | '128' | 'size' | 'inf');
-SUFFIXED_INT        : [0-9]+ [iu] ('8' | '16' | '32' | '64' | '128' | 'size' | 'inf');
-SUFFIXED_INT_FLOAT  : [0-9]+ 'f' ('32' | '64' | '80' | '128');
-SUFFIXED_FLOAT      : [0-9]+ '.' [0-9]+ ([eE] [+-]? [0-9]+)? 'f' ('32' | '64' | '80' | '128')
-                    | [0-9]+ [eE] [+-]? [0-9]+ 'f' ('32' | '64' | '80' | '128')
+SUFFIXED_HEX   : '0' [xX] HEX_DIGITS '_'? [iu] ('8' | '16' | '32' | '64' | '128' | 'size' | 'inf');
+SUFFIXED_OCT   : '0' [oO] OCT_DIGITS '_'? [iu] ('8' | '16' | '32' | '64' | '128' | 'size' | 'inf');
+SUFFIXED_BIN   : '0' [bB] BIN_DIGITS '_'? [iu] ('8' | '16' | '32' | '64' | '128' | 'size' | 'inf');
+SUFFIXED_INT        : DIGITS '_'? [iu] ('8' | '16' | '32' | '64' | '128' | 'size' | 'inf');
+SUFFIXED_INT_FLOAT  : DIGITS '_'? 'f' ('32' | '64' | '80' | '128');
+SUFFIXED_FLOAT      : DIGITS '.' DIGITS ([eE] [+-]? DIGITS)? '_'? 'f' ('32' | '64' | '80' | '128')
+                    | DIGITS [eE] [+-]? DIGITS '_'? 'f' ('32' | '64' | '80' | '128')
                     ;
-SUFFIXED_FLOAT_INT  : [0-9]+ '.' [0-9]+ ([eE] [+-]? [0-9]+)? [iu] ('8' | '16' | '32' | '64' | '128' | 'size' | 'inf')
-                    | [0-9]+ [eE] [+-]? [0-9]+ [iu] ('8' | '16' | '32' | '64' | '128' | 'size' | 'inf')
+SUFFIXED_FLOAT_INT  : DIGITS '.' DIGITS ([eE] [+-]? DIGITS)? '_'? [iu] ('8' | '16' | '32' | '64' | '128' | 'size' | 'inf')
+                    | DIGITS [eE] [+-]? DIGITS '_'? [iu] ('8' | '16' | '32' | '64' | '128' | 'size' | 'inf')
                     ;
-SUFFIXED_DOT_FLOAT  : '.' [0-9]+ 'f' ('32' | '64' | '80' | '128');
-HEX_LIT   : '0' [xX] [0-9a-fA-F]+;
-OCT_LIT   : '0' [oO] [0-7]+;
-BIN_LIT   : '0' [bB] [01]+;
-INT_LIT   : [0-9]+;
-FLOAT_LIT : [0-9]+ '.' [0-9]+ ([eE] [+-]? [0-9]+)?
-           | [0-9]+ [eE] [+-]? [0-9]+
+SUFFIXED_DOT_FLOAT  : '.' DIGITS '_'? 'f' ('32' | '64' | '80' | '128');
+HEX_LIT   : '0' [xX] HEX_DIGITS;
+OCT_LIT   : '0' [oO] OCT_DIGITS;
+BIN_LIT   : '0' [bB] BIN_DIGITS;
+INT_LIT   : DIGITS;
+FLOAT_LIT : DIGITS '.' DIGITS ([eE] [+-]? DIGITS)?
+           | DIGITS [eE] [+-]? DIGITS
            ;
 BOOL_LIT  : 'true' | 'false';
 C_STR_LIT : 'c"' (~["\\\r\n] | '\\' .)* '"';

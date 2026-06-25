@@ -194,6 +194,7 @@ Checker::tryEvalUSizeRangeExpr(LucisParser::ExpressionContext* expr) const {
     if (auto* intLit = dynamic_cast<LucisParser::IntLitExprContext*>(expr)) {
         try {
             auto s = intLit->INT_LIT()->getText();
+            s.erase(std::remove(s.begin(), s.end(), '_'), s.end());
             if (s.empty() || s[0] == '-') return std::nullopt;
             auto v = static_cast<uint64_t>(std::stoull(s));
             return std::make_pair(v, v);
@@ -214,6 +215,7 @@ Checker::tryEvalUSizeRangeExpr(LucisParser::ExpressionContext* expr) const {
                 text.compare(text.size() - suf.size(), suf.size(), suf) == 0) {
                 try {
                     auto num = text.substr(0, text.size() - suf.size());
+                    num.erase(std::remove(num.begin(), num.end(), '_'), num.end());
                     if (num.empty() || num[0] == '-') return std::nullopt;
                     auto v = static_cast<uint64_t>(std::stoull(num));
                     return std::make_pair(v, v);

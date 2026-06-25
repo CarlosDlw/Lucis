@@ -224,6 +224,25 @@ fn main() int32 {
 }
 ```
 
+## Digit Separators in Numeric Literals
+
+Underscores (`_`) can be used as visual separators in numeric literals to improve readability:
+
+```
+int32 million = 1_000_000;
+int32 addr   = 0xFFFF_0000;
+int32 mask   = 0b1010_0101;
+int32 perms  = 0o777_000;
+float64 pi   = 3.1415_9265;
+int32 typed  = 0xFF_FFu32;
+```
+
+Rules:
+- Underscores only go **between** digits — not at the start or end of the literal.
+- Multiple underscores are allowed: `1___000` (though not recommended).
+- Works with all literal forms: decimal, hex (`0x`), octal (`0o`), binary (`0b`), float, and suffixed variants.
+- Underscores are stripped by the compiler before parsing — they have no effect on the value.
+
 ## Null Coalescing Operator
 
 The `??` operator provides a fallback value when a pointer is null:

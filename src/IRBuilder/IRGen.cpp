@@ -7147,21 +7147,30 @@ std::any IRGen::visitDoWhileStmt(LucisParser::DoWhileStmtContext* ctx) {
 // ── Suffixed literal visitors (Rust-style) ───────────────────────────────
 
 // Shared helper: split suffix from literal text, return suffix and base text.
+static std::string stripUnderscores(const std::string& s) {
+    std::string r;
+    r.reserve(s.size());
+    for (char c : s)
+        if (c != '_') r += c;
+    return r;
+}
+
 static std::string splitSuffix(const std::string& text, std::string& suffix) {
+    auto clean = stripUnderscores(text);
     static const std::vector<std::string> suffixes = {
         "i8", "i16", "i32", "i64", "i128", "iinf", "isize",
         "u8", "u16", "u32", "u64", "u128", "usize",
         "f32", "f64", "f80", "f128"
     };
     for (auto& suf : suffixes) {
-        if (text.size() > suf.size() &&
-            text.compare(text.size() - suf.size(), suf.size(), suf) == 0) {
+        if (clean.size() > suf.size() &&
+            clean.compare(clean.size() - suf.size(), suf.size(), suf) == 0) {
             suffix = suf;
-            return text.substr(0, text.size() - suf.size());
+            return clean.substr(0, clean.size() - suf.size());
         }
     }
     suffix.clear();
-    return text;
+    return clean;
 }
 
 // Map suffix → LLVM integer type width in bits
@@ -7299,7 +7308,7 @@ std::any IRGen::visitSuffixedFloatIntExpr(LucisParser::SuffixedFloatIntExprConte
 // ── Unsuffixed literal visitors ─────────────────────────────────────────
 
 std::any IRGen::visitIntLitExpr(LucisParser::IntLitExprContext* ctx) {
-    auto text = ctx->INT_LIT()->getText();
+    auto text = stripUnderscores(ctx->INT_LIT()->getText());
     llvm::APInt ap(256, text, 10);
     unsigned bits = 32;
     unsigned sz = ap.getActiveBits() + 1;
@@ -7316,35 +7325,35 @@ std::any IRGen::visitIntLitExpr(LucisParser::IntLitExprContext* ctx) {
 }
 
 std::any IRGen::visitHexLitExpr(LucisParser::HexLitExprContext* ctx) {
-    auto text = ctx->HEX_LIT()->getText().substr(2); // strip "0x"/"0X"
+    auto text = stripUnderscores(ctx->HEX_LIT()->getText().substr(2)); // strip "0x"/"0X"
     llvm::APInt ap(256, text, 16);
     auto* ty = llvm::Type::getIntNTy(*context_, 256);
     return static_cast<llvm::Value*>(llvm::ConstantInt::get(ty, ap));
 }
 
 std::any IRGen::visitOctLitExpr(LucisParser::OctLitExprContext* ctx) {
-    auto text = ctx->OCT_LIT()->getText().substr(2); // strip "0o"/"0O"
+    auto text = stripUnderscores(ctx->OCT_LIT()->getText().substr(2)); // strip "0o"/"0O"
     llvm::APInt ap(256, text, 8);
     auto* ty = llvm::Type::getIntNTy(*context_, 256);
     return static_cast<llvm::Value*>(llvm::ConstantInt::get(ty, ap));
 }
 
 std::any IRGen::visitBinLitExpr(LucisParser::BinLitExprContext* ctx) {
-    auto text = ctx->BIN_LIT()->getText().substr(2); // strip "0b"/"0B"
+    auto text = stripUnderscores(ctx->BIN_LIT()->getText().substr(2)); // strip "0b"/"0B"
     llvm::APInt ap(256, text, 2);
     auto* ty = llvm::Type::getIntNTy(*context_, 256);
     return static_cast<llvm::Value*>(llvm::ConstantInt::get(ty, ap));
 }
 
 std::any IRGen::visitFloatLitExpr(LucisParser::FloatLitExprContext* ctx) {
-    double v = std::stod(ctx->FLOAT_LIT()->getText());
+    double v = std::stod(stripUnderscores(ctx->FLOAT_LIT()->getText()));
     return static_cast<llvm::Value*>(
         llvm::ConstantFP::get(llvm::Type::getDoubleTy(*context_), v));
 }
 
 std::any IRGen::visitLeadingDotFloatLitExpr(
         LucisParser::LeadingDotFloatLitExprContext* ctx) {
-    double v = std::stod("0." + ctx->INT_LIT()->getText());
+    double v = std::stod("0." + stripUnderscores(ctx->INT_LIT()->getText()));
     return static_cast<llvm::Value*>(
         llvm::ConstantFP::get(llvm::Type::getDoubleTy(*context_), v));
 }
