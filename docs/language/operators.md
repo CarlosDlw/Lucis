@@ -245,6 +245,36 @@ fn main() int32 {
 }
 ```
 
+### Null Coalescing Assignment (`??=`)
+
+The `??=` operator assigns a value only if the target pointer is currently null:
+
+```
+ptr ??= default;  // only assigns if ptr == null
+```
+
+```
+
+use stdio::printf;
+
+fn main() int32 {
+    *int32 ptr = null;
+    int32 val = 42;
+
+    // ptr is null, so ??= assigns
+    ptr ??= &val;
+    printf("*ptr = {d}\n", *ptr);   // 42
+
+    // ptr is not null now, so ??= does nothing
+    int32 other = 99;
+    ptr ??= &other;
+    printf("*ptr = {d}\n", *ptr);   // still 42
+    ret 0;
+}
+```
+
+The `??=` operator works with all compound assignment lvalue forms: simple identifiers, field access (`obj.field ??=`), arrow access (`ptr->field ??=`), and deref (`*ptr ??=` for pointer-to-pointer types).
+
 ## Type Operators
 
 | Operator | Description | Example |
