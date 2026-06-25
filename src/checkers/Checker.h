@@ -202,6 +202,7 @@ private:
     void checkStmt(LucisParser::StatementContext* stmt, const TypeInfo* retType, bool& terminated);
     void checkVarDeclStmt(LucisParser::VarDeclStmtContext* stmt);
     void checkConstDeclStmt(LucisParser::ConstDeclStmtContext* stmt);
+    bool isValidConstExpr(LucisParser::ExpressionContext* expr);
     void checkAssignStmt(LucisParser::AssignStmtContext* stmt);
     void checkCompoundAssignStmt(LucisParser::CompoundAssignStmtContext* stmt);
     void checkFieldAssignStmt(LucisParser::FieldAssignStmtContext* stmt);

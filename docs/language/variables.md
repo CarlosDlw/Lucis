@@ -97,7 +97,7 @@ Zero-initialization values by type:
 
 ## Reassignment
 
-Variables can be reassigned after declaration. There is no `const` or `let` — all variables are mutable:
+Variables can be reassigned after declaration — they are mutable by default:
 
 ```
 
@@ -282,6 +282,90 @@ fn main() int32 {
     ret 0;
 }
 ```
+
+## Constants
+
+Constants are declared with the `const` keyword and enforce immutability — their values are fixed at compile time and cannot be reassigned:
+
+```lucis
+const MAX_SIZE = 4096;
+const PI: float64 = 3.14159265359;
+```
+
+### Top-Level Constants
+
+Declared at file scope, constants are accessible throughout the module:
+
+```lucis
+use stdio::printf;
+
+const APP_NAME = "Lucis";
+const VERSION: int32 = 2;
+
+fn showVersion() void {
+    printf("name: {s}, version: {d}\n", APP_NAME, VERSION);
+}
+
+fn main() int32 {
+    showVersion();
+    ret 0;
+}
+```
+
+### Function-Scoped Constants
+
+Constants can also be declared inside functions, scoped to the enclosing block:
+
+```lucis
+use stdio::printf;
+
+fn main() int32 {
+    const GREETING = "Hello, world!";
+    printf("{s}\n", GREETING);
+
+    {
+        const BLOCK_SCOPED = 42;
+        printf("{d}\n", BLOCK_SCOPED);
+    }
+    // BLOCK_SCOPED is not accessible here
+
+    ret 0;
+}
+```
+
+### Allowed Initializers
+
+Constant initializers must be compile-time constant expressions. The following are allowed:
+
+- **Literals**: `int`, `float`, `bool`, `char`, `null`
+- **Enum variants** (without payload): `SomeEnum::Variant`
+- **Arithmetic operators**: `+`, `-`, `*`, `/`, `%`
+- **Comparison operators**: `==`, `!=`, `<`, `>`, `<=`, `>=`
+- **Bitwise/logical operators**: `&`, `|`, `^`, `~`, `&&`, `||`, `!`
+- **Ternary**: `cond ? a : b`
+- **Parenthesized sub-expressions**: `(a + b) * 2`
+- **`sizeof(T)` / `typeof(x)`**
+- **Identifiers referencing other constants**: `const Y = X + 1;`
+- **Calls to `comptime fn` functions**: `const RESULT = add(1, 2);`
+
+### Disallowed Initializers
+
+These expressions are **not** allowed in constant initializers:
+
+- Runtime function calls
+- Struct, union, array, tuple, or string literals
+- `spawn` / `await`
+- `match` expressions
+- `try` / `catch` / `throw` / `?` propagate
+- Inline ASM
+- Range expressions (`..`, `..=`)
+- Spread (`...`) or dereference (`*ptr`) / address-of (`&`)
+- Increment/decrement (`++`, `--`)
+- Assignments (`=`)
+
+### Implementation Notes
+
+Constants are initialized via an auto-generated `__lucis_const_init` function that runs before `main()` (using `llvm::appendToGlobalCtors`). Comptime function calls in constant initializers are evaluated by the compiler's JIT engine at compile time.
 
 ## See Also
 

@@ -1,0 +1,93 @@
+use std::log::println;
+use std::test::{ assertEqual, assertTrue, assertFalse };
+
+// ── Top-level constants ───────────────────────────────────────────────
+const ZERO         = 0;
+const ONE          = 1;
+const TWO          = ONE + 1;
+const THREE        = ONE + TWO;
+const NEG          = -42;
+const ANSWER       = 42;
+const PI: float64  = 3.14;
+const GREETING: char = 'A';
+const FLAG: bool  = true;
+const BIG_NEG     = -1000;
+
+// Cross-const dependencies
+const HALF         = TWO / 2;
+const QUARTER      = HALF / 2;
+const SUM          = ONE + TWO + THREE;
+const BITMASK      = 0xFF;
+const NEG_MASK     = ~BITMASK;
+const IS_TRUE      = ONE == 1;
+const NOT_TRUE     = !IS_TRUE;
+const TEST_AND     = IS_TRUE && true;
+const TEST_OR      = NOT_TRUE || IS_TRUE;
+const MULTI_EXPR   = (ONE + TWO) * (THREE - ONE) / 2;
+
+fn testConstFeatures() int32 {
+    println("[Testing const features...]");
+
+    // ── Top-level consts in expressions ──────────────────────────
+    assertEqual(ANSWER, 42);
+    assertEqual(ZERO, 0);
+    assertEqual(NEG, -42);
+    assertEqual(PI, 3.14);
+    assertEqual(GREETING, 'A');
+    assertTrue(FLAG);
+
+    // ── Cross-const dependencies ─────────────────────────────────
+    assertEqual(ONE, 1);
+    assertEqual(TWO, 2);
+    assertEqual(THREE, 3);
+    assertEqual(HALF, 1);
+    assertEqual(QUARTER, 0);
+    assertEqual(SUM, 6);
+    assertEqual(MULTI_EXPR, 3);
+
+    // ── Bitwise and logical ──────────────────────────────────────
+    assertEqual(BITMASK, 255);
+    assertEqual(NEG_MASK, -256);
+    assertTrue(IS_TRUE);
+    assertFalse(NOT_TRUE);
+    assertTrue(TEST_AND);
+    assertTrue(TEST_OR);
+
+    // ── Function-scoped consts ───────────────────────────────────
+    const LOCAL_ONE = 10;
+    const LOCAL_TWO = LOCAL_ONE + 5;
+    const LOCAL_NEG = -7;
+    assertEqual(LOCAL_ONE, 10);
+    assertEqual(LOCAL_TWO, 15);
+    assertEqual(LOCAL_NEG, -7);
+
+    // Function-scoped const with explicit type
+    const LOCAL_FP: float64 = 2.71;
+    assertEqual(LOCAL_FP, 2.71);
+
+    // Const from other consts (mixed top-level + local)
+    const MIXED = ONE + LOCAL_ONE;
+    assertEqual(MIXED, 11);
+
+    // ── Local consts in nested blocks (scope test) ───────────────
+    {
+        const INNER = 99;
+        assertEqual(INNER, 99);
+        {
+            const DEEPER = INNER + 1;
+            assertEqual(DEEPER, 100);
+        }
+        // DEEPER should not be visible here (test by lack of error)
+        assertEqual(INNER, 99);
+    }
+    // INNER should not be visible here (test by lack of conflict with same name)
+    const INNER = 200;
+    assertEqual(INNER, 200);
+
+    // ── Ternary with consts ──────────────────────────────────────
+    const TERN_RESULT = true ? 42 : 0;
+    assertEqual(TERN_RESULT, 42);
+
+    println("✔ const features tests passed");
+    ret 0;
+}

@@ -83,6 +83,7 @@ public:
     struct LocalVar {
         std::string typeName;
         unsigned    arrayDims = 0;
+        bool        isConst = false;
     };
 
 private:

@@ -1561,7 +1561,7 @@ static void collectLocalsFromStmts(
                 typeName = inferExprTypeName(d->expression(), out, flc);
             std::string constName = safeText(d->IDENTIFIER());
             if (!constName.empty())
-                out[constName] = {typeName, 0};
+                out[constName] = {typeName, 0, true};
         }
     }
 
@@ -2726,7 +2726,7 @@ void CompletionProvider::addLocals(std::vector<CompletionItem> &items,
         continue;
       CompletionItem item;
       item.label = name;
-      item.kind = CompletionKind::Variable;
+      item.kind = var.isConst ? CompletionKind::Constant : CompletionKind::Variable;
       item.detail = var.typeName;
       items.push_back(std::move(item));
     }
@@ -2945,6 +2945,24 @@ void CompletionProvider::addLocalDecls(std::vector<CompletionItem> &items,
       }
       item.documentation = "```lucis\n" + detail + "\n```";
       items.push_back(std::move(item));
+    }
+
+    // Top-level consts
+    if (auto* cd = tld->constDeclStmt()) {
+      for (auto* d : cd->constDeclarator()) {
+        std::string name = safeText(d->IDENTIFIER());
+        if (!matchesPrefix(name, prefix)) continue;
+        std::string typeName;
+        if (d->typeSpec())
+          typeName = safeText(d->typeSpec());
+        else if (d->expression())
+          typeName = inferExprTypeName(d->expression(), {}, nullptr);
+        CompletionItem item;
+        item.label = name;
+        item.kind = CompletionKind::Constant;
+        item.detail = typeName;
+        items.push_back(std::move(item));
+      }
     }
   }
 }
@@ -5768,7 +5786,7 @@ CompletionProvider::collectLocals(LucisParser::FunctionDeclContext *func,
           typeName = inferExprTypeName(d->expression(), result, &flc);
         std::string constName = safeText(d->IDENTIFIER());
         if (!constName.empty())
-          result[constName] = {typeName, 0};
+          result[constName] = {typeName, 0, true};
       }
     }
   }

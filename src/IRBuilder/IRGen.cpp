@@ -2237,6 +2237,8 @@ std::any IRGen::visitConstDeclStmt(LucisParser::ConstDeclStmtContext* ctx) {
     auto decls = ctx->constDeclarator();
     if (decls.empty()) return nullptr;
 
+    bool isTopLevel = (currentFunction_ == nullptr);
+
     for (auto* d : decls) {
         auto name = d->IDENTIFIER()->getText();
 
@@ -2255,23 +2257,31 @@ std::any IRGen::visitConstDeclStmt(LucisParser::ConstDeclStmtContext* ctx) {
 
         if (!typeInfo) continue;
 
-        // Create a global variable with zero initializer (will be set by init function)
         auto* llvmType = typeInfo->toLLVMType(*context_, module_->getDataLayout());
-        auto* global = new llvm::GlobalVariable(
-            *module_,
-            llvmType,
-            false,  // isConstant = false (allow init function to write)
-            llvm::GlobalValue::PrivateLinkage,
-            llvm::Constant::getNullValue(llvmType),
-            "const_" + name
-        );
 
-        // Store in topLevelConsts_ for init function
-        TopLevelConst tlc{global, typeInfo, dims};
-        topLevelConsts_[name] = tlc;
+        if (isTopLevel) {
+            // Top-level const: create global variable (initialized via init function)
+            auto* global = new llvm::GlobalVariable(
+                *module_,
+                llvmType,
+                false,  // isConstant = false (allow init function to write)
+                llvm::GlobalValue::PrivateLinkage,
+                llvm::Constant::getNullValue(llvmType),
+                "const_" + name
+            );
 
-        // Track this const declarator with its global for initialization
-        pendingConstDecls_.push_back({d, global});
+            TopLevelConst tlc{global, typeInfo, dims};
+            topLevelConsts_[name] = tlc;
+            pendingConstDecls_.push_back({d, global});
+        } else {
+            // Function-scoped const: alloca + store (like a local variable)
+            auto* initVal = castValue(visit(d->expression()));
+            if (!initVal) continue;
+
+            auto* alloca = builder_->CreateAlloca(llvmType, nullptr, name);
+            builder_->CreateStore(initVal, alloca);
+            locals_[name] = {alloca, typeInfo, dims, false};
+        }
     }
 
     return nullptr;
@@ -15686,6 +15696,21 @@ const TypeInfo* IRGen::resolveExprTypeInfo(LucisParser::ExpressionContext* ctx) 
         ti.pointeeType = charTI;
         typeRegistry_.registerType(std::move(ti));
         return typeRegistry_.lookup(ptrName);
+    }
+
+    // ── Function call to comptime function ─────────────────────────
+    if (auto* call = dynamic_cast<LucisParser::FnCallExprContext*>(ctx)) {
+        if (auto* ident = dynamic_cast<LucisParser::IdentExprContext*>(call->expression())) {
+            auto calleeName = ident->IDENTIFIER()->getText();
+            if (comptimeEngine_ && comptimeEngine_->isReady() &&
+                comptimeEngine_->registry().isComptime(calleeName)) {
+                auto* decl = static_cast<LucisParser::FunctionDeclContext*>(
+                    comptimeEngine_->registry().lookup(calleeName));
+                if (decl && decl->typeSpec())
+                    return resolveTypeInfo(decl->typeSpec());
+            }
+        }
+        // Fall through to the general FnCallExpr handler below
     }
 
     // ── Identifier ───────────────────────────────────────────────────

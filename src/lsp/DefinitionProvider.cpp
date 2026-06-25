@@ -89,6 +89,18 @@ static void collectLocalsFromStmts(
             }
         }
 
+        // Const declarations
+        if (auto* cd = stmt->constDeclStmt()) {
+            for (auto* d : cd->constDeclarator()) {
+                std::string constName = safeText(d->IDENTIFIER());
+                if (!constName.empty()) {
+                    std::string typeName;
+                    if (d->typeSpec()) typeName = safeText(d->typeSpec());
+                    out[constName] = {typeName, 0, d->IDENTIFIER()->getSymbol()};
+                }
+            }
+        }
+
         // Recurse into nested blocks
         if (auto* ifS = stmt->ifStmt()) {
             if (auto* body = ifS->ifBody()) {
@@ -561,6 +573,15 @@ std::optional<DefinitionResult> DefinitionProvider::resolveIdent(
     auto* extDecl = findExtendDecl(tree, name);
     if (extDecl)
         return makeResult(extDecl->IDENTIFIER()->getSymbol(), filePath);
+
+    // 8.5) Top-level const declaration
+    auto* constDecl = findConstDecl(tree, name);
+    if (constDecl) {
+        for (auto* d : constDecl->constDeclarator()) {
+            if (d->IDENTIFIER() && safeText(d->IDENTIFIER()) == name)
+                return makeResult(d->IDENTIFIER()->getSymbol(), filePath);
+        }
+    }
 
     // 9) Enum variant (Name inside EnumName::Name or standalone imported)
     for (auto* tld : tree->topLevelDecl()) {
@@ -1920,6 +1941,20 @@ DefinitionProvider::findExternDecl(LucisParser::ProgramContext* tree,
         if (auto* ext = tld->externDecl())
             if (safeText(ext->IDENTIFIER()) == name)
                 return ext;
+    }
+    return nullptr;
+}
+
+LucisParser::ConstDeclStmtContext*
+DefinitionProvider::findConstDecl(LucisParser::ProgramContext* tree,
+                                  const std::string& name) {
+    for (auto* tld : tree->topLevelDecl()) {
+        if (auto* cd = tld->constDeclStmt()) {
+            for (auto* d : cd->constDeclarator()) {
+                if (d->IDENTIFIER() && safeText(d->IDENTIFIER()) == name)
+                    return cd;
+            }
+        }
     }
     return nullptr;
 }

@@ -59,6 +59,7 @@ use tests::type_aliases_full::testTypeAliasesFull;
 use tests::type_casting_checking::testTypeCastingAndChecking;
 use tests::uint_types::testUintTypes;
 use tests::unions_full::testUnionsFull;
+use tests::const_features::testConstFeatures;
 use tests::vec_pointers::testVecPointers;
 use tests::void_types::testVoidTypes;
 
@@ -107,6 +108,7 @@ fn main() int32 {
     testErrorHandlingCustomTypes();
     testErrorHandlingFeatures();
     testPropagateOperator();
+    testConstFeatures();
     testVecPointers();
     testSysMemory();
     testSysVolatile();

@@ -51,6 +51,7 @@ public:
         std::string typeName;
         unsigned    arrayDims = 0;
         bool        isParameter = false;
+        bool        isConst = false;
     };
 
 private:

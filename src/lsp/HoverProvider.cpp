@@ -574,23 +574,7 @@ std::optional<HoverResult> HoverProvider::hoverIdent(
             for (unsigned i = 0; i < it->second.arrayDims; i++)
                 dims += "[]";
             std::string kind = it->second.isParameter ? "parameter" : "variable";
-            // Check if this is a top-level constant (not parameter, has type)
-            if (!it->second.isParameter && !it->second.typeName.empty()) {
-                // Check if it's a top-level const by looking at the tree
-                bool isConst = false;
-                for (auto* tld : tree->topLevelDecl()) {
-                    if (auto* cd = tld->constDeclStmt()) {
-                        for (auto* d : cd->constDeclarator()) {
-                            if (safeText(d->IDENTIFIER()) == name) {
-                                isConst = true;
-                                break;
-                            }
-                        }
-                        if (isConst) break;
-                    }
-                }
-                if (isConst) kind = "constant";
-            }
+            if (it->second.isConst) kind = "constant";
             std::string md = formatTypedHover(kind,
                                               dims + it->second.typeName,
                                               name,
@@ -5653,7 +5637,7 @@ static void collectLocalsFromStmts(
                 typeName = inferExprTypeName(d->expression(), out, flc);
             std::string constName = safeText(d->IDENTIFIER());
             if (!constName.empty())
-                out[constName] = {typeName, 0};
+                out[constName] = {typeName, 0, false, true};
         }
     }
 
@@ -5884,7 +5868,7 @@ HoverProvider::collectLocals(LucisParser::FunctionDeclContext* func,
                     typeName = inferExprTypeName(d->expression(), result, &flc);
                 std::string constName = safeText(d->IDENTIFIER());
                 if (!constName.empty())
-                    result[constName] = {typeName, 0, false};
+                    result[constName] = {typeName, 0, false, true};
             }
         }
     }

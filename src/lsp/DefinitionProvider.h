@@ -69,6 +69,9 @@ private:
     LucisParser::ExternDeclContext*
     findExternDecl(LucisParser::ProgramContext* tree, const std::string& name);
 
+    LucisParser::ConstDeclStmtContext*
+    findConstDecl(LucisParser::ProgramContext* tree, const std::string& name);
+
     // ── AST walkers ─────────────────────────────────────────────────
 
     std::optional<DefinitionResult> resolveAtPosition(

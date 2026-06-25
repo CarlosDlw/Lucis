@@ -6829,6 +6829,115 @@ void Checker::checkForClassicStmt(LucisParser::ForClassicStmtContext* stmt,
 //  Statement checks
 // ═══════════════════════════════════════════════════════════════════════
 
+bool Checker::isValidConstExpr(LucisParser::ExpressionContext* expr) {
+    // Literals — always valid
+    if (dynamic_cast<LucisParser::IntLitExprContext*>(expr) ||
+        dynamic_cast<LucisParser::HexLitExprContext*>(expr) ||
+        dynamic_cast<LucisParser::OctLitExprContext*>(expr) ||
+        dynamic_cast<LucisParser::BinLitExprContext*>(expr) ||
+        dynamic_cast<LucisParser::SuffixedIntLitExprContext*>(expr) ||
+        dynamic_cast<LucisParser::SuffixedHexLitExprContext*>(expr) ||
+        dynamic_cast<LucisParser::SuffixedOctLitExprContext*>(expr) ||
+        dynamic_cast<LucisParser::SuffixedBinLitExprContext*>(expr) ||
+        dynamic_cast<LucisParser::SuffixedFloatIntExprContext*>(expr) ||
+        dynamic_cast<LucisParser::SuffixedIntFloatExprContext*>(expr) ||
+        dynamic_cast<LucisParser::FloatLitExprContext*>(expr) ||
+        dynamic_cast<LucisParser::LeadingDotFloatLitExprContext*>(expr) ||
+        dynamic_cast<LucisParser::SuffixedFloatLitExprContext*>(expr) ||
+        dynamic_cast<LucisParser::SuffixedLeadingDotFloatExprContext*>(expr) ||
+        dynamic_cast<LucisParser::SuffixedFloatIntExprContext*>(expr) ||
+        dynamic_cast<LucisParser::BoolLitExprContext*>(expr) ||
+        dynamic_cast<LucisParser::CharLitExprContext*>(expr) ||
+        dynamic_cast<LucisParser::NullLitExprContext*>(expr))
+        return true;
+
+    // Identifier reference (other const)
+    if (dynamic_cast<LucisParser::IdentExprContext*>(expr))
+        return true;
+
+    // Enum variant without payload
+    if (dynamic_cast<LucisParser::EnumAccessExprContext*>(expr) ||
+        dynamic_cast<LucisParser::GenericEnumAccessExprContext*>(expr))
+        return true;
+
+    // Parenthesized
+    if (auto* paren = dynamic_cast<LucisParser::ParenExprContext*>(expr))
+        return isValidConstExpr(paren->expression());
+
+    // Unary operators
+    if (auto* neg = dynamic_cast<LucisParser::NegExprContext*>(expr))
+        return isValidConstExpr(neg->expression());
+    if (auto* lnot = dynamic_cast<LucisParser::LogicalNotExprContext*>(expr))
+        return isValidConstExpr(lnot->expression());
+    if (auto* bnot = dynamic_cast<LucisParser::BitNotExprContext*>(expr))
+        return isValidConstExpr(bnot->expression());
+
+    // Function call to a comptime function — allowed
+    if (auto* call = dynamic_cast<LucisParser::FnCallExprContext*>(expr)) {
+        if (auto* ident = dynamic_cast<LucisParser::IdentExprContext*>(call->expression())) {
+            auto calleeName = ident->IDENTIFIER()->getText();
+            if (comptimeRegistry_.isComptime(calleeName)) {
+                // Also validate all arguments
+                if (auto* argList = call->argList()) {
+                    for (auto* arg : argList->expression()) {
+                        if (!isValidConstExpr(arg)) return false;
+                    }
+                }
+                return true;
+            }
+        }
+        return false;
+    }
+
+    // Binary expressions
+    auto checkBinary = [this](auto* ctx) -> bool {
+        if (!ctx || ctx->expression().size() != 2) return false;
+        return isValidConstExpr(ctx->expression()[0]) &&
+               isValidConstExpr(ctx->expression()[1]);
+    };
+
+    if (auto* mul = dynamic_cast<LucisParser::MulExprContext*>(expr))
+        return checkBinary(mul);
+    if (auto* add = dynamic_cast<LucisParser::AddSubExprContext*>(expr))
+        return checkBinary(add);
+    if (auto* lsh = dynamic_cast<LucisParser::LshiftExprContext*>(expr))
+        return checkBinary(lsh);
+    if (auto* rsh = dynamic_cast<LucisParser::RshiftExprContext*>(expr))
+        return checkBinary(rsh);
+    if (auto* rel = dynamic_cast<LucisParser::RelExprContext*>(expr))
+        return checkBinary(rel);
+    if (auto* eq = dynamic_cast<LucisParser::EqExprContext*>(expr))
+        return checkBinary(eq);
+    if (auto* ba = dynamic_cast<LucisParser::BitAndExprContext*>(expr))
+        return checkBinary(ba);
+    if (auto* bx = dynamic_cast<LucisParser::BitXorExprContext*>(expr))
+        return checkBinary(bx);
+    if (auto* bo = dynamic_cast<LucisParser::BitOrExprContext*>(expr))
+        return checkBinary(bo);
+    if (auto* la = dynamic_cast<LucisParser::LogicalAndExprContext*>(expr))
+        return checkBinary(la);
+    if (auto* lo = dynamic_cast<LucisParser::LogicalOrExprContext*>(expr))
+        return checkBinary(lo);
+    if (auto* nc = dynamic_cast<LucisParser::NullCoalExprContext*>(expr))
+        return checkBinary(nc);
+
+    // Ternary expression — all three sub-expressions must be valid
+    if (auto* tern = dynamic_cast<LucisParser::TernaryExprContext*>(expr)) {
+        auto sub = tern->expression();
+        return sub.size() == 3 &&
+               isValidConstExpr(sub[0]) &&
+               isValidConstExpr(sub[1]) &&
+               isValidConstExpr(sub[2]);
+    }
+
+    // sizeof / typeof — always valid
+    if (dynamic_cast<LucisParser::SizeofExprContext*>(expr) ||
+        dynamic_cast<LucisParser::TypeofExprContext*>(expr))
+        return true;
+
+    return false;
+}
+
 void Checker::checkConstDeclStmt(LucisParser::ConstDeclStmtContext* stmt) {
     auto decls = stmt->constDeclarator();
     if (decls.empty()) return;
@@ -6836,7 +6945,23 @@ void Checker::checkConstDeclStmt(LucisParser::ConstDeclStmtContext* stmt) {
     for (auto* d : decls) {
         auto name = d->IDENTIFIER()->getText();
         auto it = locals_.find(name);
-        if (it == locals_.end()) continue;
+
+        // Function-scoped const: register if not already in locals_
+        bool isFunctionScoped = (it == locals_.end());
+        if (isFunctionScoped) {
+            VarInfo vi{typeRegistry_.lookup("int32"), 0, true, false, nullptr};
+            vi.isConst = true;
+            vi.scopeDepth = scopeDepth_;
+            vi.declToken = d->IDENTIFIER()->getSymbol();
+            locals_[name] = vi;
+            it = locals_.find(name);
+        }
+
+        // Validate that the initializer is a constant expression
+        if (d->expression() && !isValidConstExpr(d->expression())) {
+            error(d->expression(), "constant '" + name + "' initializer must be a compile-time constant expression");
+            continue;
+        }
 
         if (d->COLON() && d->typeSpec()) {
             // Explicit type: const NAME: TYPE = VALUE;
@@ -6861,7 +6986,8 @@ void Checker::checkConstDeclStmt(LucisParser::ConstDeclStmtContext* stmt) {
             it->second.arrayDims = dims;
             it->second.initialized = (d->expression() != nullptr);
             it->second.declToken = d->IDENTIFIER()->getSymbol();
-            globalVars_[name] = it->second;
+            if (!isFunctionScoped)
+                globalVars_[name] = it->second;
         } else if (d->expression()) {
             // Auto type: const NAME = VALUE;
             auto* initTI = resolveExprType(d->expression());
@@ -6881,7 +7007,8 @@ void Checker::checkConstDeclStmt(LucisParser::ConstDeclStmtContext* stmt) {
             it->second.arrayDims = dims;
             it->second.initialized = true;
             it->second.declToken = d->IDENTIFIER()->getSymbol();
-            globalVars_[name] = it->second;
+            if (!isFunctionScoped)
+                globalVars_[name] = it->second;
         }
     }
 }
