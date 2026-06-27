@@ -74,6 +74,7 @@ lucis build [<file>] [-o <output>] [-O <level>] [--lto]
                [--static] [--shared] [--fPIC]
                [--no-std] [--target <TRIPLE>] [--entry <SYMBOL>]
                [--link-arg <FLAG>] [--rpath <DIR>]
+               [--nmagic] [--omagic] [--linker-script <FILE>] [--linker <PATH>]
                [-l <lib>] [-L <dir>] [-I <dir>] [-q] [-r]
 ```
 
@@ -120,6 +121,10 @@ binary is produced.
 | `-l, --link <LIB>` | Link against a library (repeatable) |
 | `-L, --lib-path <DIR>` | Add library search path (repeatable) |
 | `-I, --include <DIR>` | Add include search path (repeatable) |
+| `--nmagic` | Suppress page alignment in linker (equivalent to `ld -n`) |
+| `--omagic` | Set text segment writable (equivalent to `ld -N`) |
+| `--linker-script <FILE>` | Use a custom linker script (passed as `-T` to the linker) |
+| `--linker <PATH>` | Use a custom linker instead of the default clang/gcc (useful for cross-compilation with `ld`, `x86_64-elf-ld`, etc.) |
 | `-q, --quiet` | Suppress pipeline logs |
 
 ```bash
@@ -143,6 +148,9 @@ lucis build main.lc --emit-obj -o main.o
 
 # Size-optimized build with LTO
 lucis build main.lc -Oz --lto
+
+# Build a freestanding kernel with assembly boot code
+lucis build main.lc boot.s --no-std --nmagic --target x86_64-unknown-none --linker-script linker.ld --linker ld --entry _start -o kernel.elf
 ```
 
 **Optimization Levels:**
@@ -156,6 +164,8 @@ lucis build main.lc -Oz --lto
     * **Note**: Requires static versions of system dependencies (e.g., `zlib-static`, `glibc-static`) installed on your system.
 - `--shared`: Produce a shared library (`.so`, `.dll`).
 - `--fPIC`: Generate position-independent code (PIC). Automatically enabled with `--shared`.
+- `--nmagic`: Suppress page alignment in the linker (`ld -n`). Useful for kernels and bare-metal where section alignment constraints are undesirable.
+- `--omagic`: Make the text segment writable (`ld -N`). Disables page alignment and allows self-modifying code in freestanding environments.
 
 ## run — Compile and Execute
 

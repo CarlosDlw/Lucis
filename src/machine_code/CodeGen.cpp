@@ -163,9 +163,13 @@ static bool tryLinkMulti(const char*                      linker,
                 if (devNull > STDERR_FILENO) ::close(devNull);
             }
         }
-        
+        // Detect if we're using raw ld (not gcc/clang frontend)
+        std::string linkerName = linker;
+        bool isRawLd = (linkerName == "ld" ||
+                        linkerName.find("/ld") != std::string::npos);
+
         std::string entryArg;
-        if (!entryPoint.empty())
+        if (!entryPoint.empty() && !isRawLd)
             entryArg = "-Wl,-e," + entryPoint;
 
         std::vector<const char*> argv;
@@ -175,15 +179,25 @@ static bool tryLinkMulti(const char*                      linker,
         for (auto& obj : objectPaths)
             argv.push_back(obj.c_str());
 
+        // Raw ld entry point (push directly to argv, separate args)
+        if (!entryPoint.empty() && isRawLd) {
+            argv.push_back("-e");
+            argv.push_back(entryPoint.c_str());
+        }
+
         if (noStd) {
-            argv.push_back("-nostartfiles");
-            argv.push_back("-nostdlib");
-            argv.push_back("-static");
+            if (isRawLd) {
+                argv.push_back("-static");
+            } else {
+                argv.push_back("-nostartfiles");
+                argv.push_back("-nostdlib");
+                argv.push_back("-static");
+            }
         } else {
             argv.push_back(builtinsPath.c_str());
         }
 
-        if (withSanitizers) {
+        if (withSanitizers && !isRawLd) {
 #ifdef LUCIS_RUNTIME_DIAGNOSTICS
             argv.push_back("-fsanitize=address,undefined");
             argv.push_back("-fno-omit-frame-pointer");
@@ -312,6 +326,85 @@ std::string CodeGen::builtinsLibraryPath() {
     return findBuiltinsPath();
 }
 
+bool CodeGen::compileAssembly(const std::string& asmPath,
+                               const std::string& objectPath,
+                               const std::string& targetTriple,
+                               bool quiet) {
+    // Determine format from target triple
+    bool is64Bit = targetTriple.find("x86_64") != std::string::npos ||
+                   targetTriple.find("aarch64") != std::string::npos ||
+                   targetTriple.find("amd64") != std::string::npos ||
+                   targetTriple.find("arm64") != std::string::npos ||
+                   targetTriple.empty(); // default to 64-bit
+
+    // Try nasm first (for NASM syntax, used in boot code)
+    {
+        pid_t pid = ::fork();
+        if (pid < 0) return false;
+        if (pid == 0) {
+            if (quiet) {
+                int devNull = ::open("/dev/null", O_WRONLY);
+                if (devNull >= 0) {
+                    ::dup2(devNull, STDOUT_FILENO);
+                    ::dup2(devNull, STDERR_FILENO);
+                    if (devNull > STDERR_FILENO) ::close(devNull);
+                }
+            }
+            std::vector<const char*> argv;
+            argv.push_back("nasm");
+            argv.push_back("-f");
+            argv.push_back(is64Bit ? "elf64" : "elf32");
+            argv.push_back("-o");
+            argv.push_back(objectPath.c_str());
+            argv.push_back(asmPath.c_str());
+            argv.push_back(nullptr);
+            ::execvp("nasm", const_cast<char**>(argv.data()));
+            ::_exit(127);
+        }
+        int status = 0;
+        ::waitpid(pid, &status, 0);
+        if (WIFEXITED(status) && WEXITSTATUS(status) == 0)
+            return true;
+    }
+
+    // Fallback: try GAS (as) for GAS syntax
+    {
+        pid_t pid = ::fork();
+        if (pid < 0) return false;
+        if (pid == 0) {
+            if (quiet) {
+                int devNull = ::open("/dev/null", O_WRONLY);
+                if (devNull >= 0) {
+                    ::dup2(devNull, STDOUT_FILENO);
+                    ::dup2(devNull, STDERR_FILENO);
+                    if (devNull > STDERR_FILENO) ::close(devNull);
+                }
+            }
+            std::vector<const char*> argv;
+            argv.push_back("as");
+            if (is64Bit)
+                argv.push_back("--64");
+            else
+                argv.push_back("--32");
+            argv.push_back("-o");
+            argv.push_back(objectPath.c_str());
+            argv.push_back(asmPath.c_str());
+            argv.push_back(nullptr);
+            ::execvp("as", const_cast<char**>(argv.data()));
+            ::_exit(127);
+        }
+        int status = 0;
+        ::waitpid(pid, &status, 0);
+        if (WIFEXITED(status) && WEXITSTATUS(status) == 0)
+            return true;
+    }
+
+    if (!quiet)
+        std::cerr << "lucis: failed to assemble '" << asmPath
+                  << "' — tried nasm and as\n";
+    return false;
+}
+
 bool CodeGen::emitBinary(IRModule& irModule, const std::string& outputPath) {
     const std::string objectPath = outputPath + ".o";
 
@@ -339,8 +432,19 @@ bool CodeGen::linkObjectFiles(const std::vector<std::string>& objectPaths,
                                bool withSanitizers,
                                bool quiet,
                                const std::string& entryPoint,
-                               bool noStd) {
+                               bool noStd,
+                               const std::string& customLinker) {
     auto builtinsPath = findBuiltinsPath();
+
+    if (!customLinker.empty()) {
+        // Use the user-specified linker directly
+        bool linked = tryLinkMulti(customLinker.c_str(), objectPaths, builtinsPath, outputPath,
+                                   extraLinkerFlags, extraLibPaths, withSanitizers, quiet, noStd, entryPoint);
+        if (!linked) {
+            std::cerr << "lucis: linking with '" << customLinker << "' failed\n";
+        }
+        return linked;
+    }
 
     bool linked = tryLinkMulti("clang", objectPaths, builtinsPath, outputPath,
                                extraLinkerFlags, extraLibPaths, withSanitizers, quiet, noStd, entryPoint)

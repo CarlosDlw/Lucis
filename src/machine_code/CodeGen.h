@@ -28,13 +28,22 @@ public:
                                 bool withSanitizers = true,
                                 bool quiet = false,
                                 const std::string& entryPoint = "",
-                                bool noStd = false);
+                                bool noStd = false,
+                                const std::string& customLinker = "");
 
     // Compile a C source file into an object file using the system C compiler.
     static bool compileCSource(const std::string& cSourcePath,
                                const std::string& objectPath,
                                const std::vector<std::string>& extraIncludePaths = {},
                                bool quiet = false);
+
+    // Compile an assembly file (.s/.asm) into an object file.
+    // Tries nasm first (for NASM syntax), then as (for GAS syntax).
+    // Returns true on success.
+    static bool compileAssembly(const std::string& asmPath,
+                                const std::string& objectPath,
+                                const std::string& targetTriple = "",
+                                bool quiet = false);
 
     // Locate runtime builtins static library next to the lucis executable.
     static std::string builtinsLibraryPath();

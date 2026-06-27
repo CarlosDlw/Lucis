@@ -48,11 +48,15 @@ void BuildCommand::buildArgs(ArgParser& parser) const {
     parser.addOption("rpath",    '\0', "DIR", "Add runtime library search path", false);
     parser.addFlag("quiet", 'q', "Suppress pipeline logs");
     parser.addFlag("no-std", '\0', "Build without standard library (freestanding/kernel)");
+    parser.addFlag("nmagic", '\0', "Suppress page alignment in linker (equivalent to ld -n)");
+    parser.addFlag("omagic", '\0', "Set text segment writable (equivalent to ld -N)");
     parser.addOption("target", '\0', "TRIPLE", "Target triple for cross-compilation (e.g. x86_64-unknown-none)");
     parser.addOption("entry", '\0', "SYMBOL", "Set the entry point symbol (default: main)");
     parser.addOption("link", 'l', "LIB", "Link against a library (repeatable)", true);
     parser.addOption("lib-path", 'L', "DIR", "Add library search path (repeatable)", true);
     parser.addOption("include", 'I', "DIR", "Add include search path (repeatable)", true);
+    parser.addOption("linker", '\0', "PATH", "Use a custom linker instead of clang/gcc");
+    parser.addOption("linker-script", '\0', "FILE", "Use a custom linker script (passed as -T to linker)");
 }
 
 int BuildCommand::run(const ArgParser& parser) {
@@ -167,6 +171,53 @@ int BuildCommand::run(const ArgParser& parser) {
         }
     }
 
+    // ── Parse extra inputs (assembly, object files, etc.) ────────────────
+    std::vector<std::string> assemblySources;
+    std::vector<std::string> extraObjectFiles;
+    for (auto& arg : parser.remaining()) {
+        auto ext = fs::path(arg).extension();
+        if (ext == ".o" || ext == ".a" || ext == ".so") {
+            extraObjectFiles.push_back(fs::canonical(arg).string());
+        } else if (ext == ".s" || ext == ".asm" || ext == ".S") {
+            assemblySources.push_back(arg);
+        } else {
+            std::cerr << "lucis: unexpected argument '" << arg << "'\n";
+            return 1;
+        }
+    }
+
+    // ── Build flag hash for cache invalidation ──────────────────────────
+    std::string customLinker = parser.get("linker");
+    bool isRawLd = !customLinker.empty() &&
+                   (customLinker == "ld" ||
+                    customLinker.find("/ld") != std::string::npos);
+
+    auto libPaths = parser.getAll("lib-path");
+    if (useConfig && libPaths.empty())
+        libPaths = cfg->linker.libPaths;
+
+    auto buildFlagHash = [&]() -> std::string {
+        std::string buf;
+        buf += "opt:" + parser.get("opt") + ";";
+        buf += "target:" + pipeOpts.targetTriple + ";";
+        buf += "noStd:" + std::to_string(pipeOpts.noStd) + ";";
+        buf += "static:" + std::to_string(useStatic) + ";";
+        buf += "shared:" + std::to_string(useShared) + ";";
+        buf += "PIC:" + std::to_string(usePIC) + ";";
+        buf += "LTO:" + std::to_string(useLTO) + ";";
+        buf += "entry:" + pipeOpts.entryPoint + ";";
+        buf += "nmagic:" + std::to_string(parser.has("nmagic")) + ";";
+        buf += "omagic:" + std::to_string(parser.has("omagic")) + ";";
+        buf += "ls:" + parser.get("linker-script") + ";";
+        buf += "linker:" + customLinker + ";";
+        for (auto& ip : pipeOpts.includePaths) buf += "I:" + ip + ";";
+        for (auto& lp : libPaths) buf += "L:" + lp + ";";
+        for (auto& eo : extraObjectFiles) buf += "O:" + eo + ";";
+        return std::to_string(std::hash<std::string>{}(buf));
+    };
+
+    std::string currentFlagHash = buildFlagHash();
+
     // ── Incremental build cache ──────────────────────────────────────────
     bool buildCached = false;
     std::string projRoot = LucisPipeline::getProjectRoot(pipeOpts.inputFile);
@@ -177,6 +228,7 @@ int BuildCommand::run(const ArgParser& parser) {
         std::cerr << "lucis: [build] checking incremental cache\n";
 
     std::vector<std::string> savedLinkerFlags;
+    std::string savedFlagHash;
     {
         std::ifstream manifest(cacheManifestPath);
         if (manifest) {
@@ -184,8 +236,11 @@ int BuildCommand::run(const ArgParser& parser) {
             bool allMatch = true;
             while (std::getline(manifest, line)) {
                 if (line.empty()) continue;
-                if (line[0] == 'C' && line.size() > 2 && line[1] == ':') {
-                    auto content = line.substr(2);
+                auto colonPos = line.find(':');
+                if (colonPos != std::string::npos && colonPos > 0 &&
+                    (colonPos + 1 >= line.size() || line[colonPos + 1] != ':')) {
+                    // Prefix line: "C:file.c mtime", "ASM:file.s mtime"
+                    auto content = line.substr(colonPos + 1);
                     auto sep = content.find(' ');
                     if (sep == std::string::npos) { allMatch = false; break; }
                     auto filePath = content.substr(0, sep);
@@ -209,6 +264,11 @@ int BuildCommand::run(const ArgParser& parser) {
                             savedLinkerFlags.push_back(line.substr(pos, end - pos));
                             pos = end;
                         }
+                    } else if (line.rfind("#buildHash", 0) == 0) {
+                        savedFlagHash = line.substr(10);
+                        // Trim leading space
+                        if (!savedFlagHash.empty() && savedFlagHash[0] == ' ')
+                            savedFlagHash = savedFlagHash.substr(1);
                     }
                 } else {
                     auto sep = line.find(' ');
@@ -223,6 +283,11 @@ int BuildCommand::run(const ArgParser& parser) {
                         break;
                     }
                 }
+            }
+            if (allMatch && savedFlagHash != currentFlagHash) {
+                allMatch = false;
+                if (!pipeOpts.quiet)
+                    std::cerr << "lucis: [build] flags changed, rebuilding\n";
             }
             if (allMatch) {
                 std::error_code ec;
@@ -276,10 +341,20 @@ int BuildCommand::run(const ArgParser& parser) {
                                 mtime.time_since_epoch()).count() << "\n";
                     }
                 }
+                for (auto& asmSrc : assemblySources) {
+                    std::error_code lec;
+                    auto mtime = fs::last_write_time(asmSrc, lec);
+                    if (!lec) {
+                        manifest << "ASM:" << asmSrc << " "
+                            << std::chrono::duration_cast<std::chrono::seconds>(
+                                mtime.time_since_epoch()).count() << "\n";
+                    }
+                }
                 manifest << "#linkerFlags";
                 for (auto& lf : pipeline->linkerFlags)
                     manifest << " " << lf;
                 manifest << "\n";
+                manifest << "#buildHash " << currentFlagHash << "\n";
             }
         }
     } else {
@@ -619,15 +694,6 @@ int BuildCommand::run(const ArgParser& parser) {
             if (hasTextEmit) return 0;
         }
 
-        for (auto& arg : parser.remaining()) {
-            if (fs::path(arg).extension() == ".o") {
-                objectFiles.push_back(fs::canonical(arg).string());
-            } else {
-                std::cerr << "lucis: unexpected argument '" << arg << "'\n";
-                return 1;
-            }
-        }
-
         for (auto& uir : unitIRs) {
             std::string stem;
             for (auto& unit : pipeline->units) {
@@ -648,8 +714,28 @@ int BuildCommand::run(const ArgParser& parser) {
             objectFiles.push_back(objPath);
         }
         objectFiles.insert(objectFiles.end(), cObjectFiles.begin(), cObjectFiles.end());
+
+        // Compile assembly sources
+        for (auto& asmSrc : assemblySources) {
+            auto stem = fs::path(asmSrc).stem().string();
+            auto objPath = pipelineBuildDir + "/asm__" + stem + ".o";
+            fs::create_directories(fs::path(objPath).parent_path());
+            if (!CodeGen::compileAssembly(asmSrc, objPath, pipeOpts.targetTriple, pipeOpts.quiet)) {
+                std::cerr << "lucis: failed to assemble '" << asmSrc << "'\n";
+                return 1;
+            }
+            objectFiles.push_back(objPath);
+        }
+
+        // Extra object/archive files passed directly
+        for (auto& obj : extraObjectFiles)
+            objectFiles.push_back(obj);
     } else {
         objectFiles = std::move(cachedObjectFiles);
+
+        // Extra object/archive files (always included, even on cache hit)
+        for (auto& obj : extraObjectFiles)
+            objectFiles.push_back(obj);
     }
 
     // ── Link ────────────────────────────────────────────────────────────────
@@ -682,22 +768,47 @@ int BuildCommand::run(const ArgParser& parser) {
     if (useStatic) finalLinkerFlags.push_back("-static");
     if (useShared) finalLinkerFlags.push_back("-shared");
 
+    // Determine if raw ld is used (nmagic/omagic need different flag format)
+    if (parser.has("nmagic")) {
+        finalLinkerFlags.push_back(isRawLd ? "-n" : "-Wl,-n");
+    }
+    if (parser.has("omagic")) {
+        finalLinkerFlags.push_back(isRawLd ? "-N" : "-Wl,-N");
+    }
+
+    if (parser.has("linker-script")) {
+        auto lsPath = parser.get("linker-script");
+        // Resolve relative to project root
+        if (!fs::path(lsPath).is_absolute())
+            lsPath = (fs::path(projRoot) / lsPath).string();
+        if (isRawLd) {
+            finalLinkerFlags.push_back("-T");
+            finalLinkerFlags.push_back(lsPath);
+        } else {
+            finalLinkerFlags.push_back("-Wl,-T" + lsPath);
+        }
+    }
+
     for (auto& arg : parser.getAll("link-arg"))
         finalLinkerFlags.push_back(arg);
 
-    if (parser.has("rpath"))
-        finalLinkerFlags.push_back("-Wl,-rpath," + parser.get("rpath"));
-
-    auto libPaths = parser.getAll("lib-path");
-    if (useConfig && libPaths.empty())
-        libPaths = cfg->linker.libPaths;
+    if (parser.has("rpath")) {
+        auto rpathDir = parser.get("rpath");
+        if (isRawLd) {
+            finalLinkerFlags.push_back("-rpath");
+            finalLinkerFlags.push_back(rpathDir);
+        } else {
+            finalLinkerFlags.push_back("-Wl,-rpath," + rpathDir);
+        }
+    }
 
     if (!CodeGen::linkObjectFiles(objectFiles, outputFile,
                                     finalLinkerFlags,
                                     libPaths,
                                     !useStatic && !pipeOpts.noStd, pipeOpts.quiet,
                                     pipeOpts.entryPoint,
-                                    pipeOpts.noStd)) {
+                                    pipeOpts.noStd,
+                                    parser.get("linker"))) {
         std::cerr << "lucis: failed to link binary '" << outputFile << "'\n";
         return 1;
     }
