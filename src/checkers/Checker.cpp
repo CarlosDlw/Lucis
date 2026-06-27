@@ -1956,9 +1956,9 @@ bool Checker::isAssignable(const TypeInfo* lhs, const TypeInfo* rhs) {
     if (lhs == rhs) return true;
     if (lhs->name == rhs->name) return true;
 
-    // Integer ↔ integer (implicit widening/narrowing, any signedness)
+    // Integer ↔ integer (same signedness required, any width allowed)
     if (lhs->kind == TypeKind::Integer && rhs->kind == TypeKind::Integer)
-        return true;
+        return lhs->isSigned == rhs->isSigned;
 
     // Enum ↔ integer (C enums are integers)
     if (lhs->kind == TypeKind::Enum && rhs->kind == TypeKind::Integer)
