@@ -7643,6 +7643,197 @@ std::any IRGen::visitCStrLitExpr(LucisParser::CStrLitExprContext* ctx) {
     return static_cast<llvm::Value*>(cstrGlobal);
 }
 
+std::any IRGen::visitLambdaExpr(LucisParser::LambdaExprContext* ctx) {
+    // Check cache first (avoid double-generation during auto type inference)
+    {
+        auto it = lambdaCache_.find(ctx);
+        if (it != lambdaCache_.end())
+            return static_cast<llvm::Value*>(it->second);
+    }
+
+    // 1. Determine parameter types and names from AST
+    std::vector<llvm::Type*> paramLLTypes;
+    std::vector<std::string> paramNames;
+    std::vector<const TypeInfo*> paramTIs;
+
+    if (auto* params = ctx->paramList()) {
+        for (auto* p : params->param()) {
+            if (p->SPREAD()) continue;
+            paramNames.push_back(p->IDENTIFIER()->getText());
+            auto* pti = resolveTypeInfo(p->typeSpec());
+            paramTIs.push_back(pti);
+            auto* llty = pti ? pti->toLLVMType(*context_, module_->getDataLayout())
+                             : llvm::Type::getInt32Ty(*context_);
+            paramLLTypes.push_back(llty);
+        }
+    }
+
+    // 2. Determine return type from body expression
+    auto* bodyExpr = ctx->expression();
+    auto* bodyTI = resolveExprTypeInfo(bodyExpr);
+    auto* retLLTy = bodyTI ? bodyTI->toLLVMType(*context_, module_->getDataLayout())
+                           : llvm::Type::getInt32Ty(*context_);
+
+    // 3. Create the synthetic function
+    auto funcName = "__lambda_" + std::to_string(lambdaCounter_++);
+    auto* fnType = llvm::FunctionType::get(retLLTy, paramLLTypes, false);
+    auto* fn = llvm::Function::Create(fnType, llvm::Function::InternalLinkage, funcName, module_);
+
+    // 4. Set up function body
+    auto* entryBB = llvm::BasicBlock::Create(*context_, "entry", fn);
+    auto* prevFn = currentFunction_;
+    auto* prevBuilder = builder_;
+    currentFunction_ = fn;
+    auto entryBuilder = std::make_unique<llvm::IRBuilder<>>(entryBB);
+    builder_ = entryBuilder.get();
+
+    // Save outer locals, create new scope
+    auto savedLocals = std::move(locals_);
+    locals_.clear();
+
+    // Store params as allocas
+    for (size_t i = 0; i < paramLLTypes.size(); i++) {
+        auto* alloca = builder_->CreateAlloca(paramLLTypes[i], nullptr, paramNames[i]);
+        auto* paramVal = fn->getArg(static_cast<unsigned>(i));
+        paramVal->setName(paramNames[i]);
+        builder_->CreateStore(paramVal, alloca);
+        VarInfo vi;
+        vi.alloca = alloca;
+        vi.typeInfo = (i < paramTIs.size()) ? paramTIs[i] : nullptr;
+        vi.isParam = true;
+        locals_[paramNames[i]] = vi;
+    }
+
+    // Visit the body expression
+    auto* bodyVal = castValue(visit(bodyExpr));
+    if (bodyVal) {
+        if (retLLTy->isVoidTy()) {
+            builder_->CreateRetVoid();
+        } else {
+            if (bodyVal->getType() != retLLTy) {
+                if (bodyVal->getType()->isIntegerTy() && retLLTy->isIntegerTy())
+                    bodyVal = builder_->CreateIntCast(bodyVal, retLLTy, true);
+                else if (bodyVal->getType()->isFloatingPointTy() && retLLTy->isFloatingPointTy())
+                    bodyVal = builder_->CreateFPCast(bodyVal, retLLTy);
+            }
+            builder_->CreateRet(bodyVal);
+        }
+    } else {
+        builder_->CreateRet(llvm::UndefValue::get(retLLTy));
+    }
+
+    // Restore
+    locals_ = std::move(savedLocals);
+    builder_ = prevBuilder;
+    currentFunction_ = prevFn;
+
+    // 5. Cache and return function pointer
+    lambdaCache_[ctx] = fn;
+    return static_cast<llvm::Value*>(fn);
+}
+
+std::any IRGen::visitLambdaBlockExpr(LucisParser::LambdaBlockExprContext* ctx) {
+    // Check cache first
+    {
+        auto it = lambdaCache_.find(ctx);
+        if (it != lambdaCache_.end())
+            return static_cast<llvm::Value*>(it->second);
+    }
+
+    // For block lambdas, we generate the function and visit the block.
+    std::vector<llvm::Type*> paramLLTypes;
+    std::vector<std::string> paramNames;
+    std::vector<const TypeInfo*> paramTIs;
+
+    if (auto* params = ctx->paramList()) {
+        for (auto* p : params->param()) {
+            if (p->SPREAD()) continue;
+            paramNames.push_back(p->IDENTIFIER()->getText());
+            auto* pti = resolveTypeInfo(p->typeSpec());
+            paramTIs.push_back(pti);
+            auto* llty = pti ? pti->toLLVMType(*context_, module_->getDataLayout())
+                             : llvm::Type::getInt32Ty(*context_);
+            paramLLTypes.push_back(llty);
+        }
+    }
+
+    // Determine return type from block (look for ret stmt)
+    auto* block = ctx->block();
+
+    // Temporarily register params so return expression can resolve them
+    for (size_t i = 0; i < paramNames.size(); i++) {
+        auto* pTy = paramLLTypes[i];
+        auto* alloca = builder_->CreateAlloca(pTy, nullptr, paramNames[i] + ".tmp");
+        locals_[paramNames[i]] = { alloca, paramTIs[i], 0 };
+    }
+
+    const TypeInfo* retTI = nullptr;
+    for (auto* stmt : block->statement()) {
+        if (auto* retStmt = stmt->returnStmt()) {
+            if (auto* retExpr = retStmt->expression()) {
+                if (auto* rti = resolveExprTypeInfo(retExpr)) {
+                    retTI = rti;
+                }
+            }
+            if (!retTI) retTI = typeRegistry_.lookup("int32");
+            break;
+        }
+    }
+    if (!retTI) retTI = typeRegistry_.lookup("void");
+
+    // Clean up temporary param bindings before setting up function context
+    for (auto& pn : paramNames)
+        locals_.erase(pn);
+    auto* retLLTy = retTI->toLLVMType(*context_, module_->getDataLayout());
+
+    auto funcName = "__lambda_" + std::to_string(lambdaCounter_++);
+    auto* fnType = llvm::FunctionType::get(retLLTy, paramLLTypes, false);
+    auto* fn = llvm::Function::Create(fnType, llvm::Function::InternalLinkage, funcName, module_);
+
+    auto* entryBB = llvm::BasicBlock::Create(*context_, "entry", fn);
+    auto* prevFn = currentFunction_;
+    auto* prevBuilder = builder_;
+    currentFunction_ = fn;
+    auto entryBuilder = std::make_unique<llvm::IRBuilder<>>(entryBB);
+    builder_ = entryBuilder.get();
+
+    auto savedLocals = std::move(locals_);
+    locals_.clear();
+
+    for (size_t i = 0; i < paramLLTypes.size(); i++) {
+        auto* alloca = builder_->CreateAlloca(paramLLTypes[i], nullptr, paramNames[i]);
+        auto* paramVal = fn->getArg(static_cast<unsigned>(i));
+        paramVal->setName(paramNames[i]);
+        builder_->CreateStore(paramVal, alloca);
+        VarInfo vi;
+        vi.alloca = alloca;
+        vi.typeInfo = (i < paramTIs.size()) ? paramTIs[i] : nullptr;
+        vi.isParam = true;
+        locals_[paramNames[i]] = vi;
+    }
+
+    // Visit statements directly (avoid visitBlock which creates a new BB)
+    for (auto* stmt : block->statement()) {
+        visit(stmt);
+    }
+
+    // Ensure terminator
+    llvm::BasicBlock* curBB = builder_->GetInsertBlock();
+    if (!curBB->getTerminator()) {
+        if (retLLTy->isVoidTy())
+            builder_->CreateRetVoid();
+        else
+            builder_->CreateRet(llvm::UndefValue::get(retLLTy));
+    }
+
+    locals_ = std::move(savedLocals);
+    builder_ = prevBuilder;
+    currentFunction_ = prevFn;
+
+    lambdaCache_[ctx] = fn;
+    return static_cast<llvm::Value*>(fn);
+}
+
 std::any IRGen::visitIdentExpr(LucisParser::IdentExprContext* ctx) {
     auto name = ctx->IDENTIFIER()->getText();
     auto it   = locals_.find(name);
@@ -13726,7 +13917,8 @@ std::any IRGen::visitFnCallExpr(LucisParser::FnCallExprContext* ctx) {
         }
 
         auto it = locals_.find(calleeName);
-        if (it != locals_.end() && it->second.typeInfo->kind == TypeKind::Function) {
+        if (it != locals_.end() && (it->second.typeInfo->kind == TypeKind::Function ||
+            it->second.typeInfo->kind == TypeKind::Closure)) {
             fnTI = it->second.typeInfo;
         } else if (!fnTI && !directFn) {
             // Check module-level functions for direct call (with mangled name)
@@ -14078,15 +14270,24 @@ std::any IRGen::visitFnCallExpr(LucisParser::FnCallExprContext* ctx) {
         return static_cast<llvm::Value*>(callResult);
     }
 
-    // Indirect call via function pointer variable
-    if (!fnTI || fnTI->kind != TypeKind::Function) {
+    // Indirect call via function pointer or closure variable
+    if (!fnTI || (fnTI->kind != TypeKind::Function && fnTI->kind != TypeKind::Closure)) {
         std::cerr << "lucis: expression is not a function type\n";
         return static_cast<llvm::Value*>(
             llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
     }
 
-    // Get the function pointer value
-    auto* fnPtr = castValue(visit(baseExpr));
+    // Get the function pointer value (or closure struct)
+    auto* calleeVal = castValue(visit(baseExpr));
+
+    llvm::Value* fnPtr = calleeVal;
+    llvm::Value* contextPtr = nullptr;
+
+    if (fnTI->kind == TypeKind::Closure) {
+        // Closure is a struct {fn_ptr, context_ptr}
+        fnPtr = builder_->CreateExtractValue(calleeVal, {0}, "closure_fn");
+        contextPtr = builder_->CreateExtractValue(calleeVal, {1}, "closure_ctx");
+    }
 
     // Build LLVM FunctionType from TypeInfo
     auto* retLLVM = fnTI->returnType->toLLVMType(*context_, module_->getDataLayout());
@@ -14094,23 +14295,33 @@ std::any IRGen::visitFnCallExpr(LucisParser::FnCallExprContext* ctx) {
     for (auto* pti : fnTI->paramTypes) {
         paramLLVM.push_back(pti->toLLVMType(*context_, module_->getDataLayout()));
     }
+    // For closures, the first hidden param is the context pointer
+    auto* ptrTy = llvm::PointerType::getUnqual(*context_);
+    if (contextPtr) {
+        paramLLVM.insert(paramLLVM.begin(), ptrTy);
+    }
     auto* fnType = llvm::FunctionType::get(retLLVM, paramLLVM, fnTI->isVariadic);
 
     // Collect arguments
     std::vector<llvm::Value*> args;
+    // Prepend context pointer for closure calls
+    if (contextPtr) {
+        args.push_back(contextPtr);
+    }
     if (auto* argList = ctx->argList()) {
         for (size_t i = 0; i < argList->expression().size(); i++) {
             auto* argVal = castValue(visit(argList->expression(i)));
-            // Cast if needed
-            if (i < paramLLVM.size() && argVal->getType() != paramLLVM[i]) {
-                if (argVal->getType()->isIntegerTy() && paramLLVM[i]->isIntegerTy())
-                    argVal = builder_->CreateIntCast(argVal, paramLLVM[i],
-                                                     fnTI->paramTypes[i]->isSigned);
-                else if (argVal->getType()->isFloatingPointTy() && paramLLVM[i]->isFloatingPointTy()) {
-                    if (argVal->getType()->getPrimitiveSizeInBits() > paramLLVM[i]->getPrimitiveSizeInBits())
-                        argVal = builder_->CreateFPTrunc(argVal, paramLLVM[i]);
+            // Cast if needed (offset by 1 for closure context)
+            size_t paramIdx = contextPtr ? i + 1 : i;
+            if (paramIdx < paramLLVM.size() && argVal->getType() != paramLLVM[paramIdx]) {
+                if (argVal->getType()->isIntegerTy() && paramLLVM[paramIdx]->isIntegerTy())
+                    argVal = builder_->CreateIntCast(argVal, paramLLVM[paramIdx],
+                                                     contextPtr ? false : fnTI->paramTypes[i]->isSigned);
+                else if (argVal->getType()->isFloatingPointTy() && paramLLVM[paramIdx]->isFloatingPointTy()) {
+                    if (argVal->getType()->getPrimitiveSizeInBits() > paramLLVM[paramIdx]->getPrimitiveSizeInBits())
+                        argVal = builder_->CreateFPTrunc(argVal, paramLLVM[paramIdx]);
                     else
-                        argVal = builder_->CreateFPExt(argVal, paramLLVM[i]);
+                        argVal = builder_->CreateFPExt(argVal, paramLLVM[paramIdx]);
                 }
             }
             args.push_back(argVal);
@@ -14125,7 +14336,9 @@ std::any IRGen::visitFnCallExpr(LucisParser::FnCallExprContext* ctx) {
         size_t n = std::min(exprs.size(), args.size());
         for (size_t i = 0; i < n; i++) {
             llvm::Type* expectedTy = (i < paramLLVM.size()) ? paramLLVM[i] : nullptr;
-            cleanupTempArg(exprs[i], args[i], expectedTy);
+            if (expectedTy) {
+                cleanupTempArg(exprs[i], args[i + (contextPtr ? 1 : 0)], expectedTy);
+            }
         }
     }
 
@@ -15810,6 +16023,108 @@ const TypeInfo* IRGen::resolveExprTypeInfo(LucisParser::ExpressionContext* ctx) 
             }
         }
         // Fall through to the general FnCallExpr handler below
+    }
+
+    // ── Lambda expression: |params| body ────────────────────────────
+    if (auto* lexpr = dynamic_cast<LucisParser::LambdaExprContext*>(ctx)) {
+        // Register params temporarily to resolve body type
+        std::vector<const TypeInfo*> paramTIs;
+        std::vector<std::string> paramNames;
+        auto* params = lexpr->paramList();
+        if (params) {
+            for (auto* p : params->param()) {
+                if (p->SPREAD()) continue;
+                auto* pti = resolveTypeInfo(p->typeSpec());
+                paramTIs.push_back(pti);
+                auto pname = p->IDENTIFIER()->getText();
+                paramNames.push_back(pname);
+                auto* pTy = pti ? pti->toLLVMType(*context_, module_->getDataLayout())
+                                : llvm::Type::getInt32Ty(*context_);
+                auto* alloca = builder_->CreateAlloca(pTy, nullptr, pname + ".tmp_param");
+                locals_[pname] = { alloca, pti, 0 };
+            }
+        }
+        auto* bodyTI = resolveExprTypeInfo(lexpr->expression());
+        // Clean up temporary param bindings
+        for (auto& pn : paramNames)
+            locals_.erase(pn);
+        if (!bodyTI) bodyTI = typeRegistry_.lookup("int32");
+        // Build function type name
+        std::string ftName = "fn(";
+        for (size_t i = 0; i < paramTIs.size(); i++) {
+            if (i > 0) ftName += ", ";
+            ftName += (paramTIs[i] ? paramTIs[i]->name : "?");
+        }
+        ftName += ") -> " + bodyTI->name;
+        // Check if type already exists
+        if (auto* existing = typeRegistry_.lookup(ftName))
+            return existing;
+        // Create new function type
+        TypeInfo fti;
+        fti.name = ftName;
+        fti.kind = TypeKind::Function;
+        fti.bitWidth = 0;
+        fti.isSigned = false;
+        fti.builtinSuffix = "ptr";
+        fti.returnType = bodyTI;
+        fti.paramTypes = paramTIs;
+        typeRegistry_.registerType(std::move(fti));
+        return typeRegistry_.lookup(ftName);
+    }
+    if (auto* lblk = dynamic_cast<LucisParser::LambdaBlockExprContext*>(ctx)) {
+        // Register params temporarily to resolve block's return type
+        std::vector<const TypeInfo*> paramTIs;
+        std::vector<std::string> paramNames;
+        std::unordered_set<std::string> paramNameSet;
+        auto* params = lblk->paramList();
+        if (params) {
+            for (auto* p : params->param()) {
+                if (p->SPREAD()) continue;
+                auto* pti = resolveTypeInfo(p->typeSpec());
+                paramTIs.push_back(pti);
+                auto pname = p->IDENTIFIER()->getText();
+                paramNames.push_back(pname);
+                paramNameSet.insert(pname);
+                // Temporarily register params so return expr can resolve them
+                auto* pTy = pti ? pti->toLLVMType(*context_, module_->getDataLayout())
+                                : llvm::Type::getInt32Ty(*context_);
+                auto* alloca = builder_->CreateAlloca(pTy, nullptr, pname + ".tmp_param");
+                locals_[pname] = { alloca, pti, 0 };
+            }
+        }
+        // Walk block to find return stmts
+        const TypeInfo* retTI = typeRegistry_.lookup("void");
+        for (auto* stmt : lblk->block()->statement()) {
+            if (auto* retStmt = stmt->returnStmt()) {
+                if (auto* retExpr = retStmt->expression()) {
+                    if (auto* rti = resolveExprTypeInfo(retExpr)) {
+                        retTI = rti;
+                        break;
+                    }
+                }
+            }
+        }
+        // Clean up temporary param bindings
+        for (auto& pn : paramNames)
+            locals_.erase(pn);
+        std::string ftName = "fn(";
+        for (size_t i = 0; i < paramTIs.size(); i++) {
+            if (i > 0) ftName += ", ";
+            ftName += (paramTIs[i] ? paramTIs[i]->name : "?");
+        }
+        ftName += ") -> " + retTI->name;
+        if (auto* existing = typeRegistry_.lookup(ftName))
+            return existing;
+        TypeInfo fti;
+        fti.name = ftName;
+        fti.kind = TypeKind::Function;
+        fti.bitWidth = 0;
+        fti.isSigned = false;
+        fti.builtinSuffix = "ptr";
+        fti.returnType = retTI;
+        fti.paramTypes = paramTIs;
+        typeRegistry_.registerType(std::move(fti));
+        return typeRegistry_.lookup(ftName);
     }
 
     // ── Identifier ───────────────────────────────────────────────────

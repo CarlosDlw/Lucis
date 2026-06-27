@@ -157,10 +157,29 @@ private:
     // Dynamically created TypeInfos (for pointer types, function types, etc.)
     std::vector<std::unique_ptr<TypeInfo>> dynamicTypes_;
 
+    // Lambda counter for generating unique synthetic function names
+    unsigned lambdaCounter_ = 0;
+
+    // Lambda info shared with IRGen: AST node ptr → {funcName, returnType, captures, paramCount}
+    struct LambdaInfo {
+        std::string funcName;                    // "__lambda_0"
+        const TypeInfo* returnType = nullptr;
+        std::vector<TypeInfo::CaptureInfo> captures;
+        std::vector<const TypeInfo*> paramTypes;
+        bool isBlock = false;                    // true for |x| { block }
+        LucisParser::BlockContext* blockCtx = nullptr;
+        LucisParser::ExpressionContext* exprCtx = nullptr;
+    };
+    std::unordered_map<const antlr4::ParserRuleContext*, LambdaInfo> lambdaInfo_;
+
     // ── Type resolution ──────────────────────────────────────────────
     const TypeInfo* resolveTypeSpec(LucisParser::TypeSpecContext* ctx,
                                    unsigned& arrayDims);
     const TypeInfo* resolveExprType(LucisParser::ExpressionContext* expr);
+    // Lambda expression type resolution (single-expr body)
+    const TypeInfo* resolveLambdaExpr(LucisParser::LambdaExprContext* lexpr);
+    // Lambda expression type resolution (block body)
+    const TypeInfo* resolveLambdaBlockExpr(LucisParser::LambdaBlockExprContext* lblk);
     const TypeInfo* tryResolveQualifiedType(antlr4::ParserRuleContext* ctx,
                                            const std::string& first,
                                            const std::string& second);

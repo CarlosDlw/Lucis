@@ -154,8 +154,14 @@ llvm::Type* TypeInfo::toLLVMType(llvm::LLVMContext& ctx,
         }, "struct.__va_list_tag");
     }
 
+    case TypeKind::Closure:
     case TypeKind::Function:
         // Function values are represented as opaque pointers (function pointers)
+        // Closures are fat pointers: {fn_ptr, context_ptr}
+        if (kind == TypeKind::Closure) {
+            auto* ptrTy = llvm::PointerType::getUnqual(ctx);
+            return llvm::StructType::get(ctx, {ptrTy, ptrTy});
+        }
         return llvm::PointerType::getUnqual(ctx);
 
     case TypeKind::Tuple: {

@@ -2516,6 +2516,18 @@ public:
     virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
   };
 
+  class  LambdaExprContext : public ExpressionContext {
+  public:
+    LambdaExprContext(ExpressionContext *ctx);
+
+    std::vector<antlr4::tree::TerminalNode *> PIPE();
+    antlr4::tree::TerminalNode* PIPE(size_t i);
+    ExpressionContext *expression();
+    ParamListContext *paramList();
+
+    virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+  };
+
   class  StructLitExprContext : public ExpressionContext {
   public:
     StructLitExprContext(ExpressionContext *ctx);
@@ -2575,6 +2587,18 @@ public:
     std::vector<ExpressionContext *> expression();
     ExpressionContext* expression(size_t i);
     antlr4::tree::TerminalNode *RANGE_INCL();
+
+    virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+  };
+
+  class  LambdaBlockExprContext : public ExpressionContext {
+  public:
+    LambdaBlockExprContext(ExpressionContext *ctx);
+
+    std::vector<antlr4::tree::TerminalNode *> PIPE();
+    antlr4::tree::TerminalNode* PIPE(size_t i);
+    BlockContext *block();
+    ParamListContext *paramList();
 
     virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
   };

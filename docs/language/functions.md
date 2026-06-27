@@ -385,6 +385,7 @@ The vector contains all arguments passed to the compiled binary, including the p
 
 ## See Also
 
+- [Lambdas](lambdas.md) — Anonymous functions, closures
 - [Variables](variables.md) — Variable scope in function bodies
 - [Types](types.md) — Function type syntax
 - [Type Aliases](type-aliases.md) — Named function type aliases

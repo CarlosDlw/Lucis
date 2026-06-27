@@ -303,6 +303,8 @@ public:
 
     virtual std::any visitLeadingDotFloatLitExpr(LucisParser::LeadingDotFloatLitExprContext *context) = 0;
 
+    virtual std::any visitLambdaExpr(LucisParser::LambdaExprContext *context) = 0;
+
     virtual std::any visitStructLitExpr(LucisParser::StructLitExprContext *context) = 0;
 
     virtual std::any visitPostDecrExpr(LucisParser::PostDecrExprContext *context) = 0;
@@ -312,6 +314,8 @@ public:
     virtual std::any visitBinLitExpr(LucisParser::BinLitExprContext *context) = 0;
 
     virtual std::any visitRangeInclExpr(LucisParser::RangeInclExprContext *context) = 0;
+
+    virtual std::any visitLambdaBlockExpr(LucisParser::LambdaBlockExprContext *context) = 0;
 
     virtual std::any visitTupleArrowIndexExpr(LucisParser::TupleArrowIndexExprContext *context) = 0;
 

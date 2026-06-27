@@ -2076,6 +2076,258 @@ void Checker::checkNegativeToUnsigned(const TypeInfo* target,
 }
 
 // ═══════════════════════════════════════════════════════════════════════
+//  Lambda / Closure helpers
+// ═══════════════════════════════════════════════════════════════════════
+
+static std::string buildLambdaTypeName(const TypeInfo* retType,
+                                        const std::vector<const TypeInfo*>& paramTypes) {
+    std::string name = "fn(";
+    for (size_t i = 0; i < paramTypes.size(); i++) {
+        if (i > 0) name += ", ";
+        name += paramTypes[i]->name;
+    }
+    name += ") -> " + (retType ? retType->name : "void");
+    return name;
+}
+
+static std::string buildClosureTypeName(const TypeInfo* retType,
+                                          const std::vector<const TypeInfo*>& paramTypes,
+                                          const std::vector<TypeInfo::CaptureInfo>& captures) {
+    std::string name = "closure(";
+    for (size_t i = 0; i < paramTypes.size(); i++) {
+        if (i > 0) name += ", ";
+        name += paramTypes[i]->name;
+    }
+    name += ") -> " + (retType ? retType->name : "void");
+    name += " captures [";
+    for (size_t i = 0; i < captures.size(); i++) {
+        if (i > 0) name += ", ";
+        name += captures[i].name + ": " + (captures[i].type ? captures[i].type->name : "?");
+    }
+    name += "]";
+    return name;
+}
+
+static void collectFreeVars(LucisParser::ExpressionContext* expr,
+                             const std::unordered_set<std::string>& paramNames,
+                             std::unordered_set<std::string>& freeVars) {
+    if (!expr) return;
+    if (auto* id = dynamic_cast<LucisParser::IdentExprContext*>(expr)) {
+        auto name = id->IDENTIFIER()->getText();
+        if (paramNames.find(name) == paramNames.end())
+            freeVars.insert(name);
+        return;
+    }
+    // Recurse into all child expression nodes
+    for (size_t i = 0; i < expr->children.size(); i++) {
+        if (auto* child = dynamic_cast<LucisParser::ExpressionContext*>(expr->children[i])) {
+            collectFreeVars(child, paramNames, freeVars);
+        }
+    }
+}
+
+static void collectFreeVarsFromBlock(LucisParser::BlockContext* block,
+                                      const std::unordered_set<std::string>& paramNames,
+                                      std::unordered_set<std::string>& freeVars) {
+    if (!block) return;
+    for (auto* stmt : block->statement()) {
+        // Check all expression contexts within the statement
+        for (size_t i = 0; i < stmt->children.size(); i++) {
+            if (auto* child = dynamic_cast<LucisParser::ExpressionContext*>(stmt->children[i])) {
+                collectFreeVars(child, paramNames, freeVars);
+            }
+        }
+    }
+}
+
+const TypeInfo* Checker::resolveLambdaExpr(LucisParser::LambdaExprContext* lexpr) {
+    auto id = lambdaCounter_++;
+    auto funcName = "__lambda_" + std::to_string(id);
+
+    // Parse params
+    std::vector<const TypeInfo*> paramTypes;
+    std::unordered_set<std::string> paramNames;
+    auto* params = lexpr->paramList();
+    if (params) {
+        for (auto* p : params->param()) {
+            if (p->SPREAD()) continue; // Skip variadic for now
+            unsigned dims = 0;
+            auto* ti = resolveTypeSpec(p->typeSpec(), dims);
+            if (!ti) { error(p, "unknown type in lambda parameter"); continue; }
+            auto pname = p->IDENTIFIER()->getText();
+            paramTypes.push_back(ti);
+            paramNames.insert(pname);
+            // Temporarily register as local for body resolution
+            locals_[pname] = {ti, dims, true, true, nullptr};
+        }
+    }
+
+    // Resolve body expression type → return type
+    auto* bodyExpr = lexpr->expression();
+    auto* retType = resolveExprType(bodyExpr);
+    if (!retType) retType = typeRegistry_.lookup("int32");
+
+    // Analyze captures: free vars that are local variables in enclosing scope
+    std::unordered_set<std::string> freeVars;
+    collectFreeVars(bodyExpr, paramNames, freeVars);
+
+    std::vector<TypeInfo::CaptureInfo> captures;
+    for (auto& fv : freeVars) {
+        auto it = locals_.find(fv);
+        if (it != locals_.end()) {
+            // Only capture locals, not globals/functions
+            captures.push_back({fv, it->second.type, it->second.arrayDims});
+        }
+    }
+
+    // Remove temporary params from scope
+    for (auto& pn : paramNames)
+        locals_.erase(pn);
+
+    // Build the function/closure TypeInfo
+    auto ti = std::make_unique<TypeInfo>();
+    ti->name = funcName;
+    ti->returnType = retType;
+    ti->paramTypes = paramTypes;
+    ti->syntheticFuncName = funcName;
+
+    // Store lambda info for IRGen
+    LambdaInfo linfo;
+    linfo.funcName = funcName;
+    linfo.returnType = retType;
+    linfo.paramTypes = paramTypes;
+    linfo.captures = captures;
+    linfo.isBlock = false;
+    linfo.exprCtx = bodyExpr;
+    lambdaInfo_[lexpr] = std::move(linfo);
+
+    if (captures.empty()) {
+        // Non-capturing → regular function type
+        ti->kind = TypeKind::Function;
+        ti->bitWidth = 0;
+        ti->isSigned = false;
+        ti->builtinSuffix = "ptr";
+        ti->name = buildLambdaTypeName(retType, paramTypes);
+    } else {
+        // Capturing → closure type
+        ti->kind = TypeKind::Closure;
+        ti->bitWidth = 0;
+        ti->isSigned = false;
+        ti->builtinSuffix = "closure";
+        ti->closureCaptures = std::move(captures);
+        ti->name = buildClosureTypeName(retType, paramTypes, ti->closureCaptures);
+    }
+
+    const TypeInfo* raw = ti.get();
+    dynamicTypes_.push_back(std::move(ti));
+    return raw;
+}
+
+const TypeInfo* Checker::resolveLambdaBlockExpr(LucisParser::LambdaBlockExprContext* lblk) {
+    auto id = lambdaCounter_++;
+    auto funcName = "__lambda_" + std::to_string(id);
+
+    // Parse params
+    std::vector<const TypeInfo*> paramTypes;
+    std::unordered_set<std::string> paramNames;
+    auto* params = lblk->paramList();
+    if (params) {
+        for (auto* p : params->param()) {
+            if (p->SPREAD()) continue;
+            unsigned dims = 0;
+            auto* ti = resolveTypeSpec(p->typeSpec(), dims);
+            if (!ti) { error(p, "unknown type in lambda parameter"); continue; }
+            auto pname = p->IDENTIFIER()->getText();
+            paramTypes.push_back(ti);
+            paramNames.insert(pname);
+            locals_[pname] = {ti, dims, true, true, nullptr};
+        }
+    }
+
+    // Walk block to find return type and register locals
+    auto* block = lblk->block();
+    const TypeInfo* retType = typeRegistry_.lookup("void");
+    for (auto* stmt : block->statement()) {
+        if (auto* retStmt = stmt->returnStmt()) {
+            if (auto* retExpr = retStmt->expression()) {
+                auto* exprType = resolveExprType(retExpr);
+                if (exprType) retType = exprType;
+            }
+            break;  // first return stmt determines the type
+        }
+        if (auto* varDecl = stmt->varDeclStmt()) {
+            // Process var decls to keep locals_ populated
+            auto* typeSpec = varDecl->typeSpec();
+            for (auto* d : varDecl->varDeclarator()) {
+                unsigned dims = 0;
+                auto* ti = typeSpec ? resolveTypeSpec(typeSpec, dims) : nullptr;
+                if (!ti) continue;
+                auto vname = d->IDENTIFIER()->getText();
+                locals_[vname] = {ti, dims, true, true, nullptr};
+                if (auto* initExpr = d->expression()) {
+                    resolveExprType(initExpr);
+                }
+            }
+        }
+        if (auto* exprStmt = stmt->exprStmt()) {
+            resolveExprType(exprStmt->expression());
+        }
+    }
+    if (retType->kind == TypeKind::Void) {
+        retType = typeRegistry_.lookup("int32");
+    }
+
+    // Analyze captures
+    std::unordered_set<std::string> freeVars;
+    collectFreeVarsFromBlock(block, paramNames, freeVars);
+
+    std::vector<TypeInfo::CaptureInfo> captures;
+    for (auto& fv : freeVars) {
+        auto it = locals_.find(fv);
+        if (it != locals_.end()) {
+            captures.push_back({fv, it->second.type, it->second.arrayDims});
+        }
+    }
+
+    // Remove temporary params
+    for (auto& pn : paramNames)
+        locals_.erase(pn);
+
+    auto ti = std::make_unique<TypeInfo>();
+    ti->returnType = retType;
+    ti->paramTypes = paramTypes;
+    ti->syntheticFuncName = funcName;
+
+    LambdaInfo linfo;
+    linfo.funcName = funcName;
+    linfo.returnType = retType;
+    linfo.paramTypes = paramTypes;
+    linfo.captures = captures;
+    linfo.isBlock = true;
+    linfo.blockCtx = block;
+    lambdaInfo_[lblk] = std::move(linfo);
+
+    if (captures.empty()) {
+        ti->kind = TypeKind::Function;
+        ti->bitWidth = 0;
+        ti->isSigned = false;
+        ti->builtinSuffix = "ptr";
+        ti->name = buildLambdaTypeName(retType, paramTypes);
+    } else {
+        ti->kind = TypeKind::Closure;
+        ti->bitWidth = 0;
+        ti->isSigned = false;
+        ti->builtinSuffix = "closure";
+        ti->closureCaptures = std::move(captures);
+        ti->name = buildClosureTypeName(retType, paramTypes, ti->closureCaptures);
+    }
+
+    const TypeInfo* raw = ti.get();
+    dynamicTypes_.push_back(std::move(ti));
+    return raw;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
 //  Expression type resolution
 // ═══════════════════════════════════════════════════════════════════════
 
@@ -2295,6 +2547,14 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
 
         error(expr, "undefined variable '" + name + "'");
         return nullptr;
+    }
+
+    // ── Lambda expression: |params| body ─────────────────────────────
+    if (auto* lexpr = dynamic_cast<LucisParser::LambdaExprContext*>(expr)) {
+        return resolveLambdaExpr(lexpr);
+    }
+    if (auto* lblk = dynamic_cast<LucisParser::LambdaBlockExprContext*>(expr)) {
+        return resolveLambdaBlockExpr(lblk);
     }
 
     // ── Parenthesized ────────────────────────────────────────────────
@@ -8008,6 +8268,58 @@ void Checker::checkExternDecl(LucisParser::ExternDeclContext* decl) {
 
 void Checker::checkCallStmt(LucisParser::CallStmtContext* stmt) {
     auto name = stmt->IDENTIFIER()->getText();
+
+    // Check if name is a local variable with a function/closure type
+    auto lit = locals_.find(name);
+    if (lit != locals_.end()) {
+        auto* localType = lit->second.type;
+        if (localType && (localType->kind == TypeKind::Function ||
+                          localType->kind == TypeKind::Closure)) {
+            // Resolve all argument types
+            std::vector<const TypeInfo*> argTypes;
+            std::vector<LucisParser::ExpressionContext*> argExprs;
+            if (auto* argList = stmt->argList()) {
+                for (auto* argExpr : argList->expression()) {
+                    argExprs.push_back(argExpr);
+                    argTypes.push_back(resolveExprType(argExpr));
+                }
+            }
+
+            // A value argument cannot have type void.
+            for (size_t i = 0; i < argTypes.size(); i++) {
+                auto* ti = argTypes[i];
+                if (ti && ti->kind == TypeKind::Void) {
+                    error(argExprs[i],
+                          "argument " + std::to_string(i + 1) +
+                          " has type 'void'; functions returning void cannot be used as values");
+                    return;
+                }
+            }
+
+            size_t argCount = argTypes.size();
+            size_t paramCount = localType->paramTypes.size();
+
+            if (argCount != paramCount) {
+                error(stmt, "function '" + name + "' expects " +
+                                 std::to_string(paramCount) +
+                                 " arguments " + formatParamTypes(localType->paramTypes) +
+                                 ", got " + std::to_string(argCount));
+                return;
+            }
+            for (size_t i = 0; i < argCount; i++) {
+                if (argTypes[i] && localType->paramTypes[i] &&
+                    !isAssignable(localType->paramTypes[i], argTypes[i])) {
+                    error(stmt,
+                        "argument " + std::to_string(i + 1) +
+                        " type mismatch in '" + name + "': expected '" +
+                        localType->paramTypes[i]->name + "', got '" +
+                        argTypes[i]->name + "'");
+                }
+            }
+            applyCallOwnershipEffects(name, argExprs, stmt);
+            return;
+        }
+    }
 
     if (!isKnownFunction(name)) {
         std::string hint = ImportResolver::suggestImport(name);

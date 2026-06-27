@@ -44,6 +44,7 @@ The complete guide to T's syntax and semantics, from basics to advanced features
 ### Functions
 
 - [Functions](language/functions.md) — Declaration, parameters, return values, variadic functions, function pointers
+- [Lambdas](language/lambdas.md) — Anonymous functions, closures, expression/block lambdas, captures
 
 ### Data Structures
 

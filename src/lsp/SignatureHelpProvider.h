@@ -96,6 +96,15 @@ private:
     SignatureInfo buildFromExtMethod(const MethodDescriptor& md,
                                     const std::string& receiverType);
 
+    // Build signature from a function type string (e.g. "fn(int32 x, int32 y) -> int32")
+    SignatureInfo buildFromFnTypeString(const std::string& typeName,
+                                        const std::string& funcName);
+
+    // Build signature from extracted lambda parameters.
+    using LambdaParam = std::pair<std::string, std::string>; // type, name
+    SignatureInfo buildFromParams(const std::vector<LambdaParam>& params,
+                                 const std::string& funcName);
+
     // ── Helpers ─────────────────────────────────────────────────────
 
     static std::string typeSpecToString(LucisParser::TypeSpecContext* ctx);

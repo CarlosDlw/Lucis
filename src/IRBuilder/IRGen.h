@@ -185,6 +185,8 @@ public:
     std::any visitTryExpr(LucisParser::TryExprContext* ctx)             override;
     std::any visitCatchUnwrapExpr(LucisParser::CatchUnwrapExprContext* ctx) override;
     std::any visitPropagateExpr(LucisParser::PropagateExprContext* ctx) override;
+    std::any visitLambdaExpr(LucisParser::LambdaExprContext* ctx)       override;
+    std::any visitLambdaBlockExpr(LucisParser::LambdaBlockExprContext* ctx) override;
     std::any visitMatchExpr(LucisParser::MatchExprContext* ctx)         override;
     std::any visitExtendDecl(LucisParser::ExtendDeclContext* ctx)        override;
     std::any visitDeferStmt(LucisParser::DeferStmtContext* ctx)           override;
@@ -284,6 +286,11 @@ private:
 
     // Spawn counter for unique wrapper function names
     unsigned spawnCounter_ = 0;
+
+    // Lambda counter for unique synthetic function names
+    unsigned lambdaCounter_ = 0;
+    // Cache generated lambda functions per AST node (avoid double generation)
+    std::unordered_map<const antlr4::ParserRuleContext*, llvm::Function*> lambdaCache_;
 
     struct MethodEntry {
         llvm::Function* fn;

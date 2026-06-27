@@ -594,6 +594,8 @@ expression
     | CHAR_LIT                                                 # charLitExpr
     | STR_LIT                                                  # strLitExpr
     | C_STR_LIT                                                # cStrLitExpr
+    | PIPE paramList? PIPE block                               # lambdaBlockExpr
+    | PIPE paramList? PIPE expression                          # lambdaExpr
     | IDENTIFIER                                               # identExpr
     | ASM VOLATILE? INTEL? LPAREN STR_LIT (COMMA STR_LIT)*
         (COLON asmOutputList?

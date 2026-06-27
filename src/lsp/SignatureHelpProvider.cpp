@@ -8,6 +8,7 @@
 #include <sstream>
 #include <fstream>
 #include <filesystem>
+#include <unordered_map>
 
 namespace fs = std::filesystem;
 
@@ -522,6 +523,12 @@ SignatureInfo SignatureHelpProvider::buildFromExtMethod(
 //  Main entry point
 // ═══════════════════════════════════════════════════════════════════════
 
+// Forward declarations for static helpers used in signatureHelp.
+static LucisParser::FunctionDeclContext*
+findEnclosingFunction(LucisParser::ProgramContext* tree, size_t line);
+static std::optional<std::vector<std::pair<std::string, std::string>>>
+extractLambdaParams(LucisParser::ExpressionContext* expr);
+
 std::optional<SignatureHelpResult>
 SignatureHelpProvider::signatureHelp(
         const std::string& source, size_t line, size_t col,
@@ -800,8 +807,91 @@ SignatureHelpProvider::signatureHelp(
         }
     }
 
+    // 6) Fallback: check if name is a local variable initialized with a lambda
+    if (result.signatures.empty()) {
+        auto* func = findEnclosingFunction(parsed.tree, line);
+        if (func && func->block()) {
+            for (auto* stmt : func->block()->statement()) {
+                auto* vd = stmt->varDeclStmt();
+                if (!vd) continue;
+                for (auto* d : vd->varDeclarator()) {
+                    if (safeText(d->IDENTIFIER()) != name) continue;
+                    auto* init = d->expression();
+                    if (!init) break;
+                    // Check for lambda expression: |params| expr or |params| { ... }
+                    auto params = extractLambdaParams(init);
+                    if (params) {
+                        auto sig = buildFromParams(*params, name);
+                        sig.activeParameter = site->activeParam;
+                        result.signatures.push_back(std::move(sig));
+                    }
+                    break;
+                }
+            }
+        }
+    }
+
     if (result.signatures.empty()) return std::nullopt;
 
     result.activeParameter = site->activeParam;
     return result;
+}
+
+// Find enclosing function for a given line (0-based).
+static LucisParser::FunctionDeclContext*
+findEnclosingFunction(LucisParser::ProgramContext* tree, size_t line) {
+    size_t tokenLine = line + 1;
+    for (auto* tld : tree->topLevelDecl()) {
+        auto* func = tld->functionDecl();
+        if (!func) continue;
+        auto* startTok = func->getStart();
+        auto* stopTok  = func->getStop();
+        if (!startTok || !stopTok) continue;
+        if (tokenLine >= startTok->getLine() && tokenLine <= stopTok->getLine())
+            return func;
+    }
+    return nullptr;
+}
+
+// Extract params from an expression if it is a lambda.
+static std::optional<std::vector<std::pair<std::string, std::string>>>
+extractLambdaParams(LucisParser::ExpressionContext* expr) {
+    if (auto* le = dynamic_cast<LucisParser::LambdaExprContext*>(expr)) {
+        auto* pl = le->paramList();
+        if (!pl) return std::nullopt;
+        std::vector<std::pair<std::string, std::string>> params;
+        for (auto* p : pl->param()) {
+            params.emplace_back(safeText(p->typeSpec()), safeText(p->IDENTIFIER()));
+        }
+        return params;
+    }
+    if (auto* lbe = dynamic_cast<LucisParser::LambdaBlockExprContext*>(expr)) {
+        auto* pl = lbe->paramList();
+        if (!pl) return std::nullopt;
+        std::vector<std::pair<std::string, std::string>> params;
+        for (auto* p : pl->param()) {
+            params.emplace_back(safeText(p->typeSpec()), safeText(p->IDENTIFIER()));
+        }
+        return params;
+    }
+    return std::nullopt;
+}
+
+SignatureInfo
+SignatureHelpProvider::buildFromParams(const std::vector<LambdaParam>& params,
+                                       const std::string& funcName) {
+    SignatureInfo sig;
+    std::ostringstream label;
+    label << funcName << "(";
+    for (size_t i = 0; i < params.size(); i++) {
+        if (i > 0) label << ", ";
+        std::string paramLabel = params[i].first;
+        if (!params[i].second.empty())
+            paramLabel += " " + params[i].second;
+        label << paramLabel;
+        sig.parameters.push_back({paramLabel});
+    }
+    label << ") ?";
+    sig.label = label.str();
+    return sig;
 }

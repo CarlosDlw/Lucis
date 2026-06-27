@@ -1282,7 +1282,43 @@ std::optional<DefinitionResult> DefinitionProvider::walkExprForDef(
         return std::nullopt;
     }
 
-    // (Lambda expressions are not a separate ExprContext in Lucis grammar)
+    // ── Lambda expression: |params| expr ──────────────────────────
+    if (auto* le = dynamic_cast<LucisParser::LambdaExprContext*>(expr)) {
+        if (le->paramList()) {
+            for (auto* child : le->paramList()->children) {
+                if (auto* param = dynamic_cast<LucisParser::ParamContext*>(child)) {
+                    if (param->IDENTIFIER() && param->IDENTIFIER()->getSymbol() == hoveredToken)
+                        return resolveIdent(tokenText, tree, bindings, cursorLine,
+                                            filePath, project);
+                }
+            }
+        }
+        if (le->expression()) {
+            if (auto r = walkExprForDef(le->expression(), hoveredToken, tokenText, tree,
+                                        bindings, cursorLine, filePath, project))
+                return r;
+        }
+        return std::nullopt;
+    }
+
+    // ── Lambda block expression: |params| { block } ───────────────
+    if (auto* lbe = dynamic_cast<LucisParser::LambdaBlockExprContext*>(expr)) {
+        if (lbe->paramList()) {
+            for (auto* child : lbe->paramList()->children) {
+                if (auto* param = dynamic_cast<LucisParser::ParamContext*>(child)) {
+                    if (param->IDENTIFIER() && param->IDENTIFIER()->getSymbol() == hoveredToken)
+                        return resolveIdent(tokenText, tree, bindings, cursorLine,
+                                            filePath, project);
+                }
+            }
+        }
+        if (lbe->block()) {
+            if (auto r = walkBlockForDef(lbe->block(), hoveredToken, tokenText, tree,
+                                         bindings, cursorLine, filePath, project))
+                return r;
+        }
+        return std::nullopt;
+    }
 
     // ── Identifier expression (variable name, function name, etc.) ──
     if (auto* id = dynamic_cast<LucisParser::IdentExprContext*>(expr)) {

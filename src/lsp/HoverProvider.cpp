@@ -575,6 +575,8 @@ std::optional<HoverResult> HoverProvider::hoverIdent(
                 dims += "[]";
             std::string kind = it->second.isParameter ? "parameter" : "variable";
             if (it->second.isConst) kind = "constant";
+            else if (it->second.typeName.find("fn(") == 0 || it->second.typeName.find("closure(") == 0)
+                kind = "lambda";
             std::string md = formatTypedHover(kind,
                                               dims + it->second.typeName,
                                               name,
@@ -2246,6 +2248,44 @@ std::optional<HoverResult> HoverProvider::walkExprForHover(
         if (id->IDENTIFIER()->getSymbol() == hoveredToken)
             return hoverIdent(tokenText, hoveredToken, tree, bindings,
                                cursorLine, project);
+        return std::nullopt;
+    }
+
+    // ── Lambda expression: |params| expr ──────────────────────────
+    if (auto* le = dynamic_cast<LucisParser::LambdaExprContext*>(expr)) {
+        if (le->paramList()) {
+            for (auto* child : le->paramList()->children) {
+                if (auto* param = dynamic_cast<LucisParser::ParamContext*>(child)) {
+                    if (param->IDENTIFIER() && param->IDENTIFIER()->getSymbol() == hoveredToken)
+                        return hoverIdent(tokenText, hoveredToken, tree, bindings,
+                                           cursorLine, project);
+                }
+            }
+        }
+        if (le->expression()) {
+            auto r = walkExprForHover(le->expression(), hoveredToken, tokenText,
+                                       tree, bindings, cursorLine, project);
+            if (r) return r;
+        }
+        return std::nullopt;
+    }
+
+    // ── Lambda block expression: |params| { block } ──────────────
+    if (auto* lbe = dynamic_cast<LucisParser::LambdaBlockExprContext*>(expr)) {
+        if (lbe->paramList()) {
+            for (auto* child : lbe->paramList()->children) {
+                if (auto* param = dynamic_cast<LucisParser::ParamContext*>(child)) {
+                    if (param->IDENTIFIER() && param->IDENTIFIER()->getSymbol() == hoveredToken)
+                        return hoverIdent(tokenText, hoveredToken, tree, bindings,
+                                           cursorLine, project);
+                }
+            }
+        }
+        if (lbe->block()) {
+            auto r = walkBlockForHover(lbe->block(), hoveredToken, tokenText,
+                                        tree, bindings, cursorLine, project);
+            if (r) return r;
+        }
         return std::nullopt;
     }
 
@@ -4752,6 +4792,18 @@ static std::string inferExprTypeName(
 
             auto ret = lookupFuncReturnType(funcName, flc);
             if (!ret.empty()) return ret;
+
+            // Fallback: check if callee is a local variable with fn/closure type
+            auto lit = locals.find(funcName);
+            if (lit != locals.end()) {
+                auto& typeName = lit->second.typeName;
+                // Format: "fn(params...) -> retType" or "closure(params...) -> retType"
+                auto arrowPos = typeName.rfind(") -> ");
+                if (arrowPos != std::string::npos) {
+                    auto retType = typeName.substr(arrowPos + 5);
+                    if (!retType.empty()) return retType;
+                }
+            }
         }
         return "";
     }
@@ -5409,6 +5461,76 @@ static std::string inferExprTypeName(
         return "";
     }
 
+    // ── Lambda expression: |params| expr → "fn(params...) -> ret" ──
+    if (auto* le = dynamic_cast<LucisParser::LambdaExprContext*>(expr)) {
+        std::string paramStr;
+        auto extendedLocals = locals;
+        if (le->paramList()) {
+            auto params = le->paramList()->param();
+            for (size_t i = 0; i < params.size(); i++) {
+                if (i > 0) paramStr += ", ";
+                paramStr += safeText(params[i]->typeSpec()) + " " + safeText(params[i]->IDENTIFIER());
+                auto pname = safeText(params[i]->IDENTIFIER());
+                if (!pname.empty())
+                    extendedLocals[pname] = {safeText(params[i]->typeSpec()), 0, true, false};
+            }
+        }
+        std::string retStr = le->expression()
+            ? inferExprTypeName(le->expression(), extendedLocals, flc)
+            : "void";
+        if (retStr.empty()) retStr = "auto";
+        return "fn(" + paramStr + ") -> " + retStr;
+    }
+
+    // ── Lambda block expression: |params| { block } → "fn(params...) -> ret" ──
+    if (auto* lbe = dynamic_cast<LucisParser::LambdaBlockExprContext*>(expr)) {
+        std::string paramStr;
+        auto extendedLocals = locals;
+        if (lbe->paramList()) {
+            auto params = lbe->paramList()->param();
+            for (size_t i = 0; i < params.size(); i++) {
+                if (i > 0) paramStr += ", ";
+                paramStr += safeText(params[i]->typeSpec()) + " " + safeText(params[i]->IDENTIFIER());
+                auto pname = safeText(params[i]->IDENTIFIER());
+                if (!pname.empty())
+                    extendedLocals[pname] = {safeText(params[i]->typeSpec()), 0, true, false};
+            }
+        }
+        // Collect local variable declarations from block body
+        if (lbe->block()) {
+            for (auto* stmt : lbe->block()->statement()) {
+                if (auto* vd = stmt->varDeclStmt()) {
+                    if (vd->typeSpec()) {
+                        auto typeName = safeText(vd->typeSpec());
+                        for (auto* d : vd->varDeclarator()) {
+                            auto vname = safeText(d->IDENTIFIER());
+                            if (!vname.empty())
+                                extendedLocals[vname] = {typeName, 0, false, false};
+                        }
+                    }
+                }
+            }
+        }
+        std::string retStr = "void";
+        if (lbe->block()) {
+            auto stmts = lbe->block()->statement();
+            for (auto it = stmts.rbegin(); it != stmts.rend(); ++it) {
+                if (auto* es = (*it)->exprStmt()) {
+                    retStr = inferExprTypeName(es->expression(), extendedLocals, flc);
+                    if (!retStr.empty()) break;
+                }
+                if (auto* rs = (*it)->returnStmt()) {
+                    if (rs->expression()) {
+                        retStr = inferExprTypeName(rs->expression(), extendedLocals, flc);
+                        if (!retStr.empty()) break;
+                    }
+                }
+            }
+        }
+        if (retStr.empty()) retStr = "void";
+        return "fn(" + paramStr + ") -> " + retStr;
+    }
+
     return "";
 }
 
@@ -5626,6 +5748,33 @@ static void collectLocalsFromStmts(
                         out[varName] = {typeName, 0};
                 }
             }
+            // Collect lambda params from init expressions if cursor is inside lambda
+            for (auto* d : vd->varDeclarator()) {
+                if (auto* init = d->expression()) {
+                    if (auto* le = dynamic_cast<LucisParser::LambdaExprContext*>(init)) {
+                        if (cursorInsideNode(le, beforeLine) && le->paramList()) {
+                            for (auto* p : le->paramList()->param()) {
+                                auto pname = safeText(p->IDENTIFIER());
+                                if (!pname.empty())
+                                    out[pname] = {safeText(p->typeSpec()), 0, true};
+                            }
+                        }
+                    }
+                    if (auto* lbe = dynamic_cast<LucisParser::LambdaBlockExprContext*>(init)) {
+                        if (cursorInsideNode(lbe, beforeLine)) {
+                            if (lbe->paramList()) {
+                                for (auto* p : lbe->paramList()->param()) {
+                                    auto pname = safeText(p->IDENTIFIER());
+                                    if (!pname.empty())
+                                        out[pname] = {safeText(p->typeSpec()), 0, true};
+                                }
+                            }
+                            if (lbe->block())
+                                collectLocalsFromBlock(lbe->block(), beforeLine, out, flc);
+                        }
+                    }
+                }
+            }
 
     // Const declarations: collect const variables
     if (auto* cd = stmt->constDeclStmt()) {
@@ -5817,6 +5966,30 @@ static void collectLocalsFromStmts(
                         collectLocalsFromBlock(arm->block(), beforeLine, out, flc);
                         break;
                     }
+                }
+            }
+            // Lambda expr stmt: collect params if cursor is inside
+            if (auto* le = dynamic_cast<LucisParser::LambdaExprContext*>(es->expression())) {
+                if (cursorInsideNode(le, beforeLine) && le->paramList()) {
+                    for (auto* p : le->paramList()->param()) {
+                        auto pname = safeText(p->IDENTIFIER());
+                        if (!pname.empty())
+                            out[pname] = {safeText(p->typeSpec()), 0, true};
+                    }
+                }
+            }
+            // Lambda block expr stmt: collect params + block locals
+            if (auto* lbe = dynamic_cast<LucisParser::LambdaBlockExprContext*>(es->expression())) {
+                if (cursorInsideNode(lbe, beforeLine)) {
+                    if (lbe->paramList()) {
+                        for (auto* p : lbe->paramList()->param()) {
+                            auto pname = safeText(p->IDENTIFIER());
+                            if (!pname.empty())
+                                out[pname] = {safeText(p->typeSpec()), 0, true};
+                        }
+                    }
+                    if (lbe->block())
+                        collectLocalsFromBlock(lbe->block(), beforeLine, out, flc);
                 }
             }
         }

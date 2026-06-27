@@ -28,6 +28,7 @@ enum class TypeKind {
     Extended, // extended types from stdlib (Vec<T>, Map<K,V>, etc.)
     Tuple,    // tuple type: tuple<T1, T2, ...>
     VAList,   // native variadic argument list state
+    Closure,  // closure type: fn ptr + context (for capturing lambdas)
 };
 
 struct TypeInfo;
@@ -86,6 +87,15 @@ struct TypeInfo {
     // Opaque pointer to the original struct AST node — cast to StructDeclContext* at use sites
     antlr4::ParserRuleContext* genericStructDecl = nullptr;
     antlr4::ParserRuleContext* genericEnumDecl = nullptr;
+
+    // Closure metadata (populated only for Closure kind)
+    struct CaptureInfo {
+        std::string name;
+        const TypeInfo* type;
+        unsigned arrayDims = 0;
+    };
+    std::vector<CaptureInfo> closureCaptures;
+    std::string syntheticFuncName;  // "__lambda_N"
 
     llvm::Type* toLLVMType(llvm::LLVMContext& ctx,
                            const llvm::DataLayout& dl) const;

@@ -583,6 +583,10 @@ public:
     return visitChildren(ctx);
   }
 
+  virtual std::any visitLambdaExpr(LucisParser::LambdaExprContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
   virtual std::any visitStructLitExpr(LucisParser::StructLitExprContext *ctx) override {
     return visitChildren(ctx);
   }
@@ -600,6 +604,10 @@ public:
   }
 
   virtual std::any visitRangeInclExpr(LucisParser::RangeInclExprContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual std::any visitLambdaBlockExpr(LucisParser::LambdaBlockExprContext *ctx) override {
     return visitChildren(ctx);
   }
 
