@@ -64,6 +64,16 @@ std::optional<LucisConfig> LucisConfig::load(const std::string& yamlPath) {
             cfg.build.entry     = optOrDefault(b, "entry", "");
         }
         {
+            auto e = root["emit"];
+            if (e.IsDefined() && e.IsMap()) {
+                cfg.emit.llvm = boolOrDefault(e, "llvm", false);
+                cfg.emit.asmFile = boolOrDefault(e, "asm",  false);
+                cfg.emit.bc   = boolOrDefault(e, "bc",   false);
+                cfg.emit.obj  = boolOrDefault(e, "obj",  false);
+                cfg.emit.bin  = boolOrDefault(e, "bin",  false);
+            }
+        }
+        {
             auto r = root["run"];
             cfg.run.optLevel = optOrDefault(r, "opt_level", "O0");
             cfg.run.lto      = boolOrDefault(r, "lto", false);
@@ -160,6 +170,13 @@ LucisConfig::validate(const std::string& yamlPath) {
         checkUnknownKeys(root["build"], "build", buildKeys, msgs);
     }
 
+    if (yamlIsMap(root["emit"])) {
+        static const std::vector<std::string> emitKeys = {
+            "llvm", "asm", "bc", "obj", "bin"
+        };
+        checkUnknownKeys(root["emit"], "emit", emitKeys, msgs);
+    }
+
     if (yamlIsMap(root["run"])) {
         static const std::vector<std::string> runKeys = {
             "opt_level", "lto", "args"
@@ -183,7 +200,7 @@ LucisConfig::validate(const std::string& yamlPath) {
 
     static const std::vector<std::string> topKeys = {
         "name", "version", "binary", "out_dir",
-        "source", "build", "run", "linker", "scripts", "includes"
+        "source", "build", "emit", "run", "linker", "scripts", "includes"
     };
     checkUnknownKeys(root, "", topKeys, msgs);
 
@@ -261,6 +278,12 @@ bool LucisConfig::save(const std::string& yamlPath) const {
         root["build"]["target"]    = build.target;
         root["build"]["code_model"] = build.codeModel;
         root["build"]["entry"]     = build.entry;
+
+        root["emit"]["llvm"] = emit.llvm;
+        root["emit"]["asm"]  = emit.asmFile;
+        root["emit"]["bc"]   = emit.bc;
+        root["emit"]["obj"]  = emit.obj;
+        root["emit"]["bin"]  = emit.bin;
 
         root["run"]["opt_level"] = run.optLevel;
         root["run"]["lto"]       = run.lto;

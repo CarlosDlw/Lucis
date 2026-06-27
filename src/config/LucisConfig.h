@@ -24,6 +24,14 @@ struct LucisConfig {
         std::string entry;
     } build;
 
+    struct EmitSettings {
+        bool llvm = false;
+        bool asmFile  = false;
+        bool bc   = false;
+        bool obj  = false;
+        bool bin  = false;
+    } emit;
+
     struct RunSettings {
         std::string optLevel;
         bool lto;

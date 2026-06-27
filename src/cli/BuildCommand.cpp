@@ -57,6 +57,8 @@ void BuildCommand::buildArgs(ArgParser& parser) const {
     parser.addOption("include", 'I', "DIR", "Add include search path (repeatable)", true);
     parser.addOption("linker", '\0', "PATH", "Use a custom linker instead of clang/gcc");
     parser.addOption("linker-script", '\0', "FILE", "Use a custom linker script (passed as -T to linker)");
+    parser.addFlag("strip", '\0', "Strip debug and symbol info from the output binary");
+    parser.addFlag("gc-sections", '\0', "Enable garbage collection of unused sections at link time");
 }
 
 int BuildCommand::run(const ArgParser& parser) {
@@ -69,18 +71,6 @@ int BuildCommand::run(const ArgParser& parser) {
 
     bool useConfig = resolved.useConfig;
     auto& cfg = resolved.config;
-
-    // ── Run pre-build scripts (before everything) ─────────────────
-    if (useConfig && !cfg->scripts.pre.empty()) {
-        for (auto& cmd : cfg->scripts.pre) {
-            std::cerr << "lucis: [scripts:pre] " << cmd << "\n";
-            int ret = system(cmd.c_str());
-            if (ret != 0) {
-                std::cerr << "lucis: [scripts:pre] command failed with exit code " << ret << "\n";
-                return 1;
-            }
-        }
-    }
 
     LucisPipeline::Options pipeOpts;
     pipeOpts.inputFile = resolved.filePath;
@@ -108,6 +98,28 @@ int BuildCommand::run(const ArgParser& parser) {
 
     pipeOpts.binaryName = useConfig ? cfg->binary : "";
     pipeOpts.outDir     = useConfig ? cfg->outDir : "";
+
+    // ── Compute project paths for scripts and env vars ───────────
+    std::string projRoot = LucisPipeline::getProjectRoot(pipeOpts.inputFile);
+    auto setScriptEnv = [&](const std::string& outputPath) {
+        ::setenv("LUCIS_PROJECT_ROOT", projRoot.c_str(), 1);
+        ::setenv("LUCIS_BUILD_DIR", (projRoot + "/.lucis/build").c_str(), 1);
+        ::setenv("LUCIS_TARGET", pipeOpts.targetTriple.c_str(), 1);
+        ::setenv("LUCIS_OUTPUT", outputPath.c_str(), 1);
+    };
+
+    // ── Run pre-build scripts (before everything) ─────────────────
+    if (useConfig && !cfg->scripts.pre.empty()) {
+        setScriptEnv(pipeOpts.binaryName.empty() ? pipeOpts.inputFile : pipeOpts.binaryName);
+        for (auto& cmd : cfg->scripts.pre) {
+            std::cerr << "lucis: [scripts:pre] " << cmd << "\n";
+            int ret = system(cmd.c_str());
+            if (ret != 0) {
+                std::cerr << "lucis: [scripts:pre] command failed with exit code " << ret << "\n";
+                return 1;
+            }
+        }
+    }
 
     OptimizationLevel optLevel = OptimizationLevel::O0;
     if (parser.has("opt"))
@@ -140,7 +152,7 @@ int BuildCommand::run(const ArgParser& parser) {
     bool useRecursive = parser.has("recursive");
     std::string outputFile = parser.get("output");
 
-    // ── Resolve emit tasks (CLI-only) ─────────────────────────────────────
+    // ── Resolve emit tasks (CLI + config) ─────────────────────────────────
     struct EmitTask {
         enum Type { LLVM, ASM, BC, OBJ, BIN };
         Type type;
@@ -151,7 +163,6 @@ int BuildCommand::run(const ArgParser& parser) {
     bool hasTextEmit = false;
 
     auto addEmitTask = [&](const std::string& key, EmitTask::Type etype) {
-        if (!parser.has("emit-" + key)) return;
         EmitTask t;
         t.type = etype;
         if (!outputFile.empty())
@@ -161,11 +172,25 @@ int BuildCommand::run(const ArgParser& parser) {
         tasks.push_back(t);
     };
 
-    addEmitTask("llvm", EmitTask::LLVM);
-    addEmitTask("asm",  EmitTask::ASM);
-    addEmitTask("bc",   EmitTask::BC);
-    addEmitTask("obj",  EmitTask::OBJ);
-    addEmitTask("bin",  EmitTask::BIN);
+    bool hasAnyCliEmit = parser.has("emit-llvm") || parser.has("emit-asm") ||
+                         parser.has("emit-bc") || parser.has("emit-obj") ||
+                         parser.has("emit-bin");
+    if (hasAnyCliEmit) {
+        auto addIfSet = [&](const std::string& key, EmitTask::Type etype) {
+            if (parser.has("emit-" + key)) addEmitTask(key, etype);
+        };
+        addIfSet("llvm", EmitTask::LLVM);
+        addIfSet("asm",  EmitTask::ASM);
+        addIfSet("bc",   EmitTask::BC);
+        addIfSet("obj",  EmitTask::OBJ);
+        addIfSet("bin",  EmitTask::BIN);
+    } else if (useConfig) {
+        if (cfg->emit.llvm) addEmitTask("llvm", EmitTask::LLVM);
+        if (cfg->emit.asmFile)  addEmitTask("asm",  EmitTask::ASM);
+        if (cfg->emit.bc)   addEmitTask("bc",   EmitTask::BC);
+        if (cfg->emit.obj)  addEmitTask("obj",  EmitTask::OBJ);
+        if (cfg->emit.bin)  addEmitTask("bin",  EmitTask::BIN);
+    }
 
     for (size_t i = 0; i < tasks.size(); ++i) {
         for (size_t j = i + 1; j < tasks.size(); ++j) {
@@ -217,6 +242,8 @@ int BuildCommand::run(const ArgParser& parser) {
         buf += "omagic:" + std::to_string(parser.has("omagic")) + ";";
         buf += "ls:" + parser.get("linker-script") + ";";
         buf += "linker:" + customLinker + ";";
+        buf += "strip:" + std::to_string(parser.has("strip")) + ";";
+        buf += "gcSections:" + std::to_string(parser.has("gc-sections")) + ";";
         for (auto& ip : pipeOpts.includePaths) buf += "I:" + ip + ";";
         for (auto& lp : libPaths) buf += "L:" + lp + ";";
         for (auto& eo : extraObjectFiles) buf += "O:" + eo + ";";
@@ -227,7 +254,6 @@ int BuildCommand::run(const ArgParser& parser) {
 
     // ── Incremental build cache ──────────────────────────────────────────
     bool buildCached = false;
-    std::string projRoot = LucisPipeline::getProjectRoot(pipeOpts.inputFile);
     std::string pipelineBuildDir = projRoot + "/.lucis/build";
     std::string cacheManifestPath = pipelineBuildDir + "/cache/build_manifest.txt";
 
@@ -775,6 +801,9 @@ int BuildCommand::run(const ArgParser& parser) {
     if (useStatic) finalLinkerFlags.push_back("-static");
     if (useShared) finalLinkerFlags.push_back("-shared");
 
+    if (parser.has("gc-sections"))
+        finalLinkerFlags.push_back(isRawLd ? "--gc-sections" : "-Wl,--gc-sections");
+
     // Determine if raw ld is used (nmagic/omagic need different flag format)
     if (parser.has("nmagic")) {
         finalLinkerFlags.push_back(isRawLd ? "-n" : "-Wl,-n");
@@ -822,6 +851,7 @@ int BuildCommand::run(const ArgParser& parser) {
 
     // ── Run post-build scripts (after everything) ─────────────────
     if (useConfig && !cfg->scripts.pos.empty()) {
+        setScriptEnv(outputFile);
         for (auto& cmd : cfg->scripts.pos) {
             std::cerr << "lucis: [scripts:pos] " << cmd << "\n";
             int ret = system(cmd.c_str());
@@ -835,15 +865,29 @@ int BuildCommand::run(const ArgParser& parser) {
     // ── Emit raw binary via objcopy (after poscmds, on final ELF) ─
     for (auto& t : tasks) {
         if (t.type != EmitTask::BIN) continue;
-        std::string binPath = t.outPath.empty()
-            ? (fs::path(outputFile).parent_path() / (fs::path(outputFile).stem().string() + ".bin")).string()
-            : t.outPath;
+        std::string binPath;
+        if (t.outPath.empty() || t.outPath == outputFile)
+            binPath = (fs::path(outputFile).parent_path() / (fs::path(outputFile).stem().string() + ".bin")).string();
+        else
+            binPath = t.outPath;
         std::string cmd = "objcopy -O binary " + outputFile + " " + binPath;
         if (!pipeOpts.quiet)
             std::cerr << "lucis: [emit-bin] " << cmd << "\n";
         int ret = system(cmd.c_str());
         if (ret != 0) {
             std::cerr << "lucis: objcopy failed with exit code " << ret << "\n";
+            return 1;
+        }
+    }
+
+    // ── Strip debug/symbol info ──────────────────────────────────────────
+    if (parser.has("strip")) {
+        std::string stripCmd = "objcopy --strip-all " + outputFile;
+        if (!pipeOpts.quiet)
+            std::cerr << "lucis: [strip] " << stripCmd << "\n";
+        int ret = system(stripCmd.c_str());
+        if (ret != 0) {
+            std::cerr << "lucis: strip failed with exit code " << ret << "\n";
             return 1;
         }
     }
