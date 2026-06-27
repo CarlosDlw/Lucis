@@ -75,6 +75,7 @@ lucis build [<file>] [-o <output>] [-O <level>] [--lto]
                [--no-std] [--target <TRIPLE>] [--entry <SYMBOL>]
                [--link-arg <FLAG>] [--rpath <DIR>]
                [--nmagic] [--omagic] [--linker-script <FILE>] [--linker <PATH>]
+               [--strip] [--gc-sections]
                [-l <lib>] [-L <dir>] [-I <dir>] [-q] [-r]
 ```
 
@@ -85,8 +86,9 @@ to `<input-stem>.out`. If `binary` is set in `lucis.yaml`, that name is used
 verbatim (no `.out` appended). If `out_dir` is set, the binary is placed in
 that directory (relative to the project root).
 
-All emit flags (`--emit-llvm`, `--emit-asm`, `--emit-bc`, `--emit-obj`, `--emit-bin`) are
-**CLI-only** — they are not configured in `lucis.yaml`. Without `-o`, text emits
+Emit flags (`--emit-llvm`, `--emit-asm`, `--emit-bc`, `--emit-obj`, `--emit-bin`) can also
+be configured in `lucis.yaml` under the `emit:` key (see below). CLI flags take precedence
+over config. Without `-o`, text emits
 (LLVM IR, assembly) print to **stdout**; bitcode, object, and binary emits use an
 auto-generated file path. With `-o`, all emits write to the given file.
 
@@ -125,6 +127,8 @@ binary is produced.
 | `--omagic` | Set text segment writable (equivalent to `ld -N`) |
 | `--linker-script <FILE>` | Use a custom linker script (passed as `-T` to the linker) |
 | `--linker <PATH>` | Use a custom linker instead of the default clang/gcc (useful for cross-compilation with `ld`, `x86_64-elf-ld`, etc.) |
+| `--strip` | Strip debug and symbol info from output binary via `objcopy --strip-all` |
+| `--gc-sections` | Enable garbage collection of unused sections at link time (`-Wl,--gc-sections`) |
 | `-q, --quiet` | Suppress pipeline logs |
 
 ```bash
@@ -166,6 +170,8 @@ lucis build main.lc boot.s --no-std --nmagic --target x86_64-unknown-none --link
 - `--fPIC`: Generate position-independent code (PIC). Automatically enabled with `--shared`.
 - `--nmagic`: Suppress page alignment in the linker (`ld -n`). Useful for kernels and bare-metal where section alignment constraints are undesirable.
 - `--omagic`: Make the text segment writable (`ld -N`). Disables page alignment and allows self-modifying code in freestanding environments.
+- `--gc-sections`: Enable garbage collection of unused code/data sections at link time. Passes `-Wl,--gc-sections` (or `--gc-sections` for raw `ld`). Often combined with `-ffunction-sections`/`-fdata-sections` for embedded targets.
+- `--strip`: Remove all debug and symbol information from the output binary via `objcopy --strip-all`. Reduces binary size for production/release builds.
 
 ## run — Compile and Execute
 
@@ -278,6 +284,13 @@ build:                          # Build defaults (overridden by CLI flags)
   target: ""                    # LLVM target triple for cross-compilation
   code_model: ""                # Code model (e.g. "kernel")
   entry: ""                     # Entry point symbol (default: main)
+
+emit:                           # Emit defaults (when no --emit-* CLI flags given)
+  llvm: false                   # Always emit .ll
+  asm: false                    # Always emit .s
+  bc: false                     # Always emit .bc
+  obj: false                    # Always emit .o
+  bin: false                    # Always emit .bin (via objcopy)
 
 run:                            # Run defaults (overridden by CLI flags)
   opt_level: O0
