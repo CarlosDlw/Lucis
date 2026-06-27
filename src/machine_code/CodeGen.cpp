@@ -278,7 +278,8 @@ static std::string findBuiltinsPath() {
 bool CodeGen::compileCSource(const std::string& cSourcePath,
                               const std::string& objectPath,
                               const std::vector<std::string>& extraIncludePaths,
-                              bool quiet) {
+                              bool quiet,
+                              const std::string& targetTriple) {
     const char* compilers[] = { "cc", "clang", "gcc" };
 
     for (auto* cc : compilers) {
@@ -299,6 +300,11 @@ bool CodeGen::compileCSource(const std::string& cSourcePath,
             argv.push_back(cc);
             argv.push_back("-c");
             argv.push_back(cSourcePath.c_str());
+
+            if (!targetTriple.empty()) {
+                argv.push_back("-target");
+                argv.push_back(targetTriple.c_str());
+            }
 
             for (auto& ip : extraIncludePaths)
                 argv.push_back(ip.c_str());
@@ -459,7 +465,7 @@ bool CodeGen::linkObjectFiles(const std::vector<std::string>& objectPaths,
 
 // ── Private helpers ──────────────────────────────────────────────────────────
 
-static bool emitToFile(llvm::Module* module, const std::string& outputPath, llvm::CodeGenFileType fileType, bool pic, const std::string& targetTripleStr = "") {
+static bool emitToFile(llvm::Module* module, const std::string& outputPath, llvm::CodeGenFileType fileType, bool pic, const std::string& targetTripleStr = "", const std::string& codeModelStr = "") {
     llvm::InitializeNativeTarget();
     llvm::InitializeNativeTargetAsmParser();
     llvm::InitializeNativeTargetAsmPrinter();
@@ -485,6 +491,18 @@ static bool emitToFile(llvm::Module* module, const std::string& outputPath, llvm
     std::unique_ptr<llvm::TargetMachine> machine(
         createTargetMachineCompat(target, targetTriple, cpu, features, opt, reloc, 0));
 
+    if (!codeModelStr.empty()) {
+        auto cm = machine->getCodeModel();
+        if (codeModelStr == "small")       cm = llvm::CodeModel::Small;
+        else if (codeModelStr == "kernel") cm = llvm::CodeModel::Kernel;
+        else if (codeModelStr == "medium") cm = llvm::CodeModel::Medium;
+        else if (codeModelStr == "large")  cm = llvm::CodeModel::Large;
+        else if (codeModelStr == "tiny")   cm = llvm::CodeModel::Tiny;
+        else std::cerr << "lucis: unknown code model '" << codeModelStr
+                       << "', ignoring\n";
+        machine->setCodeModel(cm);
+    }
+
     setModuleTargetTripleCompat(module, targetTriple, 0);
     module->setDataLayout(machine->createDataLayout());
 
@@ -507,17 +525,17 @@ static bool emitToFile(llvm::Module* module, const std::string& outputPath, llvm
     return true;
 }
 
-bool CodeGen::emitObjectFile(llvm::Module* module, const std::string& objectPath, bool pic, const std::string& targetTriple) {
-    return emitToFile(module, objectPath, LUCIS_CGFT_OBJECT, pic, targetTriple);
+bool CodeGen::emitObjectFile(llvm::Module* module, const std::string& objectPath, bool pic, const std::string& targetTriple, const std::string& codeModel) {
+    return emitToFile(module, objectPath, LUCIS_CGFT_OBJECT, pic, targetTriple, codeModel);
 }
 
-bool CodeGen::emitAssembly(llvm::Module* module, const std::string& assemblyPath, bool pic, const std::string& targetTriple) {
+bool CodeGen::emitAssembly(llvm::Module* module, const std::string& assemblyPath, bool pic, const std::string& targetTriple, const std::string& codeModel) {
 #ifdef LLVM_VERSION_18_OR_NEWER
     auto type = llvm::CodeGenFileType::AssemblyFile;
 #else
     auto type = llvm::CGFT_AssemblyFile;
 #endif
-    return emitToFile(module, assemblyPath, type, pic, targetTriple);
+    return emitToFile(module, assemblyPath, type, pic, targetTriple, codeModel);
 }
 
 #include <llvm/Bitcode/BitcodeWriter.h>

@@ -85,11 +85,10 @@ int BuildCommand::run(const ArgParser& parser) {
     LucisPipeline::Options pipeOpts;
     pipeOpts.inputFile = resolved.filePath;
     pipeOpts.quiet     = parser.has("quiet");
-    pipeOpts.includePaths = parser.getAll("include");
-    if (useConfig) {
-        if (pipeOpts.includePaths.empty())
-            pipeOpts.includePaths = cfg->includes;
-    }
+    if (useConfig)
+        pipeOpts.includePaths = cfg->includes;
+    auto cliIncludes = parser.getAll("include");
+    pipeOpts.includePaths.insert(pipeOpts.includePaths.end(), cliIncludes.begin(), cliIncludes.end());
 
     pipeOpts.sourcePaths = useConfig ? cfg->sourcePaths : std::vector<std::string>{"src/"};
 
@@ -127,8 +126,16 @@ int BuildCommand::run(const ArgParser& parser) {
         usePIC = true;
     else if (useStatic)
         usePIC = false;
-    else
-        usePIC = useConfig ? cfg->build.fpic : true;
+    else {
+        auto tripleEndsWith = [](const std::string& s, const std::string& suffix) -> bool {
+            return s.size() >= suffix.size() &&
+                   s.compare(s.size() - suffix.size(), suffix.size(), suffix) == 0;
+        };
+        bool isBareMetal = pipeOpts.noStd &&
+            (tripleEndsWith(pipeOpts.targetTriple, "-none") ||
+             tripleEndsWith(pipeOpts.targetTriple, "-eabi"));
+        usePIC = isBareMetal ? false : (useConfig ? cfg->build.fpic : true);
+    }
 
     bool useRecursive = parser.has("recursive");
     std::string outputFile = parser.get("output");
@@ -192,9 +199,9 @@ int BuildCommand::run(const ArgParser& parser) {
                    (customLinker == "ld" ||
                     customLinker.find("/ld") != std::string::npos);
 
-    auto libPaths = parser.getAll("lib-path");
-    if (useConfig && libPaths.empty())
-        libPaths = cfg->linker.libPaths;
+    auto libPaths = useConfig ? cfg->linker.libPaths : std::vector<std::string>{};
+    auto cliLibPaths = parser.getAll("lib-path");
+    libPaths.insert(libPaths.end(), cliLibPaths.begin(), cliLibPaths.end());
 
     auto buildFlagHash = [&]() -> std::string {
         std::string buf;
@@ -378,13 +385,13 @@ int BuildCommand::run(const ArgParser& parser) {
     std::vector<std::string> cObjectFiles;
     if (!buildCached && !pipeline->cSourceFiles.empty()) {
         std::vector<std::string> cIncFlags;
-        for (auto& ip : parser.getAll("include"))
+        for (auto& ip : pipeOpts.includePaths)
             cIncFlags.push_back("-I" + ip);
         for (auto& cSrc : pipeline->cSourceFiles) {
             auto stem = fs::path(cSrc).stem().string();
             cIncFlags.push_back("-I" + fs::path(cSrc).parent_path().string());
             auto objPath = pipeline->buildDir + "/c__" + stem + ".o";
-            if (!CodeGen::compileCSource(cSrc, objPath, cIncFlags, pipeOpts.quiet)) {
+            if (!CodeGen::compileCSource(cSrc, objPath, cIncFlags, pipeOpts.quiet, pipeOpts.targetTriple)) {
                 std::cerr << "lucis: failed to compile C source '" << cSrc << "'\n";
                 return 1;
             }
@@ -515,7 +522,7 @@ int BuildCommand::run(const ArgParser& parser) {
                             int fd = mkstemps(tmpAsm, 2);
                             if (fd == -1) return false;
                             ::close(fd);
-                            if (!CodeGen::emitAssembly(mod, tmpAsm)) { fs::remove(tmpAsm); return false; }
+                            if (!CodeGen::emitAssembly(mod, tmpAsm, usePIC, pipeOpts.targetTriple, pipeOpts.codeModel)) { fs::remove(tmpAsm); return false; }
                             std::ifstream in(tmpAsm);
                             dest << in.rdbuf();
                             fs::remove(tmpAsm);
@@ -541,7 +548,7 @@ int BuildCommand::run(const ArgParser& parser) {
                                 int fd = mkstemps(tmpAsm, 2);
                                 if (fd != -1) {
                                     ::close(fd);
-                                    if (CodeGen::emitAssembly(uir.mod->module(), tmpAsm)) {
+                                    if (CodeGen::emitAssembly(uir.mod->module(), tmpAsm, usePIC, pipeOpts.targetTriple, pipeOpts.codeModel)) {
                                         std::ifstream in(tmpAsm);
                                         std::cout << in.rdbuf();
                                         std::cout << "\n";
@@ -553,7 +560,7 @@ int BuildCommand::run(const ArgParser& parser) {
                     } else {
                         if (!mainMod) { std::cerr << "lucis: no main module for ASM emit\n"; anyEmitError = true; break; }
                         if (!t.outPath.empty()) {
-                            if (!CodeGen::emitAssembly(mainMod, t.outPath)) anyEmitError = true;
+                            if (!CodeGen::emitAssembly(mainMod, t.outPath, usePIC, pipeOpts.targetTriple, pipeOpts.codeModel)) anyEmitError = true;
                             else if (!pipeOpts.quiet)
                                 std::cout << "lucis: assembly written to '" << t.outPath << "'\n";
                         } else {
@@ -561,7 +568,7 @@ int BuildCommand::run(const ArgParser& parser) {
                             int fd = mkstemps(tmpAsm, 2);
                             if (fd != -1) {
                                 ::close(fd);
-                                if (CodeGen::emitAssembly(mainMod, tmpAsm)) {
+                                if (CodeGen::emitAssembly(mainMod, tmpAsm, usePIC, pipeOpts.targetTriple, pipeOpts.codeModel)) {
                                     std::ifstream in(tmpAsm);
                                     std::cout << in.rdbuf();
                                 } else anyEmitError = true;
@@ -640,7 +647,7 @@ int BuildCommand::run(const ArgParser& parser) {
                         for (auto& c : stem) if (c == '/' || c == '\\') c = '_';
                         auto objPath = pipelineBuildDir + "/" + stem + ".o";
                         fs::create_directories(fs::path(objPath).parent_path());
-                        if (!CodeGen::emitObjectFile(uir.mod->module(), objPath, usePIC)) {
+                        if (!CodeGen::emitObjectFile(uir.mod->module(), objPath, usePIC, pipeOpts.targetTriple, pipeOpts.codeModel)) {
                             std::cerr << "lucis: failed to emit object for '" << uir.filePath << "'\n";
                             return 1;
                         }
@@ -681,7 +688,7 @@ int BuildCommand::run(const ArgParser& parser) {
                         std::cout << "lucis: relocatable object written to '" << objEmitPath << "'\n";
                 } else {
                     if (!mainMod) { std::cerr << "lucis: no main module for OBJ emit\n"; return 1; }
-                    if (!CodeGen::emitObjectFile(mainMod, objEmitPath, usePIC)) {
+                    if (!CodeGen::emitObjectFile(mainMod, objEmitPath, usePIC, pipeOpts.targetTriple, pipeOpts.codeModel)) {
                         std::cerr << "lucis: failed to emit object file\n";
                         return 1;
                     }
@@ -707,7 +714,7 @@ int BuildCommand::run(const ArgParser& parser) {
 
             auto objPath = pipeline->buildDir + "/" + stem + ".o";
             fs::create_directories(fs::path(objPath).parent_path());
-            if (!CodeGen::emitObjectFile(uir.mod->module(), objPath, usePIC)) {
+            if (!CodeGen::emitObjectFile(uir.mod->module(), objPath, usePIC, pipeOpts.targetTriple, pipeOpts.codeModel)) {
                 std::cerr << "lucis: failed to emit object for '" << uir.filePath << "'\n";
                 return 1;
             }

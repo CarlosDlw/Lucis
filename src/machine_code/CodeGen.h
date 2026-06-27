@@ -11,11 +11,13 @@ public:
 
     // Emit a single LLVM module as an object file.
     static bool emitObjectFile(llvm::Module* module, const std::string& objectPath, bool pic = true,
-                               const std::string& targetTriple = "");
+                               const std::string& targetTriple = "",
+                               const std::string& codeModel = "");
 
     // Emit a single LLVM module as assembly text.
     static bool emitAssembly(llvm::Module* module, const std::string& assemblyPath, bool pic = true,
-                             const std::string& targetTriple = "");
+                             const std::string& targetTriple = "",
+                             const std::string& codeModel = "");
 
     // Emit a single LLVM module as bitcode.
     static bool emitBitcode(llvm::Module* module, const std::string& bitcodePath);
@@ -35,7 +37,8 @@ public:
     static bool compileCSource(const std::string& cSourcePath,
                                const std::string& objectPath,
                                const std::vector<std::string>& extraIncludePaths = {},
-                               bool quiet = false);
+                               bool quiet = false,
+                               const std::string& targetTriple = "");
 
     // Compile an assembly file (.s/.asm) into an object file.
     // Tries nasm first (for NASM syntax), then as (for GAS syntax).
