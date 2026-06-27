@@ -8925,6 +8925,23 @@ const TypeInfo* Checker::resolveTypeSpecWithSubst(
 
         // Otherwise fall back to normal resolution (built-in generics, etc.)
     }
+    // Function type: fn(params) -> ret — resolve child types with substitution
+    if (typeSpec->fnTypeSpec()) {
+        auto* fnSpec = typeSpec->fnTypeSpec();
+        auto specs = fnSpec->typeSpec();
+        if (specs.empty()) return nullptr;
+        unsigned retDims = 0;
+        auto* retType = resolveTypeSpecWithSubst(specs.back(), subst, retDims);
+        if (!retType) return nullptr;
+        std::vector<const TypeInfo*> paramTypes;
+        for (size_t i = 0; i + 1 < specs.size(); i++) {
+            unsigned pDims = 0;
+            auto* pType = resolveTypeSpecWithSubst(specs[i], subst, pDims);
+            if (!pType) return nullptr;
+            paramTypes.push_back(pType);
+        }
+        return makeFunctionType(retType, paramTypes);
+    }
     // Default: normal resolution (no substitution needed for this node)
     return resolveTypeSpec(typeSpec, arrayDims);
 }
