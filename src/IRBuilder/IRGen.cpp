@@ -1886,7 +1886,48 @@ void IRGen::registerCrossFileSymbols(LucisParser::ProgramContext* ctx) {
         for (auto* sym : allSyms) {
             if (sym->kind != ExportedSymbol::ExtendBlock) continue;
             if (sym->sourceFile == currentFile_) continue;
-            // Only process extend blocks for types we've registered
+            // Only process extend blocks for types we've registered.
+            // Check generic struct templates FIRST — a skeleton may already
+            // exist in typeRegistry_ from Phase 0c (line 1643), but we need
+            // the generic extend registered in genericExtendTemplates_.
+            if (genericStructTemplates_.count(sym->name)) {
+                auto* genExtCtx = dynamic_cast<LucisParser::ExtendDeclContext*>(sym->decl);
+                if (genExtCtx) {
+                    // Process the defining module's stdlib imports so that
+                    // method bodies (emitted by instantiateGenericStruct)
+                    // can resolve functions like alloc, free, realloc, etc.
+                    if (sym->treeAnchor && sym->treeAnchor->tree) {
+                        auto* moduleTree = sym->treeAnchor->tree;
+                        for (auto* pd : moduleTree->preambleDecl()) {
+                            auto* ud = pd->useDecl();
+                            if (!ud) continue;
+                            if (auto* item = dynamic_cast<LucisParser::UseItemContext*>(ud)) {
+                                std::string path;
+                                for (auto* id : item->modulePath()->IDENTIFIER()) {
+                                    if (!path.empty()) path += "::";
+                                    path += id->getText();
+                                }
+                                if (ImportResolver::isStdModule(path))
+                                    imports_.addImport(path, item->IDENTIFIER()->getText());
+                            }
+                            else if (auto* group = dynamic_cast<LucisParser::UseGroupContext*>(ud)) {
+                                std::string path;
+                                for (auto* id : group->modulePath()->IDENTIFIER()) {
+                                    if (!path.empty()) path += "::";
+                                    path += id->getText();
+                                }
+                                if (ImportResolver::isStdModule(path)) {
+                                    for (auto* id : group->IDENTIFIER())
+                                        imports_.addImport(path, id->getText());
+                                }
+                            }
+                        }
+                    }
+                    visitExtendDecl(genExtCtx);
+                }
+                continue;
+            }
+
             auto* structTI = typeRegistry_.lookup(sym->name);
             if (!structTI || structTI->kind != TypeKind::Struct) continue;
 
