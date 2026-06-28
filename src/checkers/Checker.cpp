@@ -1337,8 +1337,14 @@ bool Checker::check(LucisParser::ProgramContext* tree) {
     } else {
         // Under module context, aliases/enums were already registered in pass 1.5.
         // Validate/upgrade local struct and union declarations now.
+        // Skip generic structs/templates already registered via the
+        // cross-module phase above — avoids duplicate registration
+        // when the file path is non-canonical (e.g. LSP mode).
         for (auto* decl : tree->topLevelDecl()) {
             if (auto* sd = decl->structDecl()) {
+                auto name = sd->IDENTIFIER()->getText();
+                if (sd->typeParamList() && genericStructTemplates_.count(name))
+                    continue;
                 checkStructDecl(sd);
             } else if (auto* ud = decl->unionDecl()) {
                 checkUnionDecl(ud);
