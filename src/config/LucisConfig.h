@@ -12,6 +12,12 @@ struct LucisConfig {
 
     std::vector<std::string> sourcePaths;
 
+    // Explicit inputs (mirror --asm, --obj, --lib)
+    std::vector<std::string> assemblyFiles;
+    std::vector<std::string> objects;
+    std::vector<std::string> staticLibs;
+    std::vector<std::string> sharedLibs;
+
     struct BuildSettings {
         std::string optLevel;
         bool lto;
@@ -22,6 +28,8 @@ struct LucisConfig {
         std::string target;
         std::string codeModel;
         std::string entry;
+        std::string assembler;          // nasm | as
+        std::vector<std::string> assemblerFlags;
     } build;
 
     struct EmitSettings {
@@ -41,6 +49,11 @@ struct LucisConfig {
     struct LinkerSettings {
         std::vector<std::string> libs;
         std::vector<std::string> libPaths;
+        std::string program;            // ld | gcc | clang
+        std::string script;             // linker script path
+        std::string entry;              // entry point
+        std::vector<std::string> flags; // -nmagic, -N, --gc-sections
+        std::vector<std::string> args;  // raw args (--linker-arg)
     } linker;
 
     struct ScriptsConfig {

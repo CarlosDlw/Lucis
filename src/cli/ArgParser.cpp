@@ -24,6 +24,13 @@ void ArgParser::addFlag(const std::string& longName, char shortName, const std::
     optionDefs_.push_back(def);
 }
 
+void ArgParser::addSection(const std::string& title) {
+    ArgDef def;
+    def.longName = title;
+    def.isSection = true;
+    optionDefs_.push_back(def);
+}
+
 void ArgParser::addOption(const std::string& longName, char shortName,
                            const std::string& metaVar, const std::string& help,
                            bool repeatable) {
@@ -218,6 +225,8 @@ int ArgParser::getInt(const std::string& name, int defaultVal) const {
 void ArgParser::printHelp() const {
     std::cout << progName_ << " — " << description_ << "\n\n";
 
+    std::cout << "Usage:\n  " << progName_ << " [<file.lc>...] [flags]\n\n";
+
     if (!positionalDefs_.empty()) {
         std::cout << "Arguments:\n";
         for (auto& def : positionalDefs_) {
@@ -229,8 +238,12 @@ void ArgParser::printHelp() const {
     }
 
     if (!optionDefs_.empty()) {
-        std::cout << "Options:\n";
         for (auto& def : optionDefs_) {
+            if (def.isSection) {
+                std::cout << "\n" << def.longName << ":\n";
+                continue;
+            }
+            if (def.help.empty()) continue;  // hide deprecated/empty entries
             std::cout << "  ";
             if (def.shortName != '\0')
                 std::cout << "-" << def.shortName << ", ";

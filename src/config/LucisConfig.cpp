@@ -62,7 +62,14 @@ std::optional<LucisConfig> LucisConfig::load(const std::string& yamlPath) {
             cfg.build.target    = optOrDefault(b, "target", "");
             cfg.build.codeModel = optOrDefault(b, "code_model", "");
             cfg.build.entry     = optOrDefault(b, "entry", "");
+            cfg.build.assembler = optOrDefault(b, "assembler", "");
+            cfg.build.assemblerFlags = toStringVec(b["assembler_flags"]);
         }
+
+        cfg.assemblyFiles = toStringVec(root["assembly"]);
+        cfg.objects       = toStringVec(root["objects"]);
+        cfg.staticLibs    = toStringVec(root["static_libs"]);
+        cfg.sharedLibs    = toStringVec(root["shared_libs"]);
         {
             auto e = root["emit"];
             if (e.IsDefined() && e.IsMap()) {
@@ -83,6 +90,11 @@ std::optional<LucisConfig> LucisConfig::load(const std::string& yamlPath) {
             auto l = root["linker"];
             cfg.linker.libs     = toStringVec(l["libs"]);
             cfg.linker.libPaths = toStringVec(l["lib_paths"]);
+            cfg.linker.program = optOrDefault(l, "program", "");
+            cfg.linker.script  = optOrDefault(l, "script", "");
+            cfg.linker.entry   = optOrDefault(l, "entry", "");
+            cfg.linker.flags   = toStringVec(l["flags"]);
+            cfg.linker.args    = toStringVec(l["args"]);
         }
         {
             auto s = root["scripts"];
@@ -165,7 +177,8 @@ LucisConfig::validate(const std::string& yamlPath) {
             msgs.push_back({"build.opt_level", "expected scalar"});
         static const std::vector<std::string> buildKeys = {
             "opt_level", "lto", "static", "shared", "fpic",
-            "no_std", "target", "code_model", "entry"
+            "no_std", "target", "code_model", "entry",
+            "assembler", "assembler_flags"
         };
         checkUnknownKeys(root["build"], "build", buildKeys, msgs);
     }
@@ -186,7 +199,8 @@ LucisConfig::validate(const std::string& yamlPath) {
 
     if (yamlIsMap(root["linker"])) {
         static const std::vector<std::string> linkerKeys = {
-            "libs", "lib_paths"
+            "libs", "lib_paths", "program", "script",
+            "entry", "flags", "args"
         };
         checkUnknownKeys(root["linker"], "linker", linkerKeys, msgs);
     }
@@ -200,7 +214,8 @@ LucisConfig::validate(const std::string& yamlPath) {
 
     static const std::vector<std::string> topKeys = {
         "name", "version", "binary", "out_dir",
-        "source", "build", "emit", "run", "linker", "scripts", "includes"
+        "source", "build", "emit", "run", "linker", "scripts", "includes",
+        "assembly", "objects", "static_libs", "shared_libs"
     };
     checkUnknownKeys(root, "", topKeys, msgs);
 
@@ -269,15 +284,16 @@ bool LucisConfig::save(const std::string& yamlPath) const {
         for (const auto& s : sourcePaths)
             root["source"].push_back(s);
 
-        root["build"]["opt_level"] = build.optLevel;
-        root["build"]["lto"]       = build.lto;
-        root["build"]["static"]    = build.staticLink;
-        root["build"]["shared"]    = build.shared;
-        root["build"]["fpic"]      = build.fpic;
-        root["build"]["no_std"]    = build.noStd;
-        root["build"]["target"]    = build.target;
+        root["build"]["opt_level"]  = build.optLevel;
+        root["build"]["lto"]        = build.lto;
+        root["build"]["static"]     = build.staticLink;
+        root["build"]["shared"]     = build.shared;
+        root["build"]["fpic"]       = build.fpic;
+        root["build"]["no_std"]     = build.noStd;
+        root["build"]["target"]     = build.target;
         root["build"]["code_model"] = build.codeModel;
-        root["build"]["entry"]     = build.entry;
+        root["build"]["entry"]      = build.entry;
+        root["build"]["assembler"]  = build.assembler;
 
         root["emit"]["llvm"] = emit.llvm;
         root["emit"]["asm"]  = emit.asmFile;
@@ -304,11 +320,23 @@ bool LucisConfig::save(const std::string& yamlPath) const {
                     parent[key].push_back(v);
         };
 
+        writeSeq(root["build"], "assembler_flags", build.assemblerFlags);
+
+        root["linker"]["program"] = linker.program;
+        root["linker"]["script"]  = linker.script;
+        root["linker"]["entry"]   = linker.entry;
         writeSeq(root["linker"], "libs", linker.libs);
         writeSeq(root["linker"], "lib_paths", linker.libPaths);
+        writeSeq(root["linker"], "flags", linker.flags);
+        writeSeq(root["linker"], "args", linker.args);
 
         writeSeq(root["scripts"], "pre", scripts.pre);
         writeSeq(root["scripts"], "pos", scripts.pos);
+
+        writeSeq(root, "assembly", assemblyFiles);
+        writeSeq(root, "objects", objects);
+        writeSeq(root, "static_libs", staticLibs);
+        writeSeq(root, "shared_libs", sharedLibs);
 
         // includes
         if (includes.empty())

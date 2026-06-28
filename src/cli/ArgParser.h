@@ -15,6 +15,7 @@ struct ArgDef {
     bool isPositional = false;
     bool required   = false;
     bool repeatable = false;   // option can appear multiple times
+    bool isSection  = false;   // section header (not a real option)
 };
 
 class ArgParser {
@@ -27,6 +28,7 @@ public:
     void addOption(const std::string& longName, char shortName,
                    const std::string& metaVar, const std::string& help,
                    bool repeatable = false);
+    void addSection(const std::string& title);  // section header in help output
 
     // Parse argv. Returns false on error or --help (prints error/help message).
     bool parse(int argc, char* argv[], std::vector<std::string>* outRemaining = nullptr);
