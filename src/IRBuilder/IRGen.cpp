@@ -6751,6 +6751,7 @@ std::any IRGen::visitForInStmt(LucisParser::ForInStmtContext* ctx) {
         const TypeInfo* iterableTI = nullptr;
         llvm::AllocaInst* vecAlloca = nullptr;
         unsigned iterableDims = 0;
+        bool isTempVec = false;
         if (auto* ident = dynamic_cast<LucisParser::IdentExprContext*>(iterExpr)) {
             auto it = locals_.find(ident->IDENTIFIER()->getText());
             if (it != locals_.end()) {
@@ -6760,9 +6761,8 @@ std::any IRGen::visitForInStmt(LucisParser::ForInStmtContext* ctx) {
             }
         }
 
-        // Support method calls that return Vec (e.g. map.keys(), map.values(), set.values())
+        // Support any expression that returns Vec (method calls, function calls, etc.)
         if (!vecAlloca) {
-            // Evaluate the expression to see if it yields a Vec
             auto* exprVal = castValue(visit(iterExpr));
             auto* exprTI  = resolveExprTypeInfo(iterExpr);
             if (exprTI && exprTI->kind == TypeKind::Extended) {
@@ -6770,6 +6770,7 @@ std::any IRGen::visitForInStmt(LucisParser::ForInStmtContext* ctx) {
                 vecAlloca = builder_->CreateAlloca(vecTy, nullptr, "iter_tmp");
                 builder_->CreateStore(exprVal, vecAlloca);
                 iterableTI = exprTI;
+                isTempVec = true;
             }
         }
 
@@ -6855,7 +6856,13 @@ std::any IRGen::visitForInStmt(LucisParser::ForInStmtContext* ctx) {
             loopStack_.pop_back();
             locals_.erase(varName);
 
+            // Free temp vec from expression result
             builder_->SetInsertPoint(endBB);
+            if (isTempVec) {
+                auto* voidTy = llvm::Type::getVoidTy(*context_);
+                auto freeCallee = declareBuiltin("lucis_vec_free_" + suffix, voidTy, {ptrTy});
+                builder_->CreateCall(freeCallee, {vecAlloca});
+            }
         } else if ((iterableTI && iterableTI->kind == TypeKind::Integer && iterableDims == 0) ||
                    (!iterableTI && resolveExprTypeInfo(iterExpr) &&
                     resolveExprTypeInfo(iterExpr)->kind == TypeKind::Integer)) {
