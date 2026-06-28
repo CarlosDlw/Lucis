@@ -230,7 +230,7 @@ int BuildCommand::run(const ArgParser& parser) {
 
     // From --asm flag (preferred)
     for (auto& asmFile : parser.getAll("asm"))
-        assemblySources.push_back(asmFile);
+        assemblySources.push_back(fs::canonical(asmFile).string());
 
     // From --obj flag (preferred)
     for (auto& objFile : parser.getAll("obj"))
@@ -864,9 +864,9 @@ int BuildCommand::run(const ArgParser& parser) {
 
     if (parser.has("linker-script")) {
         auto lsPath = parser.get("linker-script");
-        // Resolve relative to project root
+        // Resolve relative to CWD (CLI flags use CWD, not project root)
         if (!fs::path(lsPath).is_absolute())
-            lsPath = (fs::path(projRoot) / lsPath).string();
+            lsPath = (fs::current_path() / lsPath).string();
         if (isRawLd) {
             finalLinkerFlags.push_back("-T");
             finalLinkerFlags.push_back(lsPath);
