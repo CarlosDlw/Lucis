@@ -1347,6 +1347,9 @@ bool Checker::check(LucisParser::ProgramContext* tree) {
                     continue;
                 checkStructDecl(sd);
             } else if (auto* ud = decl->unionDecl()) {
+                auto name = ud->IDENTIFIER()->getText();
+                if (ud->typeParamList() && genericUnionTemplates_.count(name))
+                    continue;
                 checkUnionDecl(ud);
             }
         }
@@ -1367,8 +1370,14 @@ bool Checker::check(LucisParser::ProgramContext* tree) {
         return false;
 
     // Pass 3.5: register struct methods via `extend` blocks
+    // Skip generic extend blocks already registered via the
+    // cross-module phase above (avoids duplicate registration
+    // when the file path is non-canonical, e.g. LSP mode).
     for (auto* decl : tree->topLevelDecl()) {
         if (auto* ext = decl->extendDecl()) {
+            auto extName = ext->IDENTIFIER()->getText();
+            if (ext->typeParamList() && genericExtendTemplates_.count(extName))
+                continue;
             checkExtendDecl(ext);
         }
     }
