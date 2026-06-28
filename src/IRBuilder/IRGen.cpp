@@ -6762,23 +6762,14 @@ std::any IRGen::visitForInStmt(LucisParser::ForInStmtContext* ctx) {
 
         // Support method calls that return Vec (e.g. map.keys(), map.values(), set.values())
         if (!vecAlloca) {
-            if (auto* mc = dynamic_cast<LucisParser::MethodCallExprContext*>(iterExpr)) {
-                auto* baseExpr = mc->expression();
-                if (auto* identBase = dynamic_cast<LucisParser::IdentExprContext*>(baseExpr)) {
-                    auto recvIt = locals_.find(identBase->IDENTIFIER()->getText());
-                    if (recvIt != locals_.end() &&
-                        recvIt->second.typeInfo->kind == TypeKind::Extended) {
-                        auto mName = mc->IDENTIFIER()->getText();
-                        if (mName == "keys" || mName == "values") {
-                            auto* vecVal = castValue(visit(mc));
-                            auto* vecTy  = getOrCreateVecStructType();
-                            vecAlloca = builder_->CreateAlloca(vecTy, nullptr,
-                                                               mName + "_tmp");
-                            builder_->CreateStore(vecVal, vecAlloca);
-                            iterableTI = recvIt->second.typeInfo;
-                        }
-                    }
-                }
+            // Evaluate the expression to see if it yields a Vec
+            auto* exprVal = castValue(visit(iterExpr));
+            auto* exprTI  = resolveExprTypeInfo(iterExpr);
+            if (exprTI && exprTI->kind == TypeKind::Extended) {
+                auto* vecTy  = getOrCreateVecStructType();
+                vecAlloca = builder_->CreateAlloca(vecTy, nullptr, "iter_tmp");
+                builder_->CreateStore(exprVal, vecAlloca);
+                iterableTI = exprTI;
             }
         }
 

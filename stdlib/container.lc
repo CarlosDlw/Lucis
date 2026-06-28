@@ -1,0 +1,56 @@
+use std::mem::{ alloc, free, realloc };
+
+struct ArrayList<T> {
+    *T data;
+    usize len;
+    usize cap;
+}
+
+extend ArrayList<T> {
+    fn new() ArrayList<T> {
+        return ArrayList<T> { null, 0, 0 };
+    }
+
+    fn grow(&self) void {
+        usize new_cap = self.cap == 0 ? 4 : self.cap * 2;
+        
+        usize size = new_cap * sizeof(T);
+        *void new_ptr = alloc(size);
+        
+        if self.data != null {
+            lucis::sys::memcpy(new_ptr, self.data, self.len * sizeof(T));
+        }
+
+        self.data = new_ptr;
+        self.cap = new_cap;
+    }
+    
+    fn push(&self, T value) void {
+        if self.len >= self.cap {
+            self.grow();
+        }
+
+        self.data[self.len] = value;
+        self.len++;
+    }
+    
+    fn get(&self, usize index) T {
+        return self.data[index];
+    }
+    
+    fn iter(&self) vec<T> {
+        vec<T> result = [];
+
+        for int32 i in 0..self.len {
+            result.push(self.data[i] as T);
+        }
+        
+        return result;
+    }
+    
+    fn drop(&self) void {
+        if self.data != null {
+            free(self.data);
+        }
+    }
+}
