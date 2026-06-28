@@ -335,7 +335,9 @@ std::string CodeGen::builtinsLibraryPath() {
 bool CodeGen::compileAssembly(const std::string& asmPath,
                                const std::string& objectPath,
                                const std::string& targetTriple,
-                               bool quiet) {
+                               bool quiet,
+                               const std::string& assembler,
+                               const std::vector<std::string>& asmFlags) {
     // Determine format from target triple
     bool is64Bit = targetTriple.find("x86_64") != std::string::npos ||
                    targetTriple.find("aarch64") != std::string::npos ||
@@ -343,8 +345,8 @@ bool CodeGen::compileAssembly(const std::string& asmPath,
                    targetTriple.find("arm64") != std::string::npos ||
                    targetTriple.empty(); // default to 64-bit
 
-    // Try nasm first (for NASM syntax, used in boot code)
-    {
+    auto tryProgram = [&](const std::string& prog,
+                          const std::vector<std::string>& extraArgs) -> bool {
         pid_t pid = ::fork();
         if (pid < 0) return false;
         if (pid == 0) {
@@ -357,51 +359,33 @@ bool CodeGen::compileAssembly(const std::string& asmPath,
                 }
             }
             std::vector<const char*> argv;
-            argv.push_back("nasm");
-            argv.push_back("-f");
-            argv.push_back(is64Bit ? "elf64" : "elf32");
+            argv.push_back(prog.c_str());
+            for (auto& f : extraArgs)
+                argv.push_back(f.c_str());
+            for (auto& f : asmFlags)
+                argv.push_back(f.c_str());
             argv.push_back("-o");
             argv.push_back(objectPath.c_str());
             argv.push_back(asmPath.c_str());
             argv.push_back(nullptr);
-            ::execvp("nasm", const_cast<char**>(argv.data()));
+            ::execvp(prog.c_str(), const_cast<char**>(argv.data()));
             ::_exit(127);
         }
         int status = 0;
         ::waitpid(pid, &status, 0);
-        if (WIFEXITED(status) && WEXITSTATUS(status) == 0)
+        return WIFEXITED(status) && WEXITSTATUS(status) == 0;
+    };
+
+    if (assembler == "nasm" || assembler.empty()) {
+        std::vector<std::string> args = {"-f", is64Bit ? "elf64" : "elf32"};
+        if (tryProgram("nasm", args))
             return true;
+        if (!assembler.empty()) return false; // user chose nasm — no fallback
     }
 
-    // Fallback: try GAS (as) for GAS syntax
-    {
-        pid_t pid = ::fork();
-        if (pid < 0) return false;
-        if (pid == 0) {
-            if (quiet) {
-                int devNull = ::open("/dev/null", O_WRONLY);
-                if (devNull >= 0) {
-                    ::dup2(devNull, STDOUT_FILENO);
-                    ::dup2(devNull, STDERR_FILENO);
-                    if (devNull > STDERR_FILENO) ::close(devNull);
-                }
-            }
-            std::vector<const char*> argv;
-            argv.push_back("as");
-            if (is64Bit)
-                argv.push_back("--64");
-            else
-                argv.push_back("--32");
-            argv.push_back("-o");
-            argv.push_back(objectPath.c_str());
-            argv.push_back(asmPath.c_str());
-            argv.push_back(nullptr);
-            ::execvp("as", const_cast<char**>(argv.data()));
-            ::_exit(127);
-        }
-        int status = 0;
-        ::waitpid(pid, &status, 0);
-        if (WIFEXITED(status) && WEXITSTATUS(status) == 0)
+    if (assembler == "as" || assembler.empty()) {
+        std::vector<std::string> args = {std::string("--") + (is64Bit ? "64" : "32")};
+        if (tryProgram("as", args))
             return true;
     }
 

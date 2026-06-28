@@ -48,21 +48,40 @@ void BuildCommand::buildArgs(ArgParser& parser) const {
     parser.addOption("rpath",    '\0', "DIR", "Add runtime library search path", false);
     parser.addFlag("quiet", 'q', "Suppress pipeline logs");
     parser.addFlag("no-std", '\0', "Build without standard library (freestanding/kernel)");
-    parser.addFlag("nmagic", '\0', "Suppress page alignment in linker (equivalent to ld -n)");
-    parser.addFlag("omagic", '\0', "Set text segment writable (equivalent to ld -N)");
+    // new names (preferred)
+    parser.addOption("linker-entry", '\0', "SYMBOL", "Linker entry point symbol (-e)");
+    parser.addFlag("linker-nmagic", '\0', "Suppress page alignment in linker (-n)");
+    parser.addFlag("linker-omagic", '\0', "Set text segment writable (-N)");
+    parser.addFlag("linker-gc-sections", '\0', "Garbage collect unused sections at link time");
+    parser.addOption("linker-arg", '\0', "FLAG", "Pass raw argument to linker (repeatable)", true);
+    // assembly stage
+    parser.addOption("asm", '\0', "FILE", "Assembly source file (.s/.asm) (repeatable)", true);
+    parser.addOption("assembler", '\0', "nasm|as", "Assembler program (default: try nasm, fallback as)");
+    parser.addOption("assembler-arg", '\0', "FLAG", "Flag for the assembler (repeatable)", true);
+    // direct inputs
+    parser.addOption("obj", '\0', "FILE", "Pre-compiled object file .o (repeatable)", true);
+    parser.addOption("lib", '\0', "FILE", "Library file .a/.so (repeatable)", true);
+    // config
+    parser.addOption("config", '\0', "FILE", "Path to lucis.yaml configuration");
+    // old names (deprecated)
+    parser.addOption("entry", '\0', "SYMBOL", "(deprecated, use --linker-entry)");
+    parser.addFlag("nmagic", '\0', "(deprecated, use --linker-nmagic)");
+    parser.addFlag("omagic", '\0', "(deprecated, use --linker-omagic)");
+    parser.addOption("link-arg", '\0', "FLAG", "(deprecated, use --linker-arg)", true);
+    parser.addFlag("gc-sections", '\0', "(deprecated, use --linker-gc-sections)");
+
+    // unchanged names
     parser.addOption("target", '\0', "TRIPLE", "Target triple for cross-compilation (e.g. x86_64-unknown-none)");
-    parser.addOption("entry", '\0', "SYMBOL", "Set the entry point symbol (default: main)");
     parser.addOption("link", 'l', "LIB", "Link against a library (repeatable)", true);
     parser.addOption("lib-path", 'L', "DIR", "Add library search path (repeatable)", true);
     parser.addOption("include", 'I', "DIR", "Add include search path (repeatable)", true);
     parser.addOption("linker", '\0', "PATH", "Use a custom linker instead of clang/gcc");
     parser.addOption("linker-script", '\0', "FILE", "Use a custom linker script (passed as -T to linker)");
     parser.addFlag("strip", '\0', "Strip debug and symbol info from the output binary");
-    parser.addFlag("gc-sections", '\0', "Enable garbage collection of unused sections at link time");
 }
 
 int BuildCommand::run(const ArgParser& parser) {
-    auto resolved = resolveInputFile(parser.get("file"));
+    auto resolved = resolveInputFile(parser.get("file"), parser.get("config"));
     if (resolved.filePath.empty()) {
         std::cerr << "lucis: no input file specified and no lucis.yaml found\n";
         std::cerr << "usage: lucis build <file>   or   lucis build  (from a project with lucis.yaml)\n";
@@ -88,7 +107,9 @@ int BuildCommand::run(const ArgParser& parser) {
     if (pipeOpts.targetTriple.empty() && useConfig)
         pipeOpts.targetTriple = cfg->build.target;
     pipeOpts.codeModel = useConfig ? cfg->build.codeModel : "";
-    pipeOpts.entryPoint = parser.get("entry");
+    pipeOpts.entryPoint = parser.has("linker-entry") ? parser.get("linker-entry") : parser.get("entry");
+    if (parser.has("entry") && !parser.has("linker-entry"))
+        std::cerr << "lucis: warning: --entry is deprecated, use --linker-entry\n";
     if (pipeOpts.entryPoint.empty() && useConfig)
         pipeOpts.entryPoint = cfg->build.entry;
 
@@ -206,17 +227,37 @@ int BuildCommand::run(const ArgParser& parser) {
     // ── Parse extra inputs (assembly, object files, etc.) ────────────────
     std::vector<std::string> assemblySources;
     std::vector<std::string> extraObjectFiles;
+
+    // From --asm flag (preferred)
+    for (auto& asmFile : parser.getAll("asm"))
+        assemblySources.push_back(asmFile);
+
+    // From --obj flag (preferred)
+    for (auto& objFile : parser.getAll("obj"))
+        extraObjectFiles.push_back(fs::canonical(objFile).string());
+
+    // From --lib flag (preferred)
+    for (auto& libFile : parser.getAll("lib"))
+        extraObjectFiles.push_back(fs::canonical(libFile).string());
+
+    // From remaining positional args (legacy)
     for (auto& arg : parser.remaining()) {
         auto ext = fs::path(arg).extension();
         if (ext == ".o" || ext == ".a" || ext == ".so") {
             extraObjectFiles.push_back(fs::canonical(arg).string());
         } else if (ext == ".s" || ext == ".asm" || ext == ".S") {
             assemblySources.push_back(arg);
+        } else if (ext == ".lc") {
+            // skip — main entry file, already handled
         } else {
             std::cerr << "lucis: unexpected argument '" << arg << "'\n";
             return 1;
         }
     }
+
+    // Assembler selection
+    std::string assemblerChoice = parser.get("assembler");
+    std::vector<std::string> assemblerFlags = parser.getAll("assembler-arg");
 
     // ── Build flag hash for cache invalidation ──────────────────────────
     std::string customLinker = parser.get("linker");
@@ -238,12 +279,12 @@ int BuildCommand::run(const ArgParser& parser) {
         buf += "PIC:" + std::to_string(usePIC) + ";";
         buf += "LTO:" + std::to_string(useLTO) + ";";
         buf += "entry:" + pipeOpts.entryPoint + ";";
-        buf += "nmagic:" + std::to_string(parser.has("nmagic")) + ";";
-        buf += "omagic:" + std::to_string(parser.has("omagic")) + ";";
+        buf += "linkerNmagic:" + std::to_string(parser.has("linker-nmagic") || parser.has("nmagic")) + ";";
+        buf += "linkerOmagic:" + std::to_string(parser.has("linker-omagic") || parser.has("omagic")) + ";";
         buf += "ls:" + parser.get("linker-script") + ";";
         buf += "linker:" + customLinker + ";";
         buf += "strip:" + std::to_string(parser.has("strip")) + ";";
-        buf += "gcSections:" + std::to_string(parser.has("gc-sections")) + ";";
+        buf += "linkerGcSections:" + std::to_string(parser.has("linker-gc-sections") || parser.has("gc-sections")) + ";";
         for (auto& ip : pipeOpts.includePaths) buf += "I:" + ip + ";";
         for (auto& lp : libPaths) buf += "L:" + lp + ";";
         for (auto& eo : extraObjectFiles) buf += "O:" + eo + ";";
@@ -753,7 +794,8 @@ int BuildCommand::run(const ArgParser& parser) {
             auto stem = fs::path(asmSrc).stem().string();
             auto objPath = pipelineBuildDir + "/asm__" + stem + ".o";
             fs::create_directories(fs::path(objPath).parent_path());
-            if (!CodeGen::compileAssembly(asmSrc, objPath, pipeOpts.targetTriple, pipeOpts.quiet)) {
+            if (!CodeGen::compileAssembly(asmSrc, objPath, pipeOpts.targetTriple,
+                                          pipeOpts.quiet, assemblerChoice, assemblerFlags)) {
                 std::cerr << "lucis: failed to assemble '" << asmSrc << "'\n";
                 return 1;
             }
@@ -801,14 +843,22 @@ int BuildCommand::run(const ArgParser& parser) {
     if (useStatic) finalLinkerFlags.push_back("-static");
     if (useShared) finalLinkerFlags.push_back("-shared");
 
-    if (parser.has("gc-sections"))
+    auto deprecate = [&](const std::string& oldFlag, const std::string& newFlag) {
+        if (parser.has(oldFlag) && !parser.has(newFlag))
+            std::cerr << "lucis: warning: --" << oldFlag << " is deprecated, use --" << newFlag << "\n";
+    };
+    deprecate("nmagic", "linker-nmagic");
+    deprecate("omagic", "linker-omagic");
+    deprecate("gc-sections", "linker-gc-sections");
+    deprecate("link-arg", "linker-arg");
+
+    if (parser.has("linker-gc-sections") || parser.has("gc-sections"))
         finalLinkerFlags.push_back(isRawLd ? "--gc-sections" : "-Wl,--gc-sections");
 
-    // Determine if raw ld is used (nmagic/omagic need different flag format)
-    if (parser.has("nmagic")) {
+    if (parser.has("linker-nmagic") || parser.has("nmagic")) {
         finalLinkerFlags.push_back(isRawLd ? "-n" : "-Wl,-n");
     }
-    if (parser.has("omagic")) {
+    if (parser.has("linker-omagic") || parser.has("omagic")) {
         finalLinkerFlags.push_back(isRawLd ? "-N" : "-Wl,-N");
     }
 
@@ -825,6 +875,9 @@ int BuildCommand::run(const ArgParser& parser) {
         }
     }
 
+    // linker-arg (new) + link-arg (deprecated)
+    for (auto& arg : parser.getAll("linker-arg"))
+        finalLinkerFlags.push_back(arg);
     for (auto& arg : parser.getAll("link-arg"))
         finalLinkerFlags.push_back(arg);
 

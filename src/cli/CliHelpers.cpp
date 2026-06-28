@@ -8,8 +8,29 @@ namespace fs = std::filesystem;
 
 static const std::vector<std::string> kDefaultSourcePaths = {"src/"};
 
-ResolvedInput resolveInputFile(const std::string& explicitFile) {
+ResolvedInput resolveInputFile(const std::string& explicitFile,
+                               const std::string& configPath) {
     ResolvedInput result;
+
+    // If --config was given, load that specific config file
+    if (!configPath.empty()) {
+        auto cfg = LucisConfig::load(fs::absolute(configPath).string());
+        if (!cfg) return result;
+        result.config = std::move(*cfg);
+
+        std::string searchDir = fs::path(fs::absolute(configPath)).parent_path().string();
+        for (auto& candidate : {"src/main.lc", "main.lc"}) {
+            auto full = fs::path(searchDir) / candidate;
+            if (fs::exists(full)) {
+                result.filePath = fs::canonical(full).string();
+                result.useConfig = true;
+                return result;
+            }
+        }
+
+        result.config.reset();
+        return result;
+    }
 
     if (!explicitFile.empty()) {
         if (!fs::is_directory(explicitFile)) {

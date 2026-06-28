@@ -41,12 +41,15 @@ public:
                                const std::string& targetTriple = "");
 
     // Compile an assembly file (.s/.asm) into an object file.
+    // Compile assembly to object file.
     // Tries nasm first (for NASM syntax), then as (for GAS syntax).
     // Returns true on success.
     static bool compileAssembly(const std::string& asmPath,
                                 const std::string& objectPath,
                                 const std::string& targetTriple = "",
-                                bool quiet = false);
+                                bool quiet = false,
+                                const std::string& assembler = "",
+                                const std::vector<std::string>& asmFlags = {});
 
     // Locate runtime builtins static library next to the lucis executable.
     static std::string builtinsLibraryPath();
