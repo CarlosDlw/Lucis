@@ -2370,6 +2370,8 @@ CompletionProvider::analyzeContext(const std::string &source, size_t line,
   // ── Multi-line use-import completion ────────────────────────────
   // When the cursor is not on a line starting with "use", check if we
   // are inside a use ... { ... } that spans multiple lines.
+  // We only enter this when the use line itself contains '{', and there
+  // is no matching '}' between it and the cursor.
   {
     std::string trimmed2 = before;
     size_t ws2 = trimmed2.find_first_not_of(" \t");
@@ -2386,18 +2388,10 @@ CompletionProvider::analyzeContext(const std::string &source, size_t line,
 
       if (line < srcLines.size()) {
         size_t useLine = (size_t)-1;
-        int braceBal = 0;
 
+        // Scan backwards to find a line starting with "use"
         for (size_t i = line; i < srcLines.size(); i--) {
           std::string txt = (i == line) ? srcLines[i].substr(0, col) : srcLines[i];
-
-          // Count braces in this line (only up to cursor on the current line)
-          for (char c : txt) {
-            if (c == '{') braceBal++;
-            else if (c == '}') braceBal--;
-          }
-
-          // Check for "use" keyword
           std::string tl = txt;
           size_t tws = tl.find_first_not_of(" \t");
           if (tws != std::string::npos) tl = tl.substr(tws);
@@ -2410,7 +2404,30 @@ CompletionProvider::analyzeContext(const std::string &source, size_t line,
           if (i == 0) break;
         }
 
-        if (useLine != (size_t)-1 && braceBal > 0) {
+        if (useLine != (size_t)-1) {
+          size_t bracePos = srcLines[useLine].find('{');
+          if (bracePos != std::string::npos) {
+            // Check for matching '}' between this '{' and the cursor
+            bool foundClosing = false;
+            for (size_t i = useLine; i <= line && !foundClosing; i++) {
+              std::string ln = srcLines[i];
+              size_t start = (i == useLine) ? bracePos + 1 : 0;
+              size_t end = (i == line) ? col : ln.size();
+              if (start < end && end <= ln.size()) {
+                auto closePos = ln.find('}', start);
+                if (closePos != std::string::npos && closePos < end)
+                  foundClosing = true;
+              }
+            }
+            if (foundClosing)
+              useLine = (size_t)-1;
+          } else {
+            // No '{' on the use line — not a multi-line group import
+            useLine = (size_t)-1;
+          }
+        }
+
+        if (useLine != (size_t)-1) {
           // Reconstruct full text from use line up to cursor
           std::string full;
           for (size_t i = useLine; i <= line; i++) {
@@ -3226,7 +3243,7 @@ void CompletionProvider::addImportedSymbols(std::vector<CompletionItem> &items,
                                             LucisParser::ProgramContext *tree,
                                             const ProjectContext *project,
                                             const std::string &prefix) {
-  if (!project || !project->isValid())
+  if (!project)
     return;
 
   for (auto *pre : tree->preambleDecl()) {
