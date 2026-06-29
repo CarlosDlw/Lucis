@@ -2367,6 +2367,113 @@ CompletionProvider::analyzeContext(const std::string &source, size_t line,
     }
   }
 
+  // ── Multi-line use-import completion ────────────────────────────
+  // When the cursor is not on a line starting with "use", check if we
+  // are inside a use ... { ... } that spans multiple lines.
+  {
+    std::string trimmed2 = before;
+    size_t ws2 = trimmed2.find_first_not_of(" \t");
+    if (ws2 != std::string::npos) trimmed2 = trimmed2.substr(ws2);
+
+    bool startsWithUse = (trimmed2.size() >= 4 && trimmed2.substr(0, 4) == "use ") ||
+                          trimmed2 == "use";
+    if (!startsWithUse && !trimmed2.empty() && trimmed2[0] != '}') {
+      std::istringstream stream3(source);
+      std::vector<std::string> srcLines;
+      std::string ln;
+      while (std::getline(stream3, ln))
+        srcLines.push_back(ln);
+
+      if (line < srcLines.size()) {
+        size_t useLine = (size_t)-1;
+        int braceBal = 0;
+
+        for (size_t i = line; i < srcLines.size(); i--) {
+          std::string txt = (i == line) ? srcLines[i].substr(0, col) : srcLines[i];
+
+          // Count braces in this line (only up to cursor on the current line)
+          for (char c : txt) {
+            if (c == '{') braceBal++;
+            else if (c == '}') braceBal--;
+          }
+
+          // Check for "use" keyword
+          std::string tl = txt;
+          size_t tws = tl.find_first_not_of(" \t");
+          if (tws != std::string::npos) tl = tl.substr(tws);
+
+          if (tl.size() >= 3 && tl.substr(0, 3) == "use" &&
+              (tl.size() == 3 || tl[3] == ' ' || tl[3] == ':' || tl[3] == '{')) {
+            useLine = i;
+            break;
+          }
+          if (i == 0) break;
+        }
+
+        if (useLine != (size_t)-1 && braceBal > 0) {
+          // Reconstruct full text from use line up to cursor
+          std::string full;
+          for (size_t i = useLine; i <= line; i++) {
+            if (i == line)
+              full += srcLines[i].substr(0, col);
+            else
+              full += srcLines[i];
+            if (i < line) full += '\n';
+          }
+
+          auto upos = full.find("use");
+          if (upos != std::string::npos) {
+            std::string after = full.substr(upos + 3);
+            size_t astart = after.find_first_not_of(" \t\n");
+            if (astart != std::string::npos) after = after.substr(astart);
+            else after.clear();
+
+            auto bpos = after.find('{');
+            if (bpos != std::string::npos) {
+              std::string afterBrace = after.substr(bpos + 1);
+              if (afterBrace.find(';') == std::string::npos) {
+                // Extract and clean the module path (before '{')
+                std::string path = after.substr(0, bpos);
+                // Strip trailing whitespace / newlines
+                while (!path.empty() && (path.back() == ' ' || path.back() == '\t' || path.back() == '\n'))
+                  path.pop_back();
+                // Strip trailing ::
+                while (path.size() >= 2 && path[path.size() - 1] == ':' && path[path.size() - 2] == ':')
+                  path.resize(path.size() - 2);
+                // Strip trailing whitespace/newlines again
+                while (!path.empty() && (path.back() == ' ' || path.back() == '\t' || path.back() == '\n'))
+                  path.pop_back();
+                // Collapse internal newlines
+                {
+                  std::string cleaned;
+                  for (char c : path)
+                    if (c != '\n') cleaned += c;
+                  path = cleaned;
+                }
+
+                // Extract prefix: text after last ',' or after '{'
+                auto lc = afterBrace.rfind(',');
+                std::string pref;
+                if (lc != std::string::npos)
+                  pref = afterBrace.substr(lc + 1);
+                else
+                  pref = afterBrace;
+                size_t pws = pref.find_first_not_of(" \t\n");
+                if (pws != std::string::npos) pref = pref.substr(pws);
+                else pref.clear();
+
+                req.context = CompletionContext::UseImport;
+                req.modulePath = path;
+                req.prefix = pref;
+                return req;
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
   // Check for scope access: Name::| or Name<T>::|
   {
     // Helper lambda: given a position at ':' in '::', extract base name

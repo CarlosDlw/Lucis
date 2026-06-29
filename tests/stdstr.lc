@@ -1,0 +1,160 @@
+use stdio::printf;
+
+use std::test::assertEqual;
+
+use std::str::{
+    charAt, chars, contains, count, endsWith, fromBytes,
+    indexOf, lastIndexOf, startsWith, toUpper, toLower, trim,
+    trimLeft, trimRight, replace, replaceFirst, repeat, reverse,
+    padLeft, padRight, substring, slice, parseInt, parseIntRadix,
+    parseFloat, fromCharCode, split, splitN, joinVec, lines, toBytes
+};
+
+fn testStdstr() void {
+    printf("[Testing std::str...]\n");
+
+    auto cA = charAt("hello", 1 as usize);
+    assertEqual(cA, 'e');
+    assertEqual(typeof(cA), "char");
+    
+    auto cchars = chars("hello");
+    assertEqual(cchars.len(), 5);
+    assertEqual(cchars.at(0 as usize), 'h');
+    assertEqual(cchars.at(4 as usize), 'o');
+    assertEqual(typeof(cchars), "Vec<char>");
+
+    auto ccontains = contains("hello", "l");
+    assertEqual(ccontains, true);
+    assertEqual(typeof(ccontains), "bool");
+    
+    auto ccount = count("hello", "l");
+    assertEqual(ccount, 2);
+    assertEqual(typeof(ccount), "usize");
+    
+    auto cendsWith = endsWith("hello", "o");
+    assertEqual(cendsWith, true);
+    assertEqual(typeof(cendsWith), "bool");
+
+    vec<uint8> bytes = [0x68_u8, 0x65_u8, 0x6c_u8, 0x6c_u8, 0x6f_u8];
+    auto cfromBytes = fromBytes(bytes);
+    assertEqual(cfromBytes, "hello");
+    assertEqual(typeof(cfromBytes), "string");
+    
+    auto cindexOf = indexOf("hello", "l");
+    assertEqual(cindexOf, 2);
+    assertEqual(typeof(cindexOf), "int64");
+    
+    auto clastIndexOf = lastIndexOf("hello", "l");
+    assertEqual(clastIndexOf, 3);
+    assertEqual(typeof(clastIndexOf), "int64");
+    
+    auto cstartsWith = startsWith("hello", "h");
+    assertEqual(cstartsWith, true);
+    assertEqual(typeof(cstartsWith), "bool");
+    
+    auto ctoUpper = toUpper("hello");
+    assertEqual(ctoUpper, "HELLO");
+    assertEqual(typeof(ctoUpper), "string");
+    
+    auto ctoLower = toLower("HELLO");
+    assertEqual(ctoLower, "hello");
+    assertEqual(typeof(ctoLower), "string");
+    
+    auto ctrim = trim("  hello  ");
+    assertEqual(ctrim, "hello");
+    assertEqual(typeof(ctrim), "string");
+    
+    auto ctrimLeft = trimLeft("  hello  ");
+    assertEqual(ctrimLeft, "hello  ");
+    assertEqual(typeof(ctrimLeft), "string");
+    
+    auto ctrimRight = trimRight("  hello  ");
+    assertEqual(ctrimRight, "  hello");
+    assertEqual(typeof(ctrimRight), "string");
+    
+    auto creplace = replace("hello", "l", "w");
+    assertEqual(creplace, "hewwo");
+    assertEqual(typeof(creplace), "string");
+    
+    auto creplaceFirst = replaceFirst("hello", "l", "w");
+    assertEqual(creplaceFirst, "hewlo");
+    assertEqual(typeof(creplaceFirst), "string");
+    
+    auto crepeat = repeat("hello", 3 as usize);
+    assertEqual(crepeat, "hellohellohello");
+    assertEqual(typeof(crepeat), "string");
+    
+    auto creverse = reverse("hello");
+    assertEqual(creverse, "olleh");
+    assertEqual(typeof(creverse), "string");
+    
+    auto cpadLeft = padLeft("hello", 10 as usize, ' ');
+    assertEqual(cpadLeft, "     hello");
+    assertEqual(typeof(cpadLeft), "string");
+    
+    auto cpadRight = padRight("hello", 10 as usize, ' ');
+    assertEqual(cpadRight, "hello     ");
+    assertEqual(typeof(cpadRight), "string");
+    
+    auto csubstring = substring("hello", 1 as usize, 3 as usize);
+    assertEqual(csubstring, "ell");
+    assertEqual(typeof(csubstring), "string");
+    
+    auto cslice = slice("hello", 1, 3);
+    assertEqual(cslice, "el");
+    assertEqual(typeof(cslice), "string");
+    
+    auto cparseInt = parseInt("123");
+    assertEqual(cparseInt, 123);
+    assertEqual(typeof(cparseInt), "int64");
+    
+    auto cparseIntRadix = parseIntRadix("123", 16 as usize);
+    assertEqual(cparseIntRadix, 291);
+    assertEqual(typeof(cparseIntRadix), "int64");
+    
+    auto cparseFloat = parseFloat("123.456");
+    assertEqual(cparseFloat, 123.456);
+    assertEqual(typeof(cparseFloat), "float64");
+    
+    auto cfromCharCode = fromCharCode(97);
+    assertEqual(cfromCharCode, 'a');
+    assertEqual(typeof(cfromCharCode), "char");
+    
+    auto csplit = split("a,b,c", ",");
+    assertEqual(csplit.len(), 3);
+    assertEqual(csplit.at(0 as usize), "a");
+    assertEqual(csplit.at(1 as usize), "b");
+    assertEqual(csplit.at(2 as usize), "c");
+    assertEqual(typeof(csplit), "Vec<string>");
+    
+    auto csplitN = splitN("a,b,c", ",", 2 as usize);
+    assertEqual(csplitN.len(), 2);
+    assertEqual(csplitN.at(0 as usize), "a");
+    assertEqual(csplitN.at(1 as usize), "b,c");
+    assertEqual(typeof(csplitN), "Vec<string>");
+    
+    vec<string> parts = ["a", "b", "c"];
+    auto cjoin = joinVec(parts, ",");
+    assertEqual(cjoin, "a,b,c");
+    assertEqual(typeof(cjoin), "string");
+    
+    string content = "as\ndskjf\noerjksd\nalsk";
+    auto clines = lines(content);
+    assertEqual(clines.len(), 4);
+    assertEqual(clines.at(0 as usize), "as");
+    assertEqual(clines.at(1 as usize), "dskjf");
+    assertEqual(clines.at(2 as usize), "oerjksd");
+    assertEqual(clines.at(3 as usize), "alsk");
+    assertEqual(typeof(clines), "Vec<string>");
+    
+    auto ctoBytes = toBytes("hello");
+    assertEqual(ctoBytes.len(), 5);
+    assertEqual(ctoBytes.at(0 as usize), 104);
+    assertEqual(ctoBytes.at(1 as usize), 101);
+    assertEqual(ctoBytes.at(2 as usize), 108);
+    assertEqual(ctoBytes.at(3 as usize), 108);
+    assertEqual(ctoBytes.at(4 as usize), 111);
+    assertEqual(typeof(ctoBytes), "Vec<uint8>");
+
+    printf("✔ Stdstr tests passed!\n");
+}

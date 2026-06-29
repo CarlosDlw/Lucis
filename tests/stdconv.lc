@@ -1,0 +1,68 @@
+use stdio::printf;
+
+use std::test::assertEqual;
+
+use std::conv::{
+    itoa, itoaRadix, utoa, ftoa,
+    ftoaPrecision, atoi, atof, toHex,
+    toOctal, toBinary, fromHex, charToInt, intToChar
+};
+
+fn testStdConv() int32 {
+    printf("[Testing std::conv::...]\n");
+
+    auto xitoa = itoa(123);
+    assertEqual(xitoa, "123");
+    assertEqual(typeof(xitoa), "string");
+    
+    auto xitoaRadix = itoaRadix(123, 16 as uint32);
+    assertEqual(xitoaRadix, "7b");
+    assertEqual(typeof(xitoaRadix), "string");
+    
+    auto xutoa = utoa(123 as uint32);
+    assertEqual(xutoa, "123");
+    assertEqual(typeof(xutoa), "string");
+    
+    auto xftoa = ftoa(123.456);
+    assertEqual(xftoa, "123.456");
+    assertEqual(typeof(xftoa), "string");
+    
+    auto xftoaPrecision = ftoaPrecision(123.456, 2 as uint32);
+    assertEqual(xftoaPrecision, "123.46");
+    assertEqual(typeof(xftoaPrecision), "string");
+    
+    auto xatoi = atoi("123");
+    assertEqual(xatoi, 123);
+    assertEqual(typeof(xatoi), "int64");
+    
+    auto xatof = atof("123.456");
+    assertEqual(xatof, 123.456);
+    assertEqual(typeof(xatof), "float64");
+    
+    auto xtoHex = toHex(123 as uint32);
+    assertEqual(xtoHex, "7b");
+    assertEqual(typeof(xtoHex), "string");
+    
+    auto xtoOctal = toOctal(123 as uint32);
+    assertEqual(xtoOctal, "173");
+    assertEqual(typeof(xtoOctal), "string");
+    
+    auto xtoBinary = toBinary(123 as uint32);
+    assertEqual(xtoBinary, "1111011");
+    assertEqual(typeof(xtoBinary), "string");
+    
+    auto xfromHex = fromHex("7b");
+    assertEqual(xfromHex, 123);
+    assertEqual(typeof(xfromHex), "uint64");
+    
+    auto xcharToInt = charToInt('a');
+    assertEqual(xcharToInt, 97);
+    assertEqual(typeof(xcharToInt), "int32");
+    
+    auto xintToChar = intToChar(97);
+    assertEqual(xintToChar, 'a');
+    assertEqual(typeof(xintToChar), "char");
+
+    printf("✔ std::conv::... passed\n");
+    return 0;
+}

@@ -1,0 +1,65 @@
+
+use stdio::printf;
+
+use std::test::assertEqual;
+
+use std::fmt::{
+    lpad, rpad, center, hex,
+    hexUpper, oct, bin, fixed, scientific,
+    humanBytes, commas, percent
+};
+
+fn testStdFmt() int32 {
+    printf("[Testing std::fmt::...]\n");
+
+    auto xlpad = lpad("123", 5 as usize, 'x');
+    assertEqual(xlpad, "xx123");
+    assertEqual(typeof(xlpad), "string");
+    
+    auto xrpad = rpad("123", 5 as usize, 'x');
+    assertEqual(xrpad, "123xx");
+    assertEqual(typeof(xrpad), "string");
+    
+    auto xcenter = center("123", 5 as usize, 'x');
+    assertEqual(xcenter, "x123x");
+    assertEqual(typeof(xcenter), "string");
+    
+    auto xhex = hex(123 as usize);
+    assertEqual(xhex, "0x7b");
+    assertEqual(typeof(xhex), "string");
+    
+    auto xhexUpper = hexUpper(123 as usize);
+    assertEqual(xhexUpper, "0x7B");
+    assertEqual(typeof(xhexUpper), "string");
+    
+    auto xoct = oct(123 as uint32);
+    assertEqual(xoct, "0o173");
+    assertEqual(typeof(xoct), "string");
+    
+    auto xbin = bin(123 as uint32);
+    assertEqual(xbin, "0b1111011");
+    assertEqual(typeof(xbin), "string");
+    
+    auto xfixed = fixed(123.456, 2 as uint32);
+    assertEqual(xfixed, "123.46");
+    assertEqual(typeof(xfixed), "string");
+
+    auto xscientific = scientific(123.456);
+    assertEqual(xscientific, "1.234560e+02");
+    assertEqual(typeof(xscientific), "string");
+    
+    auto xhumanBytes = humanBytes(123 as uint64);
+    assertEqual(xhumanBytes, "123 B");
+    assertEqual(typeof(xhumanBytes), "string");
+    
+    auto xcommas = commas(123);
+    assertEqual(xcommas, "123");
+    assertEqual(typeof(xcommas), "string");
+    
+    auto xpercent = percent(123.456);
+    assertEqual(xpercent, "12345.6%");
+    assertEqual(typeof(xpercent), "string");
+
+    printf("✔ std::fmt::... passed\n");
+    return 0;
+}
