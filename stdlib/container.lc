@@ -13,15 +13,8 @@ extend ArrayList<T> {
 
     fn grow(&self) void {
         usize new_cap = self.cap == 0 ? 4 : self.cap * 2;
-        
         usize size = new_cap * sizeof(T);
-        *void new_ptr = alloc(size);
-        
-        if self.data != null {
-            lucis::sys::memcpy(new_ptr, self.data, self.len * sizeof(T));
-        }
-
-        self.data = new_ptr;
+        self.data = realloc(self.data, size);
         self.cap = new_cap;
     }
     
@@ -34,8 +27,21 @@ extend ArrayList<T> {
         self.len++;
     }
     
+    fn pop(&self) T {
+        self.len--;
+        return self.data[self.len];
+    }
+    
     fn get(&self, usize index) T {
         return self.data[index];
+    }
+    
+    fn len(&self) usize {
+        return self.len;
+    }
+    
+    fn cap(&self) usize {
+        return self.cap;
     }
     
     fn iter(&self) vec<T> {
