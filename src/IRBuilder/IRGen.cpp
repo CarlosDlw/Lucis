@@ -16566,6 +16566,168 @@ const TypeInfo* IRGen::resolveExprTypeInfo(LucisParser::ExpressionContext* ctx) 
                     return typeRegistry_.lookup("bool");
             }
 
+            // Builtins with special IRGen handling that need explicit return type
+            // ── string → bool ───────────────────────────────────────────
+            if (fname == "contains" || fname == "startsWith" || fname == "endsWith" ||
+                fname == "isAlpha" || fname == "isDigit" || fname == "isAlphaNum" ||
+                fname == "isUpper" || fname == "isLower" || fname == "isWhitespace" ||
+                fname == "isPrintable" || fname == "isControl" || fname == "isHexDigit" ||
+                fname == "isAscii" || fname == "isPow2" || fname == "testBit" ||
+                fname == "isAbsolute" || fname == "isRelative" || fname == "isFile" ||
+                fname == "isDir" || fname == "exists" || fname == "isNaN" ||
+                fname == "isInf" || fname == "isFinite" || fname == "match" ||
+                fname == "isValid" || fname == "hasEnv" || fname == "isTTY" ||
+                fname == "isStdoutTTY" || fname == "isStderrTTY" ||
+                fname == "isEOF" || fname == "readBool" || fname == "promptBool" ||
+                fname == "randBool")
+                return typeRegistry_.lookup("bool");
+            // ── string → char ────────────────────────────────────────────
+            if (fname == "charAt" || fname == "readChar" || fname == "readByte" ||
+                fname == "randChar" || fname == "intToChar" || fname == "fromDigit" ||
+                fname == "separator")
+                return typeRegistry_.lookup("char");
+            if (fname == "fromCharCode" || fname == "toDigit")
+                return typeRegistry_.lookup("char");
+            // ── string → int64 ───────────────────────────────────────────
+            if (fname == "indexOf" || fname == "lastIndexOf" || fname == "parseInt" ||
+                fname == "parseIntRadix" || fname == "fileSize" || fname == "randInt" ||
+                fname == "randIntRange" || fname == "atoi" ||
+                fname == "findIndex" || fname == "tcpSend")
+                return typeRegistry_.lookup("int64");
+            // ── string → int32 ───────────────────────────────────────────
+            if (fname == "charToInt" || fname == "exec" || fname == "pid" ||
+                fname == "getpid" || fname == "getppid" || fname == "errno" ||
+                fname == "kill" || fname == "dup" || fname == "closeFd" ||
+                fname == "dup2" || fname == "tcpConnect" || fname == "tcpListen" ||
+                fname == "udpBind" || fname == "tcpAccept" ||
+                fname == "year" || fname == "month" || fname == "day" ||
+                fname == "hour" || fname == "minute" || fname == "second" ||
+                fname == "weekday" || fname == "compare")
+                return typeRegistry_.lookup("int32");
+            // ── string → float64 ─────────────────────────────────────────
+            if (fname == "parseFloat" || fname == "atof" || fname == "readFloat" ||
+                fname == "promptFloat" || fname == "randFloat" || fname == "randFloatRange")
+                return typeRegistry_.lookup("float64");
+            // ── string → uint64 ──────────────────────────────────────────
+            if (fname == "count")
+                return typeRegistry_.lookup("usize");
+            if (fname == "hashString" || fname == "hashInt" ||
+                fname == "hashCombine" || fname == "randUint" ||
+                fname == "now" || fname == "nowNanos" || fname == "nowMicros" ||
+                fname == "clock" || fname == "elapsed" || fname == "parseTime" ||
+                fname == "threadId" || fname == "fromHex" ||
+                fname == "rotl" || fname == "rotr" || fname == "bswap" ||
+                fname == "nextPow2" || fname == "bitReverse" ||
+                fname == "setBit" || fname == "clearBit" || fname == "toggleBit" ||
+                fname == "extractBits")
+                return typeRegistry_.lookup("uint64");
+            // ── → uint32 ─────────────────────────────────────────────────
+            if (fname == "cpuCount" || fname == "crc32" || fname == "popcount" ||
+                fname == "ctz" || fname == "clz" || fname == "getuid" || fname == "getgid")
+                return typeRegistry_.lookup("uint32");
+            // ── → string ─────────────────────────────────────────────────
+            if (fname == "toUpper" || fname == "toLower" || fname == "trim" ||
+                fname == "trimLeft" || fname == "trimRight" || fname == "reverse" ||
+                fname == "replace" || fname == "replaceFirst" || fname == "repeat" ||
+                fname == "padLeft" || fname == "padRight" || fname == "substring" ||
+                fname == "slice" || fname == "fromBytes" || fname == "fromChars" ||
+                fname == "joinVec" || fname == "readLine" || fname == "readAll" ||
+                fname == "readPassword" || fname == "prompt" || fname == "promptPassword" ||
+                fname == "promptInt" || fname == "readFile" || fname == "cwd" ||
+                fname == "tempDir" || fname == "platform" || fname == "arch" ||
+                fname == "homeDir" || fname == "executablePath" || fname == "env" ||
+                fname == "execOutput" || fname == "hostname" || fname == "strerror" ||
+                fname == "itoa" || fname == "itoaRadix" || fname == "utoa" ||
+                fname == "ftoa" || fname == "ftoaPrecision" || fname == "toHex" ||
+                fname == "toOctal" || fname == "toBinary" || fname == "join" ||
+                fname == "parent" || fname == "fileName" || fname == "stem" ||
+                fname == "extension" || fname == "normalize" || fname == "toAbsolute" ||
+                fname == "withExtension" || fname == "withFileName" ||
+                fname == "lpad" || fname == "rpad" || fname == "center" ||
+                fname == "hex" || fname == "hexUpper" || fname == "oct" || fname == "bin" ||
+                fname == "humanBytes" || fname == "commas" || fname == "fixed" ||
+                fname == "scientific" || fname == "percent" ||
+                fname == "uuid_v4" || fname == "timestamp" || fname == "formatTime" ||
+                fname == "resolve" || fname == "tcpRecv" || fname == "udpRecvFrom" ||
+                fname == "md5String" || fname == "sha1String" || fname == "sha256String" ||
+                fname == "sha512String" || fname == "md5" || fname == "sha1" ||
+                fname == "sha256" || fname == "sha512" ||
+                fname == "gzipCompress" || fname == "gzipDecompress" ||
+                fname == "deflate" || fname == "inflate" || fname == "compressLevel" ||
+                fname == "base64EncodeStr" || fname == "base64DecodeStr" ||
+                fname == "base64Encode" || fname == "joinAll" ||
+                fname == "urlEncode" || fname == "urlDecode" ||
+                fname == "regexReplace" || fname == "regexReplaceFirst" || fname == "find")
+                return typeRegistry_.lookup("string");
+            // ── → usize ──────────────────────────────────────────────────
+            if (fname == "pageSize")
+                return typeRegistry_.lookup("usize");
+            // ── → void ───────────────────────────────────────────────────
+            if (fname == "flush" || fname == "flushErr" || fname == "setCwd" ||
+                fname == "freeStr" || fname == "remove" || fname == "removeDir" ||
+                fname == "mkdir" || fname == "mkdirAll" || fname == "rename")
+                return typeRegistry_.lookup("void");
+            // ── → pointer ─────────────────────────────────────────────────
+            if (fname == "alloc" || fname == "allocZeroed" || fname == "realloc" ||
+                fname == "cstr")
+                return typeRegistry_.lookup("*void");
+            // ── Vec<string> ───────────────────────────────────────────────
+            if (fname == "split" || fname == "splitN" || fname == "lines" ||
+                fname == "words" || fname == "listDir" || fname == "readLines" ||
+                fname == "findAll" || fname == "regexSplit") {
+                auto* elemTI = typeRegistry_.lookup("string");
+                auto fullName = std::string("Vec<") + elemTI->name + ">";
+                if (auto* existing = typeRegistry_.lookup(fullName))
+                    return existing;
+                TypeInfo ti;
+                ti.name = fullName;
+                ti.kind = TypeKind::Extended;
+                ti.bitWidth = 0;
+                ti.isSigned = false;
+                ti.builtinSuffix = elemTI->builtinSuffix.empty() ? "raw" : elemTI->builtinSuffix;
+                ti.elementType = elemTI;
+                ti.extendedKind = "Vec";
+                typeRegistry_.registerType(std::move(ti));
+                return typeRegistry_.lookup(fullName);
+            }
+            // ── Vec<char> ─────────────────────────────────────────────────
+            if (fname == "chars") {
+                auto* elemTI = typeRegistry_.lookup("char");
+                auto fullName = std::string("Vec<") + elemTI->name + ">";
+                if (auto* existing = typeRegistry_.lookup(fullName))
+                    return existing;
+                TypeInfo ti;
+                ti.name = fullName;
+                ti.kind = TypeKind::Extended;
+                ti.bitWidth = 0;
+                ti.isSigned = false;
+                ti.builtinSuffix = elemTI->builtinSuffix.empty() ? "raw" : elemTI->builtinSuffix;
+                ti.elementType = elemTI;
+                ti.extendedKind = "Vec";
+                typeRegistry_.registerType(std::move(ti));
+                return typeRegistry_.lookup(fullName);
+            }
+            // ── Vec<uint8> ───────────────────────────────────────────────
+            if (fname == "toBytes" || fname == "fromBytes" ||
+                fname == "readBytes" || fname == "readNBytes" ||
+                fname == "randomBytes" || fname == "base64Decode" ||
+                fname == "hmacSha256") {
+                auto* elemTI = typeRegistry_.lookup("uint8");
+                auto fullName = std::string("Vec<") + elemTI->name + ">";
+                if (auto* existing = typeRegistry_.lookup(fullName))
+                    return existing;
+                TypeInfo ti;
+                ti.name = fullName;
+                ti.kind = TypeKind::Extended;
+                ti.bitWidth = 0;
+                ti.isSigned = false;
+                ti.builtinSuffix = elemTI->builtinSuffix.empty() ? "raw" : elemTI->builtinSuffix;
+                ti.elementType = elemTI;
+                ti.extendedKind = "Vec";
+                typeRegistry_.registerType(std::move(ti));
+                return typeRegistry_.lookup(fullName);
+            }
+
             // Builtins from std::conv and similar namespaces
             if (fname == "toHex" || fname == "toBinary" || fname == "toOctal")
                 return typeRegistry_.lookup("string");

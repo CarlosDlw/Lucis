@@ -62,6 +62,9 @@ use tests::unions_full::testUnionsFull;
 use tests::const_features::testConstFeatures;
 use tests::vec_pointers::testVecPointers;
 use tests::void_types::testVoidTypes;
+use tests::stdstr::testStdstr;
+use tests::stdconv::testStdConv;
+use tests::stdfmt::testStdFmt;
 
 fn main() int32 {
     // testAtomicOrdering();  // FIXME: libatomic memcpy overlap triggers ASAN in lucis test
@@ -128,5 +131,8 @@ fn main() int32 {
     testSysRdRand();
     testSysEndianness();
     testSysTier3();
+    testStdstr();
+    testStdConv();
+    testStdFmt();
     ret 0;
 }
