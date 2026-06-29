@@ -40,10 +40,12 @@ void RunCommand::buildArgs(ArgParser& parser) const {
     parser.addOption("link", 'l', "LIB", "Link against a library (repeatable)", true);
     parser.addOption("lib-path", 'L', "DIR", "Add library search path (repeatable)", true);
     parser.addOption("include", 'I', "DIR", "Add include search path (repeatable)", true);
+    parser.addFlag("ignore-config", '\0', "Ignore lucis.yaml, use CLI flags only");
 }
 
 int RunCommand::run(const ArgParser& parser) {
-    auto resolved = resolveInputFile(parser.get("file"));
+    auto resolved = resolveInputFile(parser.get("file"), "",
+                                     parser.has("ignore-config"));
     if (resolved.filePath.empty()) {
         std::cerr << "lucis: no input file specified and no lucis.yaml found\n";
         std::cerr << "usage: lucis run <file>   or   lucis run  (from a project with lucis.yaml)\n";
@@ -59,7 +61,7 @@ int RunCommand::run(const ArgParser& parser) {
     pipeOpts.includePaths = parser.getAll("include");
     if (useConfig) {
         if (pipeOpts.includePaths.empty())
-            pipeOpts.includePaths = cfg->includes;
+            pipeOpts.includePaths = cfg->build.includePaths;
     }
 
     pipeOpts.sourcePaths = useConfig ? cfg->sourcePaths : std::vector<std::string>{"src/"};

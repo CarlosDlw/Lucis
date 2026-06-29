@@ -13,5 +13,6 @@ struct ResolvedInput {
 };
 
 ResolvedInput resolveInputFile(const std::string& explicitFile,
-                               const std::string& configPath = "");
+                               const std::string& configPath = "",
+                               bool ignoreConfig = false);
 OptimizationLevel parseOptimizationLevel(const std::string& s);

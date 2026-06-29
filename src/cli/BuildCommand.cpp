@@ -77,6 +77,7 @@ void BuildCommand::buildArgs(ArgParser& parser) const {
     parser.addOption("output", 'o', "FILE", "Output path (default: <input>.out)");
 
     parser.addSection("General");
+    parser.addFlag("ignore-config", '\0', "Ignore lucis.yaml, use CLI flags only");
     parser.addFlag("quiet", 'q', "Suppress pipeline logs");
     parser.addOption("config", '\0', "FILE", "Path to lucis.yaml configuration");
 
@@ -89,7 +90,8 @@ void BuildCommand::buildArgs(ArgParser& parser) const {
 }
 
 int BuildCommand::run(const ArgParser& parser) {
-    auto resolved = resolveInputFile(parser.get("file"), parser.get("config"));
+    auto resolved = resolveInputFile(parser.get("file"), parser.get("config"),
+                                     parser.has("ignore-config"));
     if (resolved.filePath.empty()) {
         std::cerr << "lucis: no input file specified and no lucis.yaml found\n";
         std::cerr << "usage: lucis build <file>   or   lucis build  (from a project with lucis.yaml)\n";
@@ -103,7 +105,7 @@ int BuildCommand::run(const ArgParser& parser) {
     pipeOpts.inputFile = resolved.filePath;
     pipeOpts.quiet     = parser.has("quiet");
     if (useConfig)
-        pipeOpts.includePaths = cfg->includes;
+        pipeOpts.includePaths = cfg->build.includePaths;
     auto cliIncludes = parser.getAll("include");
     pipeOpts.includePaths.insert(pipeOpts.includePaths.end(), cliIncludes.begin(), cliIncludes.end());
 
@@ -116,13 +118,11 @@ int BuildCommand::run(const ArgParser& parser) {
         pipeOpts.targetTriple = cfg->build.target;
     pipeOpts.codeModel = useConfig ? cfg->build.codeModel : "";
 
-    // Linker entry: CLI > config.linker.entry > config.build.entry > default
+    // Linker entry: CLI (--linker-entry / --entry) > config.linker.entry
     std::string linkerEntry = parser.has("linker-entry") ? parser.get("linker-entry") :
                               parser.get("entry");
     if (linkerEntry.empty() && useConfig && !cfg->linker.entry.empty())
         linkerEntry = cfg->linker.entry;
-    else if (linkerEntry.empty() && useConfig && !cfg->build.entry.empty())
-        linkerEntry = cfg->build.entry;
     if (parser.has("entry") && !parser.has("linker-entry"))
         std::cerr << "lucis: warning: --entry is deprecated, use --linker-entry\n";
     pipeOpts.entryPoint = linkerEntry;
@@ -142,6 +142,12 @@ int BuildCommand::run(const ArgParser& parser) {
         ::setenv("LUCIS_TARGET", pipeOpts.targetTriple.c_str(), 1);
         ::setenv("LUCIS_OUTPUT", outputPath.c_str(), 1);
     };
+
+    // ── Export script env vars from config ────────────────────────
+    if (useConfig) {
+        for (auto& [k, v] : cfg->scripts.env)
+            ::setenv(k.c_str(), v.c_str(), 1);
+    }
 
     // ── Run pre-build scripts (before everything) ─────────────────
     if (useConfig && !cfg->scripts.pre.empty()) {
@@ -220,11 +226,11 @@ int BuildCommand::run(const ArgParser& parser) {
         addIfSet("obj",  EmitTask::OBJ);
         addIfSet("bin",  EmitTask::BIN);
     } else if (useConfig) {
-        if (cfg->emit.llvm) addEmitTask("llvm", EmitTask::LLVM);
-        if (cfg->emit.asmFile)  addEmitTask("asm",  EmitTask::ASM);
-        if (cfg->emit.bc)   addEmitTask("bc",   EmitTask::BC);
-        if (cfg->emit.obj)  addEmitTask("obj",  EmitTask::OBJ);
-        if (cfg->emit.bin)  addEmitTask("bin",  EmitTask::BIN);
+        if (cfg->output.emitLlvm) addEmitTask("llvm", EmitTask::LLVM);
+        if (cfg->output.emitAsm)  addEmitTask("asm",  EmitTask::ASM);
+        if (cfg->output.emitBc)   addEmitTask("bc",   EmitTask::BC);
+        if (cfg->output.emitObj)  addEmitTask("obj",  EmitTask::OBJ);
+        if (cfg->output.emitBin)  addEmitTask("bin",  EmitTask::BIN);
     }
 
     for (size_t i = 0; i < tasks.size(); ++i) {
@@ -244,13 +250,13 @@ int BuildCommand::run(const ArgParser& parser) {
 
     // From config (lucis.yaml) — lowest priority
     if (useConfig) {
-        for (auto& f : cfg->assemblyFiles)
+        for (auto& f : cfg->assembly.files)
             assemblySources.push_back(f);
-        for (auto& f : cfg->objects)
+        for (auto& f : cfg->inputs.objects)
             extraObjectFiles.push_back(f);
-        for (auto& f : cfg->staticLibs)
+        for (auto& f : cfg->inputs.staticLibs)
             extraObjectFiles.push_back(f);
-        for (auto& f : cfg->sharedLibs)
+        for (auto& f : cfg->inputs.sharedLibs)
             extraObjectFiles.push_back(f);
     }
 
@@ -281,11 +287,16 @@ int BuildCommand::run(const ArgParser& parser) {
         }
     }
 
-    // Assembler selection (CLI overrides config)
-    std::string assemblerChoice = parser.has("assembler") ? parser.get("assembler") :
-                                 (useConfig ? cfg->build.assembler : "");
+    // Assembler selection (CLI > config.assembly.assembler > config.tools.nasm)
+    std::string assemblerChoice;
+    if (parser.has("assembler"))
+        assemblerChoice = parser.get("assembler");
+    else if (useConfig && !cfg->assembly.assembler.empty())
+        assemblerChoice = cfg->assembly.assembler;
+    else if (useConfig && !cfg->tools.nasm.empty())
+        assemblerChoice = cfg->tools.nasm;
     std::vector<std::string> assemblerFlags = parser.has("assembler-arg") ?
-        parser.getAll("assembler-arg") : (useConfig ? cfg->build.assemblerFlags :
+        parser.getAll("assembler-arg") : (useConfig ? cfg->assembly.flags :
                                           std::vector<std::string>{});
 
     // ── Build flag hash for cache invalidation ──────────────────────────

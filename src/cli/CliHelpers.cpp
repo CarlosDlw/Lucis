@@ -2,6 +2,7 @@
 #include "config/LucisConfig.h"
 
 #include <filesystem>
+#include <iostream>
 #include <string>
 
 namespace fs = std::filesystem;
@@ -9,8 +10,15 @@ namespace fs = std::filesystem;
 static const std::vector<std::string> kDefaultSourcePaths = {"src/"};
 
 ResolvedInput resolveInputFile(const std::string& explicitFile,
-                               const std::string& configPath) {
+                               const std::string& configPath,
+                               bool ignoreConfig) {
     ResolvedInput result;
+
+    // --config and --ignore-config are mutually exclusive
+    if (ignoreConfig && !configPath.empty()) {
+        std::cerr << "lucis: error: --ignore-config and --config are mutually exclusive\n";
+        return result;
+    }
 
     // If --config was given, load that specific config file
     if (!configPath.empty()) {
@@ -40,6 +48,14 @@ ResolvedInput resolveInputFile(const std::string& explicitFile,
             return result;
         }
         // Directory was passed — fall through to config-based search
+    }
+
+    // --ignore-config skips auto-detection entirely
+    if (ignoreConfig) {
+        if (!explicitFile.empty()) {
+            // explicitFile is a directory; we need a .lc file from args
+        }
+        return result;
     }
 
     auto config = LucisConfig::findInDir(fs::current_path().string());

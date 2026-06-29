@@ -2,6 +2,7 @@
 
 #include <string>
 #include <vector>
+#include <map>
 #include <optional>
 
 struct LucisConfig {
@@ -10,58 +11,70 @@ struct LucisConfig {
     std::string binary;
     std::string outDir;
 
+    struct Tools {
+        std::string nasm;
+        std::string ld;
+        std::string objcopy;
+    } tools;
+
+    struct AssemblySettings {
+        std::vector<std::string> files;
+        std::string assembler;
+        std::vector<std::string> flags;
+    } assembly;
+
     std::vector<std::string> sourcePaths;
 
-    // Explicit inputs (mirror --asm, --obj, --lib)
-    std::vector<std::string> assemblyFiles;
-    std::vector<std::string> objects;
-    std::vector<std::string> staticLibs;
-    std::vector<std::string> sharedLibs;
-
     struct BuildSettings {
+        std::string target;
         std::string optLevel;
+        bool noStd;
         bool lto;
         bool staticLink;
         bool shared;
         bool fpic;
-        bool noStd;
-        std::string target;
         std::string codeModel;
-        std::string entry;
-        std::string assembler;          // nasm | as
-        std::vector<std::string> assemblerFlags;
+        std::vector<std::string> includePaths;
+        std::map<std::string, std::string> defines;
     } build;
 
-    struct EmitSettings {
-        bool llvm = false;
-        bool asmFile  = false;
-        bool bc   = false;
-        bool obj  = false;
-        bool bin  = false;
-    } emit;
+    struct InputSettings {
+        std::vector<std::string> objects;
+        std::vector<std::string> staticLibs;
+        std::vector<std::string> sharedLibs;
+    } inputs;
+
+    struct LinkerSettings {
+        std::string program;
+        std::string script;
+        std::string entry;
+        std::vector<std::string> libs;
+        std::vector<std::string> libPaths;
+        std::vector<std::string> flags;
+        std::vector<std::string> args;
+    } linker;
+
+    struct OutputSettings {
+        std::string path;
+        bool strip;
+        bool emitBin;
+        bool emitLlvm;
+        bool emitAsm;
+        bool emitBc;
+        bool emitObj;
+    } output;
+
+    struct ScriptsConfig {
+        std::map<std::string, std::string> env;
+        std::vector<std::string> pre;
+        std::vector<std::string> pos;
+    } scripts;
 
     struct RunSettings {
         std::string optLevel;
         bool lto;
         std::vector<std::string> args;
     } run;
-
-    struct LinkerSettings {
-        std::vector<std::string> libs;
-        std::vector<std::string> libPaths;
-        std::string program;            // ld | gcc | clang
-        std::string script;             // linker script path
-        std::string entry;              // entry point
-        std::vector<std::string> flags; // -nmagic, -N, --gc-sections
-        std::vector<std::string> args;  // raw args (--linker-arg)
-    } linker;
-
-    struct ScriptsConfig {
-        std::vector<std::string> pre;
-        std::vector<std::string> pos;
-    } scripts;
-
-    std::vector<std::string> includes;
 
     static std::optional<LucisConfig> load(const std::string& yamlPath);
     static std::optional<LucisConfig> findInDir(const std::string& dir);

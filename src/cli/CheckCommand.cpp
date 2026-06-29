@@ -13,10 +13,12 @@ void CheckCommand::buildArgs(ArgParser& parser) const {
     parser.addPositional("file", "Path to the .lc entrypoint file (auto-resolved from lucis.yaml if omitted)", false);
     parser.addFlag("quiet", 'q', "Suppress pipeline logs");
     parser.addOption("include", 'I', "DIR", "Add include search path (repeatable)", true);
+    parser.addFlag("ignore-config", '\0', "Ignore lucis.yaml, use CLI flags only");
 }
 
 int CheckCommand::run(const ArgParser& parser) {
-    auto resolved = resolveInputFile(parser.get("file"));
+    auto resolved = resolveInputFile(parser.get("file"), "",
+                                     parser.has("ignore-config"));
     if (resolved.filePath.empty()) {
         std::cerr << "lucis: no input file specified and no lucis.yaml found\n";
         std::cerr << "usage: lucis check <file>   or   lucis check  (from a project with lucis.yaml)\n";
@@ -29,7 +31,7 @@ int CheckCommand::run(const ArgParser& parser) {
     pipeOpts.includePaths = parser.getAll("include");
     if (resolved.useConfig) {
         if (pipeOpts.includePaths.empty())
-            pipeOpts.includePaths = resolved.config->includes;
+            pipeOpts.includePaths = resolved.config->build.includePaths;
     }
 
     pipeOpts.sourcePaths = resolved.useConfig ? resolved.config->sourcePaths : std::vector<std::string>{"src/"};

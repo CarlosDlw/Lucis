@@ -27,6 +27,28 @@ static bool boolOrDefault(const YAML::Node& node, const std::string& key,
     return node[key].as<bool>();
 }
 
+static std::map<std::string, std::string>
+toStringMap(const YAML::Node& node) {
+    std::map<std::string, std::string> result;
+    if (!node.IsDefined() || !node.IsMap()) return result;
+    for (const auto& entry : node)
+        result[entry.first.Scalar()] = entry.second.Scalar();
+    return result;
+}
+
+// ── Legacy key detection ──────────────────────────────────────────
+
+static bool hasLegacyKey(const YAML::Node& root, const std::string& key) {
+    return root[key].IsDefined();
+}
+
+static void warnLegacy(const std::string& oldKey, const std::string& newKey) {
+    std::cerr << "lucis: warning: lucis.yaml uses legacy key '" << oldKey
+              << "', use '" << newKey << "'\n";
+}
+
+// ── Load ──────────────────────────────────────────────────────────
+
 std::optional<LucisConfig> LucisConfig::load(const std::string& yamlPath) {
     if (!fs::exists(yamlPath)) return std::nullopt;
 
@@ -45,66 +67,143 @@ std::optional<LucisConfig> LucisConfig::load(const std::string& yamlPath) {
         LucisConfig cfg;
         cfg.name    = root["name"].Scalar();
         cfg.version = optOrDefault(root, "version", "0.0.1");
+        cfg.binary  = optOrDefault(root, "binary", cfg.name);
+        cfg.outDir  = optOrDefault(root, "out_dir", "build");
 
-        cfg.binary = optOrDefault(root, "binary", cfg.name);
-        cfg.outDir = optOrDefault(root, "out_dir", "build");
-
+        // ── source paths ──────────────────────────────────────────
         cfg.sourcePaths = toStringVec(root["source"]);
 
+        // ── tools ─────────────────────────────────────────────────
         {
-            auto b = root["build"];
-            cfg.build.optLevel  = optOrDefault(b, "opt_level", "O0");
-            cfg.build.lto       = boolOrDefault(b, "lto", false);
-            cfg.build.staticLink= boolOrDefault(b, "static", false);
-            cfg.build.shared    = boolOrDefault(b, "shared", false);
-            cfg.build.fpic      = boolOrDefault(b, "fpic", true);
-            cfg.build.noStd     = boolOrDefault(b, "no_std", false);
-            cfg.build.target    = optOrDefault(b, "target", "");
-            cfg.build.codeModel = optOrDefault(b, "code_model", "");
-            cfg.build.entry     = optOrDefault(b, "entry", "");
-            cfg.build.assembler = optOrDefault(b, "assembler", "");
-            cfg.build.assemblerFlags = toStringVec(b["assembler_flags"]);
+            auto t = root["tools"];
+            cfg.tools.nasm    = optOrDefault(t, "nasm", "");
+            cfg.tools.ld      = optOrDefault(t, "ld", "");
+            cfg.tools.objcopy = optOrDefault(t, "objcopy", "");
         }
 
-        cfg.assemblyFiles = toStringVec(root["assembly"]);
-        cfg.objects       = toStringVec(root["objects"]);
-        cfg.staticLibs    = toStringVec(root["static_libs"]);
-        cfg.sharedLibs    = toStringVec(root["shared_libs"]);
+        // ── assembly ──────────────────────────────────────────────
         {
-            auto e = root["emit"];
-            if (e.IsDefined() && e.IsMap()) {
-                cfg.emit.llvm = boolOrDefault(e, "llvm", false);
-                cfg.emit.asmFile = boolOrDefault(e, "asm",  false);
-                cfg.emit.bc   = boolOrDefault(e, "bc",   false);
-                cfg.emit.obj  = boolOrDefault(e, "obj",  false);
-                cfg.emit.bin  = boolOrDefault(e, "bin",  false);
+            auto a = root["assembly"];
+            // new: assembly.files
+            cfg.assembly.files = toStringVec(a["files"]);
+            // legacy: assembly is flat list
+            if (cfg.assembly.files.empty() && hasLegacyKey(root, "assembly")
+                && root["assembly"].IsSequence()) {
+                cfg.assembly.files = toStringVec(root["assembly"]);
+                warnLegacy("assembly: [files]", "assembly.files: [files]");
+            }
+            cfg.assembly.assembler = optOrDefault(a, "assembler",
+                optOrDefault(root["build"], "assembler", ""));
+            if (root["build"]["assembler"].IsDefined()
+                && !a["assembler"].IsDefined())
+                warnLegacy("build.assembler", "assembly.assembler");
+            cfg.assembly.flags = toStringVec(a["flags"].IsDefined()
+                ? a["flags"] : root["build"]["assembler_flags"]);
+            if (root["build"]["assembler_flags"].IsDefined()
+                && !a["flags"].IsDefined())
+                warnLegacy("build.assembler_flags", "assembly.flags");
+        }
+
+        // ── build ─────────────────────────────────────────────────
+        {
+            auto b = root["build"];
+            cfg.build.target      = optOrDefault(b, "target", "");
+            cfg.build.optLevel    = optOrDefault(b, "opt_level", "O0");
+            cfg.build.noStd       = boolOrDefault(b, "no_std", false);
+            cfg.build.lto         = boolOrDefault(b, "lto", false);
+            cfg.build.staticLink  = boolOrDefault(b, "static", false);
+            cfg.build.shared      = boolOrDefault(b, "shared", false);
+            cfg.build.fpic        = boolOrDefault(b, "fpic", true);
+            cfg.build.codeModel   = optOrDefault(b, "code_model", "");
+
+            // include_paths
+            cfg.build.includePaths = toStringVec(b["include_paths"]);
+            // legacy: top-level includes
+            if (cfg.build.includePaths.empty() && hasLegacyKey(root, "includes")) {
+                cfg.build.includePaths = toStringVec(root["includes"]);
+                warnLegacy("includes", "build.include_paths");
+            }
+
+            cfg.build.defines = toStringMap(b["defines"]);
+
+            // legacy build.entry → linker.entry (warn handled in linker)
+        }
+
+        // ── inputs ────────────────────────────────────────────────
+        {
+            auto i = root["inputs"];
+            cfg.inputs.objects    = toStringVec(i["objects"].IsDefined()
+                ? i["objects"] : root["objects"]);
+            if (hasLegacyKey(root, "objects") && !i["objects"].IsDefined())
+                warnLegacy("objects", "inputs.objects");
+            cfg.inputs.staticLibs = toStringVec(i["static_libs"].IsDefined()
+                ? i["static_libs"] : root["static_libs"]);
+            if (hasLegacyKey(root, "static_libs") && !i["static_libs"].IsDefined())
+                warnLegacy("static_libs", "inputs.static_libs");
+            cfg.inputs.sharedLibs = toStringVec(i["shared_libs"].IsDefined()
+                ? i["shared_libs"] : root["shared_libs"]);
+            if (hasLegacyKey(root, "shared_libs") && !i["shared_libs"].IsDefined())
+                warnLegacy("shared_libs", "inputs.shared_libs");
+        }
+
+        // ── linker ────────────────────────────────────────────────
+        {
+            auto l = root["linker"];
+            cfg.linker.program  = optOrDefault(l, "program", "");
+            cfg.linker.script   = optOrDefault(l, "script", "");
+            cfg.linker.libs     = toStringVec(l["libs"]);
+            cfg.linker.libPaths = toStringVec(l["lib_paths"]);
+            cfg.linker.flags    = toStringVec(l["flags"]);
+            cfg.linker.args     = toStringVec(l["args"]);
+
+            cfg.linker.entry    = optOrDefault(l, "entry",
+                optOrDefault(root["build"], "entry", ""));
+            if (root["build"]["entry"].IsDefined() && !l["entry"].IsDefined()) {
+                std::cerr << "lucis: warning: 'build.entry' is deprecated, "
+                          << "use 'linker.entry'\n";
             }
         }
+
+        // ── output / emit ─────────────────────────────────────────
+        {
+            auto o = root["output"];
+            auto e = root["emit"];
+            cfg.output.path   = optOrDefault(o, "path", "");
+            cfg.output.strip  = o["strip"].IsDefined()
+                ? boolOrDefault(o, "strip", false)
+                : boolOrDefault(e, "bin", false); // compat
+            cfg.output.emitBin = o["emit_bin"].IsDefined()
+                ? boolOrDefault(o, "emit_bin", false)
+                : boolOrDefault(e, "bin", false);
+            cfg.output.emitLlvm = boolOrDefault(o, "emit_llvm",
+                boolOrDefault(e, "llvm", false));
+            cfg.output.emitAsm  = boolOrDefault(o, "emit_asm",
+                boolOrDefault(e, "asm", false));
+            cfg.output.emitBc   = boolOrDefault(o, "emit_bc",
+                boolOrDefault(e, "bc", false));
+            cfg.output.emitObj  = boolOrDefault(o, "emit_obj",
+                boolOrDefault(e, "obj", false));
+
+            if (hasLegacyKey(root, "emit") && !hasLegacyKey(root, "output"))
+                std::cerr << "lucis: warning: 'emit:' section is deprecated, "
+                          << "use 'output:'\n";
+        }
+
+        // ── scripts ───────────────────────────────────────────────
+        {
+            auto s = root["scripts"];
+            cfg.scripts.env = toStringMap(s["env"]);
+            cfg.scripts.pre = toStringVec(s["pre"]);
+            cfg.scripts.pos = toStringVec(s["pos"]);
+        }
+
+        // ── run ───────────────────────────────────────────────────
         {
             auto r = root["run"];
             cfg.run.optLevel = optOrDefault(r, "opt_level", "O0");
             cfg.run.lto      = boolOrDefault(r, "lto", false);
             cfg.run.args     = toStringVec(r["args"]);
         }
-        {
-            auto l = root["linker"];
-            cfg.linker.libs     = toStringVec(l["libs"]);
-            cfg.linker.libPaths = toStringVec(l["lib_paths"]);
-            cfg.linker.program = optOrDefault(l, "program", "");
-            cfg.linker.script  = optOrDefault(l, "script", "");
-            cfg.linker.entry   = optOrDefault(l, "entry", "");
-            cfg.linker.flags   = toStringVec(l["flags"]);
-            cfg.linker.args    = toStringVec(l["args"]);
-        }
-        {
-            auto s = root["scripts"];
-            if (s.IsDefined() && s.IsMap()) {
-                cfg.scripts.pre = toStringVec(s["pre"]);
-                cfg.scripts.pos = toStringVec(s["pos"]);
-            }
-        }
-
-        cfg.includes = toStringVec(root["includes"]);
 
         return cfg;
     } catch (const std::exception& e) {
@@ -114,14 +213,29 @@ std::optional<LucisConfig> LucisConfig::load(const std::string& yamlPath) {
     }
 }
 
+// ── Validation helpers ────────────────────────────────────────────
+
 static bool yamlIsMap(const YAML::Node& n) {
     return n.IsDefined() && n.IsMap();
 }
 
+static bool yamlIsSeq(const YAML::Node& n) {
+    return n.IsDefined() && n.IsSequence();
+}
+
+static bool yamlIsScalar(const YAML::Node& n) {
+    return n.IsDefined() && n.IsScalar();
+}
+
+static bool yamlIsBool(const YAML::Node& n) {
+    if (!n.IsDefined()) return true;
+    try { n.as<bool>(); return true; } catch (...) { return false; }
+}
+
 static void checkUnknownKeys(const YAML::Node& node,
-                             const std::string& parentPath,
-                             const std::vector<std::string>& known,
-                             std::vector<LucisConfig::ValidationMsg>& out) {
+                              const std::string& parentPath,
+                              const std::vector<std::string>& known,
+                              std::vector<LucisConfig::ValidationMsg>& out) {
     if (!yamlIsMap(node)) return;
     for (const auto& entry : node) {
         auto key = entry.first.Scalar();
@@ -135,6 +249,21 @@ static void checkUnknownKeys(const YAML::Node& node,
         }
     }
 }
+
+static void checkType(const YAML::Node& node, const std::string& path,
+                       const std::string& expected,
+                       std::vector<LucisConfig::ValidationMsg>& out) {
+    if (!node.IsDefined()) return;
+    bool ok = false;
+    if (expected == "scalar") ok = node.IsScalar();
+    else if (expected == "seq") ok = node.IsSequence();
+    else if (expected == "map") ok = node.IsMap();
+    else if (expected == "bool") ok = yamlIsBool(node);
+    if (!ok)
+        out.push_back({path, "expected " + expected});
+}
+
+// ── Validate ──────────────────────────────────────────────────────
 
 std::vector<LucisConfig::ValidationMsg>
 LucisConfig::validate(const std::string& yamlPath) {
@@ -167,60 +296,135 @@ LucisConfig::validate(const std::string& yamlPath) {
             msgs.push_back({k, "expected scalar"});
     }
 
-    for (auto& k : {"source", "includes"}) {
-        if (root[k].IsDefined() && !root[k].IsSequence())
-            msgs.push_back({k, "expected sequence"});
+    if (root["source"].IsDefined() && !root["source"].IsSequence())
+        msgs.push_back({"source", "expected sequence"});
+
+    // tools
+    if (yamlIsMap(root["tools"])) {
+        static const std::vector<std::string> toolsKeys = {
+            "nasm", "ld", "objcopy"
+        };
+        checkUnknownKeys(root["tools"], "tools", toolsKeys, msgs);
+        for (auto& k : toolsKeys)
+            checkType(root["tools"][k], std::string("tools.") + k, "scalar", msgs);
     }
 
+    // assembly
+    if (yamlIsMap(root["assembly"])) {
+        static const std::vector<std::string> asmKeys = {
+            "files", "assembler", "flags"
+        };
+        checkUnknownKeys(root["assembly"], "assembly", asmKeys, msgs);
+        checkType(root["assembly"]["files"], "assembly.files", "seq", msgs);
+        checkType(root["assembly"]["assembler"], "assembly.assembler", "scalar", msgs);
+        checkType(root["assembly"]["flags"], "assembly.flags", "seq", msgs);
+        // validate assembler value
+        if (yamlIsScalar(root["assembly"]["assembler"])) {
+            auto val = root["assembly"]["assembler"].Scalar();
+            if (!val.empty() && val != "nasm" && val != "as")
+                msgs.push_back({"assembly.assembler",
+                    "expected 'nasm' or 'as', got '" + val + "'"});
+        }
+    }
+
+    // build
     if (yamlIsMap(root["build"])) {
-        if (root["build"]["opt_level"].IsDefined() && !root["build"]["opt_level"].IsScalar())
-            msgs.push_back({"build.opt_level", "expected scalar"});
         static const std::vector<std::string> buildKeys = {
-            "opt_level", "lto", "static", "shared", "fpic",
-            "no_std", "target", "code_model", "entry",
-            "assembler", "assembler_flags"
+            "target", "opt_level", "no_std", "lto", "static", "shared",
+            "fpic", "code_model", "include_paths", "defines",
+            // legacy (accepted with warning)
+            "entry", "assembler", "assembler_flags"
         };
         checkUnknownKeys(root["build"], "build", buildKeys, msgs);
+        checkType(root["build"]["opt_level"], "build.opt_level", "scalar", msgs);
+        checkType(root["build"]["target"], "build.target", "scalar", msgs);
+        for (auto& k : {"no_std", "lto", "static", "shared", "fpic"})
+            checkType(root["build"][k], std::string("build.") + k, "bool", msgs);
+        checkType(root["build"]["include_paths"], "build.include_paths", "seq", msgs);
+        checkType(root["build"]["defines"], "build.defines", "map", msgs);
+
+        // legacy warnings
+        if (root["build"]["entry"].IsDefined())
+            msgs.push_back({"build.entry", "deprecated, use 'linker.entry'"});
+        if (root["build"]["assembler"].IsDefined())
+            msgs.push_back({"build.assembler", "deprecated, use 'assembly.assembler'"});
+
+        // conflict check
+        if (boolOrDefault(root["build"], "static", false)
+            && boolOrDefault(root["build"], "shared", false))
+            msgs.push_back({"build", "'static' and 'shared' are mutually exclusive"});
     }
 
-    if (yamlIsMap(root["emit"])) {
-        static const std::vector<std::string> emitKeys = {
-            "llvm", "asm", "bc", "obj", "bin"
+    // inputs
+    if (yamlIsMap(root["inputs"])) {
+        static const std::vector<std::string> inputsKeys = {
+            "objects", "static_libs", "shared_libs"
         };
-        checkUnknownKeys(root["emit"], "emit", emitKeys, msgs);
+        checkUnknownKeys(root["inputs"], "inputs", inputsKeys, msgs);
+        checkType(root["inputs"]["objects"], "inputs.objects", "seq", msgs);
+        checkType(root["inputs"]["static_libs"], "inputs.static_libs", "seq", msgs);
+        checkType(root["inputs"]["shared_libs"], "inputs.shared_libs", "seq", msgs);
     }
 
+    // linker
+    if (yamlIsMap(root["linker"])) {
+        static const std::vector<std::string> linkerKeys = {
+            "program", "script", "entry", "libs", "lib_paths", "flags", "args"
+        };
+        checkUnknownKeys(root["linker"], "linker", linkerKeys, msgs);
+        for (auto& k : {"program", "script", "entry"})
+            checkType(root["linker"][k], std::string("linker.") + k, "scalar", msgs);
+        for (auto& k : {"libs", "lib_paths", "flags", "args"})
+            checkType(root["linker"][k], std::string("linker.") + k, "seq", msgs);
+    }
+
+    // output
+    if (yamlIsMap(root["output"])) {
+        static const std::vector<std::string> outputKeys = {
+            "path", "strip", "emit_bin", "emit_llvm", "emit_asm",
+            "emit_bc", "emit_obj"
+        };
+        checkUnknownKeys(root["output"], "output", outputKeys, msgs);
+        checkType(root["output"]["path"], "output.path", "scalar", msgs);
+        for (auto& k : {"strip", "emit_bin", "emit_llvm", "emit_asm", "emit_bc", "emit_obj"})
+            checkType(root["output"][k], std::string("output.") + k, "bool", msgs);
+    }
+
+    // scripts
+    if (yamlIsMap(root["scripts"])) {
+        static const std::vector<std::string> scriptsKeys = {
+            "env", "pre", "pos"
+        };
+        checkUnknownKeys(root["scripts"], "scripts", scriptsKeys, msgs);
+        checkType(root["scripts"]["env"], "scripts.env", "map", msgs);
+        checkType(root["scripts"]["pre"], "scripts.pre", "seq", msgs);
+        checkType(root["scripts"]["pos"], "scripts.pos", "seq", msgs);
+    }
+
+    // run
     if (yamlIsMap(root["run"])) {
         static const std::vector<std::string> runKeys = {
             "opt_level", "lto", "args"
         };
         checkUnknownKeys(root["run"], "run", runKeys, msgs);
-    }
-
-    if (yamlIsMap(root["linker"])) {
-        static const std::vector<std::string> linkerKeys = {
-            "libs", "lib_paths", "program", "script",
-            "entry", "flags", "args"
-        };
-        checkUnknownKeys(root["linker"], "linker", linkerKeys, msgs);
-    }
-
-    if (yamlIsMap(root["scripts"])) {
-        static const std::vector<std::string> scriptsKeys = {
-            "pre", "pos"
-        };
-        checkUnknownKeys(root["scripts"], "scripts", scriptsKeys, msgs);
+        checkType(root["run"]["opt_level"], "run.opt_level", "scalar", msgs);
+        checkType(root["run"]["lto"], "run.lto", "bool", msgs);
+        checkType(root["run"]["args"], "run.args", "seq", msgs);
     }
 
     static const std::vector<std::string> topKeys = {
         "name", "version", "binary", "out_dir",
-        "source", "build", "emit", "run", "linker", "scripts", "includes",
-        "assembly", "objects", "static_libs", "shared_libs"
+        "tools", "assembly", "source", "build", "inputs",
+        "linker", "output", "scripts", "run",
+        // legacy top-level keys (accepted with warning)
+        "emit", "assembly", "objects", "static_libs", "shared_libs", "includes"
     };
     checkUnknownKeys(root, "", topKeys, msgs);
 
     return msgs;
 }
+
+// ── find / create default ─────────────────────────────────────────
 
 std::optional<LucisConfig> LucisConfig::findInDir(const std::string& dir) {
     auto path = findConfigPath(dir);
@@ -250,27 +454,13 @@ bool LucisConfig::createDefault(const std::string& dir, const std::string& name)
     cfg.binary      = name;
     cfg.outDir      = "build";
     cfg.sourcePaths = {"src/"};
-    cfg.includes    = {};
-
     cfg.build.optLevel   = "O2";
-    cfg.build.lto        = false;
-    cfg.build.staticLink = false;
-    cfg.build.shared     = false;
     cfg.build.fpic       = true;
-    cfg.build.noStd      = false;
-    cfg.build.target     = "";
-    cfg.build.codeModel  = "";
-    cfg.build.entry      = "";
-
-    cfg.run.optLevel = "O0";
-    cfg.run.lto      = false;
-    cfg.run.args     = {};
-
-    cfg.linker.libs     = {};
-    cfg.linker.libPaths = {};
-
+    cfg.run.optLevel     = "O0";
     return cfg.save((fs::path(dir) / "lucis.yaml").string());
 }
+
+// ── Save ──────────────────────────────────────────────────────────
 
 bool LucisConfig::save(const std::string& yamlPath) const {
     try {
@@ -281,69 +471,75 @@ bool LucisConfig::save(const std::string& yamlPath) const {
         root["binary"]  = binary;
         root["out_dir"] = outDir;
 
+        // source
         for (const auto& s : sourcePaths)
             root["source"].push_back(s);
 
-        root["build"]["opt_level"]  = build.optLevel;
-        root["build"]["lto"]        = build.lto;
-        root["build"]["static"]     = build.staticLink;
-        root["build"]["shared"]     = build.shared;
-        root["build"]["fpic"]       = build.fpic;
-        root["build"]["no_std"]     = build.noStd;
-        root["build"]["target"]     = build.target;
-        root["build"]["code_model"] = build.codeModel;
-        root["build"]["entry"]      = build.entry;
-        root["build"]["assembler"]  = build.assembler;
+        // tools
+        auto writeScalar = [&](YAML::Node parent, const std::string& key,
+                                const std::string& val) {
+            if (!val.empty()) parent[key] = val;
+        };
+        writeScalar(root["tools"], "nasm", tools.nasm);
+        writeScalar(root["tools"], "ld", tools.ld);
+        writeScalar(root["tools"], "objcopy", tools.objcopy);
 
-        root["emit"]["llvm"] = emit.llvm;
-        root["emit"]["asm"]  = emit.asmFile;
-        root["emit"]["bc"]   = emit.bc;
-        root["emit"]["obj"]  = emit.obj;
-        root["emit"]["bin"]  = emit.bin;
-
-        root["run"]["opt_level"] = run.optLevel;
-        root["run"]["lto"]       = run.lto;
-
-        // run.args
-        if (run.args.empty())
-            root["run"]["args"] = YAML::Node(YAML::NodeType::Sequence);
-        else
-            for (const auto& a : run.args)
-                root["run"]["args"].push_back(a);
-
+        // assembly
         auto writeSeq = [&](YAML::Node parent, const std::string& key,
                              const std::vector<std::string>& vals) {
-            if (vals.empty())
-                parent[key] = YAML::Node(YAML::NodeType::Sequence);
-            else
-                for (const auto& v : vals)
-                    parent[key].push_back(v);
+            for (const auto& v : vals)
+                parent[key].push_back(v);
         };
+        writeSeq(root["assembly"], "files", assembly.files);
+        writeScalar(root["assembly"], "assembler", assembly.assembler);
+        writeSeq(root["assembly"], "flags", assembly.flags);
 
-        writeSeq(root["build"], "assembler_flags", build.assemblerFlags);
+        // build
+        root["build"]["target"]    = build.target;
+        root["build"]["opt_level"] = build.optLevel;
+        root["build"]["no_std"]    = build.noStd;
+        root["build"]["lto"]       = build.lto;
+        root["build"]["static"]    = build.staticLink;
+        root["build"]["shared"]    = build.shared;
+        root["build"]["fpic"]      = build.fpic;
+        root["build"]["code_model"]= build.codeModel;
+        writeSeq(root["build"], "include_paths", build.includePaths);
+        for (const auto& [k, v] : build.defines)
+            root["build"]["defines"][k] = v;
 
-        root["linker"]["program"] = linker.program;
-        root["linker"]["script"]  = linker.script;
-        root["linker"]["entry"]   = linker.entry;
+        // inputs
+        writeSeq(root["inputs"], "objects", inputs.objects);
+        writeSeq(root["inputs"], "static_libs", inputs.staticLibs);
+        writeSeq(root["inputs"], "shared_libs", inputs.sharedLibs);
+
+        // linker
+        writeScalar(root["linker"], "program", linker.program);
+        writeScalar(root["linker"], "script",  linker.script);
+        writeScalar(root["linker"], "entry",   linker.entry);
         writeSeq(root["linker"], "libs", linker.libs);
         writeSeq(root["linker"], "lib_paths", linker.libPaths);
         writeSeq(root["linker"], "flags", linker.flags);
         writeSeq(root["linker"], "args", linker.args);
 
+        // output
+        root["output"]["path"]      = output.path;
+        root["output"]["strip"]     = output.strip;
+        root["output"]["emit_bin"]  = output.emitBin;
+        root["output"]["emit_llvm"] = output.emitLlvm;
+        root["output"]["emit_asm"]  = output.emitAsm;
+        root["output"]["emit_bc"]   = output.emitBc;
+        root["output"]["emit_obj"]  = output.emitObj;
+
+        // scripts
+        for (const auto& [k, v] : scripts.env)
+            root["scripts"]["env"][k] = v;
         writeSeq(root["scripts"], "pre", scripts.pre);
         writeSeq(root["scripts"], "pos", scripts.pos);
 
-        writeSeq(root, "assembly", assemblyFiles);
-        writeSeq(root, "objects", objects);
-        writeSeq(root, "static_libs", staticLibs);
-        writeSeq(root, "shared_libs", sharedLibs);
-
-        // includes
-        if (includes.empty())
-            root["includes"] = YAML::Node(YAML::NodeType::Sequence);
-        else
-            for (const auto& i : includes)
-                root["includes"].push_back(i);
+        // run
+        root["run"]["opt_level"] = run.optLevel;
+        root["run"]["lto"]       = run.lto;
+        writeSeq(root["run"], "args", run.args);
 
         std::ofstream ofs(yamlPath);
         if (!ofs) return false;
