@@ -768,7 +768,15 @@ bool Checker::check(LucisParser::ProgramContext* tree) {
         }
     }
 
-    if (cBindings_) {
+    // Only register C bindings from #include directives when this file
+    // actually includes C headers — prevents symbols from one file's
+    // #include leaking into another file's scope.
+    bool hasCInclude = false;
+    for (auto* pre : tree->preambleDecl()) {
+        if (pre->includeDecl()) { hasCInclude = true; break; }
+    }
+
+    if (cBindings_ && hasCInclude) {
         // Register C structs as types
         for (auto& [name, cstruct] : cBindings_->structs()) {
             if (!typeRegistry_.lookup(name)) {
@@ -1396,7 +1404,7 @@ bool Checker::check(LucisParser::ProgramContext* tree) {
                 continue;
             }
             auto funcName = func->IDENTIFIER(0)->getText();
-            if (!moduleRegistry_ || !functions_.count(funcName)) {
+            if (!moduleRegistry_ || !functions_.count(funcName) || globalBuiltins_.count(funcName)) {
                 registerFunctionSignature(func);
             }
         }
