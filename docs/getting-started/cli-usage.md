@@ -17,9 +17,6 @@ Commands:
   init        Create a new Lucis project
 ```
 
-Legacy positional mode (`lucis <file.lc> [<output>]`) is deprecated and will be
-removed in a future release. Use `lucis build <file> [-o <output>]` instead.
-
 ## Global Flags
 
 ```
@@ -28,33 +25,17 @@ removed in a future release. Use `lucis build <file> [-o <output>]` instead.
 --print-builtins-path    Print the path to the builtins library
 ```
 
-## CLI / Config Isolation
+## Config / CLI override
 
-The CLI and `lucis.yaml` have a strict isolation rule:
-
-- **Explicit file argument** (`lucis build foo.lc`): config is **completely ignored**.
-  All behavior is controlled by CLI flags. This is the "standalone" mode.
-- **No file argument** (`lucis build` from a project directory): config **drives the
-  pipeline** — entrypoint, output binary name, output directory, optimization level,
-  source directories, linker libraries, and include paths are taken from `lucis.yaml`.
-  CLI flags override individual config values.
-
-This ensures clean behavior regardless of whether you're in a project directory
-or compiling a standalone file.
+- **CLI flags override** matching `lucis.yaml` values when both are present.
+- **`--ignore-config`** skips config detection entirely (mutually exclusive with `--config`).
+- **`--config <FILE>`** loads a specific config file instead of auto-detecting.
 
 ## init — Create a New Project
 
 ```
 lucis init [path]
 ```
-
-Creates a new Lucis project at the given path (directory name, `.` for current
-directory, `../relative/path`, etc.). If the directory does not exist, it is
-created automatically along with a `src/` directory and a starter `src/main.lc`.
-
-A `lucis.yaml` project configuration file is generated with sensible defaults.
-It controls the project name, binary output, source directories, build options,
-and linker settings.
 
 | Flag | Description |
 |------|-------------|
@@ -63,155 +44,150 @@ and linker settings.
 ```
 lucis init my-app
 lucis init .
-lucis init ../projects/hello
 ```
 
 ## build — Compile to Binary
 
+### Flags grouped by stage
+
 ```
-lucis build [<file>] [-o <output>] [-O <level>] [--lto]
-               [--emit-llvm] [--emit-asm] [--emit-bc] [--emit-obj] [--emit-bin]
-               [--static] [--shared] [--fPIC]
-               [--no-std] [--target <TRIPLE>] [--entry <SYMBOL>]
-               [--link-arg <FLAG>] [--rpath <DIR>]
-               [--nmagic] [--omagic] [--linker-script <FILE>] [--linker <PATH>]
-               [--strip] [--gc-sections]
-               [-l <lib>] [-L <dir>] [-I <dir>] [-q] [-r]
+lucis build [<file>] [flags]
 ```
 
-Compiles the project to a native binary. If `<file>` is omitted, the compiler
-looks for a `lucis.yaml` in the current directory and auto-resolves the
-entrypoint from the configured source paths. Without `-o`, the output defaults
-to `<input-stem>.out`. If `binary` is set in `lucis.yaml`, that name is used
-verbatim (no `.out` appended). If `out_dir` is set, the binary is placed in
-that directory (relative to the project root).
-
-Emit flags (`--emit-llvm`, `--emit-asm`, `--emit-bc`, `--emit-obj`, `--emit-bin`) can also
-be configured in `lucis.yaml` under the `emit:` key (see below). CLI flags take precedence
-over config. Without `-o`, text emits
-(LLVM IR, assembly) print to **stdout**; bitcode, object, and binary emits use an
-auto-generated file path. With `-o`, all emits write to the given file.
-
-The `--emit-bin` flag requires a full build + link to produce an ELF executable
-first, then runs `objcopy -O binary` to extract the raw binary. This is useful
-for freestanding/kernel targets that need a flat binary (e.g. for bootloaders).
-
-When at least one emit flag is active (except `--emit-bin`), the build stops after
-generating the requested output — no linking or binary is produced. `--emit-bin`
-always runs a full build + link before objcopy. With no emit flags, a normal
-binary is produced.
-
+**Compilation:**
 | Flag | Description |
 |------|-------------|
-| `-o, --output <FILE>` | Output file path (binary, IR, asm, bitcode, or object) |
-| `-O, --opt <LEVEL>` | Optimization level: `0`, `1`, `2`, `3`, `s`, `z`, or `fast` (default: `0`) |
-| `--lto` | Enable Link Time Optimization (LTO) |
-| `--emit-llvm` | Emit LLVM IR (`.ll`) to stdout or `-o` file |
-| `--emit-asm` | Emit assembly (`.s`) to stdout or `-o` file |
-| `--emit-bc` | Emit LLVM bitcode (`.bc`) |
-| `--emit-obj` | Emit object file (`.o`) |
-| `--emit-bin` | Emit raw binary (`.bin`) via `objcopy -O binary` |
-| `-r, --recursive` | Include all modules in emit output (works with `--emit-*`) |
+| `-O, --opt <LEVEL>` | Optimization: `0`, `1`, `2`, `3`, `s`, `z`, `fast` (default: `0`) |
+| `--target <TRIPLE>` | LLVM target triple (e.g. `x86_64-unknown-none`) |
 | `--no-std` | Build without standard library (freestanding/kernel) |
-| `--target <TRIPLE>` | Set LLVM target triple (e.g. `x86_64-unknown-none`) |
-| `--entry <SYMBOL>` | Set the entry point symbol (default: `main`; passed as `-Wl,-e`) |
-| `--static` | Produce a statically linked executable |
-| `--shared` | Produce a shared library (`.so`, `.dll`) |
-| `--fPIC` | Generate position-independent code (PIC) |
-| `--link-arg <FLAG>` | Pass argument directly to linker (repeatable) |
-| `--rpath <DIR>` | Add runtime library search path |
-| `-l, --link <LIB>` | Link against a library (repeatable) |
-| `-L, --lib-path <DIR>` | Add library search path (repeatable) |
+| `--lto` | Enable Link Time Optimization |
+| `--fPIC` | Generate position-independent code |
 | `-I, --include <DIR>` | Add include search path (repeatable) |
-| `--nmagic` | Suppress page alignment in linker (equivalent to `ld -n`) |
-| `--omagic` | Set text segment writable (equivalent to `ld -N`) |
-| `--linker-script <FILE>` | Use a custom linker script (passed as `-T` to the linker) |
-| `--linker <PATH>` | Use a custom linker instead of the default clang/gcc (useful for cross-compilation with `ld`, `x86_64-elf-ld`, etc.) |
-| `--strip` | Strip debug and symbol info from output binary via `objcopy --strip-all` |
-| `--gc-sections` | Enable garbage collection of unused sections at link time (`-Wl,--gc-sections`) |
+
+**Assembly:**
+| Flag | Description |
+|------|-------------|
+| `--asm <FILE>` | Assembly source file `.s`/`.asm` (repeatable) |
+| `--assembler <nasm\|as>` | Assembler program (default: try nasm, fallback as) |
+| `--assembler-arg <FLAG>` | Flag for the assembler (repeatable) |
+
+**Direct inputs:**
+| Flag | Description |
+|------|-------------|
+| `--obj <FILE>` | Pre-compiled object file `.o` (repeatable) |
+| `--lib <FILE>` | Library file `.a`/`.so` (repeatable) |
+| `-l, --link <LIB>` | Link against a system library (repeatable) |
+| `-L, --lib-path <DIR>` | Add library search path (repeatable) |
+
+**Link:**
+| Flag | Description |
+|------|-------------|
+| `--linker <PATH>` | Linker program (default: gcc/clang for host, ld for freestanding) |
+| `--linker-script <FILE>` | Linker script (`-T`) |
+| `--linker-entry <SYMBOL>` | Entry point symbol (`-e`) |
+| `--linker-nmagic` | Suppress page alignment in linker (`-n`) |
+| `--linker-omagic` | Set text segment writable (`-N`) |
+| `--linker-gc-sections` | Garbage collect unused sections at link time |
+| `--linker-arg <FLAG>` | Pass raw argument to linker (repeatable) |
+| `--rpath <DIR>` | Add runtime library search path |
+| `--static` | Produce a statically linked executable |
+| `--shared` | Produce a shared library |
+
+**Post-process:**
+| Flag | Description |
+|------|-------------|
+| `--strip` | Strip debug/symbol info from output binary |
+| `--emit-llvm` | Emit LLVM IR (`.ll`) |
+| `--emit-asm` | Emit assembly (`.s`) from LLVM |
+| `--emit-bc` | Emit LLVM bitcode (`.bc`) |
+| `--emit-obj` | Emit object file (`.o`) and stop |
+| `--emit-bin` | Emit raw binary (`.bin`) via objcopy |
+| `-r, --recursive` | Include all modules in emit output |
+
+**Output:**
+| Flag | Description |
+|------|-------------|
+| `-o, --output <FILE>` | Output path (default: `<input>.out`) |
+
+**General:**
+| Flag | Description |
+|------|-------------|
 | `-q, --quiet` | Suppress pipeline logs |
+| `--config <FILE>` | Path to `lucis.yaml` configuration |
+| `--ignore-config` | Ignore `lucis.yaml`, use CLI flags only |
+
+**Deprecated aliases (accepted with warning):**
+| Old flag | Use instead |
+|----------|-------------|
+| `--entry <SYMBOL>` | `--linker-entry <SYMBOL>` |
+| `--nmagic` | `--linker-nmagic` |
+| `--omagic` | `--linker-omagic` |
+| `--gc-sections` | `--linker-gc-sections` |
+| `--link-arg <FLAG>` | `--linker-arg <FLAG>` |
+
+### Examples
 
 ```bash
 # Standard build
-lucis build main.lc -o ./main -O2
+lucis build main.lc -o app -O2
 
-# Build a shared library (automatically enables --fPIC)
-lucis build module.lc --shared -o libmodule.so
+# Shared library
+lucis build lib.lc --shared -o libfoo.so
 
-# Build a static binary
+# Static binary
 lucis build main.lc --static -o main_static
+
+# Kernel / bare-metal with assembly
+lucis build main.lc --asm boot.s --assembler nasm \
+  --target x86_64-unknown-none --no-std \
+  --linker ld --linker-script linker.ld --linker-entry _start --linker-nmagic \
+  -o kernel.elf
+
+# Using lucis.yaml from a project directory
+lucis build
+
+# Build without config (ad-hoc)
+lucis build --ignore-config main.lc -o app
 
 # Emit LLVM IR to stdout
 lucis build main.lc --emit-llvm | less
-
-# Emit Assembly to file
-lucis build main.lc --emit-asm -o main.s
-
-# Emit object file
-lucis build main.lc --emit-obj -o main.o
-
-# Size-optimized build with LTO
-lucis build main.lc -Oz --lto
-
-# Build a freestanding kernel with assembly boot code
-lucis build main.lc boot.s --no-std --nmagic --target x86_64-unknown-none --linker-script linker.ld --linker ld --entry _start -o kernel.elf
 ```
-
-**Optimization Levels:**
-- `0-3`: Standard optimization levels.
-- `s`: Optimize for size, balancing performance.
-- `z`: Optimize aggressively for size.
-- `fast`: Enable aggressive optimizations (O3 + fast-math).
-
-**Linkage Control:**
-- `--static`: Produce a statically linked executable.
-    * **Note**: Requires static versions of system dependencies (e.g., `zlib-static`, `glibc-static`) installed on your system.
-- `--shared`: Produce a shared library (`.so`, `.dll`).
-- `--fPIC`: Generate position-independent code (PIC). Automatically enabled with `--shared`.
-- `--nmagic`: Suppress page alignment in the linker (`ld -n`). Useful for kernels and bare-metal where section alignment constraints are undesirable.
-- `--omagic`: Make the text segment writable (`ld -N`). Disables page alignment and allows self-modifying code in freestanding environments.
-- `--gc-sections`: Enable garbage collection of unused code/data sections at link time. Passes `-Wl,--gc-sections` (or `--gc-sections` for raw `ld`). Often combined with `-ffunction-sections`/`-fdata-sections` for embedded targets.
-- `--strip`: Remove all debug and symbol information from the output binary via `objcopy --strip-all`. Reduces binary size for production/release builds.
 
 ## run — Compile and Execute
 
 ```
-lucis run [<file>] [-O <level>] [--lto] [-c] [-l <lib>] [-L <dir>] [-I <dir>] [-q] [-- args...]
+lucis run [<file>] [-O <level>] [--lto] [-c] [-l <lib>] [-L <dir>] [-I <dir>]
+          [--ignore-config] [-q] [-- args...]
 ```
-
-Compiles and immediately executes the program — the compiled binary is cached
-in `.lucis/cache/` and reused on subsequent runs when the source hasn't changed.
-If `<file>` is omitted, the entrypoint is auto-resolved from `lucis.yaml`.
 
 | Flag | Description |
 |------|-------------|
-| `-O, --opt <LEVEL>` | Optimization level: `0`, `1`, `2`, `3`, `s`, `z`, or `fast` |
+| `-O, --opt <LEVEL>` | Optimization level |
 | `--lto` | Enable Link Time Optimization |
 | `-c, --clean` | Clear run cache before compiling |
 | `-l, --link <LIB>` | Link against a library (repeatable) |
 | `-L, --lib-path <DIR>` | Add library search path (repeatable) |
 | `-I, --include <DIR>` | Add include search path (repeatable) |
+| `--ignore-config` | Ignore `lucis.yaml` |
 | `-q, --quiet` | Suppress pipeline logs |
 | `-- args...` | Arguments forwarded to the compiled program |
 
 ```bash
 lucis run main.lc -O3
-lucis run app.lc --lto -- arg1 arg2
-lucis run app.lc -c -q              # clear cache before run
+lucis run --lto -- arg1 arg2
+lucis run -c -q
 ```
 
 ## check — Type Checking
 
 ```
-lucis check [<file>] [-I <dir>] [-q]
+lucis check [<file>] [-I <dir>] [--ignore-config] [-q]
 ```
-
-Runs the parser and semantic checker without generating any code or binary.
-If `<file>` is omitted, the entrypoint is auto-resolved from `lucis.yaml`.
 
 | Flag | Description |
 |------|-------------|
 | `-I, --include <DIR>` | Add include search path (repeatable) |
+| `--ignore-config` | Ignore `lucis.yaml` |
 | `-q, --quiet` | Suppress pipeline logs |
 
 ```bash
@@ -219,99 +195,167 @@ lucis check main.lc
 lucis check -q
 ```
 
-## test — Run Test Suite
-
-```
-lucis test
-```
-
-**Not yet implemented.** Prints a message and exits. A proper test runner with
-test discovery, filtering, and per-test reporting is planned for a future release.
-
 ## help — Command Help
 
 ```
 lucis help [command]
 ```
 
-Shows general help or help for a specific command.
-
 ```bash
-lucis help
 lucis help build
 ```
 
-## helpc — C Library Reference
-
-```
-lucis helpc <lib> [symbol] [flags]
-```
-
-Inspects C library headers and displays type information mapped to Lucis
-equivalents.
-
-```bash
-lucis helpc raylib InitWindow
-lucis helpc stdio printf
-lucis helpc math sin --json
-```
-
-See [helpc](../tools/helpc.md) for the full reference.
+---
 
 ## Project Configuration (lucis.yaml)
 
-When a `lucis.yaml` file exists in the project root, the compiler and LSP use
-it to define project boundaries and settings. The file is generated by
-`lucis init` and can be edited manually.
+Every CLI flag has a corresponding `lucis.yaml` key, and vice‑versa.
+The file is generated by `lucis init` and can be edited manually.
+
+### Full schema
 
 ```yaml
 name: my-app                    # Project name (required)
-version: "0.0.1"               # Project version
+version: "0.1.0"               # Project version
 
-binary: my-app                  # Output binary name (default: <name>)
-out_dir: build                  # Build output directory
+# Tool paths (cross-compilation, override PATH)
+tools:
+  nasm: /usr/bin/nasm           # Assembler path
+  ld: /usr/bin/ld.bfd           # Linker path
+  objcopy: /usr/bin/objcopy     # Used by --strip, --emit-bin
 
-source:                         # Source directories for use resolution
+# Assembly stage
+assembly:
+  files:                        # --asm (repeatable)
+    - boot.s
+  assembler: nasm               # --assembler <nasm|as>
+  flags:                        # --assembler-arg (repeatable)
+    - -f elf64
+
+# Source directories
+source:
   - src/
 
-build:                          # Build defaults (overridden by CLI flags)
-  opt_level: O2                 # O0, O1, O2, O3, Os, Oz, Ofast
-  lto: false                    # Enable Link Time Optimization
-  static: false                 # Static linking
-  shared: false                 # Shared library
-  fpic: true                    # Position-independent code
-  no_std: false                 # Build without standard library (freestanding)
-  target: ""                    # LLVM target triple for cross-compilation
-  code_model: ""                # Code model (e.g. "kernel")
-  entry: ""                     # Entry point symbol (default: main)
+# Compiler options
+build:
+  target: ""                    # --target
+  opt_level: O2                 # -O (default: O0)
+  no_std: false                 # --no-std
+  lto: false                    # --lto
+  static: false                 # --static
+  shared: false                 # --shared
+  fpic: true                    # --fPIC
+  code_model: ""                # LLVM code model
+  include_paths:                # -I (repeatable)
+    - include/
+  defines:                      # Preprocessor defines (-D)
+    DEBUG: "1"
+    VERSION: '"0.1.0"'
 
-emit:                           # Emit defaults (when no --emit-* CLI flags given)
-  llvm: false                   # Always emit .ll
-  asm: false                    # Always emit .s
-  bc: false                     # Always emit .bc
-  obj: false                    # Always emit .o
-  bin: false                    # Always emit .bin (via objcopy)
+# Pre-compiled inputs
+inputs:
+  objects:                      # --obj (repeatable)
+    - lib/foo.o
+  static_libs:                  # --lib (repeatable)
+    - lib/libdriver.a
+  shared_libs:                  # --lib for .so
+    - lib/libexternal.so
 
-run:                            # Run defaults (overridden by CLI flags)
+# Linker options
+linker:
+  program: ""                   # --linker (default: gcc/clang/ld)
+  script: ""                    # --linker-script
+  entry: ""                     # --linker-entry
+  libs: []                      # -l (repeatable)
+  lib_paths: []                 # -L (repeatable)
+  flags: []                     # --linker-nmagic, --linker-omagic, etc.
+  args: []                      # --linker-arg (repeatable)
+
+# Output / emit
+output:
+  path: ""                      # -o
+  strip: false                  # --strip
+  emit_bin: false               # --emit-bin
+  emit_llvm: false              # --emit-llvm
+  emit_asm: false               # --emit-asm
+  emit_bc: false                # --emit-bc
+  emit_obj: false               # --emit-obj
+
+# Pre/post build scripts
+scripts:
+  env:                          # Environment variables for scripts
+    LUCIS_ARCH: x86_64
+  pre: []                       # Commands before build
+  pos: []                       # Commands after successful link
+
+# Run defaults (lucis run)
+run:
   opt_level: O0
   lto: false
-  args: []                      # Default program arguments
-
-linker:                         # Linker settings
-  libs: []                      # Libraries to link (-l)
-  lib_paths: []                 # Library search paths (-L)
-
-scripts:                        # Pre/post build hooks
-  pre: []                       # Shell commands to run before compilation
-  pos: []                       # Shell commands to run after successful link
-
-includes: []                    # Include paths for C FFI (-I)
+  args: []
 ```
 
-## Build Artifacts
+### Key mapping: yaml ↔ CLI
 
-The compiler creates a `.lucis/build/` directory in the project root for
-intermediate object files:
+| Yaml key | CLI flag |
+|----------|----------|
+| `assembly.files[]` | `--asm <file>` |
+| `assembly.assembler` | `--assembler <nasm\|as>` |
+| `assembly.flags[]` | `--assembler-arg <flag>` |
+| `build.target` | `--target <triple>` |
+| `build.opt_level` | `-O <level>` |
+| `build.no_std` | `--no-std` |
+| `build.lto` | `--lto` |
+| `build.static` | `--static` |
+| `build.shared` | `--shared` |
+| `build.fpic` | `--fPIC` |
+| `build.include_paths[]` | `-I <dir>` |
+| `inputs.objects[]` | `--obj <file>` |
+| `inputs.static_libs[]` | `--lib <file>` |
+| `inputs.shared_libs[]` | `--lib <file>` |
+| `linker.program` | `--linker <path>` |
+| `linker.script` | `--linker-script <file>` |
+| `linker.entry` | `--linker-entry <sym>` |
+| `linker.libs[]` | `-l <lib>` |
+| `linker.lib_paths[]` | `-L <dir>` |
+| `linker.flags[]` | `--linker-nmagic`, `--linker-omagic`, `--linker-gc-sections` |
+| `linker.args[]` | `--linker-arg <flag>` |
+| `output.path` | `-o <file>` |
+| `output.strip` | `--strip` |
+| `output.emit_bin` | `--emit-bin` |
+| `output.emit_llvm` | `--emit-llvm` |
+| `output.emit_asm` | `--emit-asm` |
+| `output.emit_bc` | `--emit-bc` |
+| `output.emit_obj` | `--emit-obj` |
+| `tools.nasm` | `--assembler` (fallback) |
+| `tools.ld` | `--linker` (fallback) |
+
+### Pre/post scripts
+
+Scripts run as shell commands with these environment variables set:
+
+| Variable | Set by | Available in |
+|----------|--------|-------------|
+| `LUCIS_PROJECT_ROOT` | Compiler | pre, pos |
+| `LUCIS_BUILD_DIR` | Compiler | pre, pos |
+| `LUCIS_TARGET` | Compiler | pre, pos |
+| `LUCIS_OUTPUT` | Compiler | pos only |
+| `LUCIS_*` (from `scripts.env`) | Config | pre, pos |
+
+## Build Pipeline
+
+```
+assembly  →  compilation (LC → LLVM IR)  →  link  →  post-process
+  │                │                           │          │
+ nasm/as         lucis                      ld/gcc    objcopy/strip
+```
+
+1. **Assembly** — `.s`/`.asm` files are assembled with `nasm` or `as`
+2. **Compilation** — `.lc` sources are compiled to LLVM IR, optimized, and emitted as objects
+3. **Link** — Objects + libraries are linked into an ELF/PE/Mach-O binary
+4. **Post-process** — Optional `objcopy` for strip or raw binary emit
+
+## Build Artifacts
 
 ```
 project/
@@ -319,55 +363,29 @@ project/
 │   └── main.lc
 ├── lucis.yaml
 └── .lucis/
-    ├── build/
-    │   ├── src__main__main.o
-    │   └── cache/
-    │       ├── build_manifest.txt
-    │       └── semantic.db
-    └── cache/
-        └── run-<hash>.bin
+    └── build/
+        ├── __main.o
+        └── cache/
+            ├── build_manifest.txt
+            └── semantic.db
 ```
-
-These files are reused across compilations. You can safely delete `.lucis/`
-to force a clean rebuild.
-
-## Compiler Pipeline
-
-When you run `lucis build`, the compiler performs these steps:
-
-1. **Resolve Project Root** — Walk up from the input file looking for `lucis.yaml` or `.git`
-2. **Resolve Imports** — BFS import resolution starting from the entry point; only
-   files referenced by `use` are opened (no directory scanning)
-3. **Parse** — Parse each file using the ANTLR4 grammar
-4. **Register** — Build a module registry for cross-file symbol resolution
-5. **Resolve Headers** — Process `#include` directives and auto-discover C source files
-6. **Check** — Run semantic analysis and type checking on all units
-7. **Generate IR** — Emit LLVM intermediate representation for each unit
-8. **Optimize** — Apply LLVM optimization passes (if `-O` is specified)
-9. **Emit Objects** — Write `.o` object files to `.lucis/build/`
-10. **Link** — Invoke the system linker to produce the final native binary
 
 ## Error Messages
 
 ```
 lucis: unknown flag '--xyz'
 ```
-
-Unknown command-line flag. Check the flag spelling.
+Unknown command-line flag.
 
 ```
 lucis: no input file specified and no lucis.yaml found
 ```
-
-No `.lc` file provided and no `lucis.yaml` found in the current directory or
-any parent directory.
+No `.lc` file provided and no config found.
 
 ```
-lucis: cannot find header '<mylib.h>'. Check '-I' include paths
+lucis: error: --ignore-config and --config are mutually exclusive
 ```
-
-A `#include` directive references a header that cannot be found. Add the
-correct `-I` path.
+Both flags cannot be used together.
 
 ## See Also
 
