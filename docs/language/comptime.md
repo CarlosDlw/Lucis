@@ -33,18 +33,19 @@ The runtime binary contains **zero code** for the comptime function — only the
 | Category | Supported |
 |----------|-----------|
 | Arithmetic | `+`, `-`, `*`, `/` |
+| Relational | `>`, `<`, `>=`, `<=`, `==`, `!=` |
 | Variables | Local vars and parameters |
-| Literals | Integer (`42`), float, bool |
-| Control flow | `return` |
+| Literals | Integer (`42`), float, bool (`true` / `false`) |
+| Control flow | `return`, `if` / `else` |
 | Function calls | Other comptime functions |
 
 ## Limitations (current)
 
-- No `if`, `for`, `while` yet (future)
+- No `for`, `while`, `loop` yet (future)
 - No `match` / `switch`
 - No `string` or complex types in comptime functions
 - No `comptime` blocks — only functions
-- Only `int32` return type fully supported
+- `int32` and `bool` return types supported; others are treated as `int32`
 - All arguments must be compile-time constants
 
 ## Use Cases

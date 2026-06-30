@@ -11142,6 +11142,12 @@ std::any IRGen::visitFnCallExpr(LucisParser::FnCallExprContext* ctx) {
                         llvm::Type::getInt32Ty(*context_),
                         result.asInt(), true));
             }
+            if (result.kind() == ComptimeValue::Kind::Bool) {
+                return static_cast<llvm::Value*>(
+                    llvm::ConstantInt::get(
+                        llvm::Type::getInt1Ty(*context_),
+                        result.asBool() ? 1 : 0));
+            }
         }
 
         // ── Global builtins (value-returning: toInt, toFloat, toBool, toString) ──

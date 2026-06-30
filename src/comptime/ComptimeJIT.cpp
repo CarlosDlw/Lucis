@@ -62,6 +62,16 @@ ComptimeJIT::runJIT(llvm::Module* module,
                      const std::vector<ComptimeValue>& args) {
     if (!module) return ComptimeValue::voidVal();
 
+    // Inspect return type from the module BEFORE transferring ownership to the engine
+    auto* irFn = module->getFunction(funcName);
+    if (!irFn) {
+        std::cerr << "[comptime] function '" << funcName << "' not found in module\n";
+        return ComptimeValue::voidVal();
+    }
+    auto* retTy = irFn->getReturnType();
+    bool isBoolRet = retTy->isIntegerTy(1);
+    bool isIntRet = retTy->isIntegerTy(32);
+
     std::string err;
     auto clone = llvm::CloneModule(*module);
     llvm::EngineBuilder builder(std::move(clone));
@@ -73,31 +83,60 @@ ComptimeJIT::runJIT(llvm::Module* module,
         return ComptimeValue::voidVal();
     }
 
-    // Lookup function address and call via function pointer
     auto fnAddr = impl_->engine->getFunctionAddress(funcName);
     if (!fnAddr) {
         std::cerr << "[comptime] function '" << funcName << "' not found in JIT\n";
         return ComptimeValue::voidVal();
     }
 
-    // Cast to native function pointer based on arg count
-    // Currently only support 0-2 int32 args returning int32
-    if (args.size() == 0) {
-        using Fn = int32_t (*)();
-        auto* fn = reinterpret_cast<Fn>(fnAddr);
+    // Convert args to int32 for calling
+    auto toInt32 = [](const ComptimeValue& v) -> int32_t {
+        if (v.kind() == ComptimeValue::Kind::Int) return static_cast<int32_t>(v.asInt());
+        if (v.kind() == ComptimeValue::Kind::Bool) return v.asBool() ? 1 : 0;
+        return 0;
+    };
+
+    auto retBool = [&](auto fn) {
+        return ComptimeValue::boolVal(fn() != 0);
+    };
+    auto retInt = [&](auto fn) {
         return ComptimeValue::intVal(fn());
-    } else if (args.size() == 1) {
-        using Fn = int32_t (*)(int32_t);
-        auto* fn = reinterpret_cast<Fn>(fnAddr);
-        return ComptimeValue::intVal(fn(static_cast<int32_t>(args[0].asInt())));
-    } else if (args.size() == 2) {
-        using Fn = int32_t (*)(int32_t, int32_t);
-        auto* fn = reinterpret_cast<Fn>(fnAddr);
-        return ComptimeValue::intVal(fn(
-            static_cast<int32_t>(args[0].asInt()),
-            static_cast<int32_t>(args[1].asInt())));
+    };
+
+    if (isBoolRet) {
+        if (args.size() == 0) {
+            using Fn = bool (*)();
+            return retBool(reinterpret_cast<Fn>(fnAddr));
+        } else if (args.size() == 1) {
+            using Fn = bool (*)(int32_t);
+            auto* fn = reinterpret_cast<Fn>(fnAddr);
+            return ComptimeValue::boolVal(fn(toInt32(args[0])) != 0);
+        } else if (args.size() == 2) {
+            using Fn = bool (*)(int32_t, int32_t);
+            auto* fn = reinterpret_cast<Fn>(fnAddr);
+            return ComptimeValue::boolVal(fn(toInt32(args[0]), toInt32(args[1])) != 0);
+        } else {
+            std::cerr << "[comptime] unsupported arg count for bool fn: " << args.size() << "\n";
+            return ComptimeValue::voidVal();
+        }
+    } else if (isIntRet) {
+        if (args.size() == 0) {
+            using Fn = int32_t (*)();
+            return ComptimeValue::intVal(reinterpret_cast<Fn>(fnAddr)());
+        } else if (args.size() == 1) {
+            using Fn = int32_t (*)(int32_t);
+            auto* fn = reinterpret_cast<Fn>(fnAddr);
+            return ComptimeValue::intVal(fn(toInt32(args[0])));
+        } else if (args.size() == 2) {
+            using Fn = int32_t (*)(int32_t, int32_t);
+            auto* fn = reinterpret_cast<Fn>(fnAddr);
+            return ComptimeValue::intVal(fn(toInt32(args[0]), toInt32(args[1])));
+        } else {
+            std::cerr << "[comptime] unsupported arg count: " << args.size() << "\n";
+            return ComptimeValue::voidVal();
+        }
     } else {
-        std::cerr << "[comptime] unsupported arg count: " << args.size() << "\n";
+        std::cerr << "[comptime] unsupported return type in JIT runner\n";
         return ComptimeValue::voidVal();
     }
 }

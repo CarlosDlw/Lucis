@@ -21,5 +21,7 @@ private:
     llvm::IRBuilder<> builder_;
     std::unordered_map<std::string, llvm::Value*> locals_;
 
+    llvm::Value* visitStmt(LucisParser::StatementContext* stmt);
+    llvm::Value* visitIfStmt(LucisParser::IfStmtContext* ifStmt);
     llvm::Value* visitExpr(LucisParser::ExpressionContext* expr);
 };
