@@ -3783,23 +3783,38 @@ std::optional<HoverResult> HoverProvider::hoverMethodCall(
     auto formatExtendMethod = [&](LucisParser::ExtendDeclContext* ext,
                                    LucisParser::ExtendMethodContext* m,
                                    const std::vector<DocComment>& docs) -> std::optional<HoverResult> {
+        // Build substitution map from receiver's concrete type args
+        std::unordered_map<std::string, std::string> subst;
+        std::string rBase, rArgsStr;
+        std::vector<std::string> rArgs;
+        if (parseGenericInstance(receiverTypeName, rBase, rArgs)) {
+            if (auto* tpl = ext->typeParamList()) {
+                auto tps = tpl->typeParam();
+                for (size_t i = 0; i < std::min(rArgs.size(), tps.size()); i++) {
+                    auto ids = tps[i]->IDENTIFIER();
+                    if (!ids.empty())
+                        subst[ids[0]->getText()] = rArgs[i];
+                }
+            }
+        }
         std::ostringstream ss;
         ss << "```lucis\n(" << safeText(ext->IDENTIFIER())
-           << " method) " << typeSpecToString(m->typeSpec())
+           << " method) " << substituteTypeParams(typeSpecToString(m->typeSpec()), subst)
            << " " << methodName << "(";
+        bool first = true;
         if (m->AMPERSAND()) {
-            ss << "&self";
             for (auto* p : m->param()) {
-                ss << ", " << typeSpecToString(p->typeSpec())
+                if (!first) ss << ", ";
+                first = false;
+                ss << substituteTypeParams(typeSpecToString(p->typeSpec()), subst)
                    << " " << safeText(p->IDENTIFIER());
             }
         } else {
             if (auto* params = m->paramList()) {
-                bool first = true;
                 for (auto* p : params->param()) {
                     if (!first) ss << ", ";
                     first = false;
-                    ss << typeSpecToString(p->typeSpec())
+                    ss << substituteTypeParams(typeSpecToString(p->typeSpec()), subst)
                        << " " << safeText(p->IDENTIFIER());
                 }
             }

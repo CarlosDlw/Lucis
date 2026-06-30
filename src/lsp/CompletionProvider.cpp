@@ -4990,6 +4990,10 @@ void CompletionProvider::addStaticMethods(std::vector<CompletionItem> &items,
   auto lastScope = baseTypeName.rfind("::");
   if (lastScope != std::string::npos)
     baseTypeName = baseTypeName.substr(lastScope + 2);
+  // Strip generic type arguments: ArrayList<int32> -> ArrayList
+  auto lt = baseTypeName.find('<');
+  if (lt != std::string::npos)
+    baseTypeName = baseTypeName.substr(0, lt);
 
   // Same-file extend blocks
   for (auto *tld : tree->topLevelDecl()) {
@@ -6249,20 +6253,17 @@ CompletionProvider::formatFuncSignature(LucisParser::FunctionDeclContext *func) 
 std::string CompletionProvider::formatMethodSignature(
     LucisParser::ExtendMethodContext *method) {
   std::string sig = "fn " + safeIdAt(method, 0) + "(";
-  bool isInstance = (method->AMPERSAND() != nullptr);
-  if (isInstance) {
-    sig += "&" + safeIdAt(method, 1);
-    bool first = true;
+  bool first = true;
+  if (method->AMPERSAND()) {
     for (auto *p : method->param()) {
-      sig += ", ";
+      if (!first) sig += ", ";
+      first = false;
       sig += typeSpecToString(p->typeSpec()) + " " + safeText(p->IDENTIFIER());
     }
   } else {
     if (auto *pl = method->paramList()) {
-      bool first = true;
       for (auto *p : pl->param()) {
-        if (!first)
-          sig += ", ";
+        if (!first) sig += ", ";
         first = false;
         sig +=
             typeSpecToString(p->typeSpec()) + " " + safeText(p->IDENTIFIER());

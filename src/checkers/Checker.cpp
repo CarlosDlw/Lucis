@@ -3520,6 +3520,15 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
                     std::to_string(sm->paramTypes.size()) +
                     " arguments, got " + std::to_string(argTypes.size()));
             }
+            for (size_t i = 0; i < argTypes.size() && i < sm->paramTypes.size(); i++) {
+                if (!argTypes[i] || !sm->paramTypes[i]) continue;
+                if (!isAssignable(sm->paramTypes[i], argTypes[i])) {
+                    error(expr, "method '" + methodName + "' argument " +
+                        std::to_string(i + 1) + " type mismatch: expected '" +
+                        sm->paramTypes[i]->name + "', got '" +
+                        argTypes[i]->name + "'");
+                }
+            }
             return sm->returnType;
         }
         error(expr, "struct '" + pointee->name +
@@ -3742,6 +3751,15 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
                         std::to_string(sm->paramTypes.size()) +
                         " arguments " + formatParamTypes(sm->paramTypes) +
                         ", got " + std::to_string(argTypes.size()));
+                }
+                for (size_t i = 0; i < argTypes.size() && i < sm->paramTypes.size(); i++) {
+                    if (!argTypes[i] || !sm->paramTypes[i]) continue;
+                    if (!isAssignable(sm->paramTypes[i], argTypes[i])) {
+                        error(expr, "method '" + methodName + "' argument " +
+                            std::to_string(i + 1) + " type mismatch: expected '" +
+                            sm->paramTypes[i]->name + "', got '" +
+                            argTypes[i]->name + "'");
+                    }
                 }
                 return sm->returnType;
             }
