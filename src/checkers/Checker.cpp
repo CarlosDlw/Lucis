@@ -3625,6 +3625,12 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
                         "' to 'string': incompatible types");
                 }
             }
+            // char → string (not supported, use .toString())
+            else if (sk == TypeKind::Char && dk == TypeKind::String) {
+                error(expr,
+                    "cannot cast 'char' to 'string'. "
+                    "Use char.toString() to convert a character to a string");
+            }
             // struct/extended/string → numeric or vice-versa
             else if ((sk == TypeKind::Struct || sk == TypeKind::Extended ||
                       sk == TypeKind::String) &&
