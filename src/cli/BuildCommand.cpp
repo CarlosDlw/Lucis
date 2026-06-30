@@ -301,7 +301,8 @@ int BuildCommand::run(const ArgParser& parser) {
 
     // ── Build flag hash for cache invalidation ──────────────────────────
     std::string customLinker = parser.has("linker") ? parser.get("linker") :
-                                (useConfig ? cfg->linker.program : "");
+                                (useConfig && !cfg->linker.program.empty() ? cfg->linker.program :
+                                 (useConfig && !cfg->tools.ld.empty() ? cfg->tools.ld : ""));
     bool isRawLd = !customLinker.empty() &&
                    (customLinker == "ld" ||
                     customLinker.find("/ld") != std::string::npos);
@@ -323,12 +324,19 @@ int BuildCommand::run(const ArgParser& parser) {
         buf += "linkerNmagic:" + std::to_string(parser.has("linker-nmagic") || parser.has("nmagic")) + ";";
         buf += "linkerOmagic:" + std::to_string(parser.has("linker-omagic") || parser.has("omagic")) + ";";
         buf += "ls:" + parser.get("linker-script") + ";";
+        if (useConfig && parser.get("linker-script").empty())
+            buf += "ls_cfg:" + cfg->linker.script + ";";
         buf += "linker:" + customLinker + ";";
-        buf += "strip:" + std::to_string(parser.has("strip")) + ";";
+        buf += "strip:" + std::to_string(parser.has("strip") || (useConfig && cfg->output.strip)) + ";";
         buf += "linkerGcSections:" + std::to_string(parser.has("linker-gc-sections") || parser.has("gc-sections")) + ";";
         for (auto& ip : pipeOpts.includePaths) buf += "I:" + ip + ";";
         for (auto& lp : libPaths) buf += "L:" + lp + ";";
         for (auto& eo : extraObjectFiles) buf += "O:" + eo + ";";
+        if (useConfig) {
+            for (auto& [k, v] : cfg->build.defines) buf += "D:" + k + "=" + v + ";";
+            for (auto& flag : cfg->linker.flags) buf += "LF:" + flag + ";";
+            for (auto& arg : cfg->linker.args) buf += "LA:" + arg + ";";
+        }
         return std::to_string(std::hash<std::string>{}(buf));
     };
 
@@ -495,6 +503,11 @@ int BuildCommand::run(const ArgParser& parser) {
         std::vector<std::string> cIncFlags;
         for (auto& ip : pipeOpts.includePaths)
             cIncFlags.push_back("-I" + ip);
+        // Config defines: -DKEY=VAL
+        if (useConfig) {
+            for (auto& [k, v] : cfg->build.defines)
+                cIncFlags.push_back("-D" + k + "=" + v);
+        }
         for (auto& cSrc : pipeline->cSourceFiles) {
             auto stem = fs::path(cSrc).stem().string();
             cIncFlags.push_back("-I" + fs::path(cSrc).parent_path().string());
@@ -861,7 +874,11 @@ int BuildCommand::run(const ArgParser& parser) {
     }
 
     if (outputFile.empty()) {
-        if (useConfig && !cfg->binary.empty()) {
+        if (useConfig && !cfg->output.path.empty()) {
+            outputFile = cfg->output.path;
+            if (fs::path(outputFile).is_relative())
+                outputFile = (fs::path(projRoot) / outputFile).string();
+        } else if (useConfig && !cfg->binary.empty()) {
             outputFile = cfg->binary;
         } else {
             outputFile = fs::path(pipeOpts.inputFile).stem().string() + ".out";
@@ -914,6 +931,16 @@ int BuildCommand::run(const ArgParser& parser) {
         } else {
             finalLinkerFlags.push_back("-Wl,-T" + lsPath);
         }
+    } else if (useConfig && !cfg->linker.script.empty()) {
+        auto lsPath = cfg->linker.script;
+        if (fs::path(lsPath).is_relative())
+            lsPath = (fs::path(projRoot) / lsPath).string();
+        if (isRawLd) {
+            finalLinkerFlags.push_back("-T");
+            finalLinkerFlags.push_back(lsPath);
+        } else {
+            finalLinkerFlags.push_back("-Wl,-T" + lsPath);
+        }
     }
 
     // linker-arg (new) + link-arg (deprecated)
@@ -921,6 +948,14 @@ int BuildCommand::run(const ArgParser& parser) {
         finalLinkerFlags.push_back(arg);
     for (auto& arg : parser.getAll("link-arg"))
         finalLinkerFlags.push_back(arg);
+
+    // Config linker.flags and linker.args (CLI > config)
+    if (useConfig) {
+        for (auto& flag : cfg->linker.flags)
+            finalLinkerFlags.push_back(flag);
+        for (auto& arg : cfg->linker.args)
+            finalLinkerFlags.push_back(arg);
+    }
 
     if (parser.has("rpath")) {
         auto rpathDir = parser.get("rpath");
@@ -957,6 +992,10 @@ int BuildCommand::run(const ArgParser& parser) {
     }
 
     // ── Emit raw binary via objcopy (after poscmds, on final ELF) ─
+    std::string objcopyCmd = "objcopy";
+    if (useConfig && !cfg->tools.objcopy.empty())
+        objcopyCmd = cfg->tools.objcopy;
+
     for (auto& t : tasks) {
         if (t.type != EmitTask::BIN) continue;
         std::string binPath;
@@ -964,24 +1003,25 @@ int BuildCommand::run(const ArgParser& parser) {
             binPath = (fs::path(outputFile).parent_path() / (fs::path(outputFile).stem().string() + ".bin")).string();
         else
             binPath = t.outPath;
-        std::string cmd = "objcopy -O binary " + outputFile + " " + binPath;
+        std::string cmd = objcopyCmd + " -O binary " + outputFile + " " + binPath;
         if (!pipeOpts.quiet)
             std::cerr << "lucis: [emit-bin] " << cmd << "\n";
         int ret = system(cmd.c_str());
         if (ret != 0) {
-            std::cerr << "lucis: objcopy failed with exit code " << ret << "\n";
+            std::cerr << "lucis: " << objcopyCmd << " failed with exit code " << ret << "\n";
             return 1;
         }
     }
 
     // ── Strip debug/symbol info ──────────────────────────────────────────
-    if (parser.has("strip")) {
-        std::string stripCmd = "objcopy --strip-all " + outputFile;
+    bool shouldStrip = parser.has("strip") || (useConfig && cfg->output.strip);
+    if (shouldStrip) {
+        std::string stripCmd = objcopyCmd + " --strip-all " + outputFile;
         if (!pipeOpts.quiet)
             std::cerr << "lucis: [strip] " << stripCmd << "\n";
         int ret = system(stripCmd.c_str());
         if (ret != 0) {
-            std::cerr << "lucis: strip failed with exit code " << ret << "\n";
+            std::cerr << "lucis: " << objcopyCmd << " strip failed with exit code " << ret << "\n";
             return 1;
         }
     }

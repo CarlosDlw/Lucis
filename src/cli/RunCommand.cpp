@@ -335,6 +335,12 @@ int RunCommand::run(const ArgParser& parser) {
     if (pid == 0) {
         std::vector<char*> execArgv;
         execArgv.push_back(const_cast<char*>(runBinPath.c_str()));
+        // Config run.args first (lower priority)
+        if (useConfig) {
+            for (auto& arg : cfg->run.args)
+                execArgv.push_back(const_cast<char*>(arg.c_str()));
+        }
+        // CLI remaining args override (higher priority)
         for (auto& arg : parser.remaining())
             execArgv.push_back(const_cast<char*>(arg.c_str()));
         execArgv.push_back(nullptr);

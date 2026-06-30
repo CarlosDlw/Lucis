@@ -457,6 +457,45 @@ bool LucisConfig::createDefault(const std::string& dir, const std::string& name)
     cfg.build.optLevel   = "O2";
     cfg.build.fpic       = true;
     cfg.run.optLevel     = "O0";
+
+    // Set all other fields to their defaults so they appear in the saved YAML
+    cfg.tools.nasm    = "";
+    cfg.tools.ld      = "";
+    cfg.tools.objcopy = "";
+    cfg.assembly.files.clear();
+    cfg.assembly.assembler = "";
+    cfg.assembly.flags.clear();
+    cfg.build.target      = "";
+    cfg.build.noStd       = false;
+    cfg.build.lto         = false;
+    cfg.build.staticLink  = false;
+    cfg.build.shared      = false;
+    cfg.build.codeModel   = "";
+    cfg.build.includePaths.clear();
+    cfg.build.defines.clear();
+    cfg.inputs.objects.clear();
+    cfg.inputs.staticLibs.clear();
+    cfg.inputs.sharedLibs.clear();
+    cfg.linker.program  = "";
+    cfg.linker.script   = "";
+    cfg.linker.entry    = "";
+    cfg.linker.libs.clear();
+    cfg.linker.libPaths.clear();
+    cfg.linker.flags.clear();
+    cfg.linker.args.clear();
+    cfg.output.path      = "";
+    cfg.output.strip     = false;
+    cfg.output.emitBin   = false;
+    cfg.output.emitLlvm  = false;
+    cfg.output.emitAsm   = false;
+    cfg.output.emitBc    = false;
+    cfg.output.emitObj   = false;
+    cfg.scripts.env.clear();
+    cfg.scripts.pre.clear();
+    cfg.scripts.pos.clear();
+    cfg.run.lto      = false;
+    cfg.run.args.clear();
+
     return cfg.save((fs::path(dir) / "lucis.yaml").string());
 }
 
@@ -478,7 +517,7 @@ bool LucisConfig::save(const std::string& yamlPath) const {
         // tools
         auto writeScalar = [&](YAML::Node parent, const std::string& key,
                                 const std::string& val) {
-            if (!val.empty()) parent[key] = val;
+            parent[key] = val;
         };
         writeScalar(root["tools"], "nasm", tools.nasm);
         writeScalar(root["tools"], "ld", tools.ld);
@@ -489,6 +528,9 @@ bool LucisConfig::save(const std::string& yamlPath) const {
                              const std::vector<std::string>& vals) {
             for (const auto& v : vals)
                 parent[key].push_back(v);
+            // Ensure key exists even if empty
+            if (vals.empty() && !parent[key].IsDefined())
+                parent[key] = YAML::Node(YAML::NodeType::Sequence);
         };
         writeSeq(root["assembly"], "files", assembly.files);
         writeScalar(root["assembly"], "assembler", assembly.assembler);
@@ -504,8 +546,12 @@ bool LucisConfig::save(const std::string& yamlPath) const {
         root["build"]["fpic"]      = build.fpic;
         root["build"]["code_model"]= build.codeModel;
         writeSeq(root["build"], "include_paths", build.includePaths);
-        for (const auto& [k, v] : build.defines)
-            root["build"]["defines"][k] = v;
+        if (!build.defines.empty()) {
+            for (const auto& [k, v] : build.defines)
+                root["build"]["defines"][k] = v;
+        } else {
+            root["build"]["defines"] = YAML::Node(YAML::NodeType::Map);
+        }
 
         // inputs
         writeSeq(root["inputs"], "objects", inputs.objects);
@@ -531,8 +577,12 @@ bool LucisConfig::save(const std::string& yamlPath) const {
         root["output"]["emit_obj"]  = output.emitObj;
 
         // scripts
-        for (const auto& [k, v] : scripts.env)
-            root["scripts"]["env"][k] = v;
+        if (!scripts.env.empty()) {
+            for (const auto& [k, v] : scripts.env)
+                root["scripts"]["env"][k] = v;
+        } else {
+            root["scripts"]["env"] = YAML::Node(YAML::NodeType::Map);
+        }
         writeSeq(root["scripts"], "pre", scripts.pre);
         writeSeq(root["scripts"], "pos", scripts.pos);
 
