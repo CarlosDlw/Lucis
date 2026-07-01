@@ -56,7 +56,7 @@ std::vector<Diagnostic> DiagnosticEngine::run(const std::string& source,
 
     // Collect parse errors (syntax errors are always valid without project context)
     for (auto& d : parsed.diagnostics) {
-        result.push_back(std::move(d));
+        result.push_back(d);
     }
 
     // Step 2: Semantic checking
@@ -113,7 +113,7 @@ std::vector<Diagnostic> DiagnosticEngine::run(const std::string& source,
     auto& parsed = preParsed ? *preParsed : (localParseStorage = Parser::parseString(source), localParseStorage);
 
     for (auto& d : parsed.diagnostics) {
-        result.push_back(std::move(d));
+        result.push_back(d);
     }
 
     // Step 2: Semantic checking with full project context

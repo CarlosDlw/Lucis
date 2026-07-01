@@ -359,8 +359,6 @@ void LspServer::handleDidChange(const json& msg) {
         parseCache_.invalidate(uri);
         cachedTokens_.erase(uri);
 
-        publishDiagnostics(uri, text);
-
         // Quickly register any new stdlib imports so errors disappear
         // before save. Full rebuild happens on didSave.
         try {
