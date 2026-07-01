@@ -6435,11 +6435,12 @@ void Checker::checkFunction(LucisParser::FunctionDeclContext* func) {
     // Generic function templates are not checked directly — only their instantiations are.
     if (func->typeParamList()) return;
 
-    // Comptime functions: register and skip body checking (evaluated at compile time)
+    // Comptime functions: register (if not already) and type-check the body
     if (func->COMPTIME()) {
         auto funcName = func->IDENTIFIER(0)->getText();
-        comptimeRegistry_.registerFunction(funcName, func);
-        return;
+        if (!comptimeRegistry_.isComptime(funcName))
+            comptimeRegistry_.registerFunction(funcName, func);
+        // Fall through to type-check the body for error reporting
     }
 
     unsigned retDims = 0;
