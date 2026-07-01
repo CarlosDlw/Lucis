@@ -59,9 +59,10 @@ ParseResult Parser::parseString(const std::string& source) {
     result.tokens = std::make_unique<antlr4::CommonTokenStream>(result.lexer.get());
     result.parser = std::make_unique<LucisParser>(result.tokens.get());
 
-    fixContextualKeywords(result.tokens.get());
-
     // Collect-mode listener: errors stored in result.diagnostics
+    // MUST be attached BEFORE fixContextualKeywords (which calls tokens->fill()
+    // and triggers lexing), otherwise lexer errors like token recognition
+    // failures for stray characters (e.g. '@') are never captured.
     auto errorListener = std::make_unique<DiagnosticErrorListener>();
     errorListener->setCollectMode(true);
 
@@ -69,6 +70,8 @@ ParseResult Parser::parseString(const std::string& source) {
     result.lexer->addErrorListener(errorListener.get());
     result.parser->removeErrorListeners();
     result.parser->addErrorListener(errorListener.get());
+
+    fixContextualKeywords(result.tokens.get());
 
     result.tree = result.parser->program();
 
