@@ -9,6 +9,11 @@
 #include <string>
 #include <unordered_map>
 
+struct TypedValue {
+    llvm::Value* val;
+    bool isUnsigned = false;
+};
+
 class ComptimeIRGen {
 public:
     ComptimeIRGen(llvm::LLVMContext& ctx, llvm::Module& mod);
@@ -19,7 +24,7 @@ private:
     llvm::LLVMContext& ctx_;
     llvm::Module& mod_;
     llvm::IRBuilder<> builder_;
-    std::unordered_map<std::string, llvm::Value*> locals_;
+    std::unordered_map<std::string, TypedValue> locals_;
 
     llvm::Value* visitStmt(LucisParser::StatementContext* stmt);
     llvm::Value* visitIfStmt(LucisParser::IfStmtContext* ifStmt);

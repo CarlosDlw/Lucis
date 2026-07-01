@@ -4623,6 +4623,33 @@ std::any IRGen::visitExprStmt(LucisParser::ExprStmtContext* ctx) {
 std::any IRGen::visitCallStmt(LucisParser::CallStmtContext* ctx) {
     auto funcName = ctx->IDENTIFIER()->getText();
 
+    // ── Comptime function call as statement ───────────────────────
+    if (comptimeEngine_ && comptimeEngine_->isReady() &&
+        comptimeEngine_->registry().isComptime(funcName)) {
+        std::vector<llvm::Value*> argVals;
+        if (auto* argList = ctx->argList()) {
+            for (auto* exprCtx : argList->expression())
+                argVals.push_back(castValue(visit(exprCtx)));
+        }
+        std::vector<ComptimeValue> cvArgs;
+        for (auto* av : argVals) {
+            if (auto* ci = llvm::dyn_cast<llvm::ConstantInt>(av)) {
+                cvArgs.push_back(
+                    ci->getType()->isIntegerTy(1)
+                        ? ComptimeValue::boolVal(ci->isOne())
+                        : ComptimeValue::intVal(ci->getSExtValue()));
+            } else if (auto* cf = llvm::dyn_cast<llvm::ConstantFP>(av)) {
+                cvArgs.push_back(ComptimeValue::floatVal(
+                    cf->getValueAPF().convertToDouble()));
+            } else {
+                return {};
+            }
+        }
+        auto* decl = comptimeEngine_->registry().lookup(funcName);
+        comptimeEngine_->evaluate(decl, cvArgs);
+        return {};
+    }
+
     auto cleanupTempArg = [&](LucisParser::ExpressionContext* argExpr, llvm::Value* argVal) {
         if (!argExpr || !argVal) return;
         if (dynamic_cast<LucisParser::IdentExprContext*>(argExpr)) return;
@@ -11128,25 +11155,87 @@ std::any IRGen::visitFnCallExpr(LucisParser::FnCallExprContext* ctx) {
             // Convert to ComptimeValue and evaluate
             std::vector<ComptimeValue> cvArgs;
             for (auto* av : argVals) {
-                if (auto* ci = llvm::dyn_cast<llvm::ConstantInt>(av))
-                    cvArgs.push_back(ComptimeValue::intVal(
-                        ci->getSExtValue()));
-                else
+                if (auto* ci = llvm::dyn_cast<llvm::ConstantInt>(av)) {
+                    cvArgs.push_back(
+                        ci->getType()->isIntegerTy(1)
+                            ? ComptimeValue::boolVal(ci->isOne())
+                            : ComptimeValue::intVal(ci->getSExtValue()));
+                } else if (auto* cf = llvm::dyn_cast<llvm::ConstantFP>(av)) {
+                    cvArgs.push_back(ComptimeValue::floatVal(
+                        cf->getValueAPF().convertToDouble()));
+                } else {
                     return static_cast<llvm::Value*>(av); // non-constant, fallback
+                }
             }
+            // Resolve return type from the comptime function declaration
             auto* decl = comptimeEngine_->registry().lookup(calleeName);
+            auto* retTypeSpec = static_cast<LucisParser::FunctionDeclContext*>(decl)->typeSpec();
+            auto getLLVMType = [&](const std::string& name) -> llvm::Type* {
+                if (name == "void")   return llvm::Type::getVoidTy(*context_);
+                if (name == "bool")   return llvm::Type::getInt1Ty(*context_);
+                if (name == "int8" || name == "char" || name == "byte")  return llvm::Type::getInt8Ty(*context_);
+                if (name == "int16" || name == "uint16") return llvm::Type::getInt16Ty(*context_);
+                if (name == "int32" || name == "uint32" || name == "int") return llvm::Type::getInt32Ty(*context_);
+                if (name == "int64" || name == "uint64" || name == "isize" || name == "usize")
+                    return llvm::Type::getInt64Ty(*context_);
+                if (name == "float32" || name == "float") return llvm::Type::getFloatTy(*context_);
+                if (name == "float64" || name == "double") return llvm::Type::getDoubleTy(*context_);
+                return llvm::Type::getInt32Ty(*context_);
+            };
+            std::string retTypeName;
+            if (retTypeSpec->IDENTIFIER())
+                retTypeName = retTypeSpec->IDENTIFIER()->getText();
+            else if (retTypeSpec->primitiveType()) {
+                if (retTypeSpec->primitiveType()->BOOL()) retTypeName = "bool";
+                else if (retTypeSpec->primitiveType()->INT32()) retTypeName = "int32";
+                else if (retTypeSpec->primitiveType()->INT64()) retTypeName = "int64";
+                else if (retTypeSpec->primitiveType()->FLOAT32()) retTypeName = "float32";
+                else if (retTypeSpec->primitiveType()->FLOAT64()) retTypeName = "float64";
+                else if (retTypeSpec->primitiveType()->VOID()) retTypeName = "void";
+                else if (retTypeSpec->primitiveType()->CHAR()) retTypeName = "char";
+                else if (retTypeSpec->primitiveType()->UINT32()) retTypeName = "uint32";
+                else if (retTypeSpec->primitiveType()->UINT64()) retTypeName = "uint64";
+                else if (retTypeSpec->primitiveType()->INT8()) retTypeName = "int8";
+                else if (retTypeSpec->primitiveType()->UINT8()) retTypeName = "uint8";
+                else if (retTypeSpec->primitiveType()->INT16()) retTypeName = "int16";
+                else if (retTypeSpec->primitiveType()->UINT16()) retTypeName = "uint16";
+                else if (retTypeSpec->primitiveType()->ISIZE()) retTypeName = "isize";
+                else if (retTypeSpec->primitiveType()->USIZE()) retTypeName = "usize";
+                else retTypeName = "int32";
+            } else {
+                retTypeName = "int32";
+            }
             auto result = comptimeEngine_->evaluate(decl, cvArgs);
             if (result.kind() == ComptimeValue::Kind::Int) {
+                if (retTypeName == "bool") {
+                    return static_cast<llvm::Value*>(
+                        llvm::ConstantInt::get(
+                            llvm::Type::getInt1Ty(*context_),
+                            result.asInt() != 0));
+                }
                 return static_cast<llvm::Value*>(
                     llvm::ConstantInt::get(
-                        llvm::Type::getInt32Ty(*context_),
-                        result.asInt(), true));
+                        getLLVMType(retTypeName),
+                        result.asInt(), retTypeName.find('u') == std::string::npos));
             }
             if (result.kind() == ComptimeValue::Kind::Bool) {
                 return static_cast<llvm::Value*>(
                     llvm::ConstantInt::get(
                         llvm::Type::getInt1Ty(*context_),
                         result.asBool() ? 1 : 0));
+            }
+            if (result.kind() == ComptimeValue::Kind::Float) {
+                return static_cast<llvm::Value*>(
+                    llvm::ConstantFP::get(
+                        getLLVMType(retTypeName), result.asFloat()));
+            }
+            if (result.kind() == ComptimeValue::Kind::Void) {
+                // Void comptime call — return an un-used constant to signal
+                // that the call was handled and avoid falling through to
+                // the regular function call code generator below.
+                return static_cast<llvm::Value*>(
+                    llvm::Constant::getNullValue(
+                        llvm::Type::getInt32Ty(*context_)));
             }
         }
 
