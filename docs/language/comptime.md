@@ -18,7 +18,7 @@ fn main() int32 {
 ## How It Works
 
 1. **Parser** recognizes `comptime` before `fn`
-2. **Checker** registers the function in the compile-time registry and skips normal body validation
+2. **Checker** registers the function in the compile-time registry and type-checks the body (parameter types, return types, expression types, return-path completeness)
 3. **IRGen** skips code generation for the comptime function body
 4. At the call site, the compiler:
    - Extracts constant argument values
@@ -32,21 +32,42 @@ The runtime binary contains **zero code** for the comptime function — only the
 
 | Category | Supported |
 |----------|-----------|
-| Arithmetic | `+`, `-`, `*`, `/` |
+| Arithmetic | `+`, `-`, `*`, `/`, unary `-` |
 | Relational | `>`, `<`, `>=`, `<=`, `==`, `!=` |
-| Variables | Local vars and parameters |
-| Literals | Integer (`42`), float, bool (`true` / `false`) |
-| Control flow | `return`, `if` / `else` |
-| Function calls | Other comptime functions |
+| Logical | `!` (not) |
+| Cast | `as` (between primitive types) |
+| Variables | Parameters only |
+| Literals | Integer (`42`, `0xFF`, `0o77`), float (`3.14`, `1.5f32`), bool (`true` / `false`), char (`'A'`) |
+| Control flow | `return`, `if` / `else` / `else if` |
+| Self-call recursion | Supported |
+| Other comptime fns | Not yet implemented |
+
+### Supported Types
+
+All six primitive type families can be used as parameter types, return types, and inside the function body:
+
+| Family | Types |
+|--------|-------|
+| Signed int | `int8`, `int16`, `int32`, `int64` |
+| Unsigned int | `uint8`, `uint16`, `uint32`, `uint64` |
+| Float | `float32`, `float64` |
+| Bool | `bool` |
+| Void | `void` |
+| Char | `char` (internally `int8`) |
 
 ## Limitations (current)
 
-- No `for`, `while`, `loop` yet (future)
+- No `for`, `while`, `loop` — no iteration yet
 - No `match` / `switch`
-- No `string` or complex types in comptime functions
-- No `comptime` blocks — only functions
-- `int32` and `bool` return types supported; others are treated as `int32`
-- All arguments must be compile-time constants
+- No `string` or complex types (structs, arrays, slices) in comptime functions
+- No `comptime` blocks — only standalone functions
+- No variable declarations (`let` / `var`) inside comptime functions — only parameters
+- No bitwise operators (`&`, `|`, `^`, `<<`, `>>`, `~`)
+- No ternary expressions (`cond ? a : b`)
+- No calls to other comptime functions — only self-recursion is supported
+- No generic comptime functions
+- No mutable assignment — parameters are read-only
+- All argument values must be compile-time constants
 
 ## Use Cases
 
@@ -57,13 +78,14 @@ comptime fn assert_size(usize actual, usize expected) bool {
 }
 ```
 
-**Constant folding:**
+**Compile-time computation (self-recursion):**
 ```lucis
 comptime fn factorial(int32 n) int32 {
     if n <= 1 { return 1; }
     return n * factorial(n - 1);
 }
 ```
+Note: cross-function calls (one comptime fn calling another) are not yet supported.
 
 ## Flags
 
