@@ -706,9 +706,6 @@ void LspServer::handleSignatureHelp(const json& msg) {
     }
 }
 
-// ═══════════════════════════════════════════════════════════════════════
-//  Semantic Tokens
-// ═══════════════════════════════════════════════════════════════════════
 
 void LspServer::handleSemanticTokensFull(const json& msg) {
     try {
