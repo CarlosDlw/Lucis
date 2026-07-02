@@ -693,6 +693,17 @@ std::optional<DefinitionResult> DefinitionProvider::resolveIdent(
         }
     }
 
+    // 12c) C function-like macro
+    if (auto* cflm = bindings.findFunctionLikeMacro(name)) {
+        if (!cflm->sourceFile.empty()) {
+            DefinitionResult r;
+            r.uri = "file://" + cflm->sourceFile;
+            r.line = r.endLine = cflm->line;
+            r.col = r.endCol = 0;
+            return r;
+        }
+    }
+
     // 13) C struct / union
     if (auto* cs = bindings.findStruct(name)) {
         if (!cs->sourceFile.empty()) {

@@ -11070,6 +11070,53 @@ std::any IRGen::visitDerefCompoundAssignStmt(LucisParser::DerefCompoundAssignStm
     return {};
 }
 
+// ── Macro constant evaluator helpers (for function-like macros) ──
+namespace {
+static bool evalMacroAdd(const std::vector<std::string>& toks, size_t& pos, int64_t& val);
+
+static bool evalMacroPrimary(const std::vector<std::string>& toks, size_t& pos, int64_t& val) {
+    if (pos >= toks.size()) return false;
+    if (toks[pos] == "-") { pos++; if (!evalMacroPrimary(toks, pos, val)) return false; val = -val; return true; }
+    if (toks[pos] == "~") { pos++; if (!evalMacroPrimary(toks, pos, val)) return false; val = ~val; return true; }
+    if (toks[pos] == "(") {
+        pos++;
+        if (!evalMacroAdd(toks, pos, val)) return false;
+        if (pos >= toks.size() || toks[pos] != ")") return false;
+        pos++;
+        return true;
+    }
+    try {
+        size_t n = 0;
+        if (toks[pos].size() > 2 && toks[pos][0] == '0' && (toks[pos][1] == 'x' || toks[pos][1] == 'X'))
+            val = std::stoll(toks[pos], &n, 16);
+        else if (toks[pos].size() > 1 && toks[pos][0] == '0')
+            val = std::stoll(toks[pos], &n, 8);
+        else
+            val = std::stoll(toks[pos], &n, 10);
+        if (n == toks[pos].size()) { pos++; return true; }
+    } catch (...) {}
+    return false;
+}
+static bool evalMacroShift(const std::vector<std::string>& toks, size_t& pos, int64_t& val) {
+    if (!evalMacroPrimary(toks, pos, val)) return false;
+    while (pos < toks.size()) {
+        if (toks[pos] == "<<") { pos++; int64_t rhs; if (!evalMacroPrimary(toks, pos, rhs)) return false; val <<= rhs; }
+        else if (toks[pos] == ">>") { pos++; int64_t rhs; if (!evalMacroPrimary(toks, pos, rhs)) return false; val >>= rhs; }
+        else break;
+    }
+    return true;
+}
+static bool evalMacroAdd(const std::vector<std::string>& toks, size_t& pos, int64_t& val) {
+    if (!evalMacroShift(toks, pos, val)) return false;
+    while (pos < toks.size()) {
+        if (toks[pos] == "+") { pos++; int64_t rhs; if (!evalMacroShift(toks, pos, rhs)) return false; val += rhs; }
+        else if (toks[pos] == "-") { pos++; int64_t rhs; if (!evalMacroShift(toks, pos, rhs)) return false; val -= rhs; }
+        else break;
+    }
+    return true;
+}
+}
+
 std::any IRGen::visitFnCallExpr(LucisParser::FnCallExprContext* ctx) {
     auto* baseExpr = ctx->expression();
 
@@ -11236,6 +11283,61 @@ std::any IRGen::visitFnCallExpr(LucisParser::FnCallExprContext* ctx) {
                 return static_cast<llvm::Value*>(
                     llvm::Constant::getNullValue(
                         llvm::Type::getInt32Ty(*context_)));
+            }
+        }
+
+        // ── Function-like macro: KEY_F(1), NCURSES_BITS(1,13) etc. ──
+        if (cBindings_) {
+            if (auto* flm = cBindings_->findFunctionLikeMacro(calleeName)) {
+                // Collect argument values as constants
+                std::vector<int64_t> argVals;
+                if (auto* argList = ctx->argList()) {
+                    for (auto* exprCtx : argList->expression()) {
+                        auto argVal = visit(exprCtx);
+                        if (auto* ci = llvm::dyn_cast<llvm::ConstantInt>(castValue(argVal))) {
+                            argVals.push_back(ci->getSExtValue());
+                        } else {
+                            break; // non-constant argument
+                        }
+                    }
+                }
+                if (argVals.size() != flm->paramNames.size())
+                    return static_cast<llvm::Value*>(
+                        llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
+
+                // Substitute parameter names with argument values in body tokens
+                std::vector<std::string> evalTokens;
+                for (auto& tok : flm->bodyTokens) {
+                    bool isParam = false;
+                    for (size_t i = 0; i < flm->paramNames.size(); i++) {
+                        if (tok == flm->paramNames[i]) {
+                            evalTokens.push_back(std::to_string(argVals[i]));
+                            isParam = true;
+                            break;
+                        }
+                    }
+                    if (!isParam)
+                        evalTokens.push_back(tok);
+                }
+
+                // Resolve identifiers from cEnumConstants_ and similar
+                for (auto& tok : evalTokens) {
+                    auto eit = cEnumConstants_.find(tok);
+                    if (eit != cEnumConstants_.end()) {
+                        tok = std::to_string(eit->second);
+                    }
+                }
+
+                // Evaluate constant expression
+                int64_t result = 0;
+                size_t pos = 0;
+                if (evalMacroAdd(evalTokens, pos, result) && pos == evalTokens.size()) {
+                    return static_cast<llvm::Value*>(
+                        llvm::ConstantInt::get(
+                            llvm::Type::getInt32Ty(*context_), result, true));
+                }
+                return static_cast<llvm::Value*>(
+                    llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
             }
         }
 

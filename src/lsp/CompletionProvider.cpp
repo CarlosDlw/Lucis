@@ -3849,6 +3849,22 @@ void CompletionProvider::addCSymbols(std::vector<CompletionItem> &items,
     items.push_back(std::move(ci));
   }
 
+  // C function-like macros
+  for (auto &[name, flm] : bindings.functionLikeMacros()) {
+    if (!matchesPrefix(name, prefix))
+      continue;
+    CompletionItem ci;
+    ci.label = name;
+    ci.kind = CompletionKind::Function;
+    ci.detail = "(C) #define " + name + "(";
+    for (size_t i = 0; i < flm.paramNames.size(); i++) {
+      if (i > 0) ci.detail += ", ";
+      ci.detail += flm.paramNames[i];
+    }
+    ci.detail += ")";
+    items.push_back(std::move(ci));
+  }
+
   // C typedefs
   for (auto &[name, ct] : bindings.typedefs()) {
     if (!matchesPrefix(name, prefix))

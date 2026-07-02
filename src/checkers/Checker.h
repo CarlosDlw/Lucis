@@ -20,6 +20,7 @@
 #include "semantic/SemanticDB.h"
 
 class CBindings;
+struct CFunctionLikeMacro;
 
 class Checker {
 public:
@@ -327,6 +328,9 @@ private:
 
     // C global variables: name → type
     std::unordered_map<std::string, const TypeInfo*> cGlobals_;
+
+    // C function-like macros: name → definition
+    std::unordered_map<std::string, const CFunctionLikeMacro*> cFunctionLikeMacros_;
 
     // Check if a function is known (local, same-module, imported, or builtin)
     bool isKnownFunction(const std::string& name) const;

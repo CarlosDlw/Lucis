@@ -77,6 +77,15 @@ struct CGlobalVar {
     unsigned        line = 0;
 };
 
+// Describes a function-like macro: #define FOO(x, y) body...
+struct CFunctionLikeMacro {
+    std::string              name;
+    std::vector<std::string> paramNames;
+    std::vector<std::string> bodyTokens;  // tokenized macro body
+    std::string              sourceFile;
+    unsigned                 line = 0;
+};
+
 // Registry of all C symbols imported via #include directives.
 // Populated by CHeaderResolver, queried by Checker and IRGen.
 class CBindings {
@@ -87,6 +96,7 @@ public:
     void addTypedef(CTypedef t);
     void addMacro(CMacro m);
     void addStructMacro(CStructMacro m);
+    void addFunctionLikeMacro(CFunctionLikeMacro m);
     void addGlobal(CGlobalVar g);
 
     // Update the source location of a previously-registered struct
@@ -112,6 +122,7 @@ public:
     const CMacro*      findMacro(const std::string& name) const;
     const CStructMacro* findStructMacro(const std::string& name) const;
     const CGlobalVar*  findGlobal(const std::string& name) const;
+    const CFunctionLikeMacro* findFunctionLikeMacro(const std::string& name) const;
 
     bool hasSymbol(const std::string& name) const;
 
@@ -136,6 +147,9 @@ public:
     const std::unordered_map<std::string, CGlobalVar>& globals() const {
         return globals_;
     }
+    const std::unordered_map<std::string, CFunctionLikeMacro>& functionLikeMacros() const {
+        return functionLikeMacros_;
+    }
 
     // Owns dynamically created TypeInfo objects (for pointer types, etc.)
     const TypeInfo* internType(std::unique_ptr<TypeInfo> ti);
@@ -148,6 +162,7 @@ private:
     std::unordered_map<std::string, CMacro>       macros_;
     std::unordered_map<std::string, CStructMacro> structMacros_;
     std::unordered_map<std::string, CGlobalVar>   globals_;
+    std::unordered_map<std::string, CFunctionLikeMacro> functionLikeMacros_;
 
     // Maps include name (e.g. "raylib.h") to its absolute resolved path.
     std::unordered_map<std::string, std::string>  headerPaths_;

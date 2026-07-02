@@ -873,6 +873,11 @@ bool Checker::check(LucisParser::ProgramContext* tree) {
         for (auto& [name, gvar] : cBindings_->globals()) {
             cGlobals_[name] = gvar.type;
         }
+
+        // Register C function-like macros
+        for (auto& [name, flm] : cBindings_->functionLikeMacros()) {
+            cFunctionLikeMacros_[name] = &flm;
+        }
     }
 
     // Pass 1: register all `use` declarations
@@ -4009,6 +4014,24 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
                     }
                 }
                 return enumType;
+            }
+        }
+
+        // Function-like macro call: KEY_F(1) etc.
+        if (!calleeName.empty()) {
+            auto flmIt = cFunctionLikeMacros_.find(calleeName);
+            if (flmIt != cFunctionLikeMacros_.end()) {
+                auto* flm = flmIt->second;
+
+                if (argTypes.size() != flm->paramNames.size()) {
+                    error(expr, "function-like macro '" + calleeName + "' expects " +
+                          std::to_string(flm->paramNames.size()) + " argument(s), got " +
+                          std::to_string(argTypes.size()));
+                }
+                // Function-like macros expand to integer constant expressions
+                auto* int32TI = typeRegistry_.lookup("int32");
+                if (int32TI) return int32TI;
+                return nullptr;
             }
         }
 

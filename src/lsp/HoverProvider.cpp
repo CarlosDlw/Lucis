@@ -782,6 +782,20 @@ std::optional<HoverResult> HoverProvider::hoverIdent(
         return makeResult(token, md);
     }
 
+    // 9.2) C function-like macro
+    auto* cflm = bindings.findFunctionLikeMacro(name);
+    if (cflm) {
+        std::string md = "```c\n#define " + name + "(";
+        for (size_t i = 0; i < cflm->paramNames.size(); i++) {
+            if (i > 0) md += ", ";
+            md += cflm->paramNames[i];
+        }
+        md += ") ";
+        for (auto& tok : cflm->bodyTokens) md += tok + " ";
+        md += "\n```";
+        return makeResult(token, md);
+    }
+
     // 9.5) C enum variant value (e.g. FLAG_VSYNC_HINT from ConfigFlags)
     for (auto& [enumName, cenum] : bindings.enums()) {
         for (auto& [vname, val] : cenum.values) {

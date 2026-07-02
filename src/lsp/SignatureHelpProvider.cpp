@@ -807,6 +807,27 @@ SignatureHelpProvider::signatureHelp(
         }
     }
 
+    // 5.5) C function-like macro
+    if (result.signatures.empty()) {
+        auto* cflm = cBindingsPtr->findFunctionLikeMacro(name);
+        if (cflm) {
+            SignatureInfo sig;
+            sig.label = name;
+            sig.activeParameter = site->activeParam;
+            std::string paramsStr;
+            for (size_t i = 0; i < cflm->paramNames.size(); i++) {
+                if (i > 0) paramsStr += ", ";
+                paramsStr += cflm->paramNames[i];
+                ParameterInfo pi;
+                pi.label = cflm->paramNames[i];
+                sig.parameters.push_back(std::move(pi));
+            }
+            sig.label += "(" + paramsStr + ")";
+            sig.documentation = "C function-like macro";
+            result.signatures.push_back(std::move(sig));
+        }
+    }
+
     // 6) Fallback: check if name is a local variable initialized with a lambda
     if (result.signatures.empty()) {
         auto* func = findEnclosingFunction(parsed.tree, line);

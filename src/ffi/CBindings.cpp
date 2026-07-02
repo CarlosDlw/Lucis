@@ -28,6 +28,15 @@ void CBindings::addGlobal(CGlobalVar g) {
     globals_.emplace(g.name, std::move(g));
 }
 
+void CBindings::addFunctionLikeMacro(CFunctionLikeMacro m) {
+    functionLikeMacros_.emplace(m.name, std::move(m));
+}
+
+const CFunctionLikeMacro* CBindings::findFunctionLikeMacro(const std::string& name) const {
+    auto it = functionLikeMacros_.find(name);
+    return it != functionLikeMacros_.end() ? &it->second : nullptr;
+}
+
 void CBindings::addRequiredLib(const std::string& flag,
                                const std::string& header) {
     for (auto& [f, h] : requiredLibs_)
@@ -77,7 +86,8 @@ bool CBindings::hasSymbol(const std::string& name) const {
         || typedefs_.count(name)
         || macros_.count(name)
         || structMacros_.count(name)
-        || globals_.count(name);
+        || globals_.count(name)
+        || functionLikeMacros_.count(name);
 }
 
 const TypeInfo* CBindings::internType(std::unique_ptr<TypeInfo> ti) {

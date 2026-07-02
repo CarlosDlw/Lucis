@@ -985,9 +985,6 @@ static CXChildVisitResult cursorVisitor(CXCursor cursor, CXCursor /*parent*/,
 
     // ── Macro definitions (#define constants) ────────────────────────
     if (kind == CXCursor_MacroDefinition) {
-        // Skip function-like macros: #define FOO(x) ...
-        if (clang_Cursor_isMacroFunctionLike(cursor))
-            return CXChildVisit_Continue;
         // Skip compiler builtins
         if (clang_Cursor_isMacroBuiltin(cursor))
             return CXChildVisit_Continue;
@@ -1002,7 +999,8 @@ static CXChildVisitResult cursorVisitor(CXCursor cursor, CXCursor /*parent*/,
         if (name[0] == '_') return CXChildVisit_Continue;
 
         // Skip if name conflicts with an already-registered symbol
-        if (data->bindings->findMacro(name))
+        if (data->bindings->findMacro(name) ||
+            data->bindings->findFunctionLikeMacro(name))
             return CXChildVisit_Continue;
 
         // Tokenize the macro body
@@ -1013,17 +1011,47 @@ static CXChildVisitResult cursorVisitor(CXCursor cursor, CXCursor /*parent*/,
         clang_tokenize(tu, range, &tokens, &numTokens);
 
         // First token is the macro name itself; rest is the body
-        std::vector<std::string> bodyTokens;
+        std::vector<std::string> allBodyTokens;
         for (unsigned i = 1; i < numTokens; i++) {
             CXString ts = clang_getTokenSpelling(tu, tokens[i]);
-            bodyTokens.push_back(clang_getCString(ts));
+            allBodyTokens.push_back(clang_getCString(ts));
             clang_disposeString(ts);
         }
         clang_disposeTokens(tu, tokens, numTokens);
 
+        // Handle function-like macros: #define FOO(x, y) body...
+        if (clang_Cursor_isMacroFunctionLike(cursor)) {
+            // Parse parameter list from body tokens:
+            // First token should be '(' then param names separated by ',' then ')'
+            size_t pos = 0;
+            std::vector<std::string> paramNames;
+            if (pos < allBodyTokens.size() && allBodyTokens[pos] == "(") {
+                pos++; // skip '('
+                while (pos < allBodyTokens.size() && allBodyTokens[pos] != ")") {
+                    if (allBodyTokens[pos] == ",") {
+                        pos++; continue;
+                    }
+                    paramNames.push_back(allBodyTokens[pos]);
+                    pos++;
+                }
+                if (pos < allBodyTokens.size() && allBodyTokens[pos] == ")")
+                    pos++; // skip ')'
+            }
+            // Remaining tokens are the macro body
+            std::vector<std::string> macroBody(allBodyTokens.begin() + pos, allBodyTokens.end());
+
+            CFunctionLikeMacro flm;
+            flm.name       = name;
+            flm.paramNames = std::move(paramNames);
+            flm.bodyTokens = std::move(macroBody);
+            flm.sourceFile = extractCursorSourceFile(cursor, &flm.line);
+            data->bindings->addFunctionLikeMacro(std::move(flm));
+            return CXChildVisit_Continue;
+        }
+
         int64_t value = 0;
         bool isNull = false;
-        if (tryEvalMacroTokens(bodyTokens, value, isNull)) {
+        if (tryEvalMacroTokens(allBodyTokens, value, isNull)) {
             CMacro cm;
             cm.name     = name;
             cm.value    = value;
@@ -1033,7 +1061,7 @@ static CXChildVisitResult cursorVisitor(CXCursor cursor, CXCursor /*parent*/,
         } else {
             // Try as float literal: #define M_PI 3.14159...
             double floatVal = 0.0;
-            if (tryEvalFloatLiteral(bodyTokens, floatVal)) {
+            if (tryEvalFloatLiteral(allBodyTokens, floatVal)) {
                 CMacro cm;
                 cm.name       = name;
                 cm.floatValue = floatVal;
@@ -1044,7 +1072,7 @@ static CXChildVisitResult cursorVisitor(CXCursor cursor, CXCursor /*parent*/,
             // Try as string literal: #define FOO "bar"
             else {
                 std::string strVal;
-                if (tryEvalStringLiteral(bodyTokens, strVal)) {
+                if (tryEvalStringLiteral(allBodyTokens, strVal)) {
                     CMacro cm;
                     cm.name        = name;
                     cm.stringValue = std::move(strVal);
@@ -1056,14 +1084,14 @@ static CXChildVisitResult cursorVisitor(CXCursor cursor, CXCursor /*parent*/,
                 else {
                     std::string structType;
                     std::vector<int64_t> fieldValues;
-                    if (tryEvalStructLiteralMacro(bodyTokens, structType, fieldValues)) {
+                    if (tryEvalStructLiteralMacro(allBodyTokens, structType, fieldValues)) {
                         CStructMacro sm;
                         sm.name       = name;
                         sm.structType = structType;
                         sm.fieldValues = std::move(fieldValues);
                         sm.sourceFile  = extractCursorSourceFile(cursor, &sm.line);
                         data->bindings->addStructMacro(std::move(sm));
-                    } else if (!bodyTokens.empty() && couldBeConstantExpr(bodyTokens)) {
+                    } else if (!allBodyTokens.empty() && couldBeConstantExpr(allBodyTokens)) {
                         // Defer for batch evaluation via preprocessor expansion
                         unsigned srcLine = 0;
                         std::string srcFile = extractCursorSourceFile(cursor, &srcLine);
@@ -1173,7 +1201,7 @@ bool CHeaderResolver::parseHeader(const std::string& headerContent,
         struct EvalData {
             std::vector<VisitorData::UnresolvedMacro>* macros;
             CBindings* bindings;
-            std::vector<bool> resolved;
+            std::vector<bool>* resolved;  // pointer to outer resolved vector
             bool isFloatPass;
         };
 
@@ -1205,12 +1233,14 @@ bool CHeaderResolver::parseHeader(const std::string& headerContent,
             if (!evalTU) return;
 
             EvalData evd = { const_cast<std::vector<VisitorData::UnresolvedMacro>*>(&macros),
-                             &bindings_, resolved, floatPass };
+                             &bindings_, &resolved, floatPass };
 
+            unsigned long evalVarCount = 0;
             CXCursor evalRoot = clang_getTranslationUnitCursor(evalTU);
             clang_visitChildren(evalRoot,
                 [](CXCursor cur, CXCursor, CXClientData cd)
                     -> CXChildVisitResult {
+                    auto* evd = static_cast<EvalData*>(cd);
                     if (clang_getCursorKind(cur) != CXCursor_VarDecl)
                         return CXChildVisit_Continue;
 
@@ -1218,16 +1248,15 @@ bool CHeaderResolver::parseHeader(const std::string& headerContent,
                     std::string vn = clang_getCString(cxN);
                     clang_disposeString(cxN);
 
-                    if (vn.size() <= 11 ||
-                        vn.substr(0, 11) != "__lucis_eval_")
+                    if (vn.size() <= 13 ||
+                        vn.substr(0, 13) != "__lucis_eval_")
                         return CXChildVisit_Continue;
 
                     size_t idx = 0;
-                    try { idx = std::stoul(vn.substr(11)); }
+                    try { idx = std::stoul(vn.substr(13)); }
                     catch (...) { return CXChildVisit_Continue; }
 
-                    auto* evd = static_cast<EvalData*>(cd);
-                    if (idx >= evd->macros->size() || evd->resolved[idx])
+                    if (idx >= evd->macros->size() || (*evd->resolved)[idx])
                         return CXChildVisit_Continue;
 
                     CXEvalResult ev = clang_Cursor_Evaluate(cur);
@@ -1244,7 +1273,7 @@ bool CHeaderResolver::parseHeader(const std::string& headerContent,
                         cm.sourceFile = m.sourceFile;
                         cm.line       = m.line;
                         evd->bindings->addMacro(std::move(cm));
-                        evd->resolved[idx] = true;
+                        (*evd->resolved)[idx] = true;
                     } else if (kind == CXEval_Float && evd->isFloatPass) {
                         CMacro cm;
                         cm.name       = m.name;
@@ -1253,13 +1282,15 @@ bool CHeaderResolver::parseHeader(const std::string& headerContent,
                         cm.sourceFile = m.sourceFile;
                         cm.line       = m.line;
                         evd->bindings->addMacro(std::move(cm));
-                        evd->resolved[idx] = true;
+                        (*evd->resolved)[idx] = true;
                     }
 
                     clang_EvalResult_dispose(ev);
                     return CXChildVisit_Continue;
                 },
                 &evd);
+
+
 
             clang_disposeTranslationUnit(evalTU);
         };
