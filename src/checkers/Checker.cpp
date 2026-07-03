@@ -2571,7 +2571,24 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
         }
 
         // User module import or same-module symbol
-        if (userImports_.count(name)) return nullptr;
+        if (userImports_.count(name)) {
+            auto modPath = userImports_[name];
+            if (moduleRegistry_) {
+                auto* sym = moduleRegistry_->findSymbol(modPath, name);
+                if (sym && sym->kind == ExportedSymbol::Constant) {
+                    // If const has explicit type spec, resolve it; otherwise default to int32
+                    if (auto* cd = dynamic_cast<LucisParser::ConstDeclaratorContext*>(sym->decl)) {
+                        if (cd->typeSpec()) {
+                            unsigned dims = 0;
+                            auto* ti = resolveTypeSpec(cd->typeSpec(), dims);
+                            if (ti) return ti;
+                        }
+                    }
+                    return typeRegistry_.lookup("int32");
+                }
+            }
+            return nullptr;
+        }
 
         // Enum variant imported via `use EnumType::*;`
         auto evIt = enumVariantImports_.find(name);

@@ -2309,11 +2309,13 @@ std::any IRGen::visitConstDeclStmt(LucisParser::ConstDeclStmtContext* ctx) {
 
         if (isTopLevel) {
             // Top-level const: create global variable (initialized via init function)
+            // ExternalLinkage allows the global to be referenced by other modules
+            // that import this constant via `use`.
             auto* global = new llvm::GlobalVariable(
                 *module_,
                 llvmType,
                 false,  // isConstant = false (allow init function to write)
-                llvm::GlobalValue::PrivateLinkage,
+                llvm::GlobalValue::ExternalLinkage,
                 llvm::Constant::getNullValue(llvmType),
                 "const_" + name
             );
@@ -8052,6 +8054,22 @@ std::any IRGen::visitIdentExpr(LucisParser::IdentExprContext* ctx) {
             auto* loadedTy = entry.global->getValueType();
             return static_cast<llvm::Value*>(
                 builder_->CreateLoad(loadedTy, entry.global, name));
+        }
+    }
+
+    // ── User-imported constant from another module ─────────────────────
+    if (userImports_.count(name)) {
+        std::string globalName = "const_" + name;
+        // Declare the global (creates a forward declaration if not yet defined;
+        // linker resolves it when the defining module is linked in).
+        auto* gv = module_->getGlobalVariable(globalName);
+        if (!gv)
+            gv = module_->getOrInsertGlobal(globalName,
+                                            llvm::Type::getInt32Ty(*context_));
+        if (gv) {
+            auto* loadedTy = gv->getValueType();
+            return static_cast<llvm::Value*>(
+                builder_->CreateLoad(loadedTy, gv, name));
         }
     }
 

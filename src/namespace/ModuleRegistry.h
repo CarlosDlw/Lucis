@@ -9,7 +9,7 @@
 #include "parser/Parser.h"
 
 struct ExportedSymbol {
-    enum Kind { Function, Struct, Union, Enum, TypeAlias, ExtendBlock };
+    enum Kind { Function, Struct, Union, Enum, TypeAlias, ExtendBlock, Constant };
 
     Kind        kind;
     std::string name;

@@ -90,6 +90,21 @@ void ModuleRegistry::registerFile(const std::string& modulePath,
             sym.treeAnchor = anchor;
             symbols.push_back(std::move(sym));
         }
+        else if (auto* constStmt = topLevel->constDeclStmt()) {
+            for (auto* d : constStmt->constDeclarator()) {
+                ExportedSymbol sym;
+                sym.kind       = ExportedSymbol::Constant;
+                sym.name       = d->IDENTIFIER()->getText();
+                sym.modulePath = modulePath;
+                sym.sourceFile = filePath;
+                sym.isStdlib   = isStdlib;
+                sym.line       = static_cast<unsigned>(d->getStart()->getLine());
+                sym.column     = static_cast<unsigned>(d->getStart()->getCharPositionInLine());
+                sym.decl       = d;
+                sym.treeAnchor = anchor;
+                symbols.push_back(std::move(sym));
+            }
+        }
     }
 }
 
