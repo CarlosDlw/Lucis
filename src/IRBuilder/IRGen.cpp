@@ -19129,6 +19129,86 @@ IRGen::visitMethodCallExpr(LucisParser::MethodCallExprContext* ctx) {
                             return static_cast<llvm::Value*>(
                                 builder_->CreateLoad(elemTy, elemPtr, "slice.elem"));
                         }
+
+                        // ── contains on slice ──────────────────────────
+                        if (methodName == "contains") {
+                            if (args.empty()) {
+                                std::cerr << "lucis: contains() requires a value argument\n";
+                                return static_cast<llvm::Value*>(
+                                    llvm::UndefValue::get(llvm::Type::getInt1Ty(*context_)));
+                            }
+                            auto* needle = args[0];
+                            if (needle->getType() != elemTy)
+                                needle = builder_->CreateIntCast(needle, elemTy, true);
+                            auto* boolTy = llvm::Type::getInt1Ty(*context_);
+                            auto* resA = builder_->CreateAlloca(boolTy, nullptr, "sc.res");
+                            builder_->CreateStore(llvm::ConstantInt::get(boolTy, 0), resA);
+                            auto* cBB = llvm::BasicBlock::Create(*context_, "sc.cond", currentFunction_);
+                            auto* bBB = llvm::BasicBlock::Create(*context_, "sc.body", currentFunction_);
+                            auto* fBB = llvm::BasicBlock::Create(*context_, "sc.found", currentFunction_);
+                            auto* nBB = llvm::BasicBlock::Create(*context_, "sc.next", currentFunction_);
+                            auto* eBB = llvm::BasicBlock::Create(*context_, "sc.end", currentFunction_);
+                            auto* iA = builder_->CreateAlloca(usizeTy, nullptr, "sc.idx");
+                            builder_->CreateStore(llvm::ConstantInt::get(usizeTy, 0), iA);
+                            builder_->CreateBr(cBB);
+                            builder_->SetInsertPoint(cBB);
+                            auto* iv = builder_->CreateLoad(usizeTy, iA, "sc.i");
+                            auto* sc = builder_->CreateICmpULT(iv, lenAsUsize, "sc.cmp");
+                            builder_->CreateCondBr(sc, bBB, eBB);
+                            builder_->SetInsertPoint(bBB);
+                            auto* cv = builder_->CreateLoad(usizeTy, iA, "sc.ci");
+                            auto* ep = builder_->CreateGEP(elemTy, dataPtr, cv, "sc.ep");
+                            auto* ev = builder_->CreateLoad(elemTy, ep, "sc.ev");
+                            auto* eq = elemTy->isIntegerTy() ? builder_->CreateICmpEQ(ev, needle, "sc.eq")
+                                : elemTy->isFloatingPointTy() ? builder_->CreateFCmpOEQ(ev, needle, "sc.eq")
+                                : builder_->CreateICmpEQ(ev, needle, "sc.eq");
+                            builder_->CreateCondBr(eq, fBB, nBB);
+                            builder_->SetInsertPoint(fBB);
+                            builder_->CreateStore(llvm::ConstantInt::get(boolTy, 1), resA);
+                            builder_->CreateBr(eBB);
+                            builder_->SetInsertPoint(nBB);
+                            auto* nx = builder_->CreateAdd(cv, llvm::ConstantInt::get(usizeTy, 1), "sc.nx");
+                            builder_->CreateStore(nx, iA);
+                            builder_->CreateBr(cBB);
+                            builder_->SetInsertPoint(eBB);
+                            return static_cast<llvm::Value*>(
+                                builder_->CreateLoad(boolTy, resA, "sc.res"));
+                        }
+
+                        // ── sum on slice ────────────────────────────────
+                        if (methodName == "sum" && (elemTy->isIntegerTy() || elemTy->isFloatingPointTy())) {
+                            auto* accA = builder_->CreateAlloca(elemTy, nullptr, "ss.acc");
+                            auto* zero = elemTy->isIntegerTy()
+                                ? static_cast<llvm::Value*>(llvm::ConstantInt::get(elemTy, 0))
+                                : static_cast<llvm::Value*>(llvm::ConstantFP::get(elemTy, 0.0));
+                            builder_->CreateStore(zero, accA);
+                            auto* cBB = llvm::BasicBlock::Create(*context_, "ss.cond", currentFunction_);
+                            auto* bBB = llvm::BasicBlock::Create(*context_, "ss.body", currentFunction_);
+                            auto* eBB = llvm::BasicBlock::Create(*context_, "ss.end", currentFunction_);
+                            auto* iA = builder_->CreateAlloca(usizeTy, nullptr, "ss.idx");
+                            builder_->CreateStore(llvm::ConstantInt::get(usizeTy, 0), iA);
+                            builder_->CreateBr(cBB);
+                            builder_->SetInsertPoint(cBB);
+                            auto* ci = builder_->CreateLoad(usizeTy, iA, "ss.i");
+                            auto* cc = builder_->CreateICmpULT(ci, lenAsUsize, "ss.cmp");
+                            builder_->CreateCondBr(cc, bBB, eBB);
+                            builder_->SetInsertPoint(bBB);
+                            auto* av = builder_->CreateLoad(elemTy, accA, "ss.av");
+                            auto* v = builder_->CreateLoad(elemTy,
+                                builder_->CreateGEP(elemTy, dataPtr,
+                                    builder_->CreateLoad(usizeTy, iA, "ss.ci"), "ss.v"), "ss.v");
+                            auto* nv = elemTy->isIntegerTy()
+                                ? static_cast<llvm::Value*>(builder_->CreateAdd(av, v, "ss.nv"))
+                                : static_cast<llvm::Value*>(builder_->CreateFAdd(av, v, "ss.nv"));
+                            builder_->CreateStore(nv, accA);
+                            auto* n = builder_->CreateAdd(builder_->CreateLoad(usizeTy, iA, "ss.ni"),
+                                llvm::ConstantInt::get(usizeTy, 1), "ss.n");
+                            builder_->CreateStore(n, iA);
+                            builder_->CreateBr(cBB);
+                            builder_->SetInsertPoint(eBB);
+                            return static_cast<llvm::Value*>(
+                                builder_->CreateLoad(elemTy, accA, "ss.ret"));
+                        }
                     }
                 }
             }
