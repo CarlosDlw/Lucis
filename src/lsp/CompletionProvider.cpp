@@ -3496,6 +3496,10 @@ void CompletionProvider::addImportedSymbols(std::vector<CompletionItem> &items,
         ci.kind = CompletionKind::Class;
         ci.detail = "type " + symName;
         break;
+      case ExportedSymbol::Constant:
+        ci.kind = CompletionKind::Constant;
+        ci.detail = "constant " + symName;
+        break;
       case ExportedSymbol::ExtendBlock:
         continue; // extend blocks not directly completable
       }
@@ -3758,6 +3762,10 @@ void CompletionProvider::addProjectSymbols(std::vector<CompletionItem> &items,
       case ExportedSymbol::TypeAlias:
         ci.kind = CompletionKind::Class;
         ci.detail = "type " + sym->name + " [" + currentModPath + "]";
+        break;
+      case ExportedSymbol::Constant:
+        ci.kind = CompletionKind::Constant;
+        ci.detail = "constant " + sym->name + " [" + currentModPath + "]";
         break;
       default:
         continue;
@@ -4821,6 +4829,10 @@ void CompletionProvider::addUseCompletions(std::vector<CompletionItem> &items,
       case ExportedSymbol::TypeAlias:
         ci.kind = CompletionKind::Class;
         ci.detail = "type alias";
+        break;
+      case ExportedSymbol::Constant:
+        ci.kind = CompletionKind::Constant;
+        ci.detail = "constant";
         break;
       case ExportedSymbol::ExtendBlock:
         continue;

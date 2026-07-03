@@ -721,6 +721,18 @@ std::optional<HoverResult> HoverProvider::hoverIdent(
                     if (auto* ext = dynamic_cast<LucisParser::ExtendDeclContext*>(sym->decl))
                         return makeResult(token, formatExtendMethods(ext));
                     break;
+                case ExportedSymbol::Constant:
+                    if (auto* cd = dynamic_cast<LucisParser::ConstDeclaratorContext*>(sym->decl)) {
+                        std::string typeName = "int32";
+                        if (cd->typeSpec())
+                            typeName = typeSpecToString(cd->typeSpec());
+                        std::string md = "```lucis\nconst " + name + ": " + typeName + "\n```";
+                        size_t declLine = cd->getStart()->getLine() - 1;
+                        const auto& crossDocs = docCommentsForFile(sym->sourceFile);
+                        md = appendDocToHover(md, crossDocs, declLine);
+                        return makeResult(token, md);
+                    }
+                    break;
             }
         }
     }
@@ -1038,6 +1050,17 @@ std::optional<HoverResult> HoverProvider::hoverImportedSymbol(
                     if (auto* ext = dynamic_cast<LucisParser::ExtendDeclContext*>(sym->decl)) {
                         std::string md = formatExtendMethods(ext);
                         size_t declLine = ext->getStart()->getLine() - 1;
+                        md = appendDocToHover(md, crossDocs, declLine);
+                        return makeResult(token, md);
+                    }
+                    break;
+                case ExportedSymbol::Constant:
+                    if (auto* cd = dynamic_cast<LucisParser::ConstDeclaratorContext*>(sym->decl)) {
+                        std::string typeName = "int32";
+                        if (cd->typeSpec())
+                            typeName = typeSpecToString(cd->typeSpec());
+                        std::string md = "```lucis\nconst " + symbolName + ": " + typeName + "\n```";
+                        size_t declLine = cd->getStart()->getLine() - 1;
                         md = appendDocToHover(md, crossDocs, declLine);
                         return makeResult(token, md);
                     }
