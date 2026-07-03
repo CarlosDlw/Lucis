@@ -1,13 +1,48 @@
 #include "lsp/ProjectContext.h"
 #include "ffi/CHeaderResolver.h"
+#include "ffi/CMacroEval.h"
 #include "config/LucisConfig.h"
 #include "imports/ImportResolver.h"
 
 #include <filesystem>
 #include <deque>
 #include <unordered_set>
+#include <cctype>
+#include <sstream>
 
 namespace fs = std::filesystem;
+
+// ── Helper: recursively find all c_macro blocks in a parse tree ───
+static void findCMacroBlocks(antlr4::tree::ParseTree* node,
+                             const std::string& sourceFile,
+                             const std::string& tempDir,
+                             CBindings& bindings) {
+    if (!node) return;
+    if (auto* cm = dynamic_cast<LucisParser::CMacroBlockContext*>(node)) {
+        auto tok = cm->C_MACRO_BLOCK();
+        if (!tok) return;
+        std::string fullText = tok->getText();
+        if (fullText.size() < 11) return;
+        std::string rawC = fullText.substr(9, fullText.size() - 10);
+        evalCMacroRaw(rawC, sourceFile, tok->getSymbol()->getLine(),
+                      tempDir, bindings, false);
+        return; // c_macro blocks have no children that need scanning
+    }
+    for (size_t i = 0; i < node->children.size(); ++i)
+        findCMacroBlocks(node->children[i], sourceFile, tempDir, bindings);
+}
+
+// ── Helper: process c_macro blocks from a parsed tree into CBindings ──
+static void processCMacroBlocks(LucisParser::ProgramContext* tree,
+                                const std::string& sourceFile,
+                                const std::string& projectRoot,
+                                CBindings& bindings) {
+    std::string tempDir = projectRoot.empty()
+        ? "/tmp"
+        : (fs::path(projectRoot) / ".lucis" / "cmacro").string();
+
+    findCMacroBlocks(tree, sourceFile, tempDir, bindings);
+}
 
 // ═══════════════════════════════════════════════════════════════════════
 //  Build project context
@@ -149,6 +184,9 @@ bool ProjectContext::build(const std::string& filePath) {
                 enqueueUse(use);
         }
 
+        // Process c_macro blocks from this file
+        processCMacroBlocks(unit.parseResult->tree, curPath, projectRoot_, cBindings_);
+
         units_.push_back(std::move(unit));
     }
 
@@ -185,6 +223,7 @@ bool ProjectContext::build(const std::string& filePath) {
                 registry_.registerFile(unit.modulePath, canon, unit.parseResult->tree, unit.parseResult);
                 fileModulePaths_[canon] = unit.modulePath;
                 visited.insert(canon);
+                processCMacroBlocks(unit.parseResult->tree, canon, projectRoot_, cBindings_);
                 units_.push_back(std::move(unit));
             }
         }

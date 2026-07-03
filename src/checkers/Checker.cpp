@@ -1,11 +1,17 @@
 #include "checkers/Checker.h"
 #include "generated/LucisLexer.h"
 #include "ffi/CBindings.h"
+#include "ffi/CMacroEval.h"
 #include "parser/Parser.h"
 #include <cctype>
+#include <cstdio>
+#include <cstdlib>
+#include <array>
 #include <filesystem>
 #include <functional>
+#include <fstream>
 #include <limits>
+#include <sstream>
 #include <unordered_map>
 #include <vector>
 
@@ -776,7 +782,7 @@ bool Checker::check(LucisParser::ProgramContext* tree) {
         if (pre->includeDecl()) { hasCInclude = true; break; }
     }
 
-    if (cBindings_ && hasCInclude) {
+    if (cBindings_) {
         // Register C structs as types
         for (auto& [name, cstruct] : cBindings_->structs()) {
             if (!typeRegistry_.lookup(name)) {
@@ -1425,7 +1431,17 @@ bool Checker::check(LucisParser::ProgramContext* tree) {
         }
     }
 
-    // Pass 4.5: pre-register all top-level const names (for forward references)
+    // Pass 4.5: process c_macro { ... } blocks (must precede const/var
+    //            resolution so function-like macros are registered)
+    for (auto* decl : tree->topLevelDecl()) {
+        if (auto* cm = decl->cMacroBlock()) {
+            checkCMacroBlock(cm);
+        }
+    }
+    // Also process c_macro blocks at statement level (inside functions)
+    // This is handled in checkStmt via the statement visitor.
+
+    // Pass 4.6: pre-register all top-level const names (for forward references)
     for (auto* decl : tree->topLevelDecl()) {
         if (auto* cd = decl->constDeclStmt()) {
             auto decls = cd->constDeclarator();
@@ -1440,7 +1456,7 @@ bool Checker::check(LucisParser::ProgramContext* tree) {
         }
     }
 
-    // Pass 4.5b: resolve expressions and real types for top-level consts
+    // Pass 4.7: resolve expressions and real types for top-level consts
     for (auto* decl : tree->topLevelDecl()) {
         if (auto* cd = decl->constDeclStmt()) {
             checkConstDeclStmt(cd);
@@ -5700,6 +5716,98 @@ void Checker::setCBindings(const CBindings* bindings) {
     cBindings_ = bindings;
 }
 
+// ── c_macro { ... } block evaluation ──────────────────────────────────
+
+// Tokenize a macro body string into tokens for evalMacroAdd.
+// Splits on whitespace and separates operators: (, ), +, -, *, /, %, etc.
+static std::vector<std::string> tokenizeMacroBody(const std::string& body) {
+    std::vector<std::string> tokens;
+    std::string tok;
+    for (size_t i = 0; i < body.size(); i++) {
+        char c = body[i];
+        if (std::isspace(c)) {
+            if (!tok.empty()) { tokens.push_back(tok); tok.clear(); }
+            continue;
+        }
+        // Multi-char operators
+        if (c == '<' && i+1 < body.size() && body[i+1] == '<') {
+            if (!tok.empty()) { tokens.push_back(tok); tok.clear(); }
+            tokens.push_back("<<");
+            i++;
+            continue;
+        }
+        if (c == '>' && i+1 < body.size() && body[i+1] == '>') {
+            if (!tok.empty()) { tokens.push_back(tok); tok.clear(); }
+            tokens.push_back(">>");
+            i++;
+            continue;
+        }
+        // Single-char operators/delimiters
+        if (c == '(' || c == ')' || c == '+' || c == '-' || c == '*' ||
+            c == '/' || c == '%' || c == '&' || c == '|' || c == '^' ||
+            c == '~' || c == '?' || c == ':') {
+            if (!tok.empty()) { tokens.push_back(tok); tok.clear(); }
+            tokens.push_back(std::string(1, c));
+            continue;
+        }
+        tok += c;
+    }
+    if (!tok.empty()) tokens.push_back(tok);
+    return tokens;
+}
+
+// Extract macro name from "#define FOO ..." → "FOO"
+static std::string extractMacroName(const std::string& line) {
+    auto s = line.find("#define");
+    if (s == std::string::npos) return {};
+    s = line.find_first_not_of(" \t", s + 7);
+    if (s == std::string::npos) return {};
+    size_t e = s;
+    while (e < line.size() && !std::isspace(line[e]) && line[e] != '(') e++;
+    return line.substr(s, e - s);
+}
+
+void Checker::checkCMacroBlock(LucisParser::CMacroBlockContext* ctx) {
+    namespace fs = std::filesystem;
+
+    // 1. Extract raw C text from token: "c_macro { #define FOO 42\n... }"
+    auto tok = ctx->C_MACRO_BLOCK();
+    if (!tok) return;
+    std::string fullText = tok->getText();
+
+    // Strip "c_macro {" prefix (9 chars) and "}" suffix (1 char)
+    if (fullText.size() < 11) {
+        error(ctx, "empty c_macro block");
+        return;
+    }
+    std::string rawC = fullText.substr(9, fullText.size() - 10);  // between braces
+
+    // 2. Evaluate via gcc preprocessor + optional compilation
+    std::string tempDir = projectRoot_.empty()
+        ? "/tmp"
+        : (fs::path(projectRoot_) / ".lucis" / "cmacro").string();
+
+    CBindings localBindings;
+    evalCMacroRaw(rawC, currentFile_, tok->getSymbol()->getLine(),
+                  tempDir, localBindings, true);
+
+    // 3. Register results into Checker's internal tables
+    for (auto& [name, cm] : localBindings.macros()) {
+        if (cMacroBindings_.findMacro(name)) continue;
+        cMacroBindings_.addMacro(cm);
+        auto* int32TI = typeRegistry_.lookup("int32");
+        if (int32TI)
+            cEnumConstants_[name] = CEnumConstant{int32TI, cm.value, 0.0, false, false};
+    }
+
+    for (auto& [name, flm] : localBindings.functionLikeMacros()) {
+        if (cMacroBindings_.findFunctionLikeMacro(name)) continue;
+        cMacroBindings_.addFunctionLikeMacro(flm);
+        cFunctionLikeMacros_[name] = const_cast<CFunctionLikeMacro*>(
+            cMacroBindings_.findFunctionLikeMacro(name));
+    }
+}
+
 bool Checker::isKnownFunction(const std::string& name) const {
     // 1. Local file function
     if (functions_.count(name)) return true;
@@ -6929,6 +7037,9 @@ void Checker::checkStmt(LucisParser::StatementContext* stmt,
         }
         locals_ = savedLocals;
         enumVariantImports_ = savedEnumImports;
+
+    } else if (auto* cm = stmt->cMacroBlock()) {
+        checkCMacroBlock(cm);
     }
 
     if (isTerminatorStmt(stmt))
@@ -8390,6 +8501,18 @@ void Checker::checkCallStmt(LucisParser::CallStmtContext* stmt) {
             applyCallOwnershipEffects(name, argExprs, stmt);
             return;
         }
+    }
+
+    // Check for function-like macro calls (e.g. SQUARE(3))
+    if (cFunctionLikeMacros_.count(name)) {
+        auto* flm = cFunctionLikeMacros_[name];
+        size_t argCount = stmt->argList() ? stmt->argList()->expression().size() : 0;
+        if (argCount != flm->paramNames.size()) {
+            error(stmt, "function-like macro '" + name + "' expects " +
+                  std::to_string(flm->paramNames.size()) + " argument(s), got " +
+                  std::to_string(argCount));
+        }
+        return;
     }
 
     if (!isKnownFunction(name)) {

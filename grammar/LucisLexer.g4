@@ -58,6 +58,11 @@ INCLUDE_LOCAL  : '#include' [ \t]+ '"' ~["\r\n]+ '"';
 INLINE_BLOCK  : '#inline';
 SCOPE_BLOCK   : '#scope';
 
+// C macro block: c_macro { ... } with balanced braces (opaque to Lucis lexer)
+C_MACRO_BLOCK : 'c_macro' [ \t\r\n]* '{' CMACRO_CONTENT '}';
+fragment CMACRO_CONTENT : (CMACRO_ATOM | '{' CMACRO_CONTENT '}')*;
+fragment CMACRO_ATOM : ~[{}];
+
 NULLCOAL_ASSIGN: '??=';
 NULLCOAL  : '??';
 SPREAD    : '...';

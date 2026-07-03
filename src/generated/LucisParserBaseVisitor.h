@@ -711,6 +711,10 @@ public:
     return visitChildren(ctx);
   }
 
+  virtual std::any visitCMacroBlock(LucisParser::CMacroBlockContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
 
 };
 

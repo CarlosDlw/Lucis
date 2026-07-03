@@ -19,8 +19,7 @@
 #include "lsp/Diagnostic.h"
 #include "semantic/SemanticDB.h"
 
-class CBindings;
-struct CFunctionLikeMacro;
+#include "ffi/CBindings.h"
 
 class Checker {
 public:
@@ -233,6 +232,7 @@ private:
     void checkDerefCompoundAssignStmt(LucisParser::DerefCompoundAssignStmtContext* stmt);
     void checkCallStmt(LucisParser::CallStmtContext* stmt);
     void checkAsmStmt(LucisParser::AsmStmtContext* stmt);
+    void checkCMacroBlock(LucisParser::CMacroBlockContext* ctx);
     void checkExprStmt(LucisParser::ExprStmtContext* stmt);
     void checkReturnStmt(LucisParser::ReturnStmtContext* stmt,
                          const TypeInfo* expectedType);
@@ -315,6 +315,9 @@ private:
 
     // C bindings from parsed #include headers
     const CBindings* cBindings_ = nullptr;
+
+    // C bindings from c_macro { ... } blocks (owned by Checker)
+    CBindings cMacroBindings_;
 
     // C enum constants: name → { type, value }
     struct CEnumConstant {

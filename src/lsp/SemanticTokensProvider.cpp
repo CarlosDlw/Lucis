@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <regex>
+#include <sstream>
 
 #include <unordered_set>
 #include "imports/ImportResolver.h"
@@ -660,6 +661,376 @@ static void emitStringSubTokens(std::vector<RawSemanticToken>& out,
 }
 
 // ═══════════════════════════════════════════════════════════════════════
+//  c_macro block: parse the opaque token text for semantic highlighting
+// ═══════════════════════════════════════════════════════════════════════
+
+// Helper: emit sub-tokens for a single line of C preprocessor content.
+static void emitCMacroLineTokens(std::vector<RawSemanticToken>& out,
+                                 uint32_t line, uint32_t baseCol,
+                                 const std::string& text,
+                                 uint32_t firstNonSpace) {
+    // ── Preprocessor directive ──────────────────────────────────────
+    if (firstNonSpace < text.size() && text[firstNonSpace] == '#') {
+        // Work with the trimmed portion for all parsing
+        std::string trimmed = text.substr(firstNonSpace);
+        // Find end of directive keyword (e.g. "#define", "#ifdef", "#include")
+        size_t kwEnd = 1; // skip '#'
+        while (kwEnd < trimmed.size() && (std::isalnum(trimmed[kwEnd]) || trimmed[kwEnd] == '_'))
+            kwEnd++;
+        std::string directive = trimmed.substr(0, kwEnd);
+
+        uint32_t docCol = baseCol + firstNonSpace;
+
+        // All preprocessor directives are Macro tokens
+        emit(out, line, docCol, static_cast<uint32_t>(kwEnd), SemanticTokenType::Macro);
+
+        // Rest of line after directive keyword
+        auto restStart = trimmed.find_first_not_of(" \t", kwEnd);
+        if (restStart == std::string::npos) return;
+
+        if (directive == "#define") {
+            // #define NAME value or #define NAME(args) body
+            auto nameStart = restStart;
+            auto nameEnd = trimmed.find_first_of(" \t(", restStart);
+            if (nameEnd == std::string::npos) nameEnd = trimmed.size();
+            std::string macroName = trimmed.substr(nameStart, nameEnd - nameStart);
+            if (!macroName.empty()) {
+                emit(out, line, docCol + nameStart,
+                     static_cast<uint32_t>(macroName.size()),
+                     SemanticTokenType::Macro,
+                     static_cast<uint32_t>(SemanticTokenMod::Declaration));
+
+                if (nameEnd < trimmed.size() && trimmed[nameEnd] == '(') {
+                    // Function-like macro: emit params
+                    auto closeParen = trimmed.find(')', nameEnd);
+                    if (closeParen != std::string::npos) {
+                        emit(out, line, docCol + nameEnd, 1, SemanticTokenType::Operator);
+                        size_t pos = nameEnd + 1;
+                        // Emit individual parameters
+                        for (size_t sp = nameEnd + 1; sp < closeParen;) {
+                            if (std::isspace(trimmed[sp])) { sp++; pos++; continue; }
+                            size_t paramStart = sp;
+                            while (sp < closeParen && trimmed[sp] != ',' && !std::isspace(trimmed[sp])) sp++;
+                            if (sp > paramStart) {
+                                emit(out, line, docCol + pos,
+                                     static_cast<uint32_t>(sp - paramStart),
+                                     SemanticTokenType::Parameter,
+                                     static_cast<uint32_t>(SemanticTokenMod::Declaration));
+                                pos += sp - paramStart;
+                            }
+                            if (sp < closeParen && trimmed[sp] == ',') {
+                                sp++; pos++;
+                            }
+                        }
+                        emit(out, line, docCol + closeParen, 1, SemanticTokenType::Operator);
+                        // Body after closing paren
+                        auto bodyStart = trimmed.find_first_not_of(" \t", closeParen + 1);
+                        if (bodyStart != std::string::npos) {
+                            for (size_t i = bodyStart; i < trimmed.size();) {
+                                if (std::isspace(trimmed[i])) { i++; continue; }
+                                if (std::isdigit(trimmed[i]) || (trimmed[i] == '-' && i+1 < trimmed.size() && std::isdigit(trimmed[i+1]))) {
+                                    size_t ns = i;
+                                    if (trimmed[i] == '-') i++;
+                                    while (i < trimmed.size() && (std::isxdigit(trimmed[i]) || trimmed[i] == '.'))
+                                        i++;
+                                    emit(out, line, docCol + ns, static_cast<uint32_t>(i - ns), SemanticTokenType::Number);
+                                    continue;
+                                }
+                                if (trimmed[i] == '(' || trimmed[i] == ')' || trimmed[i] == '+' || trimmed[i] == '-' ||
+                                    trimmed[i] == '*' || trimmed[i] == '/' || trimmed[i] == '&' || trimmed[i] == '|' ||
+                                    trimmed[i] == '^' || trimmed[i] == '~' || trimmed[i] == '<' || trimmed[i] == '>') {
+                                    size_t os = i;
+                                    if (i+1 < trimmed.size() && ((trimmed[i] == '<' && trimmed[i+1] == '<') || (trimmed[i] == '>' && trimmed[i+1] == '>')))
+                                        i++;
+                                    i++;
+                                    emit(out, line, docCol + os, static_cast<uint32_t>(i - os), SemanticTokenType::Operator);
+                                    continue;
+                                }
+                                if (std::isalnum(trimmed[i]) || trimmed[i] == '_') {
+                                    size_t is = i;
+                                    while (i < trimmed.size() && (std::isalnum(trimmed[i]) || trimmed[i] == '_')) i++;
+                                    emit(out, line, docCol + is, static_cast<uint32_t>(i - is), SemanticTokenType::Variable);
+                                    continue;
+                                }
+                                i++;
+                            }
+                        }
+                    }
+                } else {
+                    // Simple macro: emit value tokens
+                    auto valStart = trimmed.find_first_not_of(" \t", nameEnd);
+                    if (valStart != std::string::npos && valStart < trimmed.size()) {
+                        if (valStart + 1 < trimmed.size() && trimmed[valStart] == '/' && trimmed[valStart+1] == '/')
+                            return;
+                        for (size_t i = valStart; i < trimmed.size();) {
+                            if (std::isspace(trimmed[i])) { i++; continue; }
+                            if (std::isdigit(trimmed[i]) || (trimmed[i] == '-' && i+1 < trimmed.size() && std::isdigit(trimmed[i+1]))) {
+                                size_t ns = i;
+                                if (trimmed[i] == '-') i++;
+                                while (i < trimmed.size() && (std::isxdigit(trimmed[i]) || trimmed[i] == '.')) i++;
+                                emit(out, line, docCol + ns, static_cast<uint32_t>(i - ns), SemanticTokenType::Number);
+                                continue;
+                            }
+                            if (trimmed[i] == '+' || trimmed[i] == '-' || trimmed[i] == '*' || trimmed[i] == '/' ||
+                                trimmed[i] == '&' || trimmed[i] == '|' || trimmed[i] == '^' || trimmed[i] == '~' ||
+                                trimmed[i] == '<' || trimmed[i] == '>' || trimmed[i] == '(' || trimmed[i] == ')' ||
+                                trimmed[i] == '?' || trimmed[i] == ':') {
+                                size_t os = i;
+                                if (i+1 < trimmed.size() && ((trimmed[i] == '<' && trimmed[i+1] == '<') || (trimmed[i] == '>' && trimmed[i+1] == '>')))
+                                    i++;
+                                i++;
+                                emit(out, line, docCol + os, static_cast<uint32_t>(i - os), SemanticTokenType::Operator);
+                                continue;
+                            }
+                            if (std::isalnum(trimmed[i]) || trimmed[i] == '_') {
+                                size_t is = i;
+                                while (i < trimmed.size() && (std::isalnum(trimmed[i]) || trimmed[i] == '_')) i++;
+                                emit(out, line, docCol + is, static_cast<uint32_t>(i - is), SemanticTokenType::Variable);
+                                continue;
+                            }
+                            i++;
+                        }
+                    }
+                }
+            }
+        } else if (directive == "#ifdef" || directive == "#ifndef") {
+            auto argStart = trimmed.find_first_not_of(" \t", kwEnd);
+            if (argStart != std::string::npos) {
+                auto argEnd = trimmed.find_first_of(" \t", argStart);
+                if (argEnd == std::string::npos) argEnd = trimmed.size();
+                emit(out, line, docCol + argStart, static_cast<uint32_t>(argEnd - argStart),
+                     SemanticTokenType::Macro);
+            }
+        } else if (directive == "#if" || directive == "#elif") {
+            auto exprStart = trimmed.find_first_not_of(" \t", kwEnd);
+            if (exprStart != std::string::npos) {
+                for (size_t i = exprStart; i < trimmed.size();) {
+                    if (std::isspace(trimmed[i])) { i++; continue; }
+                    if (std::isdigit(trimmed[i])) {
+                        size_t ns = i;
+                        while (i < trimmed.size() && (std::isxdigit(trimmed[i]) || trimmed[i] == 'x' || trimmed[i] == 'X')) i++;
+                        emit(out, line, docCol + ns, static_cast<uint32_t>(i - ns), SemanticTokenType::Number);
+                        continue;
+                    }
+                    if (trimmed[i] == '(' || trimmed[i] == ')' || trimmed[i] == '+' || trimmed[i] == '-' ||
+                        trimmed[i] == '*' || trimmed[i] == '/' || trimmed[i] == '&' || trimmed[i] == '|' ||
+                        trimmed[i] == '^' || trimmed[i] == '~' || trimmed[i] == '!' ||
+                        trimmed[i] == '<' || trimmed[i] == '>' || trimmed[i] == '=') {
+                        i++;
+                        emit(out, line, docCol + i - 1, 1, SemanticTokenType::Operator);
+                        continue;
+                    }
+                    if (std::isalnum(trimmed[i]) || trimmed[i] == '_') {
+                        size_t is = i;
+                        while (i < trimmed.size() && (std::isalnum(trimmed[i]) || trimmed[i] == '_')) i++;
+                        emit(out, line, docCol + is, static_cast<uint32_t>(i - is), SemanticTokenType::Macro);
+                        continue;
+                    }
+                    if (trimmed[i] == '"') {
+                        size_t ss = i;
+                        i++;
+                        while (i < trimmed.size() && trimmed[i] != '"') { if (trimmed[i] == '\\') i++; i++; }
+                        if (i < trimmed.size()) i++;
+                        emit(out, line, docCol + ss, static_cast<uint32_t>(i - ss), SemanticTokenType::String);
+                        continue;
+                    }
+                    i++;
+                }
+            }
+        } else if (directive == "#else" || directive == "#endif") {
+            // Just the directive keyword — already emitted
+        } else if (directive == "#undef") {
+            auto argStart = trimmed.find_first_not_of(" \t", kwEnd);
+            if (argStart != std::string::npos) {
+                auto argEnd = trimmed.find_first_of(" \t", argStart);
+                if (argEnd == std::string::npos) argEnd = trimmed.size();
+                emit(out, line, docCol + argStart, static_cast<uint32_t>(argEnd - argStart),
+                     SemanticTokenType::Macro);
+            }
+        } else if (directive == "#include") {
+            auto argStart = trimmed.find_first_not_of(" \t", kwEnd);
+            if (argStart != std::string::npos && argStart < trimmed.size()) {
+                if (trimmed[argStart] == '<' || trimmed[argStart] == '"') {
+                    char closeChar = (trimmed[argStart] == '<') ? '>' : '"';
+                    auto argEnd = trimmed.find(closeChar, argStart + 1);
+                    if (argEnd == std::string::npos) argEnd = trimmed.size();
+                    else argEnd++;
+                    emit(out, line, docCol + argStart, static_cast<uint32_t>(argEnd - argStart),
+                         SemanticTokenType::String);
+                }
+            }
+        } else if (directive == "#pragma" || directive == "#error" || directive == "#warning" ||
+                   directive == "#line" || directive == "#") {
+            auto rest = trimmed.find_first_not_of(" \t", kwEnd);
+            if (rest != std::string::npos)
+                emit(out, line, docCol + rest, static_cast<uint32_t>(trimmed.size() - rest),
+                     SemanticTokenType::String);
+        }
+        return;
+    }
+
+    // ── Non-directive line within c_macro block ─────────────────────
+    for (size_t i = firstNonSpace; i < text.size();) {
+        if (std::isspace(text[i])) { i++; continue; }
+        if (text[i] == '"') {
+            size_t ss = i; i++;
+            while (i < text.size() && text[i] != '"') { if (text[i] == '\\') i++; i++; }
+            if (i < text.size()) i++;
+            emit(out, line, baseCol + ss, static_cast<uint32_t>(i - ss), SemanticTokenType::String);
+            continue;
+        }
+        if (text[i] == '\'') {
+            size_t cs = i; i++;
+            while (i < text.size() && text[i] != '\'') { if (text[i] == '\\') i++; i++; }
+            if (i < text.size()) i++;
+            emit(out, line, baseCol + cs, static_cast<uint32_t>(i - cs), SemanticTokenType::String);
+            continue;
+        }
+        if (std::isdigit(text[i]) || (text[i] == '-' && i+1 < text.size() && std::isdigit(text[i+1]))) {
+            size_t ns = i;
+            if (text[i] == '-') i++;
+            while (i < text.size() && (std::isxdigit(text[i]) || text[i] == '.')) i++;
+            emit(out, line, baseCol + ns, static_cast<uint32_t>(i - ns), SemanticTokenType::Number);
+            continue;
+        }
+        if (text[i] == '(' || text[i] == ')' || text[i] == '{' || text[i] == '}' ||
+            text[i] == '+' || text[i] == '-' || text[i] == '*' || text[i] == '/' ||
+            text[i] == '=' || text[i] == ';' || text[i] == ',' || text[i] == ':' ||
+            text[i] == '&' || text[i] == '|' || text[i] == '^' || text[i] == '~' ||
+            text[i] == '<' || text[i] == '>' || text[i] == '!' || text[i] == '%' ||
+            text[i] == '[' || text[i] == ']') {
+            size_t os = i;
+            if (i+1 < text.size() && ((text[i] == '<' && text[i+1] == '<') ||
+                (text[i] == '>' && text[i+1] == '>') ||
+                (text[i] == '-' && text[i+1] == '>') ||
+                (text[i] == '+' && text[i+1] == '+') ||
+                (text[i] == '-' && text[i+1] == '-')))
+                i++;
+            i++;
+            emit(out, line, baseCol + os, static_cast<uint32_t>(i - os), SemanticTokenType::Operator);
+            continue;
+        }
+        if (std::isalnum(text[i]) || text[i] == '_') {
+            size_t is = i;
+            while (i < text.size() && (std::isalnum(text[i]) || text[i] == '_')) i++;
+            emit(out, line, baseCol + is, static_cast<uint32_t>(i - is), SemanticTokenType::Variable);
+            continue;
+        }
+        i++;
+    }
+}
+
+static void emitCMacroSubTokens(std::vector<RawSemanticToken>& out,
+                                uint32_t line, uint32_t col,
+                                const std::string& text) {
+    // text = "c_macro { ... }"
+    // Emit "c_macro" keyword
+    emit(out, line, col, 7, SemanticTokenType::Keyword,
+         static_cast<uint32_t>(SemanticTokenMod::Readonly));
+
+    // Find opening brace
+    auto brace = text.find('{');
+    if (brace == std::string::npos) return;
+
+    // Track position past "c_macro"
+    uint32_t curLine = line;
+    uint32_t curCol = col + 7;
+
+    // Skip whitespace between "c_macro" and "{"
+    for (size_t p = 7; p < brace; p++) {
+        if (text[p] == '\n') { curLine++; curCol = 0; }
+        else if (text[p] != '\r') curCol++;
+    }
+
+    // Emit "{"
+    emit(out, curLine, curCol, 1, SemanticTokenType::Operator);
+    uint32_t bracketLine = curLine;
+    uint32_t bracketCol = curCol;
+
+    // Content is text between first '{' and last '}'
+    // Find the matching closing brace (the last one that balances)
+    int depth = 0;
+    size_t closeBrace = std::string::npos;
+    for (size_t i = brace; i < text.size(); i++) {
+        if (text[i] == '{') depth++;
+        else if (text[i] == '}') {
+            depth--;
+            if (depth == 0) { closeBrace = i; break; }
+        }
+    }
+    if (closeBrace == std::string::npos) {
+        emit(out, bracketLine, bracketCol, 1, SemanticTokenType::Operator); // already emitted
+        return;
+    }
+
+    std::string innerText = text.substr(brace + 1, closeBrace - brace - 1);
+
+    // Track position inside the block
+    curLine = bracketLine;
+    curCol = bracketCol + 1; // after "{"
+
+    std::istringstream stream(innerText);
+    std::string innerLine;
+    while (std::getline(stream, innerLine)) {
+        // Check for line comment
+        auto lineComment = innerLine.find("//");
+        size_t blockCommentStart = innerLine.find("/*");
+        size_t processEnd = innerLine.size();
+
+        if (lineComment != std::string::npos)
+            processEnd = std::min(processEnd, lineComment);
+        // For block comments, we handle them below; still process tokens before them
+
+        std::string beforeComment = innerLine.substr(0, processEnd);
+        auto first = beforeComment.find_first_not_of(" \t\r");
+        if (first != std::string::npos)
+            emitCMacroLineTokens(out, curLine, curCol, beforeComment, static_cast<uint32_t>(first));
+
+        // Emit line comment
+        if (lineComment != std::string::npos) {
+            emit(out, curLine, curCol + static_cast<uint32_t>(lineComment),
+                 static_cast<uint32_t>(innerLine.size() - lineComment),
+                 SemanticTokenType::Comment);
+        }
+
+        // Emit block comment
+        if (blockCommentStart != std::string::npos) {
+            // Block comment may span multiple lines
+            size_t bcEnd = innerLine.find("*/", blockCommentStart + 2);
+            if (bcEnd != std::string::npos) {
+                bcEnd += 2;
+                emit(out, curLine, curCol + static_cast<uint32_t>(blockCommentStart),
+                     static_cast<uint32_t>(bcEnd - blockCommentStart),
+                     SemanticTokenType::Comment);
+            } else {
+                // Block comment continues to next line — emit this portion
+                emit(out, curLine, curCol + static_cast<uint32_t>(blockCommentStart),
+                     static_cast<uint32_t>(innerLine.size() - blockCommentStart),
+                     SemanticTokenType::Comment);
+            }
+        }
+
+        curLine++;
+        curCol = 0;
+    }
+
+    // Emit "}"
+    // Find the line/col of closeBrace within the full text
+    {
+        uint32_t scanL = line;
+        uint32_t scanC = col;
+        for (size_t i = 0; i <= closeBrace && i < text.size(); i++) {
+            if (i == closeBrace) {
+                emit(out, scanL, scanC, 1, SemanticTokenType::Operator);
+                break;
+            }
+            if (text[i] == '\n') { scanL++; scanC = 0; }
+            else if (text[i] != '\r') scanC++;
+        }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
 //  Collect comments (skipped by ANTLR lexer, so we scan manually)
 // ═══════════════════════════════════════════════════════════════════════
 
@@ -819,6 +1190,10 @@ std::vector<uint32_t> SemanticTokensProvider::tokenize(const std::string& source
         // Include directives
         else if (type == LucisLexer::INCLUDE_SYS || type == LucisLexer::INCLUDE_LOCAL) {
             emit(raw, line, col, len, SemanticTokenType::Macro);
+        }
+        // c_macro block — emit semantic sub-tokens for content inside
+        else if (type == LucisLexer::C_MACRO_BLOCK) {
+            emitCMacroSubTokens(raw, line, col, tok->getText());
         }
         // Identifiers — look up in the context map
         else if (type == LucisLexer::IDENTIFIER) {

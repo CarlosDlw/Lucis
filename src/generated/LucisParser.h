@@ -20,26 +20,26 @@ public:
     THROW = 34, DEFER = 35, MATCH = 36, OR = 37, EXTERN = 38, ASM = 39, 
     VOLATILE = 40, GOTO = 41, INTEL = 42, AUTO = 43, VEC = 44, MAP = 45, 
     SET = 46, TUPLE = 47, ARROW = 48, INCLUDE_SYS = 49, INCLUDE_LOCAL = 50, 
-    INLINE_BLOCK = 51, SCOPE_BLOCK = 52, NULLCOAL_ASSIGN = 53, NULLCOAL = 54, 
-    SPREAD = 55, RANGE_INCL = 56, RANGE = 57, INT1 = 58, INT8 = 59, INT16 = 60, 
-    INT32 = 61, INT64 = 62, INT128 = 63, INTINF = 64, ISIZE = 65, UINT1 = 66, 
-    UINT8 = 67, UINT16 = 68, UINT32 = 69, UINT64 = 70, UINT128 = 71, USIZE = 72, 
-    FLOAT32 = 73, FLOAT64 = 74, FLOAT80 = 75, FLOAT128 = 76, DOUBLE = 77, 
-    BOOL = 78, CHAR = 79, VOID = 80, STRING = 81, CSTRING = 82, SUFFIXED_HEX = 83, 
-    SUFFIXED_OCT = 84, SUFFIXED_BIN = 85, SUFFIXED_INT = 86, SUFFIXED_INT_FLOAT = 87, 
-    SUFFIXED_FLOAT = 88, SUFFIXED_FLOAT_INT = 89, SUFFIXED_DOT_FLOAT = 90, 
-    HEX_LIT = 91, OCT_LIT = 92, BIN_LIT = 93, INT_LIT = 94, FLOAT_LIT = 95, 
-    BOOL_LIT = 96, C_STR_LIT = 97, STR_LIT = 98, CHAR_LIT = 99, ATTR_ERROR = 100, 
-    WILDCARD = 101, IDENTIFIER = 102, PLUS_ASSIGN = 103, MINUS_ASSIGN = 104, 
-    STAR_ASSIGN = 105, SLASH_ASSIGN = 106, PERCENT_ASSIGN = 107, AMP_ASSIGN = 108, 
-    PIPE_ASSIGN = 109, CARET_ASSIGN = 110, LSHIFT_ASSIGN = 111, RSHIFT_ASSIGN = 112, 
-    SEMI = 113, COLON = 114, SCOPE = 115, COMMA = 116, DOT = 117, ASSIGN = 118, 
-    LPAREN = 119, RPAREN = 120, LBRACE = 121, RBRACE = 122, LBRACKET = 123, 
-    RBRACKET = 124, STAR = 125, AMPERSAND = 126, MINUS = 127, PLUS = 128, 
-    SLASH = 129, PERCENT = 130, EQ = 131, NEQ = 132, LTE = 133, GTE = 134, 
-    LT = 135, GT = 136, LAND = 137, LOR = 138, NOT = 139, INCR = 140, DECR = 141, 
-    LSHIFT = 142, PIPE = 143, CARET = 144, TILDE = 145, QUESTION = 146, 
-    WS = 147, LINE_COMMENT = 148, BLOCK_COMMENT = 149
+    INLINE_BLOCK = 51, SCOPE_BLOCK = 52, C_MACRO_BLOCK = 53, NULLCOAL_ASSIGN = 54, 
+    NULLCOAL = 55, SPREAD = 56, RANGE_INCL = 57, RANGE = 58, INT1 = 59, 
+    INT8 = 60, INT16 = 61, INT32 = 62, INT64 = 63, INT128 = 64, INTINF = 65, 
+    ISIZE = 66, UINT1 = 67, UINT8 = 68, UINT16 = 69, UINT32 = 70, UINT64 = 71, 
+    UINT128 = 72, USIZE = 73, FLOAT32 = 74, FLOAT64 = 75, FLOAT80 = 76, 
+    FLOAT128 = 77, DOUBLE = 78, BOOL = 79, CHAR = 80, VOID = 81, STRING = 82, 
+    CSTRING = 83, SUFFIXED_HEX = 84, SUFFIXED_OCT = 85, SUFFIXED_BIN = 86, 
+    SUFFIXED_INT = 87, SUFFIXED_INT_FLOAT = 88, SUFFIXED_FLOAT = 89, SUFFIXED_FLOAT_INT = 90, 
+    SUFFIXED_DOT_FLOAT = 91, HEX_LIT = 92, OCT_LIT = 93, BIN_LIT = 94, INT_LIT = 95, 
+    FLOAT_LIT = 96, BOOL_LIT = 97, C_STR_LIT = 98, STR_LIT = 99, CHAR_LIT = 100, 
+    ATTR_ERROR = 101, WILDCARD = 102, IDENTIFIER = 103, PLUS_ASSIGN = 104, 
+    MINUS_ASSIGN = 105, STAR_ASSIGN = 106, SLASH_ASSIGN = 107, PERCENT_ASSIGN = 108, 
+    AMP_ASSIGN = 109, PIPE_ASSIGN = 110, CARET_ASSIGN = 111, LSHIFT_ASSIGN = 112, 
+    RSHIFT_ASSIGN = 113, SEMI = 114, COLON = 115, SCOPE = 116, COMMA = 117, 
+    DOT = 118, ASSIGN = 119, LPAREN = 120, RPAREN = 121, LBRACE = 122, RBRACE = 123, 
+    LBRACKET = 124, RBRACKET = 125, STAR = 126, AMPERSAND = 127, MINUS = 128, 
+    PLUS = 129, SLASH = 130, PERCENT = 131, EQ = 132, NEQ = 133, LTE = 134, 
+    GTE = 135, LT = 136, GT = 137, LAND = 138, LOR = 139, NOT = 140, INCR = 141, 
+    DECR = 142, LSHIFT = 143, PIPE = 144, CARET = 145, TILDE = 146, QUESTION = 147, 
+    WS = 148, LINE_COMMENT = 149, BLOCK_COMMENT = 150
   };
 
   enum {
@@ -66,7 +66,7 @@ public:
     RuleLockStmt = 70, RuleTryCatchStmt = 71, RuleCatchClause = 72, RuleFinallyClause = 73, 
     RuleThrowStmt = 74, RuleSwitchStmt = 75, RuleCaseClause = 76, RuleDefaultClause = 77, 
     RuleMatchArm = 78, RulePattern = 79, RuleLiteralPattern = 80, RuleExpression = 81, 
-    RuleTypeSpec = 82, RuleFnTypeSpec = 83, RulePrimitiveType = 84
+    RuleTypeSpec = 82, RuleFnTypeSpec = 83, RulePrimitiveType = 84, RuleCMacroBlock = 85
   };
 
   explicit LucisParser(antlr4::TokenStream *input);
@@ -170,7 +170,8 @@ public:
   class ExpressionContext;
   class TypeSpecContext;
   class FnTypeSpecContext;
-  class PrimitiveTypeContext; 
+  class PrimitiveTypeContext;
+  class CMacroBlockContext; 
 
   class  ProgramContext : public antlr4::ParserRuleContext {
   public:
@@ -317,6 +318,7 @@ public:
     ExternDeclContext *externDecl();
     FunctionDeclContext *functionDecl();
     ConstDeclStmtContext *constDeclStmt();
+    CMacroBlockContext *cMacroBlock();
 
 
     virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
@@ -709,6 +711,7 @@ public:
     InlineBlockStmtContext *inlineBlockStmt();
     ScopeBlockStmtContext *scopeBlockStmt();
     AsmStmtContext *asmStmt();
+    CMacroBlockContext *cMacroBlock();
 
 
     virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
@@ -2958,6 +2961,19 @@ public:
   };
 
   PrimitiveTypeContext* primitiveType();
+
+  class  CMacroBlockContext : public antlr4::ParserRuleContext {
+  public:
+    CMacroBlockContext(antlr4::ParserRuleContext *parent, size_t invokingState);
+    virtual size_t getRuleIndex() const override;
+    antlr4::tree::TerminalNode *C_MACRO_BLOCK();
+
+
+    virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+   
+  };
+
+  CMacroBlockContext* cMacroBlock();
 
 
   bool sempred(antlr4::RuleContext *_localctx, size_t ruleIndex, size_t predicateIndex) override;

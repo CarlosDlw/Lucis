@@ -367,6 +367,8 @@ public:
 
     virtual std::any visitPrimitiveType(LucisParser::PrimitiveTypeContext *context) = 0;
 
+    virtual std::any visitCMacroBlock(LucisParser::CMacroBlockContext *context) = 0;
+
 
 };
 

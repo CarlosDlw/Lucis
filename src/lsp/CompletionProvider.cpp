@@ -2089,6 +2089,19 @@ CompletionProvider::complete(const std::string &source, size_t line, size_t col,
     }
     if (!cBindingsPtr)
       cBindingsPtr = &includeBindingsCache_;
+
+    // Merge project-level c_macro and C header results into the cache
+    // so macros defined via c_macro { ... } appear in completions.
+    if (project && project->isValid()) {
+      for (auto& [name, cm] : project->cBindings().macros()) {
+        if (!includeBindingsCache_.findMacro(name))
+          includeBindingsCache_.addMacro(cm);
+      }
+      for (auto& [name, flm] : project->cBindings().functionLikeMacros()) {
+        if (!includeBindingsCache_.findFunctionLikeMacro(name))
+          includeBindingsCache_.addFunctionLikeMacro(flm);
+      }
+    }
   }
 
   // Re-infer receiver type now that we have a valid tree

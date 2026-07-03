@@ -23,7 +23,7 @@
 #include "comptime/ComptimeEngine.h"
 #include "ffi/ABIInfo.h"
 #include "semantic/SemanticDB.h"
-
+#include "ffi/CBindings.h"
 class ModuleRegistry;
 class CBindings;
 struct CStructMacro;
@@ -193,6 +193,7 @@ public:
     std::any visitNakedBlockStmt(LucisParser::NakedBlockStmtContext* ctx) override;
     std::any visitInlineBlockStmt(LucisParser::InlineBlockStmtContext* ctx) override;
     std::any visitScopeBlockStmt(LucisParser::ScopeBlockStmtContext* ctx) override;
+    std::any visitCMacroBlock(LucisParser::CMacroBlockContext* ctx) override;
     // Generic expression visitors
     std::any visitGenericFnCallExpr(LucisParser::GenericFnCallExprContext* ctx) override;
     std::any visitGenericStaticMethodCallExpr(LucisParser::GenericStaticMethodCallExprContext* ctx) override;
@@ -339,6 +340,9 @@ private:
 
     // C bindings from parsed #include headers
     const CBindings* cBindings_ = nullptr;
+
+    // C bindings from c_macro { ... } blocks (owned by IRGen)
+    CBindings cMacroBindings_;
 
     // Comptime engine for compile-time function evaluation
     ComptimeEngine* comptimeEngine_ = nullptr;

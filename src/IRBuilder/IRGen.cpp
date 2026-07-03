@@ -21,6 +21,7 @@
 #include "generated/LucisLexer.h"
 #include "namespace/ModuleRegistry.h"
 #include "ffi/CBindings.h"
+#include "ffi/CMacroEval.h"
 
 #include <cctype>
 #include <iostream>
@@ -470,6 +471,12 @@ std::any IRGen::visitProgram(LucisParser::ProgramContext* ctx) {
         if (decl->extendDecl())
             visit(decl);
     }
+    // Process c_macro blocks
+    for (auto* decl : ctx->topLevelDecl()) {
+        if (auto* cm = decl->cMacroBlock())
+            visitCMacroBlock(cm);
+    }
+
     // Forward-declare all user functions (signatures only)
     for (auto* decl : ctx->topLevelDecl()) {
         if (decl->functionDecl())
@@ -11071,6 +11078,8 @@ std::any IRGen::visitDerefCompoundAssignStmt(LucisParser::DerefCompoundAssignStm
 }
 
 // ── Macro constant evaluator helpers (for function-like macros) ──
+// C operator precedence (lowest to highest within this subset):
+//   shift (<< >>) → additive (+ -) → multiplicative (* / %) → primary
 namespace {
 static bool evalMacroAdd(const std::vector<std::string>& toks, size_t& pos, int64_t& val);
 
@@ -11097,20 +11106,30 @@ static bool evalMacroPrimary(const std::vector<std::string>& toks, size_t& pos, 
     } catch (...) {}
     return false;
 }
-static bool evalMacroShift(const std::vector<std::string>& toks, size_t& pos, int64_t& val) {
+static bool evalMacroMul(const std::vector<std::string>& toks, size_t& pos, int64_t& val) {
     if (!evalMacroPrimary(toks, pos, val)) return false;
     while (pos < toks.size()) {
-        if (toks[pos] == "<<") { pos++; int64_t rhs; if (!evalMacroPrimary(toks, pos, rhs)) return false; val <<= rhs; }
-        else if (toks[pos] == ">>") { pos++; int64_t rhs; if (!evalMacroPrimary(toks, pos, rhs)) return false; val >>= rhs; }
+        if (toks[pos] == "*") { pos++; int64_t rhs; if (!evalMacroPrimary(toks, pos, rhs)) return false; val *= rhs; }
+        else if (toks[pos] == "/") { pos++; int64_t rhs; if (!evalMacroPrimary(toks, pos, rhs)) return false; val /= rhs; }
+        else if (toks[pos] == "%") { pos++; int64_t rhs; if (!evalMacroPrimary(toks, pos, rhs)) return false; val %= rhs; }
         else break;
     }
     return true;
 }
 static bool evalMacroAdd(const std::vector<std::string>& toks, size_t& pos, int64_t& val) {
-    if (!evalMacroShift(toks, pos, val)) return false;
+    if (!evalMacroMul(toks, pos, val)) return false;
     while (pos < toks.size()) {
-        if (toks[pos] == "+") { pos++; int64_t rhs; if (!evalMacroShift(toks, pos, rhs)) return false; val += rhs; }
-        else if (toks[pos] == "-") { pos++; int64_t rhs; if (!evalMacroShift(toks, pos, rhs)) return false; val -= rhs; }
+        if (toks[pos] == "+") { pos++; int64_t rhs; if (!evalMacroMul(toks, pos, rhs)) return false; val += rhs; }
+        else if (toks[pos] == "-") { pos++; int64_t rhs; if (!evalMacroMul(toks, pos, rhs)) return false; val -= rhs; }
+        else break;
+    }
+    return true;
+}
+static bool evalMacroShift(const std::vector<std::string>& toks, size_t& pos, int64_t& val) {
+    if (!evalMacroAdd(toks, pos, val)) return false;
+    while (pos < toks.size()) {
+        if (toks[pos] == "<<") { pos++; int64_t rhs; if (!evalMacroAdd(toks, pos, rhs)) return false; val <<= rhs; }
+        else if (toks[pos] == ">>") { pos++; int64_t rhs; if (!evalMacroAdd(toks, pos, rhs)) return false; val >>= rhs; }
         else break;
     }
     return true;
@@ -11287,8 +11306,10 @@ std::any IRGen::visitFnCallExpr(LucisParser::FnCallExprContext* ctx) {
         }
 
         // ── Function-like macro: KEY_F(1), NCURSES_BITS(1,13) etc. ──
-        if (cBindings_) {
-            if (auto* flm = cBindings_->findFunctionLikeMacro(calleeName)) {
+        const CFunctionLikeMacro* flm = nullptr;
+        if (cBindings_) flm = cBindings_->findFunctionLikeMacro(calleeName);
+        if (!flm) flm = cMacroBindings_.findFunctionLikeMacro(calleeName);
+        if (flm) {
                 // Collect argument values as constants
                 std::vector<int64_t> argVals;
                 if (auto* argList = ctx->argList()) {
@@ -11339,7 +11360,6 @@ std::any IRGen::visitFnCallExpr(LucisParser::FnCallExprContext* ctx) {
                 return static_cast<llvm::Value*>(
                     llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
             }
-        }
 
         // ── Global builtins (value-returning: toInt, toFloat, toBool, toString) ──
         if (globalBuiltins_.count(calleeName)) {
@@ -17687,6 +17707,31 @@ std::any IRGen::visitScopeBlockStmt(LucisParser::ScopeBlockStmtContext* ctx) {
     deferStack_.resize(deferBase);
     locals_ = savedLocals;
 
+    return {};
+}
+
+// ── c_macro { ... } block ──────────────────────────────────────────────
+std::any IRGen::visitCMacroBlock(LucisParser::CMacroBlockContext* ctx) {
+    auto tok = ctx->C_MACRO_BLOCK();
+    if (!tok) return {};
+    std::string fullText = tok->getText();
+    if (fullText.size() < 11) return {};
+    std::string rawC = fullText.substr(9, fullText.size() - 10);
+
+    std::string tempDir = "/tmp";
+    CBindings localBindings;
+    evalCMacroRaw(rawC, currentFile_, tok->getSymbol()->getLine(),
+                  tempDir, localBindings, false);
+
+    for (auto& [name, cm] : localBindings.macros()) {
+        if (cMacroBindings_.findMacro(name)) continue;
+        cMacroBindings_.addMacro(cm);
+        cEnumConstants_[name] = cm.value;
+    }
+    for (auto& [name, flm] : localBindings.functionLikeMacros()) {
+        if (cMacroBindings_.findFunctionLikeMacro(name)) continue;
+        cMacroBindings_.addFunctionLikeMacro(flm);
+    }
     return {};
 }
 

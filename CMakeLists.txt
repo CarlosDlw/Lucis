@@ -266,6 +266,7 @@ set(SOURCES
     src/intrinsics/namespaces/AtomicNamespace.cpp
     src/intrinsics/namespaces/IoNamespace.cpp
     src/ffi/CBindings.cpp
+    src/ffi/CMacroEval.cpp
     src/ffi/CTypeMapper.cpp
     src/ffi/CHeaderResolver.cpp
     src/ffi/ABIInfo.cpp

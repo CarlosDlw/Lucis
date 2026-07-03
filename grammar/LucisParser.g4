@@ -48,6 +48,7 @@ topLevelDecl
     | externDecl
     | functionDecl
     | constDeclStmt
+    | cMacroBlock
     ;
 
 // type BinOp = fn(int32, int32) -> int32;
@@ -183,6 +184,7 @@ statement
     | inlineBlockStmt
     | scopeBlockStmt
     | asmStmt
+    | cMacroBlock
     ;
 
 // defer free(ptr);  or  defer v.free();
@@ -652,4 +654,9 @@ primitiveType
     | VOID
     | STRING
     | CSTRING
+    ;
+
+// c_macro { ... } — inline C macro definitions evaluated via C compiler
+cMacroBlock
+    : C_MACRO_BLOCK
     ;
