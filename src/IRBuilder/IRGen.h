@@ -563,4 +563,6 @@ private:
                                 const std::string& name = "tobool");
     std::pair<llvm::Value*, llvm::Value*>
                        promoteArithmetic(llvm::Value* lhs, llvm::Value* rhs);
+    // Lower [N]T array value to {T*, i64} slice for []T fields/params
+    llvm::Value*       lowerArrayToSlice(llvm::Value* arrVal, llvm::Type* sliceTy);
 };

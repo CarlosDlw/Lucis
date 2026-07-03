@@ -619,6 +619,11 @@ std::any IRGen::visitStructDecl(LucisParser::StructDeclContext* ctx) {
         if (fieldDims > 0 && !fieldSizes.empty()) {
             for (auto it = fieldSizes.rbegin(); it != fieldSizes.rend(); ++it)
                 fieldLLTy = llvm::ArrayType::get(fieldLLTy, *it);
+        } else if (fieldDims > 0 && fieldSizes.empty()) {
+            // Unsized array field []T — represent as slice {T*, i64}
+            auto* ptrTy = llvm::PointerType::getUnqual(*context_);
+            auto* i64Ty = llvm::Type::getInt64Ty(*context_);
+            fieldLLTy = llvm::StructType::get(*context_, {ptrTy, i64Ty});
         }
         fieldTypes.push_back(fieldLLTy);
         if (field->IDENTIFIER()) {
@@ -8396,6 +8401,32 @@ std::any IRGen::visitIndexExpr(LucisParser::IndexExprContext* ctx) {
                 return static_cast<llvm::Value*>(builder_->CreateLoad(elemTy, elemPtr, "idx_elem"));
             }
 
+            // Slice {ptr, len} indexing: expr returning []T, e.g., dots[i].arr[j]
+            if (baseVal && baseVal->getType()->isStructTy()) {
+                auto* st = llvm::dyn_cast<llvm::StructType>(baseVal->getType());
+                if (st && st->getNumElements() == 2 &&
+                    st->getElementType(0)->isPointerTy() &&
+                    st->getElementType(1)->isIntegerTy()) {
+                    auto* dataPtr = builder_->CreateExtractValue(baseVal, 0, "slice_ptr");
+                    auto* i64Ty = llvm::Type::getInt64Ty(*context_);
+                    auto* idx = castValue(visit(indexExprs[0]));
+                    if (idx->getType() != i64Ty)
+                        idx = builder_->CreateIntCast(idx, i64Ty, true);
+                    // Get element type from the expression's type info
+                    auto* elemTI = resolveExprTypeInfo(current);
+                    if (!elemTI) {
+                        std::cerr << "lucis: cannot resolve element type for slice index\n";
+                        return static_cast<llvm::Value*>(
+                            llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
+                    }
+                    auto* elemTy = elemTI->toLLVMType(*context_, module_->getDataLayout());
+                    auto* elemPtr = builder_->CreateGEP(
+                        elemTy, dataPtr, idx, "slice_elem_ptr");
+                    return static_cast<llvm::Value*>(
+                        builder_->CreateLoad(elemTy, elemPtr, "slice_val"));
+                }
+            }
+
             // Array-value indexing: chained field/expr returning array, e.g., m.hidden.bias[1]
             if (baseVal && baseVal->getType()->isArrayTy()) {
                 auto* zero = llvm::ConstantInt::get(i64Ty, 0);
@@ -8968,7 +8999,7 @@ std::any IRGen::visitStructPosInitExpr(LucisParser::StructPosInitExprContext* ct
 
         auto& field = ti->fields[i];
         auto* fieldTI = field.typeInfo;
-        auto* fieldTy = fieldTI->toLLVMType(*context_, module_->getDataLayout());
+        auto* fieldTy = buildFieldLLVMType(fieldTI, field.arrayDims, field.arraySizes);
         llvm::Value* val = nullptr;
 
         if (fieldTI && fieldTI->kind == TypeKind::Extended &&
@@ -8990,6 +9021,10 @@ std::any IRGen::visitStructPosInitExpr(LucisParser::StructPosInitExprContext* ct
                     val = builder_->CreateFPTrunc(val, fieldTy);
                 else
                     val = builder_->CreateFPExt(val, fieldTy);
+            } else if (field.arrayDims > 0 && field.arraySizes.empty() &&
+                       val->getType()->isArrayTy() && fieldTy->isStructTy() &&
+                       llvm::cast<llvm::StructType>(fieldTy)->getNumElements() == 2) {
+                val = lowerArrayToSlice(val, fieldTy);
             }
         }
 
@@ -9516,6 +9551,11 @@ llvm::Type* IRGen::buildFieldLLVMType(const TypeInfo* elemTI, unsigned arrayDims
     if (arrayDims > 0 && !arraySizes.empty()) {
         for (auto it = arraySizes.rbegin(); it != arraySizes.rend(); ++it)
             ty = llvm::ArrayType::get(ty, *it);
+    } else if (arrayDims > 0 && arraySizes.empty()) {
+        // Unsized array field []T — represent as slice {T*, i64}
+        auto* ptrTy = llvm::PointerType::getUnqual(*context_);
+        auto* i64Ty = llvm::Type::getInt64Ty(*context_);
+        ty = llvm::StructType::get(*context_, {ptrTy, i64Ty});
     }
     return ty;
 }
@@ -9792,6 +9832,7 @@ std::any IRGen::visitQualifiedStructPosInitExpr(LucisParser::QualifiedStructPosI
             if (!val)
                 val = castValue(visit(exprs[i]));
 
+            // Unsized array field []T — lower [N]T value to {ptr, len} slice
             if (val->getType() != fieldTy) {
                 if (val->getType()->isIntegerTy() && fieldTy->isIntegerTy())
                     val = builder_->CreateIntCast(val, fieldTy, fieldTI->isSigned);
@@ -9800,6 +9841,10 @@ std::any IRGen::visitQualifiedStructPosInitExpr(LucisParser::QualifiedStructPosI
                         val = builder_->CreateFPTrunc(val, fieldTy);
                     else
                         val = builder_->CreateFPExt(val, fieldTy);
+                } else if (field.arrayDims > 0 && field.arraySizes.empty() &&
+                           val->getType()->isArrayTy() && fieldTy->isStructTy() &&
+                           llvm::cast<llvm::StructType>(fieldTy)->getNumElements() == 2) {
+                    val = lowerArrayToSlice(val, fieldTy);
                 }
             }
 
@@ -17505,6 +17550,40 @@ void IRGen::storeArrayElements(llvm::Value* src, llvm::Value* destPtr,
             builder_->CreateStore(elem, gep);
         }
     }
+}
+
+llvm::Value* IRGen::lowerArrayToSlice(llvm::Value* arrVal, llvm::Type* sliceTy) {
+    auto* i64Ty = llvm::Type::getInt64Ty(*context_);
+    auto* zero  = llvm::ConstantInt::get(i64Ty, 0);
+
+    llvm::Value* srcAlloca = nullptr;
+    if (auto* li = llvm::dyn_cast<llvm::LoadInst>(arrVal))
+        srcAlloca = li->getPointerOperand();
+    if (!srcAlloca) {
+        srcAlloca = builder_->CreateAlloca(arrVal->getType(), nullptr, "arr.slice");
+        builder_->CreateStore(arrVal, srcAlloca);
+    }
+
+    auto* elemPtr = builder_->CreateGEP(arrVal->getType(), srcAlloca,
+                                        {zero, zero}, "arr.slice.ptr");
+    auto* ptrFieldTy = llvm::cast<llvm::StructType>(sliceTy)->getElementType(0);
+    if (elemPtr->getType() != ptrFieldTy)
+        elemPtr = builder_->CreateBitCast(elemPtr, ptrFieldTy, "arr.slice.cast");
+
+    auto* lenFieldTy = llvm::cast<llvm::StructType>(sliceTy)->getElementType(1);
+    auto* lenField = llvm::ConstantInt::get(
+        llvm::cast<llvm::IntegerType>(lenFieldTy),
+        llvm::cast<llvm::ArrayType>(arrVal->getType())->getNumElements());
+
+    llvm::Value* slice = llvm::UndefValue::get(sliceTy);
+    slice = builder_->CreateInsertValue(slice, elemPtr, {0}, "arr.slice.ins.ptr");
+    slice = builder_->CreateInsertValue(slice, lenField, {1}, "arr.slice.ins.len");
+
+    if (auto* li = llvm::dyn_cast<llvm::LoadInst>(arrVal))
+        if (li->use_empty())
+            li->eraseFromParent();
+
+    return slice;
 }
 
 // Declare (or retrieve an already-declared) external C function in the module.
