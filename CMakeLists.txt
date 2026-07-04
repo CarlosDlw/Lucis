@@ -349,10 +349,10 @@ target_compile_definitions(lucis PRIVATE
     LUCIS_STDLIB_DIR="${LUCIS_STDLIB_INSTALL_DIR}"
 )
 
-# ─── Install stdlib .lc files ─────────────────────────────────────────────────
+# ─── Install stdlib (recursive: .lc, .c, .h files) ──────────────────────────────
 install(DIRECTORY stdlib/
     DESTINATION ${CMAKE_INSTALL_PREFIX}/share/lucis/stdlib
-    FILES_MATCHING PATTERN "*.lc"
+    FILES_MATCHING PATTERN "*.lc" PATTERN "*.c" PATTERN "*.h"
 )
 
 # ─── Install compiler binary and builtins library ─────────────────────────────

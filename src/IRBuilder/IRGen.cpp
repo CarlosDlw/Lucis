@@ -2331,7 +2331,11 @@ std::any IRGen::visitConstDeclStmt(LucisParser::ConstDeclStmtContext* ctx) {
 
             // Store compile-time integer literal value for use in array dimensions
             if (auto* intLit = dynamic_cast<LucisParser::IntLitExprContext*>(d->expression())) {
-                compileTimeValues_[name] = std::stoll(intLit->getText());
+                try {
+                    compileTimeValues_[name] = std::stoll(intLit->getText());
+                } catch (const std::out_of_range&) {
+                    // Value too large for int64_t - skip
+                }
             }
         } else {
             // Function-scoped const: alloca + store (like a local variable)
@@ -2344,7 +2348,11 @@ std::any IRGen::visitConstDeclStmt(LucisParser::ConstDeclStmtContext* ctx) {
 
             // Store compile-time integer literal value for use in array dimensions
             if (auto* intLit = dynamic_cast<LucisParser::IntLitExprContext*>(d->expression())) {
-                compileTimeValues_[name] = std::stoll(intLit->getText());
+                try {
+                    compileTimeValues_[name] = std::stoll(intLit->getText());
+                } catch (const std::out_of_range&) {
+                    // Value too large for int64_t - skip
+                }
             }
         }
     }
@@ -2831,7 +2839,11 @@ std::any IRGen::visitVarDeclStmt(LucisParser::VarDeclStmtContext* ctx) {
 
             // Store compile-time integer literal value for use in array dimensions
             if (auto* intLit = dynamic_cast<LucisParser::IntLitExprContext*>(d->expression())) {
-                compileTimeValues_[name] = std::stoll(intLit->getText());
+                try {
+                    compileTimeValues_[name] = std::stoll(intLit->getText());
+                } catch (const std::out_of_range&) {
+                    // Value too large for int64_t - skip
+                }
             }
         }
     }
@@ -20620,7 +20632,7 @@ IRGen::visitMethodCallExpr(LucisParser::MethodCallExprContext* ctx) {
                 auto* voidTy = llvm::Type::getVoidTy(*context_);
                 auto memcpyFn = declareBuiltin("memcpy", voidTy, {ptrTy, ptrTy, usizeTy});
                 auto* srcPtr = builder_->CreateBitCast(arrAlloca, ptrTy, "copy.src");
-                builder_->CreateCall(memcpyFn, {rawMem, srcPtr, totalSz}, "copy.cpy");
+                builder_->CreateCall(memcpyFn, {rawMem, srcPtr, totalSz});
                 auto* typedPtr = builder_->CreateBitCast(rawMem,
                     llvm::PointerType::getUnqual(arrTy), "copy.typed");
                 auto* result = builder_->CreateLoad(arrTy, typedPtr, "copy_val");
@@ -20667,7 +20679,7 @@ IRGen::visitMethodCallExpr(LucisParser::MethodCallExprContext* ctx) {
                         {llvm::ConstantInt::get(i64Ty, 0), startIdx}, "slc.src");
                     auto* dstPtr = builder_->CreateBitCast(rawMem, ptrTy, "slc.dst");
                     auto* srcPtr = builder_->CreateBitCast(srcBase, ptrTy, "slc.srcb");
-                    builder_->CreateCall(memcpyFn, {dstPtr, srcPtr, totalSz}, "slc.cpy");
+                    builder_->CreateCall(memcpyFn, {dstPtr, srcPtr, totalSz});
                     auto* typedPtr = builder_->CreateBitCast(rawMem,
                         llvm::PointerType::getUnqual(outArrTy), "slc.typed");
                     auto* constResult = builder_->CreateLoad(outArrTy, typedPtr, "slice_const_val");
@@ -20689,7 +20701,7 @@ IRGen::visitMethodCallExpr(LucisParser::MethodCallExprContext* ctx) {
                     {llvm::ConstantInt::get(i64Ty, 0), startIdx}, "sl.src");
                 auto* dstPtr = builder_->CreateBitCast(rawMem, ptrTy, "sl.dst");
                 auto* srcPtr = builder_->CreateBitCast(srcBase, ptrTy, "sl.srcb");
-                builder_->CreateCall(memcpyFn, {dstPtr, srcPtr, totalSz}, "sl.cpy");
+                builder_->CreateCall(memcpyFn, {dstPtr, srcPtr, totalSz});
                 auto* typedPtr = builder_->CreateBitCast(rawMem,
                     llvm::PointerType::getUnqual(arrTy), "sl.typed");
                 auto* sliceResult = builder_->CreateLoad(arrTy, typedPtr, "slice_val");

@@ -7507,7 +7507,11 @@ void Checker::checkConstDeclStmt(LucisParser::ConstDeclStmtContext* stmt) {
         // Store compile-time integer literal value for use in array dimensions
         if (d->expression()) {
             if (auto* intLit = dynamic_cast<LucisParser::IntLitExprContext*>(d->expression())) {
-                compileTimeValues_[name] = std::stoll(intLit->getText());
+                try {
+                    compileTimeValues_[name] = std::stoll(intLit->getText());
+                } catch (const std::out_of_range&) {
+                    // Value too large for int64_t (e.g., int128, intinf) - skip storage
+                }
             }
         }
     }
@@ -7663,7 +7667,11 @@ std::vector<unsigned> arraySizes = extractArraySizesFromSpec(stmt->typeSpec());
             locals_[varName] = vi;
             // Store compile-time integer literal value for use in array dimensions
             if (auto* intLit = dynamic_cast<LucisParser::IntLitExprContext*>(d->expression())) {
-                compileTimeValues_[varName] = std::stoll(intLit->getText());
+                try {
+                    compileTimeValues_[varName] = std::stoll(intLit->getText());
+                } catch (const std::out_of_range&) {
+                    // Value too large for int64_t (e.g., int128, intinf) - skip storage
+                }
             }
             markExprAsMoved(d->expression(), stmt);
             trackVarBufferFromExpr(varName, d->expression(), initType);
@@ -7753,7 +7761,11 @@ std::vector<unsigned> arraySizes = extractArraySizesFromSpec(stmt->typeSpec());
         locals_[varName] = vi;
         // Store compile-time integer literal value for use in array dimensions
         if (auto* intLit = dynamic_cast<LucisParser::IntLitExprContext*>(d->expression())) {
-            compileTimeValues_[varName] = std::stoll(intLit->getText());
+            try {
+                compileTimeValues_[varName] = std::stoll(intLit->getText());
+            } catch (const std::out_of_range&) {
+                // Value too large for int64_t (e.g., int128, intinf) - skip storage
+            }
         }
         markExprAsMoved(d->expression(), stmt);
         trackVarBufferFromExpr(varName, d->expression(), typeInfo);

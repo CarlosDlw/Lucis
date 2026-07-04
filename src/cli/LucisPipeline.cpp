@@ -296,13 +296,32 @@ std::unique_ptr<PipelineResult> LucisPipeline::run(const Options& opts) {
         return result;
     }
 
-    // ── Step 4: resolve C headers & compile C sources ─────────────────────
-    progress(4, 5, "resolving C includes and auto-link");
+    // ── Step 4: create shared C bindings registry ──────────────────────────
+    progress(4, 5, "creating C bindings registry");
     result->cBindings = std::make_unique<CBindings>();
     result->cTypeReg  = std::make_unique<TypeRegistry>();
-    if (!opts.noStd) {
-        CHeaderResolver resolver(*result->cTypeReg, *result->cBindings, opts.includePaths);
-        for (auto& unit : result->units) {
+
+    // ── Step 5: semantic check (with per-unit C header resolution) ─────────
+    progress(5, 5, "running semantic checker");
+
+    // Phase 1: create shared SemanticDB
+    result->semanticDB = std::make_unique<semantic::SemanticDB>();
+
+    bool anyCheckError = false;
+    size_t checkIdx = 0;
+    for (auto& unit : result->units) {
+        ++checkIdx;
+        if (!opts.quiet)
+            printUnitLine(stage, "check", checkIdx, result->units.size(), unit.filePath);
+
+        // Per-unit C header resolution ──────────────────────────────────
+        if (!opts.noStd) {
+            std::vector<std::string> cIncludePaths = opts.includePaths;
+            if (unit.isStdlib) {
+                for (auto& p : ImportResolver::stdlibSearchPaths())
+                    cIncludePaths.push_back(p);
+            }
+            CHeaderResolver resolver(*result->cTypeReg, *result->cBindings, cIncludePaths);
             auto* tree = unit.parseResult->tree;
             for (auto* pre : tree->preambleDecl()) {
                 auto* incl = pre->includeDecl();
@@ -314,8 +333,9 @@ std::unique_ptr<PipelineResult> LucisPipeline::run(const Options& opts) {
                 } else if (incl->INCLUDE_LOCAL()) {
                     auto header = CHeaderResolver::extractLocalHeader(incl->getText());
                     if (!header.empty()) {
-                        resolver.resolveLocalHeader(header, result->projectRoot);
-                        auto hPath = fs::path(result->projectRoot) / header;
+                        auto basePath = unit.isStdlib ? ImportResolver::stdlibSearchPaths()[0] : result->projectRoot;
+                        resolver.resolveLocalHeader(header, basePath);
+                        auto hPath = fs::path(basePath) / header;
                         auto cPath = fs::path(hPath).replace_extension(".c");
                         if (fs::exists(cPath)) {
                             auto canonical = fs::canonical(cPath).string();
@@ -328,35 +348,7 @@ std::unique_ptr<PipelineResult> LucisPipeline::run(const Options& opts) {
                 }
             }
         }
-    }
 
-    for (auto& [flag, header] : result->cBindings->requiredLibs()) {
-        bool alreadyProvided = false;
-        for (auto& lf : opts.userLinkerFlags) {
-            if (("-l" + lf) == flag) { alreadyProvided = true; break; }
-        }
-        if (!alreadyProvided) {
-            if (!opts.quiet)
-                std::cerr << "lucis: auto-linking '" << flag
-                          << "' (required by <" << header << ">)\n";
-            result->linkerFlags.push_back(flag);
-        }
-    }
-    for (auto& lf : opts.userLinkerFlags)
-        result->linkerFlags.push_back("-l" + lf);
-
-    // ── Step 5: semantic check ──────────────────────────────────────────────
-    progress(5, 5, "running semantic checker");
-
-    // Phase 1: create shared SemanticDB
-    result->semanticDB = std::make_unique<semantic::SemanticDB>();
-
-    bool anyCheckError = false;
-    size_t checkIdx = 0;
-    for (auto& unit : result->units) {
-        ++checkIdx;
-        if (!opts.quiet)
-            printUnitLine(stage, "check", checkIdx, result->units.size(), unit.filePath);
         Checker checker;
         checker.setModuleContext(result->registry.get(), unit.modulePath, unit.filePath);
         checker.setProjectPaths(result->projectRoot, opts.sourcePaths);
@@ -372,7 +364,7 @@ std::unique_ptr<PipelineResult> LucisPipeline::run(const Options& opts) {
         return result;
     }
 
-    // Phase 5: save SemanticDB cache for incremental builds
+    // Phase 2: save SemanticDB cache for incremental builds
     if (result->semanticDB) {
         std::string cacheDir = result->buildDir + "/cache";
         std::error_code ec;
@@ -381,6 +373,22 @@ std::unique_ptr<PipelineResult> LucisPipeline::run(const Options& opts) {
             result->semanticDB->save(cacheDir + "/semantic.db");
         }
     }
+
+    // Auto-link libraries from C headers
+    for (auto& [flag, header] : result->cBindings->requiredLibs()) {
+        bool alreadyProvided = false;
+        for (auto& lf : opts.userLinkerFlags) {
+            if (("-l" + lf) == flag) { alreadyProvided = true; break; }
+        }
+        if (!alreadyProvided) {
+            if (!opts.quiet)
+                std::cerr << "lucis: auto-linking '" << flag
+                          << "' (required by <" << header << ">)\n";
+            result->linkerFlags.push_back(flag);
+        }
+    }
+    for (auto& lf : opts.userLinkerFlags)
+        result->linkerFlags.push_back("-l" + lf);
 
     return result;
 }
