@@ -1,7 +1,39 @@
+/**
+ * Terminal I/O and control module.
+ * 
+ * Provides functions for terminal I/O, mode control, cursor manipulation,
+ * and low-level terminal attribute manipulation.
+ * 
+ * @since 0.0.1 beta
+ * @see tty
+ * @see console
+ */
+ 
 #include "_runtime/tty.h"
 #include "_runtime/terminal.h"
 #include "_runtime/console.h"
+ 
+/**
+ * Standard file descriptors.
+*/
+const STDIN: int32 = 0;
+const STDOUT: int32 = 1;
+const STDERR: int32 = 2;
 
+/**
+ * Terminal state structure mirroring C's LucisTerminalState.
+ * 
+ * @field raw True if terminal is in raw mode
+ * @field echo True if input echoing is enabled
+ * @field canonical True if canonical (line-buffered) mode is active
+ * @field inputSpeed Input baud rate (cfgetispeed)
+ * @field outputSpeed Output baud rate (cfgetospeed)
+ * @field controlChars 32 control characters (VINTR, VERASE, etc.)
+ * 
+ * @since 0.0.1 beta
+ * @see getState
+ * @see setState
+ */
 struct TerminalState {
     bool raw;
     bool echo;
@@ -13,105 +45,935 @@ struct TerminalState {
     [32]uint8 controlChars;
 }
 
+/**
+ * Console size structure.
+ * 
+ * @field rows Number of rows (height)
+ * @field cols Number of columns (width)
+ * 
+ * @since 0.0.1 beta
+ * @see getConsoleSize
+ */
 struct ConsoleSize {
     int32 rows;
     int32 cols;
 }
 
+/**
+ * Check if a file descriptor is a terminal device.
+ * 
+ * @param fd The file descriptor to check
+ * 
+ * @return True if the file descriptor refers to a terminal device
+ * 
+ * @since 0.0.1 beta
+ */
 fn isTTY(int32 fd) bool {
     return __lucis_tty_isatty(fd);
 }
 
+/**
+ * Read data from a terminal.
+ * 
+ * @param fd The file descriptor
+ * @param buffer Pointer to the buffer to read into
+ * @param size Number of bytes to read
+ * 
+ * @return Number of bytes read, or -1 on error
+ * 
+ * @throws If the file descriptor is invalid or read fails
+ * @since 0.0.1 beta
+ */
 fn read(int32 fd, *uint8 buffer, usize size) int32 {
-    return 0;
+    return __lucis_tty_read(fd, buffer, size);
 }
 
+/**
+ * Write data to a terminal.
+ * 
+ * @param fd The file descriptor
+ * @param buffer Pointer to the data to write
+ * @param size Number of bytes to write
+ * 
+ * @return Number of bytes written, or -1 on error
+ * 
+ * @throws If the file descriptor is invalid or write fails
+ * @since 0.0.1 beta
+ */
 fn write(int32 fd, *uint8 buffer, usize size) int32 {
-    return 0;
+    return __lucis_tty_write(fd, buffer, size);
 }
 
+/**
+ * Flush the terminal input buffer.
+ * 
+ * Discards any data received but not yet read.
+ * 
+ * @param fd The file descriptor
+ * 
+ * @return True if the input buffer was flushed successfully
+ * 
+ * @since 0.0.1 beta
+ */
 fn flushInput(int32 fd) bool {
-    return false;
+    return __lucis_tty_flush_input(fd);
 }
 
+/**
+ * Flush the terminal output buffer.
+ * 
+ * Ensures all pending output is transmitted to the terminal.
+ * 
+ * @param fd The file descriptor
+ * 
+ * @return True if the output buffer was flushed successfully
+ * 
+ * @since 0.0.1 beta
+ */
 fn flushOutput(int32 fd) bool {
-    return false;
+    return __lucis_tty_flush_output(fd);
 }
 
+/**
+ * Flush both input and output buffers of a terminal.
+ * 
+ * @param fd The file descriptor
+ * 
+ * @return True if both buffers were flushed successfully
+ * 
+ * @since 0.0.1 beta
+ */
 fn flush(int32 fd) bool {
-    return false;
+    return __lucis_tty_flush_io(fd);
 }
 
-fn getState(int32 fd) TerminalState {
-    TerminalState ts;
-    return ts;
+/**
+ * Get the current state of a terminal.
+ * 
+ * Populates the given TerminalState structure with the current
+ * terminal attributes including mode flags, speeds, and control characters.
+ * 
+ * @param fd The file descriptor
+ * @param state Pointer to TerminalState structure to populate
+ * 
+ * @return True if the state was retrieved successfully
+ * 
+ * @since 0.0.1 beta
+ * @see setState
+ * @see TerminalState
+ */
+fn getState(int32 fd, *TerminalState state) bool {
+    return __lucis_terminal_get_state(fd, state);
 }
 
-fn setState(int32 fd, TerminalState state) bool {
-    return false;
+/**
+ * Set the state of a terminal.
+ * 
+ * Applies all attributes from the given TerminalState structure
+ * to the terminal, including raw/echo/canonical modes, speeds,
+ * and control characters.
+ * 
+ * @param fd The file descriptor
+ * @param state Pointer to TerminalState with desired attributes
+ * 
+ * @return True if the state was applied successfully
+ * 
+ * @since 0.0.1 beta
+ * @see getState
+ * @see TerminalState
+ */
+fn setState(int32 fd, *TerminalState state) bool {
+    return __lucis_terminal_set_state(fd, state);
 }
 
+/**
+ * Enable raw mode on a terminal.
+ * 
+ * Raw mode disables canonical input processing, echo, and signal generation.
+ * Input is available character-by-character without waiting for newline.
+ * 
+ * @param fd The file descriptor
+ * 
+ * @return True if raw mode was enabled successfully
+ * 
+ * @since 0.0.1 beta
+ * @see disableRaw
+ * @see TerminalState
+ */
 fn enableRaw(int32 fd) bool {
-    return false;
+    return __lucis_terminal_enable_raw(fd);
 }
 
+/**
+ * Disable raw mode on a terminal.
+ * 
+ * Restores canonical (line-buffered) mode and input echoing.
+ * 
+ * @param fd The file descriptor
+ * 
+ * @return True if raw mode was disabled successfully
+ * 
+ * @since 0.0.1 beta
+ * @see enableRaw
+ * @see TerminalState
+ */
 fn disableRaw(int32 fd) bool {
-    return false;
+    return __lucis_terminal_disable_raw(fd);
 }
 
+/**
+ * Enable input echo on a terminal.
+ * 
+ * Characters typed by the user will be echoed back to the terminal.
+ * 
+ * @param fd The file descriptor
+ * 
+ * @return True if echo was enabled successfully
+ * 
+ * @since 0.0.1 beta
+ * @see disableEcho
+ * @see TerminalState
+ */
 fn enableEcho(int32 fd) bool {
-    return false;
+    return __lucis_terminal_enable_echo(fd);
 }
 
+/**
+ * Disable input echo on a terminal.
+ * 
+ * Characters typed by the user will not be displayed.
+ * Useful for password input.
+ * 
+ * @param fd The file descriptor
+ * 
+ * @return True if echo was disabled successfully
+ * 
+ * @since 0.0.1 beta
+ * @see enableEcho
+ * @see TerminalState
+ */
 fn disableEcho(int32 fd) bool {
-    return false;
+    return __lucis_terminal_disable_echo(fd);
 }
 
+/**
+ * Enable canonical (line-buffered) mode on a terminal.
+ * 
+ * Input is processed line-by-line with editing capabilities
+ * (backspace, kill line, etc.) and delivered on newline.
+ * 
+ * @param fd The file descriptor
+ * 
+ * @return True if canonical mode was enabled successfully
+ * 
+ * @since 0.0.1 beta
+ * @see disableCanonical
+ * @see TerminalState
+ */
 fn enableCanonical(int32 fd) bool {
-    return false;
+    return __lucis_terminal_enable_canonical(fd);
 }
 
+/**
+ * Disable canonical (line-buffered) mode on a terminal.
+ * 
+ * Input is available character-by-character without waiting for newline.
+ * Line editing features (backspace, kill line) are disabled.
+ * 
+ * @param fd The file descriptor
+ * 
+ * @return True if canonical mode was disabled successfully
+ * 
+ * @since 0.0.1 beta
+ * @see enableCanonical
+ * @see TerminalState
+ */
 fn disableCanonical(int32 fd) bool {
-    return false;
+    return __lucis_terminal_disable_canonical(fd);
 }
 
-fn getConsoleSize(int32 fd) ConsoleSize {
-    ConsoleSize cs;
-    return cs;
+/**
+ * Get the current console size.
+ * 
+ * Populates the given ConsoleSize structure with the current
+ * terminal dimensions (rows and columns).
+ * 
+ * @param fd The file descriptor
+ * @param cs Pointer to ConsoleSize structure to populate
+ * 
+ * @return True if the size was retrieved successfully
+ * 
+ * @since 0.0.1 beta
+ * @see ConsoleSize
+ */
+fn getConsoleSize(int32 fd, *ConsoleSize cs) bool {
+    return __lucis_console_get_size(fd, cs);
 }
 
+/**
+ * Clear the terminal screen.
+ * 
+ * Sends ANSI escape sequence to clear the entire screen
+ * and move cursor to home position (0,0).
+ * 
+ * @param fd The file descriptor
+ * 
+ * @return True if the screen was cleared successfully
+ * 
+ * @since 0.0.1 beta
+ * @see clearLine
+ * @see moveCursor
+ */
 fn clear(int32 fd) bool {
-    return false;
+    return __lucis_console_clear(fd);
 }
 
+/**
+ * Clear the current line in the terminal.
+ * 
+ * Sends ANSI escape sequence to clear from cursor to end of line.
+ * 
+ * @param fd The file descriptor
+ * 
+ * @return True if the line was cleared successfully
+ * 
+ * @since 0.0.1 beta
+ * @see clear
+ * @see moveCursor
+ */
 fn clearLine(int32 fd) bool {
-    return false;
+    return __lucis_console_clear_line(fd);
 }
 
+/**
+ * Show the terminal cursor.
+ * 
+ * Makes the cursor visible.
+ * 
+ * @param fd The file descriptor
+ * 
+ * @return True if the cursor was shown successfully
+ * 
+ * @since 0.0.1 beta
+ * @see hideCursor
+ */
 fn showCursor(int32 fd) bool {
-    return false;
+    return __lucis_console_show_cursor(fd);
 }
 
+/**
+ * Hide the terminal cursor.
+ * 
+ * Makes the cursor invisible.
+ * 
+ * @param fd The file descriptor
+ * 
+ * @return True if the cursor was hidden successfully
+ * 
+ * @since 0.0.1 beta
+ * @see showCursor
+ */
 fn hideCursor(int32 fd) bool {
-    return false;
+    return __lucis_console_hide_cursor(fd);
 }
 
-fn moveCursor(int32 fd, int32 x, int32 y) bool {
-    return false;
+/**
+ * Move the terminal cursor to a specific position.
+ * 
+ * Moves the cursor to the given row and column (0-indexed).
+ * 
+ * @param fd The file descriptor
+ * @param row The target row (0 = top)
+ * @param col The target column (0 = left)
+ * 
+ * @return True if the cursor was moved successfully
+ * 
+ * @since 0.0.1 beta
+ * @see showCursor
+ * @see hideCursor
+ * @see moveUp
+ * @see moveDown
+ * @see moveLeft
+ * @see moveRight
+ */
+fn moveCursor(int32 fd, int32 row, int32 col) bool {
+    return __lucis_console_move_cursor(fd, row, col);
 }
 
+/**
+ * Move the terminal cursor up by the specified number of lines.
+ * 
+ * @param fd The file descriptor
+ * @param count Number of lines to move up
+ * 
+ * @return True if the cursor was moved successfully
+ * 
+ * @since 0.0.1 beta
+ * @see moveDown
+ * @see moveLeft
+ * @see moveRight
+ * @see moveCursor
+ */
 fn moveUp(int32 fd, int32 count) bool {
-    return false;
+    return __lucis_console_move_up(fd, count);
 }
 
+/**
+ * Move the terminal cursor down by the specified number of lines.
+ * 
+ * @param fd The file descriptor
+ * @param count Number of lines to move down
+ * 
+ * @return True if the cursor was moved successfully
+ * 
+ * @since 0.0.1 beta
+ * @see moveUp
+ * @see moveLeft
+ * @see moveRight
+ * @see moveCursor
+ */
 fn moveDown(int32 fd, int32 count) bool {
-    return false;
+    return __lucis_console_move_down(fd, count);
 }
 
+/**
+ * Move the terminal cursor right by the specified number of columns.
+ * 
+ * @param fd The file descriptor
+ * @param count Number of columns to move right
+ * 
+ * @return True if the cursor was moved successfully
+ * 
+ * @since 0.0.1 beta
+ * @see moveLeft
+ * @see moveUp
+ * @see moveDown
+ * @see moveCursor
+ */
 fn moveRight(int32 fd, int32 count) bool {
-    return false;
+    return __lucis_console_move_right(fd, count);
 }
 
+/**
+ * Move the terminal cursor left by the specified number of columns.
+ * 
+ * @param fd The file descriptor
+ * @param count Number of columns to move left
+ * 
+ * @return True if the cursor was moved successfully
+ * 
+ * @since 0.0.1 beta
+ * @see moveRight
+ * @see moveUp
+ * @see moveDown
+ * @see moveCursor
+ */
 fn moveLeft(int32 fd, int32 count) bool {
-    return false;
+    return __lucis_console_move_left(fd, count);
+}
+
+/**
+ * Set the terminal input baud rate.
+ * 
+ * @param fd The file descriptor
+ * @param speed The input speed (baud rate), e.g., 9600, 115200
+ * 
+ * @return True if the speed was set successfully
+ * 
+ * @since 0.0.1 beta
+ * @see setOutputSpeed
+ * @see getState
+ * @see TerminalState
+ */
+fn setInputSpeed(int32 fd, int32 speed) bool {
+    return __lucis_terminal_set_input_speed(fd, speed);
+}
+
+/**
+ * Set the terminal output baud rate.
+ * 
+ * @param fd The file descriptor
+ * @param speed The output speed (baud rate), e.g., 9600, 115200
+ * 
+ * @return True if the speed was set successfully
+ * 
+ * @since 0.0.1 beta
+ * @see setInputSpeed
+ * @see getState
+ * @see TerminalState
+ */
+fn setOutputSpeed(int32 fd, int32 speed) bool {
+    return __lucis_terminal_set_output_speed(fd, speed);
+}
+
+/**
+ * Get a control character from the terminal.
+ * 
+ * Reads a single control character value from the terminal's c_cc array.
+ * 
+ * @param fd The file descriptor
+ * @param idx The index of the control character (0 = VINTR, 1 = VQUIT, etc.)
+ * 
+ * @return The control character value, or 0 on error
+ * 
+ * @since 0.0.1 beta
+ * @see setControlChar
+ * @see TerminalState
+ * @see setIntrChar
+ * @see setEraseChar
+ * @see setKillChar
+ */
+fn getControlChar(int32 fd, int32 idx) uint8 {
+    uint8 c = 0;
+    if (!__lucis_terminal_get_control_char(fd, idx, &c)) return 0;
+    return c;
+}
+
+/**
+ * Set a control character on the terminal.
+ * 
+ * Sets a single control character value in the terminal's c_cc array.
+ * 
+ * @param fd The file descriptor
+ * @param idx The index of the control character (0 = VINTR, 1 = VQUIT, etc.)
+ * @param val The character value to set
+ * 
+ * @return True if the character was set successfully
+ * 
+ * @since 0.0.1 beta
+ * @see getControlChar
+ * @see setIntrChar
+ * @see setEraseChar
+ * @see setKillChar
+ * @see TerminalState
+ */
+fn setControlChar(int32 fd, int32 idx, uint8 val) bool {
+    return __lucis_terminal_set_control_char(fd, idx, val);
+}
+
+/**
+ * Set the interrupt character (VINTR).
+ * 
+ * The character that sends a SIGINT signal to the foreground process group.
+ * Default is Ctrl+C (0x03).
+ * 
+ * @param fd The file descriptor
+ * @param c The character to use as interrupt (e.g., 3 for Ctrl+C)
+ * 
+ * @return True if the character was set successfully
+ * 
+ * @since 0.0.1 beta
+ * @see setQuitChar
+ * @see setSuspChar
+ * @see setControlChar
+ * @see getControlChar
+ * @see TerminalState
+ */
+fn setIntrChar(int32 fd, uint8 c) bool {
+    return __lucis_terminal_set_intr(fd, c);
+}
+
+/**
+ * Set the quit character (VQUIT).
+ * 
+ * The character that sends a SIGQUIT signal to the foreground process group.
+ * Default is Ctrl+\ (0x1c).
+ * 
+ * @param fd The file descriptor
+ * @param c The character to use as quit (e.g., 28 for Ctrl+\)
+ * 
+ * @return True if the character was set successfully
+ * 
+ * @since 0.0.1 beta
+ * @see setIntrChar
+ * @see setSuspChar
+ * @see setControlChar
+ * @see getControlChar
+ * @see TerminalState
+ */
+fn setQuitChar(int32 fd, uint8 c) bool {
+    return __lucis_terminal_set_quit(fd, c);
+}
+
+/**
+ * Set the suspend character (VSUSP).
+ * 
+ * The character that sends a SIGTSTP signal to suspend the foreground process group.
+ * Default is Ctrl+Z (0x1a).
+ * 
+ * @param fd The file descriptor
+ * @param c The character to use as suspend (e.g., 26 for Ctrl+Z)
+ * 
+ * @return True if the character was set successfully
+ * 
+ * @since 0.0.1 beta
+ * @see setIntrChar
+ * @see setQuitChar
+ * @see setControlChar
+ * @see getControlChar
+ * @see TerminalState
+ */
+fn setSuspChar(int32 fd, uint8 c) bool {
+    return __lucis_terminal_set_susp_char(fd, c);
+}
+
+/**
+ * Set the end-of-file character (VEOF).
+ * 
+ * The character that indicates end-of-file on input.
+ * Default is Ctrl+D (0x04).
+ * 
+ * @param fd The file descriptor
+ * @param c The character to use as EOF (e.g., 4 for Ctrl+D)
+ * 
+ * @return True if the character was set successfully
+ * 
+ * @since 0.0.1 beta
+ * @see setEraseChar
+ * @see setKillChar
+ * @see setControlChar
+ * @see getControlChar
+ * @see TerminalState
+ */
+fn setEofChar(int32 fd, uint8 c) bool {
+    return __lucis_terminal_set_eof(fd, c);
+}
+
+/**
+ * Set the erase character (VERASE).
+ * 
+ * The character that erases the last character typed.
+ * Default is Backspace (0x7f) or Ctrl+H (0x08).
+ * 
+ * @param fd The file descriptor
+ * @param c The character to use as erase (e.g., 127 for Backspace, 8 for Ctrl+H)
+ * 
+ * @return True if the character was set successfully
+ * 
+ * @since 0.0.1 beta
+ * @see setIntrChar
+ * @see setKillChar
+ * @see setControlChar
+ * @see getControlChar
+ * @see TerminalState
+ */
+fn setEraseChar(int32 fd, uint8 c) bool {
+    return __lucis_terminal_set_erase(fd, c);
+}
+
+/**
+ * Set the kill character (VKILL).
+ * 
+ * The character that erases the entire current input line.
+ * Default is Ctrl+U (0x15).
+ * 
+ * @param fd The file descriptor
+ * @param c The character to use as line kill (e.g., 21 for Ctrl+U)
+ * 
+ * @return True if the character was set successfully
+ * 
+ * @since 0.0.1 beta
+ * @see setIntrChar
+ * @see setEraseChar
+ * @see setControlChar
+ * @see getControlChar
+ * @see TerminalState
+ */
+fn setKillChar(int32 fd, uint8 c) bool {
+    return __lucis_terminal_set_kill(fd, c);
+}
+
+/**
+ * Set the end-of-line character (VEOL).
+ * 
+ * An additional end-of-line character.
+ * Default is 0 (disabled).
+ * 
+ * @param fd The file descriptor
+ * @param c The character to use as end-of-line
+ * 
+ * @return True if the character was set successfully
+ * 
+ * @since 0.0.1 beta
+ * @see setEol2Char
+ * @see setControlChar
+ * @see getControlChar
+ * @see TerminalState
+ */
+fn setEolChar(int32 fd, uint8 c) bool {
+    return __lucis_terminal_set_eol(fd, c);
+}
+
+/**
+ * Set the second end-of-line character (VEOL2).
+ * 
+ * An additional end-of-line character.
+ * Default is 0 (disabled).
+ * 
+ * @param fd The file descriptor
+ * @param c The character to use as second end-of-line
+ * 
+ * @return True if the character was set successfully
+ * 
+ * @since 0.0.1 beta
+ * @see setEolChar
+ * @see setControlChar
+ * @see getControlChar
+ * @see TerminalState
+ */
+fn setEol2Char(int32 fd, uint8 c) bool {
+    return __lucis_terminal_set_eol2(fd, c);
+}
+
+/**
+ * Set the start character (VSTART).
+ * 
+ * The character that restarts output suspended by the stop character.
+ * Default is Ctrl+Q (0x11).
+ * 
+ * @param fd The file descriptor
+ * @param c The character to use as start (e.g., 17 for Ctrl+Q)
+ * 
+ * @return True if the character was set successfully
+ * 
+ * @since 0.0.1 beta
+ * @see setStopChar
+ * @see setControlChar
+ * @see getControlChar
+ * @see TerminalState
+ */
+fn setStartChar(int32 fd, uint8 c) bool {
+    return __lucis_terminal_set_start(fd, c);
+}
+
+/**
+ * Set the stop character (VSTOP).
+ * 
+ * The character that suspends output.
+ * Default is Ctrl+S (0x13).
+ * 
+ * @param fd The file descriptor
+ * @param c The character to use as stop (e.g., 19 for Ctrl+S)
+ * 
+ * @return True if the character was set successfully
+ * 
+ * @since 0.0.1 beta
+ * @see setStartChar
+ * @see setControlChar
+ * @see getControlChar
+ * @see TerminalState
+ */
+fn setStopChar(int32 fd, uint8 c) bool {
+    return __lucis_terminal_set_stop(fd, c);
+}
+
+/**
+ * Set the reprint character (VREPRINT).
+ * 
+ * The character that reprints the current input line.
+ * Default is Ctrl+R (0x12).
+ * 
+ * @param fd The file descriptor
+ * @param c The character to use as reprint (e.g., 18 for Ctrl+R)
+ * 
+ * @return True if the character was set successfully
+ * 
+ * @since 0.0.1 beta
+ * @see setWEraseChar
+ * @see setLNextChar
+ * @see setControlChar
+ * @see getControlChar
+ * @see TerminalState
+ */
+fn setReprintChar(int32 fd, uint8 c) bool {
+    return __lucis_terminal_set_reprint(fd, c);
+}
+
+/**
+ * Set the word erase character (VWERASE).
+ * 
+ * The character that erases the word before the cursor.
+ * Default is Ctrl+W (0x17).
+ * 
+ * @param fd The file descriptor
+ * @param c The character to use as word erase (e.g., 23 for Ctrl+W)
+ * 
+ * @return True if the character was set successfully
+ * 
+ * @since 0.0.1 beta
+ * @see setEraseChar
+ * @see setKillChar
+ * @see setControlChar
+ * @see getControlChar
+ * @see TerminalState
+ */
+fn setWEraseChar(int32 fd, uint8 c) bool {
+    return __lucis_terminal_set_werase(fd, c);
+}
+
+/**
+ * Set the literal next character (VLNEXT).
+ * 
+ * The character that causes the next character to be taken literally
+ * without any special processing.
+ * Default is Ctrl+V (0x16).
+ * 
+ * @param fd The file descriptor
+ * @param c The character to use as literal next (e.g., 22 for Ctrl+V)
+ * 
+ * @return True if the character was set successfully
+ * 
+ * @since 0.0.1 beta
+ * @see setDiscardChar
+ * @see setControlChar
+ * @see getControlChar
+ * @see TerminalState
+ */
+fn setLNextChar(int32 fd, uint8 c) bool {
+    return __lucis_terminal_set_lnext(fd, c);
+}
+
+/**
+ * Set the discard character (VDISCARD).
+ * 
+ * The character that discards pending output.
+ * Default is Ctrl+O (0x0f).
+ * 
+ * @param fd The file descriptor
+ * @param c The character to use as discard (e.g., 15 for Ctrl+O)
+ * 
+ * @return True if the character was set successfully
+ * 
+ * @since 0.0.1 beta
+ * @see setLNextChar
+ * @see setControlChar
+ * @see getControlChar
+ * @see TerminalState
+ */
+fn setDiscardChar(int32 fd, uint8 c) bool {
+    return __lucis_terminal_set_discard(fd, c);
+}
+
+/* Flow control & blocking modes */
+
+/**
+ * Enable software flow control (XON/XOFF).
+ * 
+ * Enables IXON (start/stop output control) and IXOFF (start/stop input control).
+ * When enabled, the terminal will pause output on VSTOP and resume on VSTART,
+ * and will send VSTART/VSTOP to control input flow.
+ * 
+ * @param fd The file descriptor
+ * 
+ * @return True if flow control was enabled successfully
+ * 
+ * @since 0.0.1 beta
+ * @see disableFlowControl
+ * @see setStartChar
+ * @see setStopChar
+ * @see TerminalState
+ */
+fn enableFlowControl(int32 fd) bool {
+    return __lucis_terminal_enable_flow_control(fd);
+}
+
+/**
+ * Disable software flow control (XON/XOFF).
+ * 
+ * Disables IXON and IXOFF flow control.
+ * 
+ * @param fd The file descriptor
+ * 
+ * @return True if flow control was disabled successfully
+ * 
+ * @since 0.0.1 beta
+ * @see enableFlowControl
+ * @see setStartChar
+ * @see setStopChar
+ * @see TerminalState
+ */
+fn disableFlowControl(int32 fd) bool {
+    return __lucis_terminal_disable_flow_control(fd);
+}
+
+/**
+ * Set terminal to non-blocking mode.
+ * 
+ * Sets VMIN=0 and VTIME=0 so read() returns immediately with whatever
+ * data is available (or 0 if no data is ready).
+ * 
+ * @param fd The file descriptor
+ * 
+ * @return True if non-blocking mode was set successfully
+ * 
+ * @since 0.0.1 beta
+ * @see setBlocking
+ * @see TerminalState
+ */
+fn setNonBlocking(int32 fd) bool {
+    return __lucis_terminal_set_nonblocking(fd);
+}
+
+/**
+ * Set terminal to blocking mode with custom timeout.
+ * 
+ * Sets VMIN (minimum characters to read) and VTIME (inter-character timer
+ * in tenths of a second) for fine-grained read blocking behavior.
+ * 
+ * @param fd The file descriptor
+ * @param min Minimum characters to read before returning (0 = no minimum)
+ * @param time Inter-character timeout in tenths of a second (0 = no timeout)
+ * 
+ * @return True if blocking mode was set successfully
+ * 
+ * @since 0.0.1 beta
+ * @see setNonBlocking
+ * @see TerminalState
+ */
+fn setBlocking(int32 fd, int32 min, int32 time) bool {
+    return __lucis_terminal_set_blocking(fd, min, time);
+}
+
+/* Signal handling */
+
+/**
+ * Enable signal generation (ISIG) on a terminal.
+ * 
+ * Enables generation of SIGINT (VINTR), SIGQUIT (VQUIT), and SIGTSTP (VSUSP)
+ * signals when their corresponding special characters are received.
+ * 
+ * @param fd The file descriptor
+ * 
+ * @return True if signals were enabled successfully
+ * 
+ * @since 0.0.1 beta
+ * @see disableSignals
+ * @see setIntrChar
+ * @see setQuitChar
+ * @see setSuspChar
+ * @see TerminalState
+ */
+fn enableSignals(int32 fd) bool {
+    return __lucis_terminal_enable_signals(fd);
+}
+
+/**
+ * Disable signal generation (ISIG) on a terminal.
+ * 
+ * Disables generation of SIGINT, SIGQUIT, and SIGTSTP signals.
+ * The special characters will be treated as ordinary input.
+ * 
+ * @param fd The file descriptor
+ * 
+ * @return True if signals were disabled successfully
+ * 
+ * @since 0.0.1 beta
+ * @see enableSignals
+ * @see setIntrChar
+ * @see setQuitChar
+ * @see setSuspChar
+ * @see TerminalState
+ */
+fn disableSignals(int32 fd) bool {
+    return __lucis_terminal_disable_signals(fd);
 }
