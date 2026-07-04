@@ -1,0 +1,117 @@
+#include "_runtime/tty.h"
+#include "_runtime/terminal.h"
+#include "_runtime/console.h"
+
+struct TerminalState {
+    bool raw;
+    bool echo;
+    bool canonical;
+
+    int32 inputSpeed;
+    int32 outputSpeed;
+
+    [32]uint8 controlChars;
+}
+
+struct ConsoleSize {
+    int32 rows;
+    int32 cols;
+}
+
+fn isTTY(int32 fd) bool {
+    return __lucis_tty_isatty(fd);
+}
+
+fn read(int32 fd, *uint8 buffer, usize size) int32 {
+    return 0;
+}
+
+fn write(int32 fd, *uint8 buffer, usize size) int32 {
+    return 0;
+}
+
+fn flushInput(int32 fd) bool {
+    return false;
+}
+
+fn flushOutput(int32 fd) bool {
+    return false;
+}
+
+fn flush(int32 fd) bool {
+    return false;
+}
+
+fn getState(int32 fd) TerminalState {
+    TerminalState ts;
+    return ts;
+}
+
+fn setState(int32 fd, TerminalState state) bool {
+    return false;
+}
+
+fn enableRaw(int32 fd) bool {
+    return false;
+}
+
+fn disableRaw(int32 fd) bool {
+    return false;
+}
+
+fn enableEcho(int32 fd) bool {
+    return false;
+}
+
+fn disableEcho(int32 fd) bool {
+    return false;
+}
+
+fn enableCanonical(int32 fd) bool {
+    return false;
+}
+
+fn disableCanonical(int32 fd) bool {
+    return false;
+}
+
+fn getConsoleSize(int32 fd) ConsoleSize {
+    ConsoleSize cs;
+    return cs;
+}
+
+fn clear(int32 fd) bool {
+    return false;
+}
+
+fn clearLine(int32 fd) bool {
+    return false;
+}
+
+fn showCursor(int32 fd) bool {
+    return false;
+}
+
+fn hideCursor(int32 fd) bool {
+    return false;
+}
+
+fn moveCursor(int32 fd, int32 x, int32 y) bool {
+    return false;
+}
+
+fn moveUp(int32 fd, int32 count) bool {
+    return false;
+}
+
+fn moveDown(int32 fd, int32 count) bool {
+    return false;
+}
+
+fn moveRight(int32 fd, int32 count) bool {
+    return false;
+}
+
+fn moveLeft(int32 fd, int32 count) bool {
+    return false;
+}

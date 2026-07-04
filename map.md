@@ -9,7 +9,7 @@
 
 ## 🟥 P0 — Crash / Wrong Code
 
-### 1. Struct field `[]T` perde tipo array no IR
+### 1. Struct field `[]T` perde tipo array no IR ✓
 
 **Onde:** provavelmente `src/IRBuilder/IRGen.cpp` (visita struct decl / init de struct)
 
@@ -39,7 +39,7 @@ fn main() int32 {
 
 ---
 
-### 2. `dots[0].arr[0]` — "invalid index base expression"
+### 2. `dots[0].arr[0]` — "invalid index base expression" ✓
 
 **Onde:** `src/checkers/Checker.cpp` (visita `indexExpr` + `fieldAccess` em cadeia)
 
@@ -49,7 +49,7 @@ fn main() int32 {
 
 ---
 
-### 3. Substituição genérica perde `[]` em `[]T`
+### 3. Substituição genérica perde `[]` em `[]T` ✓
 
 **Onde:** `src/checkers/Checker.cpp:9009-9019` — `resolveTypeSpecWithSubst`
 
@@ -75,7 +75,7 @@ fn main() int32 {
 
 ---
 
-### 4. Parâmetros `[]T` só funcionam com 5 de 31 métodos
+### 4. Parâmetros `[]T` só funcionam com 5 de 31 métodos ✓
 
 **Onde:** `src/IRBuilder/IRGen.cpp:18984-19055`
 
@@ -100,7 +100,7 @@ fn main() int32 {
 
 ---
 
-### 5. `join()` com elemento não-inteiro/float usa `%s` e crasha
+### 5. `join()` com elemento não-inteiro/float usa `%s` e crasha ✓
 
 **Onde:** `src/IRBuilder/IRGen.cpp:20013-20019`
 
@@ -122,13 +122,15 @@ fn main() int32 {
 
 ---
 
-### 6. `toString()` memory allocation sem free claro
+### 6. `toString()` memory allocation sem free claro ✓
 
 **Onde:** `src/IRBuilder/IRGen.cpp:19829-19937`
 
 **Problema:** `toString()` chama `lucis_allocString` que faz `malloc`. A string retornada é `{ptr, len}`. Não há free explícito.
 
 **Como consertar:** Documentar ownership ou usar GC/arena.
+
+**Resolvido por:** O runtime já usa `lucis_tracked_malloc` que trackeia ownership; o compilador já insere `lucis_freeStr` para strings locais (`emitBlockExitCleanups`/`emitAllCleanups`) e temporários (`visitExprStmt`, `cleanupTempArg`). Teste existente `printf("bools={s}\n", bools.toString())` funciona sem vazar.
 
 **Teste:**
 ```lucis
@@ -192,7 +194,7 @@ fn main() int32 {
 
 ---
 
-### 9. Array multidimensional auto-inferido sempre como `arrayDims=1`
+### 9. Array multidimensional auto-inferido sempre como `arrayDims=1` ✓
 
 **Onde:** `src/checkers/Checker.cpp:7560-7586` (~linha 7574)
 
@@ -236,7 +238,7 @@ fn main() int32 {
 
 ## 🟨 P2 — Segurança / Robustez
 
-### 11. Sem bounds checking em runtime
+### 11. Sem bounds checking em runtime ✓
 
 **Onde:** `src/IRBuilder/IRGen.cpp:8348-8510`, `19139-19150`
 
@@ -350,17 +352,17 @@ fn main() int32 {
 
 | Arquivo | O quê |
 |---------|-------|
-| `src/checkers/Checker.cpp:9009-9019` | #3 — preservar arrayDims na substituição genérica |
-| `src/checkers/Checker.cpp:5636-5650` | #8 — array vazio inferir tipo |
-| `src/checkers/Checker.cpp:7574-7575` | #9 — auto-inferir arrayDims > 1 |
-| `src/checkers/Checker.cpp:3703-3719` | #10 — `sizeof` retornar `usize` |
-| `src/checkers/Checker.cpp:4247-4248` | #7 — `.len` property retornar `usize` |
-| `src/checkers/Checker.cpp` (index+field chain) | #2 — `dots[0].arr[0]` |
-| `src/IRBuilder/IRGen.cpp` (struct init) | #1 — struct field `[]T` vira `{ i32 }` |
-| `src/IRBuilder/IRGen.cpp:18984-19055` | #4 — generalizar dispatch para slice lowering |
-| `src/IRBuilder/IRGen.cpp:20013-20019` | #5 — `join()` com tipos não numéricos |
-| `src/IRBuilder/IRGen.cpp:19829-19937` | #6 — gerenciar memória de `toString()` |
-| `src/IRBuilder/IRGen.cpp:8348-8510` | #11 — bounds checking |
+| `src/checkers/Checker.cpp:9009-9019` | #3 — preservar arrayDims na substituição genérica ✓ |
+| `src/checkers/Checker.cpp:5636-5650` | #8 — array vazio inferir tipo ✓ |
+| `src/checkers/Checker.cpp:7574-7575,8875-8888` | #9 — auto-inferir arrayDims > 1 ✓ |
+| `src/checkers/Checker.cpp:3703-3719`<br>`src/IRBuilder/IRGen.cpp:15206,15222` | #10 — `sizeof` retornar `usize` ✓ |
+| `src/checkers/Checker.cpp:4248` | #7 — `.len` property retornar `usize` ✓ |
+| `src/checkers/Checker.cpp` (index+field chain) | #2 — `dots[0].arr[0]` ✓ |
+| `src/IRBuilder/IRGen.cpp` (struct init) | #1 — struct field `[]T` vira `{ i32 }` ✓ |
+| `src/IRBuilder/IRGen.cpp:18984-19055` | #4 — generalizar dispatch para slice lowering ✓ |
+| `src/IRBuilder/IRGen.cpp:20013-20019` | #5 — `join()` com tipos não numéricos ✓ |
+| `src/IRBuilder/IRGen.cpp:19829-19937` | #6 — gerenciar memória de `toString()` ✓ |
+| `src/IRBuilder/IRGen.cpp:8348-8510,19141-19236,20262-20273` | #11 — bounds checking ✓ |
 | `src/IRBuilder/IRGen.cpp:19410-19506` | #13 — heap vs stack para arrays grandes |
 | `src/IRBuilder/IRGen.cpp:19677-19766` | #14 — sort eficiente |
 | `src/types/TypeInfo.cpp:8, 19` | #12 — opaque payload dinâmico |
