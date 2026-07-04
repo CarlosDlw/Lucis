@@ -2883,8 +2883,9 @@ public:
     std::vector<TypeSpecContext *> typeSpec();
     TypeSpecContext* typeSpec(size_t i);
     antlr4::tree::TerminalNode *LBRACKET();
-    antlr4::tree::TerminalNode *INT_LIT();
     antlr4::tree::TerminalNode *RBRACKET();
+    antlr4::tree::TerminalNode *INT_LIT();
+    antlr4::tree::TerminalNode *IDENTIFIER();
     FnTypeSpecContext *fnTypeSpec();
     antlr4::tree::TerminalNode *VEC();
     antlr4::tree::TerminalNode *LT();
@@ -2894,7 +2895,6 @@ public:
     antlr4::tree::TerminalNode* COMMA(size_t i);
     antlr4::tree::TerminalNode *SET();
     antlr4::tree::TerminalNode *TUPLE();
-    antlr4::tree::TerminalNode *IDENTIFIER();
     PrimitiveTypeContext *primitiveType();
     antlr4::tree::TerminalNode *AUTO();
 

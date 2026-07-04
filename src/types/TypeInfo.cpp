@@ -5,19 +5,19 @@
 #include <llvm/IR/DataLayout.h>
 #include <llvm/IR/LLVMContext.h>
 
-static constexpr unsigned kOpaqueUnsizedArrayPayloadBytes = 4096;
-
 static llvm::Type* fieldToLLVMType(const FieldInfo& field,
                                    llvm::LLVMContext& ctx,
                                    const llvm::DataLayout& dl) {
     auto* baseTy = field.typeInfo->toLLVMType(ctx, dl);
     if (field.arrayDims == 0) return baseTy;
 
-    // []T in enum payloads has no compile-time extent in the type declaration.
-    // Use an opaque storage block and reinterpret it at construction/extraction sites.
+    // []T in enum payloads — checker rejects this at compile time.
+    // Represent as {T*, i64} slice as a safe fallback.
     if (field.arraySizes.empty()) {
-        return llvm::ArrayType::get(llvm::Type::getInt8Ty(ctx),
-                                    kOpaqueUnsizedArrayPayloadBytes);
+        return llvm::StructType::get(ctx, {
+            llvm::PointerType::getUnqual(ctx),
+            dl.getIntPtrType(ctx)
+        });
     }
 
     llvm::Type* arrTy = baseTy;

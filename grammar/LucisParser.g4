@@ -610,7 +610,7 @@ expression
 typeSpec
     : STAR typeSpec                    // Pointer type: *int32, *[]char
     | typeSpec STAR                    // Error: C-style pointer (int32*)
-    | LBRACKET INT_LIT RBRACKET typeSpec  // Fixed-size array: [10]int32, [3][3]float64
+    | LBRACKET (INT_LIT | IDENTIFIER) RBRACKET typeSpec  // Fixed-size array: [10]int32, [SOME_CONST]float64
     | LBRACKET RBRACKET typeSpec       // Array type: []int32, [][]char
     | fnTypeSpec                       // Function type
     | VEC LT typeSpec GT               // Built-in: vec<int32>

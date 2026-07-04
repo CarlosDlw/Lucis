@@ -138,7 +138,7 @@ static bool inferArraySizesFromLLVMType(llvm::Type* ty,
     return true;
 }
 
-static constexpr unsigned kOpaqueUnsizedArrayPayloadBytes = 4096;
+
 
 static bool isBorrowedStringExpr(LucisParser::ExpressionContext* expr) {
     if (!expr) return false;
@@ -2328,6 +2328,11 @@ std::any IRGen::visitConstDeclStmt(LucisParser::ConstDeclStmtContext* ctx) {
             TopLevelConst tlc{global, typeInfo, dims};
             topLevelConsts_[name] = tlc;
             pendingConstDecls_.push_back({d, global});
+
+            // Store compile-time integer literal value for use in array dimensions
+            if (auto* intLit = dynamic_cast<LucisParser::IntLitExprContext*>(d->expression())) {
+                compileTimeValues_[name] = std::stoll(intLit->getText());
+            }
         } else {
             // Function-scoped const: alloca + store (like a local variable)
             auto* initVal = castValue(visit(d->expression()));
@@ -2336,6 +2341,11 @@ std::any IRGen::visitConstDeclStmt(LucisParser::ConstDeclStmtContext* ctx) {
             auto* alloca = builder_->CreateAlloca(llvmType, nullptr, name);
             builder_->CreateStore(initVal, alloca);
             locals_[name] = {alloca, typeInfo, dims, false};
+
+            // Store compile-time integer literal value for use in array dimensions
+            if (auto* intLit = dynamic_cast<LucisParser::IntLitExprContext*>(d->expression())) {
+                compileTimeValues_[name] = std::stoll(intLit->getText());
+            }
         }
     }
 
@@ -2676,8 +2686,18 @@ std::any IRGen::visitVarDeclStmt(LucisParser::VarDeclStmtContext* ctx) {
             if (!d->expression()) {
                 auto* spec = ctx->typeSpec();
                 std::vector<unsigned> sizes;
-                while (!spec->typeSpec().empty() && spec->INT_LIT()) {
-                    sizes.push_back(std::stoul(spec->INT_LIT()->getText()));
+                while (!spec->typeSpec().empty() && (spec->INT_LIT() || spec->IDENTIFIER())) {
+                    if (spec->INT_LIT()) {
+                        sizes.push_back(std::stoul(spec->INT_LIT()->getText()));
+                    } else {
+                        auto identName = spec->IDENTIFIER()->getText();
+                        auto cit = compileTimeValues_.find(identName);
+                        if (cit != compileTimeValues_.end()) {
+                            sizes.push_back(static_cast<unsigned>(cit->second));
+                        } else {
+                            break;
+                        }
+                    }
                     spec = spec->typeSpec(0);
                 }
                 if (sizes.empty() && !aliasArraySizes.empty())
@@ -2718,12 +2738,37 @@ std::any IRGen::visitVarDeclStmt(LucisParser::VarDeclStmtContext* ctx) {
             if (!val->getType()->isArrayTy()) {
                 auto* spec = ctx->typeSpec();
                 std::vector<unsigned> sizes;
-                while (!spec->typeSpec().empty() && spec->INT_LIT()) {
-                    sizes.push_back(std::stoul(spec->INT_LIT()->getText()));
+                while (!spec->typeSpec().empty() && (spec->INT_LIT() || spec->IDENTIFIER())) {
+                    if (spec->INT_LIT()) {
+                        sizes.push_back(std::stoul(spec->INT_LIT()->getText()));
+                    } else {
+                        auto identName = spec->IDENTIFIER()->getText();
+                        auto cit = compileTimeValues_.find(identName);
+                        if (cit != compileTimeValues_.end()) {
+                            sizes.push_back(static_cast<unsigned>(cit->second));
+                        } else {
+                            break;
+                        }
+                    }
                     spec = spec->typeSpec(0);
                 }
                 if (sizes.empty() && !aliasArraySizes.empty())
                     sizes = aliasArraySizes;
+                // Dynamic array []T with empty initializer → {null, 0}
+                if (sizes.empty() && dims > 0) {
+                    auto* ptrTy = llvm::PointerType::getUnqual(*context_);
+                    auto* i64Ty = llvm::Type::getInt64Ty(*context_);
+                    auto* sliceTy = llvm::StructType::get(*context_, {ptrTy, i64Ty});
+                    auto* nullPtr = llvm::ConstantPointerNull::get(ptrTy);
+                    auto* zero = llvm::ConstantInt::get(i64Ty, 0);
+                    llvm::Value* slice = llvm::UndefValue::get(sliceTy);
+                    slice = builder_->CreateInsertValue(slice, nullPtr, {0});
+                    slice = builder_->CreateInsertValue(slice, zero, {1});
+                    auto* alloca = builder_->CreateAlloca(sliceTy, nullptr, name);
+                    builder_->CreateStore(slice, alloca);
+                    locals_[name] = { alloca, ti, dims };
+                    continue;
+                }
                 llvm::Type* arrTy = elemType;
                 for (auto it = sizes.rbegin(); it != sizes.rend(); ++it)
                     arrTy = llvm::ArrayType::get(arrTy, *it);
@@ -2783,6 +2828,11 @@ std::any IRGen::visitVarDeclStmt(LucisParser::VarDeclStmtContext* ctx) {
             val = coerceValueToType(val, type, srcSigned);
 
             builder_->CreateStore(val, alloca);
+
+            // Store compile-time integer literal value for use in array dimensions
+            if (auto* intLit = dynamic_cast<LucisParser::IntLitExprContext*>(d->expression())) {
+                compileTimeValues_[name] = std::stoll(intLit->getText());
+            }
         }
     }
 
@@ -3220,6 +3270,7 @@ std::any IRGen::visitFieldAssignStmt(LucisParser::FieldAssignStmtContext* ctx) {
     llvm::Value* currentPtr = alloca;
     llvm::Type*  currentTy  = structTy;
     const TypeInfo* currentTI = structTI;
+    const FieldInfo* lastField = nullptr;
 
     for (size_t i = 1; i < identifiers.size(); i++) {
         auto fieldName = identifiers[i]->getText();
@@ -3245,19 +3296,32 @@ std::any IRGen::visitFieldAssignStmt(LucisParser::FieldAssignStmtContext* ctx) {
             return {};
         }
 
+        lastField = &currentTI->fields[fieldIdx];
         if (currentTI->kind == TypeKind::Union) {
             // Union: all fields at offset 0 — pointer stays the same
             currentTI = currentTI->fields[fieldIdx].typeInfo;
             currentTy = currentTI->toLLVMType(*context_, module_->getDataLayout());
         } else {
             currentPtr = builder_->CreateStructGEP(currentTy, currentPtr,
-                                                    fieldIdx, fieldName + "_ptr");
+                                                     fieldIdx, fieldName + "_ptr");
             currentTI = currentTI->fields[fieldIdx].typeInfo;
             currentTy = currentTI->toLLVMType(*context_, module_->getDataLayout());
         }
     }
 
     auto* val = castValue(visit(ctx->expression()));
+
+    // Array-to-slice lowering for dynamic array fields
+    if (lastField && lastField->arrayDims > 0 && lastField->arraySizes.empty() &&
+        val->getType()->isArrayTy()) {
+        auto* sliceTy = buildFieldLLVMType(lastField->typeInfo,
+                                           lastField->arrayDims,
+                                           lastField->arraySizes);
+        if (sliceTy->isStructTy() &&
+            llvm::cast<llvm::StructType>(sliceTy)->getNumElements() == 2) {
+            val = lowerArrayToSlice(val, sliceTy);
+        }
+    }
 
     // Cast if needed
     if (val->getType() != currentTy) {
@@ -8408,10 +8472,16 @@ std::any IRGen::visitIndexExpr(LucisParser::IndexExprContext* ctx) {
                     st->getElementType(0)->isPointerTy() &&
                     st->getElementType(1)->isIntegerTy()) {
                     auto* dataPtr = builder_->CreateExtractValue(baseVal, 0, "slice_ptr");
+                    auto* lenVal  = builder_->CreateExtractValue(baseVal, 1, "slice_len");
                     auto* i64Ty = llvm::Type::getInt64Ty(*context_);
                     auto* idx = castValue(visit(indexExprs[0]));
                     if (idx->getType() != i64Ty)
                         idx = builder_->CreateIntCast(idx, i64Ty, true);
+                    // Bounds check
+                    auto* usizeTy = module_->getDataLayout().getIntPtrType(*context_);
+                    auto* idxU = builder_->CreateIntCast(idx, usizeTy, false, "bnd.idx");
+                    auto* lenU = builder_->CreateIntCast(lenVal, usizeTy, false, "bnd.len");
+                    emitBoundsCheck(idxU, lenU, "slice_idx");
                     // Get element type from the expression's type info
                     auto* elemTI = resolveExprTypeInfo(current);
                     if (!elemTI) {
@@ -8432,6 +8502,9 @@ std::any IRGen::visitIndexExpr(LucisParser::IndexExprContext* ctx) {
                 auto* zero = llvm::ConstantInt::get(i64Ty, 0);
                 auto* tmp = builder_->CreateAlloca(baseVal->getType(), nullptr, "arr_val_tmp");
                 builder_->CreateStore(baseVal, tmp);
+                auto* arrTyCheck = llvm::cast<llvm::ArrayType>(baseVal->getType());
+                auto* arrLenVal = llvm::ConstantInt::get(i64Ty, arrTyCheck->getNumElements());
+                emitBoundsCheck(idxVal, arrLenVal, "arr_val_idx");
                 auto* elemPtr = builder_->CreateInBoundsGEP(
                     baseVal->getType(), tmp, {zero, idxVal}, "arr_val_elem");
                 auto* elemTy = llvm::cast<llvm::ArrayType>(baseVal->getType())->getElementType();
@@ -8504,6 +8577,9 @@ std::any IRGen::visitIndexExpr(LucisParser::IndexExprContext* ctx) {
                             auto* idx = castValue(visit(indexExprs[0]));
                             if (idx->getType() != i64Ty)
                                 idx = builder_->CreateIntCast(idx, i64Ty, true);
+                            auto* arrTyCheck = llvm::cast<llvm::ArrayType>(arrTy);
+                            auto* arrLenVal = llvm::ConstantInt::get(i64Ty, arrTyCheck->getNumElements());
+                            emitBoundsCheck(idx, arrLenVal, "field_arr_idx");
                             auto* elemGep = builder_->CreateInBoundsGEP(
                                 arrTy, fieldGep,
                                 { llvm::ConstantInt::get(i64Ty, 0), idx },
@@ -9567,8 +9643,9 @@ llvm::Type* IRGen::getEnumVariantPayloadType(const EnumVariantInfo& variantInfo)
         auto* llTy = field.typeInfo->toLLVMType(*context_, module_->getDataLayout());
         if (field.arrayDims == 0) return llTy;
         if (field.arraySizes.empty()) {
-            return llvm::ArrayType::get(llvm::Type::getInt8Ty(*context_),
-                                        kOpaqueUnsizedArrayPayloadBytes);
+            auto* ptrTy = llvm::PointerType::getUnqual(*context_);
+            auto* usizeTy = module_->getDataLayout().getIntPtrType(*context_);
+            return llvm::StructType::get(*context_, {ptrTy, usizeTy});
         }
 
         llvm::Type* arrTy = llTy;
@@ -9637,8 +9714,9 @@ llvm::Value* IRGen::buildEnumVariantValue(const TypeInfo* enumType,
                 auto* llTy = field.typeInfo->toLLVMType(*context_, module_->getDataLayout());
                 if (field.arrayDims == 0) return llTy;
                 if (field.arraySizes.empty()) {
-                    return llvm::ArrayType::get(llvm::Type::getInt8Ty(*context_),
-                                                kOpaqueUnsizedArrayPayloadBytes);
+                    auto* ptrTy = llvm::PointerType::getUnqual(*context_);
+                    auto* usizeTy = module_->getDataLayout().getIntPtrType(*context_);
+                    return llvm::StructType::get(*context_, {ptrTy, usizeTy});
                 }
                 llvm::Type* arrTy = llTy;
                 for (auto it = field.arraySizes.rbegin(); it != field.arraySizes.rend(); ++it)
@@ -15173,8 +15251,9 @@ std::any IRGen::visitSizeofExpr(LucisParser::SizeofExprContext* ctx) {
     while (spec && spec->LBRACKET()) {
         if (!spec->INT_LIT()) {
             std::cerr << "lucis: sizeof requires fixed-size array type\n";
+            auto* usizeTy = module_->getDataLayout().getIntPtrType(*context_);
             return static_cast<llvm::Value*>(
-                llvm::ConstantInt::get(llvm::Type::getInt64Ty(*context_), 0));
+                llvm::ConstantInt::get(usizeTy, 0));
         }
         arraySizes.push_back(std::stoull(spec->INT_LIT()->getText()));
         if (spec->typeSpec().empty()) break;
@@ -15189,8 +15268,9 @@ std::any IRGen::visitSizeofExpr(LucisParser::SizeofExprContext* ctx) {
 
     auto& dl = module_->getDataLayout();
     uint64_t sizeBytes = dl.getTypeAllocSize(llvmTy);
+    auto* usizeTy = dl.getIntPtrType(*context_);
     return static_cast<llvm::Value*>(
-        llvm::ConstantInt::get(llvm::Type::getInt64Ty(*context_), sizeBytes));
+        llvm::ConstantInt::get(usizeTy, sizeBytes));
 }
 
 std::any IRGen::visitTypeofExpr(LucisParser::TypeofExprContext* ctx) {
@@ -15826,6 +15906,42 @@ std::any IRGen::visitEqExpr(LucisParser::EqExprContext* ctx) {
             return static_cast<llvm::Value*>(builder_->CreateICmpEQ(ltag, rtag, "enum_eq"));
         if (ctx->op->getType() == LucisLexer::NEQ)
             return static_cast<llvm::Value*>(builder_->CreateICmpNE(ltag, rtag, "enum_neq"));
+    }
+
+    // Array comparison: element-by-element
+    if (lhs->getType()->isArrayTy() && rhs->getType()->isArrayTy()) {
+        auto* lhsArrTy = llvm::cast<llvm::ArrayType>(lhs->getType());
+        auto* rhsArrTy = llvm::cast<llvm::ArrayType>(rhs->getType());
+        if (lhsArrTy->getNumElements() == rhsArrTy->getNumElements() &&
+            lhsArrTy->getElementType() == rhsArrTy->getElementType()) {
+            auto* boolTy = llvm::Type::getInt1Ty(*context_);
+            auto* i64Ty = llvm::Type::getInt64Ty(*context_);
+            uint64_t len = lhsArrTy->getNumElements();
+            auto* elemTy = lhsArrTy->getElementType();
+
+            auto* resultAlloca = builder_->CreateAlloca(boolTy, nullptr, "arr_eq_res");
+            builder_->CreateStore(llvm::ConstantInt::get(boolTy, 1), resultAlloca);
+
+            for (uint64_t i = 0; i < len; i++) {
+                auto* idx = llvm::ConstantInt::get(i64Ty, i);
+                auto* lv = builder_->CreateExtractValue(lhs, {i}, "lhs_el");
+                auto* rv = builder_->CreateExtractValue(rhs, {i}, "rhs_el");
+                llvm::Value* elemEq;
+                if (elemTy->isIntegerTy())
+                    elemEq = builder_->CreateICmpEQ(lv, rv, "elem_eq");
+                else if (elemTy->isFloatingPointTy())
+                    elemEq = builder_->CreateFCmpOEQ(lv, rv, "elem_eq");
+                else
+                    elemEq = builder_->CreateICmpEQ(lv, rv, "elem_eq");
+                auto* cur = builder_->CreateLoad(boolTy, resultAlloca, "cur");
+                builder_->CreateStore(builder_->CreateAnd(cur, elemEq, "and"), resultAlloca);
+            }
+
+            llvm::Value* result = builder_->CreateLoad(boolTy, resultAlloca, "arr_eq");
+            if (ctx->op->getType() == LucisLexer::NEQ)
+                result = builder_->CreateNot(result, "arr_neq");
+            return static_cast<llvm::Value*>(result);
+        }
     }
 
     // Generic struct equality fallback: compare first integer field (enum-like discriminant)
@@ -17730,6 +17846,28 @@ void IRGen::emitDivByZeroGuard(llvm::Value* divisor, antlr4::Token* opToken) {
     builder_->SetInsertPoint(okBB);
 }
 
+void IRGen::emitBoundsCheck(llvm::Value* index, llvm::Value* length,
+                             const std::string& name) {
+    auto* ok = builder_->CreateICmpULT(index, length, name + ".bnd.chk");
+    auto* fn = currentFunction_;
+    auto* panicBB = llvm::BasicBlock::Create(*context_, name + ".bnd.panic", fn);
+    auto* okBB    = llvm::BasicBlock::Create(*context_, name + ".bnd.ok",    fn);
+    builder_->CreateCondBr(ok, okBB, panicBB);
+
+    builder_->SetInsertPoint(panicBB);
+    auto* ptrTy   = llvm::PointerType::getUnqual(*context_);
+    auto* usizeTy = module_->getDataLayout().getIntPtrType(*context_);
+    auto* voidTy  = llvm::Type::getVoidTy(*context_);
+    auto* msg     = builder_->CreateGlobalString(
+        "index out of bounds", name + ".bnd.msg", 0, module_);
+    auto* msgLen  = llvm::ConstantInt::get(usizeTy, 20);
+    auto panicFn  = declareBuiltin("lucis_panic", voidTy, {ptrTy, usizeTy});
+    builder_->CreateCall(panicFn, {msg, msgLen});
+    builder_->CreateUnreachable();
+
+    builder_->SetInsertPoint(okBB);
+}
+
 void IRGen::emitDeferredCleanups() {
     for (auto it = deferStack_.rbegin(); it != deferStack_.rend(); ++it) {
         emitOneDeferred(*it);
@@ -19054,6 +19192,46 @@ IRGen::visitMethodCallExpr(LucisParser::MethodCallExprContext* ctx) {
             llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
     }
 
+    // ── Array method codegen for non-variable receivers (field access, etc.) ──
+    if (recvArrayDims > 0 && receiverVarName.empty()) {
+        auto* receiverValLocal = castValue(visit(ctx->expression()));
+        auto* structTy = llvm::dyn_cast<llvm::StructType>(receiverValLocal->getType());
+        if (structTy && structTy->getNumElements() == 2 &&
+            structTy->getElementType(0)->isPointerTy() &&
+            structTy->getElementType(1)->isIntegerTy()) {
+            auto* localUsizeTy = module_->getDataLayout().getIntPtrType(*context_);
+            auto* ptrVal = builder_->CreateExtractValue(receiverValLocal, 0, "slice.ptr");
+            auto* lenVal = builder_->CreateExtractValue(receiverValLocal, 1, "slice.len");
+            auto* lenAsUsize = (lenVal->getType() == localUsizeTy)
+                ? lenVal : builder_->CreateIntCast(lenVal, localUsizeTy, false, "slice.len.cast");
+            auto* elTy = receiverTI ? receiverTI->toLLVMType(*context_, module_->getDataLayout())
+                                    : llvm::Type::getInt32Ty(*context_);
+            if (methodName == "len")
+                return static_cast<llvm::Value*>(lenAsUsize);
+            if (methodName == "isEmpty")
+                return static_cast<llvm::Value*>(
+                    builder_->CreateICmpEQ(lenAsUsize, llvm::ConstantInt::get(localUsizeTy, 0), "slice.empty"));
+            if (methodName == "first" || methodName == "last" || methodName == "at") {
+                auto* zero = llvm::ConstantInt::get(localUsizeTy, 0);
+                llvm::Value* idx = nullptr;
+                if (methodName == "last") {
+                    idx = builder_->CreateSub(lenAsUsize, llvm::ConstantInt::get(localUsizeTy, 1), "slice.last.idx");
+                } else if (methodName == "at" && !args.empty()) {
+                    idx = builder_->CreateIntCast(args[0], localUsizeTy, true);
+                    emitBoundsCheck(idx, lenAsUsize, "slice_at_expr");
+                } else {
+                    idx = zero;
+                }
+                auto* elemPtr = builder_->CreateGEP(elTy, ptrVal, idx, "slice.elem.ptr");
+                return static_cast<llvm::Value*>(
+                    builder_->CreateLoad(elTy, elemPtr, "slice.elem"));
+            }
+        }
+        std::cerr << "lucis: expected slice type for method '" << methodName << "'\n";
+        return static_cast<llvm::Value*>(
+            llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
+    }
+
     // ── Array method codegen ─────────────────────────────────────────
     if (recvArrayDims > 0 && !receiverVarName.empty()) {
         auto it = locals_.find(receiverVarName);
@@ -19125,6 +19303,10 @@ IRGen::visitMethodCallExpr(LucisParser::MethodCallExprContext* ctx) {
                         }
 
                         if (methodName == "first" || methodName == "last" || methodName == "at") {
+                            if (methodName == "at") {
+                                auto* idxU = builder_->CreateIntCast(idx, usizeTy, false, "at.idx");
+                                emitBoundsCheck(idxU, lenAsUsize, "slice_at");
+                            }
                             auto* elemPtr = builder_->CreateGEP(elemTy, dataPtr, idx, "slice.elem.ptr");
                             return static_cast<llvm::Value*>(
                                 builder_->CreateLoad(elemTy, elemPtr, "slice.elem"));
@@ -19208,6 +19390,865 @@ IRGen::visitMethodCallExpr(LucisParser::MethodCallExprContext* ctx) {
                             builder_->SetInsertPoint(eBB);
                             return static_cast<llvm::Value*>(
                                 builder_->CreateLoad(elemTy, accA, "ss.ret"));
+                        }
+
+                        // ── indexOf / lastIndexOf on slice ──────────────
+                        if (methodName == "indexOf" || methodName == "lastIndexOf") {
+                            if (args.empty()) {
+                                std::cerr << "lucis: " << methodName << "() requires a value argument\n";
+                                return static_cast<llvm::Value*>(
+                                    llvm::ConstantInt::get(i64Ty, -1));
+                            }
+                            auto* needle = args[0];
+                            if (needle->getType() != elemTy)
+                                needle = builder_->CreateIntCast(needle, elemTy, true);
+                            auto* resA = builder_->CreateAlloca(i64Ty, nullptr, "sio.res");
+                            builder_->CreateStore(llvm::ConstantInt::get(i64Ty, -1ULL), resA);
+                            auto* cBB = llvm::BasicBlock::Create(*context_, "sio.cond", currentFunction_);
+                            auto* bBB = llvm::BasicBlock::Create(*context_, "sio.body", currentFunction_);
+                            auto* fBB = llvm::BasicBlock::Create(*context_, "sio.found", currentFunction_);
+                            auto* nBB = llvm::BasicBlock::Create(*context_, "sio.next", currentFunction_);
+                            auto* eBB = llvm::BasicBlock::Create(*context_, "sio.end", currentFunction_);
+                            auto* iA = builder_->CreateAlloca(usizeTy, nullptr, "sio.idx");
+                            if (methodName == "indexOf") {
+                                builder_->CreateStore(llvm::ConstantInt::get(usizeTy, 0), iA);
+                            } else {
+                                builder_->CreateStore(lenAsUsize, iA);
+                            }
+                            builder_->CreateBr(cBB);
+                            builder_->SetInsertPoint(cBB);
+                            auto* ci = builder_->CreateLoad(usizeTy, iA, "sio.i");
+                            llvm::Value* cmp = (methodName == "indexOf")
+                                ? static_cast<llvm::Value*>(builder_->CreateICmpULT(ci, lenAsUsize, "sio.cmp"))
+                                : static_cast<llvm::Value*>(builder_->CreateICmpUGT(ci, llvm::ConstantInt::get(usizeTy, 0), "sio.cmp"));
+                            builder_->CreateCondBr(cmp, bBB, eBB);
+                            builder_->SetInsertPoint(bBB);
+                            auto* curIdx = (methodName == "indexOf")
+                                ? builder_->CreateLoad(usizeTy, iA, "sio.ii")
+                                : builder_->CreateSub(builder_->CreateLoad(usizeTy, iA, "sio.di"),
+                                    llvm::ConstantInt::get(usizeTy, 1), "sio.dec");
+                            if (methodName == "lastIndexOf")
+                                builder_->CreateStore(curIdx, iA);
+                            auto* ev = builder_->CreateLoad(elemTy,
+                                builder_->CreateGEP(elemTy, dataPtr, curIdx, "sio.ep"), "sio.ev");
+                            auto* eq = elemTy->isIntegerTy() ? builder_->CreateICmpEQ(ev, needle, "sio.eq")
+                                : elemTy->isFloatingPointTy() ? builder_->CreateFCmpOEQ(ev, needle, "sio.eq")
+                                : builder_->CreateICmpEQ(ev, needle, "sio.eq");
+                            builder_->CreateCondBr(eq, fBB, nBB);
+                            builder_->SetInsertPoint(fBB);
+                            auto* foundIdx = (methodName == "indexOf")
+                                ? builder_->CreateLoad(usizeTy, iA, "sio.fi")
+                                : curIdx;
+                            builder_->CreateStore(builder_->CreateIntCast(foundIdx, i64Ty, false, "sio.fcast"), resA);
+                            builder_->CreateBr(eBB);
+                            builder_->SetInsertPoint(nBB);
+                            auto* nextIdx = (methodName == "indexOf")
+                                ? builder_->CreateAdd(builder_->CreateLoad(usizeTy, iA, "sio.ni"),
+                                    llvm::ConstantInt::get(usizeTy, 1), "sio.nx")
+                                : builder_->CreateLoad(usizeTy, iA, "sio.nd");
+                            if (methodName == "indexOf")
+                                builder_->CreateStore(nextIdx, iA);
+                            builder_->CreateBr(cBB);
+                            builder_->SetInsertPoint(eBB);
+                            return static_cast<llvm::Value*>(
+                                builder_->CreateLoad(i64Ty, resA, "sio.ret"));
+                        }
+
+                        // ── count on slice ──────────────────────────────
+                        if (methodName == "count") {
+                            if (args.empty()) {
+                                std::cerr << "lucis: count() requires a value argument\n";
+                                return static_cast<llvm::Value*>(
+                                    llvm::ConstantInt::get(usizeTy, 0));
+                            }
+                            auto* needle = args[0];
+                            if (needle->getType() != elemTy)
+                                needle = builder_->CreateIntCast(needle, elemTy, true);
+                            auto* resA = builder_->CreateAlloca(usizeTy, nullptr, "scnt.res");
+                            builder_->CreateStore(llvm::ConstantInt::get(usizeTy, 0), resA);
+                            auto* cBB = llvm::BasicBlock::Create(*context_, "scnt.cond", currentFunction_);
+                            auto* bBB = llvm::BasicBlock::Create(*context_, "scnt.body", currentFunction_);
+                            auto* mBB = llvm::BasicBlock::Create(*context_, "scnt.match", currentFunction_);
+                            auto* nBB = llvm::BasicBlock::Create(*context_, "scnt.next", currentFunction_);
+                            auto* eBB = llvm::BasicBlock::Create(*context_, "scnt.end", currentFunction_);
+                            auto* iA = builder_->CreateAlloca(usizeTy, nullptr, "scnt.idx");
+                            builder_->CreateStore(llvm::ConstantInt::get(usizeTy, 0), iA);
+                            builder_->CreateBr(cBB);
+                            builder_->SetInsertPoint(cBB);
+                            auto* ci = builder_->CreateLoad(usizeTy, iA, "scnt.i");
+                            auto* cmp = builder_->CreateICmpULT(ci, lenAsUsize, "scnt.cmp");
+                            builder_->CreateCondBr(cmp, bBB, eBB);
+                            builder_->SetInsertPoint(bBB);
+                            auto* ev = builder_->CreateLoad(elemTy,
+                                builder_->CreateGEP(elemTy, dataPtr,
+                                    builder_->CreateLoad(usizeTy, iA, "scnt.ei"), "scnt.ev"), "scnt.ev");
+                            auto* eq = elemTy->isIntegerTy() ? builder_->CreateICmpEQ(ev, needle, "scnt.eq")
+                                : elemTy->isFloatingPointTy() ? builder_->CreateFCmpOEQ(ev, needle, "scnt.eq")
+                                : builder_->CreateICmpEQ(ev, needle, "scnt.eq");
+                            builder_->CreateCondBr(eq, mBB, nBB);
+                            builder_->SetInsertPoint(mBB);
+                            auto* cur = builder_->CreateLoad(usizeTy, resA, "scnt.cur");
+                            builder_->CreateStore(
+                                builder_->CreateAdd(cur, llvm::ConstantInt::get(usizeTy, 1), "scnt.inc"),
+                                resA);
+                            builder_->CreateBr(nBB);
+                            builder_->SetInsertPoint(nBB);
+                            auto* nx = builder_->CreateAdd(builder_->CreateLoad(usizeTy, iA, "scnt.ni"),
+                                llvm::ConstantInt::get(usizeTy, 1), "scnt.nx");
+                            builder_->CreateStore(nx, iA);
+                            builder_->CreateBr(cBB);
+                            builder_->SetInsertPoint(eBB);
+                            return static_cast<llvm::Value*>(
+                                builder_->CreateLoad(usizeTy, resA, "scnt.ret"));
+                        }
+
+                        // ── fill on slice ──────────────────────────────
+                        if (methodName == "fill") {
+                            if (args.empty()) {
+                                std::cerr << "lucis: fill() requires a value argument\n";
+                                return static_cast<llvm::Value*>(
+                                    llvm::UndefValue::get(llvm::Type::getVoidTy(*context_)));
+                            }
+                            auto* fillVal = args[0];
+                            if (fillVal->getType() != elemTy)
+                                fillVal = builder_->CreateIntCast(fillVal, elemTy, true);
+                            auto* cBB = llvm::BasicBlock::Create(*context_, "sfill.cond", currentFunction_);
+                            auto* bBB = llvm::BasicBlock::Create(*context_, "sfill.body", currentFunction_);
+                            auto* eBB = llvm::BasicBlock::Create(*context_, "sfill.end", currentFunction_);
+                            auto* iA = builder_->CreateAlloca(usizeTy, nullptr, "sfill.idx");
+                            builder_->CreateStore(llvm::ConstantInt::get(usizeTy, 0), iA);
+                            builder_->CreateBr(cBB);
+                            builder_->SetInsertPoint(cBB);
+                            auto* ci = builder_->CreateLoad(usizeTy, iA, "sfill.i");
+                            auto* cmp = builder_->CreateICmpULT(ci, lenAsUsize, "sfill.cmp");
+                            builder_->CreateCondBr(cmp, bBB, eBB);
+                            builder_->SetInsertPoint(bBB);
+                            builder_->CreateStore(fillVal,
+                                builder_->CreateGEP(elemTy, dataPtr,
+                                    builder_->CreateLoad(usizeTy, iA, "sfill.ei"), "sfill.ep"));
+                            auto* nx = builder_->CreateAdd(builder_->CreateLoad(usizeTy, iA, "sfill.ni"),
+                                llvm::ConstantInt::get(usizeTy, 1), "sfill.nx");
+                            builder_->CreateStore(nx, iA);
+                            builder_->CreateBr(cBB);
+                            builder_->SetInsertPoint(eBB);
+                            return static_cast<llvm::Value*>(
+                                llvm::UndefValue::get(llvm::Type::getVoidTy(*context_)));
+                        }
+
+                        // ── swap on slice ──────────────────────────────
+                        if (methodName == "swap") {
+                            if (args.size() < 2) {
+                                std::cerr << "lucis: swap() requires two index arguments\n";
+                                return static_cast<llvm::Value*>(
+                                    llvm::UndefValue::get(llvm::Type::getVoidTy(*context_)));
+                            }
+                            auto* idxA = args[0];
+                            auto* idxB = args[1];
+                            if (idxA->getType() != usizeTy)
+                                idxA = builder_->CreateIntCast(idxA, usizeTy, true);
+                            if (idxB->getType() != usizeTy)
+                                idxB = builder_->CreateIntCast(idxB, usizeTy, true);
+                            emitBoundsCheck(idxA, lenAsUsize, "swap_a");
+                            emitBoundsCheck(idxB, lenAsUsize, "swap_b");
+                            auto* gepA = builder_->CreateGEP(elemTy, dataPtr, idxA, "swap_a");
+                            auto* gepB = builder_->CreateGEP(elemTy, dataPtr, idxB, "swap_b");
+                            auto* valA = builder_->CreateLoad(elemTy, gepA, "a");
+                            auto* valB = builder_->CreateLoad(elemTy, gepB, "b");
+                            builder_->CreateStore(valB, gepA);
+                            builder_->CreateStore(valA, gepB);
+                            return static_cast<llvm::Value*>(
+                                llvm::UndefValue::get(llvm::Type::getVoidTy(*context_)));
+                        }
+
+                        // ── reverse on slice ───────────────────────────
+                        if (methodName == "reverse") {
+                            auto* loA = builder_->CreateAlloca(usizeTy, nullptr, "srev.lo");
+                            auto* hiA = builder_->CreateAlloca(usizeTy, nullptr, "srev.hi");
+                            builder_->CreateStore(llvm::ConstantInt::get(usizeTy, 0), loA);
+                            builder_->CreateStore(lenAsUsize, hiA);
+                            auto* cBB = llvm::BasicBlock::Create(*context_, "srev.cond", currentFunction_);
+                            auto* bBB = llvm::BasicBlock::Create(*context_, "srev.body", currentFunction_);
+                            auto* eBB = llvm::BasicBlock::Create(*context_, "srev.end", currentFunction_);
+                            builder_->CreateBr(cBB);
+                            builder_->SetInsertPoint(cBB);
+                            auto* lo = builder_->CreateLoad(usizeTy, loA, "srev.lv");
+                            auto* hi = builder_->CreateLoad(usizeTy, hiA, "srev.hv");
+                            llvm::Value* hiMinus1 = builder_->CreateSub(hi,
+                                llvm::ConstantInt::get(usizeTy, 1), "srev.hm1");
+                            auto* rcmp = builder_->CreateICmpULT(lo, hiMinus1, "srev.cmp");
+                            builder_->CreateCondBr(rcmp, bBB, eBB);
+                            builder_->SetInsertPoint(bBB);
+                            auto* loV = builder_->CreateLoad(usizeTy, loA, "srev.l");
+                            auto* hiV = builder_->CreateSub(
+                                builder_->CreateLoad(usizeTy, hiA, "srev.h"),
+                                llvm::ConstantInt::get(usizeTy, 1), "srev.hs");
+                            auto* gepL = builder_->CreateGEP(elemTy, dataPtr, loV, "srev.gl");
+                            auto* gepH = builder_->CreateGEP(elemTy, dataPtr, hiV, "srev.gh");
+                            auto* valL = builder_->CreateLoad(elemTy, gepL, "srev.vl");
+                            auto* valH = builder_->CreateLoad(elemTy, gepH, "srev.vh");
+                            builder_->CreateStore(valH, gepL);
+                            builder_->CreateStore(valL, gepH);
+                            auto* nlo = builder_->CreateAdd(loV, llvm::ConstantInt::get(usizeTy, 1), "srev.nl");
+                            builder_->CreateStore(nlo, loA);
+                            auto* nhi = builder_->CreateSub(hiV, llvm::ConstantInt::get(usizeTy, 0), "srev.nh");
+                            builder_->CreateStore(nhi, hiA);
+                            builder_->CreateBr(cBB);
+                            builder_->SetInsertPoint(eBB);
+                            return static_cast<llvm::Value*>(
+                                llvm::UndefValue::get(llvm::Type::getVoidTy(*context_)));
+                        }
+
+                        // ── equals on slice ────────────────────────────
+                        if (methodName == "equals") {
+                            auto* boolTy = llvm::Type::getInt1Ty(*context_);
+                            if (args.empty()) {
+                                std::cerr << "lucis: equals() requires an array argument\n";
+                                return static_cast<llvm::Value*>(
+                                    llvm::ConstantInt::get(boolTy, 0));
+                            }
+                            auto* rhsVal = args[0];
+                            auto* rhsSliceTy = llvm::dyn_cast<llvm::StructType>(rhsVal->getType());
+                            if (rhsSliceTy && rhsSliceTy->getNumElements() == 2 &&
+                                rhsSliceTy->getElementType(0)->isPointerTy() &&
+                                rhsSliceTy->getElementType(1)->isIntegerTy()) {
+                                auto* rhsPtr = builder_->CreateExtractValue(rhsVal, 0, "seq.rp");
+                                auto* rhsLen = builder_->CreateExtractValue(rhsVal, 1, "seq.rl");
+                                auto* rhsLenU = (rhsLen->getType() == usizeTy)
+                                    ? rhsLen : builder_->CreateIntCast(rhsLen, usizeTy, false, "seq.rlc");
+                                auto* resA = builder_->CreateAlloca(boolTy, nullptr, "seq.res");
+                                builder_->CreateStore(llvm::ConstantInt::get(boolTy, 1), resA);
+                                auto* lenEq = builder_->CreateICmpEQ(lenAsUsize, rhsLenU, "seq.le");
+                                auto* lenBB = llvm::BasicBlock::Create(*context_, "seq.lenok", currentFunction_);
+                                auto* eBB = llvm::BasicBlock::Create(*context_, "seq.end", currentFunction_);
+                                builder_->CreateCondBr(lenEq, lenBB, eBB);
+                                builder_->SetInsertPoint(lenBB);
+                                auto* iA = builder_->CreateAlloca(usizeTy, nullptr, "seq.idx");
+                                builder_->CreateStore(llvm::ConstantInt::get(usizeTy, 0), iA);
+                                auto* cBB = llvm::BasicBlock::Create(*context_, "seq.cond", currentFunction_);
+                                auto* bBB = llvm::BasicBlock::Create(*context_, "seq.body", currentFunction_);
+                                auto* nBB = llvm::BasicBlock::Create(*context_, "seq.next", currentFunction_);
+                                auto* fBB = llvm::BasicBlock::Create(*context_, "seq.fail", currentFunction_);
+                                builder_->CreateBr(cBB);
+                                builder_->SetInsertPoint(cBB);
+                                auto* ci = builder_->CreateLoad(usizeTy, iA, "seq.i");
+                                auto* cc = builder_->CreateICmpULT(ci, lenAsUsize, "seq.cmp");
+                                builder_->CreateCondBr(cc, bBB, eBB);
+                                builder_->SetInsertPoint(bBB);
+                                auto* cv = builder_->CreateLoad(usizeTy, iA, "seq.ci");
+                                auto* lv = builder_->CreateLoad(elemTy,
+                                    builder_->CreateGEP(elemTy, dataPtr, cv, "seq.lv"), "seq.lv");
+                                auto* rv = builder_->CreateLoad(elemTy,
+                                    builder_->CreateGEP(elemTy, rhsPtr, cv, "seq.rv"), "seq.rv");
+                                auto* eq = elemTy->isIntegerTy() ? builder_->CreateICmpEQ(lv, rv, "seq.eq")
+                                    : elemTy->isFloatingPointTy() ? builder_->CreateFCmpOEQ(lv, rv, "seq.eq")
+                                    : builder_->CreateICmpEQ(lv, rv, "seq.eq");
+                                builder_->CreateCondBr(eq, nBB, fBB);
+                                builder_->SetInsertPoint(nBB);
+                                auto* nv = builder_->CreateAdd(cv, llvm::ConstantInt::get(usizeTy, 1), "seq.nv");
+                                builder_->CreateStore(nv, iA);
+                                builder_->CreateBr(cBB);
+                                builder_->SetInsertPoint(fBB);
+                                builder_->CreateStore(llvm::ConstantInt::get(boolTy, 0), resA);
+                                builder_->CreateBr(eBB);
+                                builder_->SetInsertPoint(eBB);
+                                return static_cast<llvm::Value*>(
+                                    builder_->CreateLoad(boolTy, resA, "seq.ret"));
+                            }
+                            // rhs is a fixed array
+                            auto* rhsArrTy = llvm::dyn_cast<llvm::ArrayType>(rhsVal->getType());
+                            if (rhsArrTy) {
+                                auto* rhsLenU = llvm::ConstantInt::get(usizeTy, rhsArrTy->getNumElements());
+                                auto* resA = builder_->CreateAlloca(boolTy, nullptr, "seq.res");
+                                builder_->CreateStore(llvm::ConstantInt::get(boolTy, 1), resA);
+                                auto* lenEq = builder_->CreateICmpEQ(lenAsUsize, rhsLenU, "seq.le");
+                                auto* lenBB = llvm::BasicBlock::Create(*context_, "seq.lenok", currentFunction_);
+                                auto* eBB = llvm::BasicBlock::Create(*context_, "seq.end", currentFunction_);
+                                builder_->CreateCondBr(lenEq, lenBB, eBB);
+                                builder_->SetInsertPoint(lenBB);
+                                auto* iA = builder_->CreateAlloca(usizeTy, nullptr, "seq.idx");
+                                builder_->CreateStore(llvm::ConstantInt::get(usizeTy, 0), iA);
+                                auto* cBB = llvm::BasicBlock::Create(*context_, "seq.cond", currentFunction_);
+                                auto* bBB = llvm::BasicBlock::Create(*context_, "seq.body", currentFunction_);
+                                auto* nBB = llvm::BasicBlock::Create(*context_, "seq.next", currentFunction_);
+                                auto* fBB = llvm::BasicBlock::Create(*context_, "seq.fail", currentFunction_);
+                                builder_->CreateBr(cBB);
+                                builder_->SetInsertPoint(cBB);
+                                auto* ci = builder_->CreateLoad(usizeTy, iA, "seq.i");
+                                auto* cc = builder_->CreateICmpULT(ci, lenAsUsize, "seq.cmp");
+                                builder_->CreateCondBr(cc, bBB, eBB);
+                                builder_->SetInsertPoint(bBB);
+                                auto* cv = builder_->CreateLoad(usizeTy, iA, "seq.ci");
+                                auto* lv = builder_->CreateLoad(elemTy,
+                                    builder_->CreateGEP(elemTy, dataPtr, cv, "seq.lv"), "seq.lv");
+                                auto* rv = builder_->CreateLoad(elemTy,
+                                    builder_->CreateGEP(arrTy, arrAlloca, {llvm::ConstantInt::get(i64Ty, 0),
+                                        builder_->CreateIntCast(cv, i64Ty, false, "seq.rci")}, "seq.rv"), "seq.rv");
+                                auto* eq = elemTy->isIntegerTy() ? builder_->CreateICmpEQ(lv, rv, "seq.eq")
+                                    : elemTy->isFloatingPointTy() ? builder_->CreateFCmpOEQ(lv, rv, "seq.eq")
+                                    : builder_->CreateICmpEQ(lv, rv, "seq.eq");
+                                builder_->CreateCondBr(eq, nBB, fBB);
+                                builder_->SetInsertPoint(nBB);
+                                auto* nv = builder_->CreateAdd(cv, llvm::ConstantInt::get(usizeTy, 1), "seq.nv");
+                                builder_->CreateStore(nv, iA);
+                                builder_->CreateBr(cBB);
+                                builder_->SetInsertPoint(fBB);
+                                builder_->CreateStore(llvm::ConstantInt::get(boolTy, 0), resA);
+                                builder_->CreateBr(eBB);
+                                builder_->SetInsertPoint(eBB);
+                                return static_cast<llvm::Value*>(
+                                    builder_->CreateLoad(boolTy, resA, "seq.ret"));
+                            }
+                            std::cerr << "lucis: equals() argument must be an array or slice\n";
+                            return static_cast<llvm::Value*>(
+                                llvm::ConstantInt::get(boolTy, 0));
+                        }
+
+                        // ── product on slice ──────────────────────────────
+                        if (methodName == "product" && (elemTy->isIntegerTy() || elemTy->isFloatingPointTy())) {
+                            auto* accA = builder_->CreateAlloca(elemTy, nullptr, "sp.acc");
+                            auto* init = elemTy->isIntegerTy()
+                                ? static_cast<llvm::Value*>(llvm::ConstantInt::get(elemTy, 1))
+                                : static_cast<llvm::Value*>(llvm::ConstantFP::get(elemTy, 1.0));
+                            builder_->CreateStore(init, accA);
+                            auto* cBB = llvm::BasicBlock::Create(*context_, "sp.cond", currentFunction_);
+                            auto* bBB = llvm::BasicBlock::Create(*context_, "sp.body", currentFunction_);
+                            auto* eBB = llvm::BasicBlock::Create(*context_, "sp.end", currentFunction_);
+                            auto* iA = builder_->CreateAlloca(usizeTy, nullptr, "sp.idx");
+                            builder_->CreateStore(llvm::ConstantInt::get(usizeTy, 0), iA);
+                            builder_->CreateBr(cBB);
+                            builder_->SetInsertPoint(cBB);
+                            auto* ci = builder_->CreateLoad(usizeTy, iA, "sp.i");
+                            auto* cc = builder_->CreateICmpULT(ci, lenAsUsize, "sp.cmp");
+                            builder_->CreateCondBr(cc, bBB, eBB);
+                            builder_->SetInsertPoint(bBB);
+                            auto* av = builder_->CreateLoad(elemTy, accA, "sp.av");
+                            auto* v = builder_->CreateLoad(elemTy,
+                                builder_->CreateGEP(elemTy, dataPtr,
+                                    builder_->CreateLoad(usizeTy, iA, "sp.ci"), "sp.v"), "sp.v");
+                            auto* nv = elemTy->isIntegerTy()
+                                ? static_cast<llvm::Value*>(builder_->CreateMul(av, v, "sp.nv"))
+                                : static_cast<llvm::Value*>(builder_->CreateFMul(av, v, "sp.nv"));
+                            builder_->CreateStore(nv, accA);
+                            auto* n = builder_->CreateAdd(builder_->CreateLoad(usizeTy, iA, "sp.ni"),
+                                llvm::ConstantInt::get(usizeTy, 1), "sp.n");
+                            builder_->CreateStore(n, iA);
+                            builder_->CreateBr(cBB);
+                            builder_->SetInsertPoint(eBB);
+                            return static_cast<llvm::Value*>(
+                                builder_->CreateLoad(elemTy, accA, "sp.ret"));
+                        }
+
+                        // ── min / max on slice ────────────────────────────
+                        if (methodName == "min" || methodName == "max") {
+                            auto* bestA = builder_->CreateAlloca(elemTy, nullptr, "smm.best");
+                            auto* z = llvm::ConstantInt::get(usizeTy, 0);
+                            auto* firstPtr = builder_->CreateGEP(elemTy, dataPtr, z, "smm.first");
+                            builder_->CreateStore(builder_->CreateLoad(elemTy, firstPtr, "smm.firstv"), bestA);
+                            auto* cBB = llvm::BasicBlock::Create(*context_, "smm.cond", currentFunction_);
+                            auto* bBB = llvm::BasicBlock::Create(*context_, "smm.body", currentFunction_);
+                            auto* eBB = llvm::BasicBlock::Create(*context_, "smm.end", currentFunction_);
+                            auto* iA = builder_->CreateAlloca(usizeTy, nullptr, "smm.idx");
+                            builder_->CreateStore(llvm::ConstantInt::get(usizeTy, 1), iA);
+                            builder_->CreateBr(cBB);
+                            builder_->SetInsertPoint(cBB);
+                            auto* ci = builder_->CreateLoad(usizeTy, iA, "smm.i");
+                            auto* cc = builder_->CreateICmpULT(ci, lenAsUsize, "smm.cmp");
+                            builder_->CreateCondBr(cc, bBB, eBB);
+                            builder_->SetInsertPoint(bBB);
+                            auto* ev = builder_->CreateLoad(elemTy,
+                                builder_->CreateGEP(elemTy, dataPtr,
+                                    builder_->CreateLoad(usizeTy, iA, "smm.ei"), "smm.ev"), "smm.ev");
+                            auto* bv = builder_->CreateLoad(elemTy, bestA, "smm.bv");
+                            llvm::Value* cmp;
+                            if (methodName == "min") {
+                                cmp = elemTy->isIntegerTy()
+                                    ? static_cast<llvm::Value*>(builder_->CreateICmpSLT(ev, bv, "smm.lt"))
+                                    : static_cast<llvm::Value*>(builder_->CreateFCmpOLT(ev, bv, "smm.lt"));
+                            } else {
+                                cmp = elemTy->isIntegerTy()
+                                    ? static_cast<llvm::Value*>(builder_->CreateICmpSGT(ev, bv, "smm.gt"))
+                                    : static_cast<llvm::Value*>(builder_->CreateFCmpOGT(ev, bv, "smm.gt"));
+                            }
+                            auto* sel = builder_->CreateSelect(cmp, ev, bv, "smm.sel");
+                            builder_->CreateStore(sel, bestA);
+                            auto* nx = builder_->CreateAdd(builder_->CreateLoad(usizeTy, iA, "smm.ni"),
+                                llvm::ConstantInt::get(usizeTy, 1), "smm.nx");
+                            builder_->CreateStore(nx, iA);
+                            builder_->CreateBr(cBB);
+                            builder_->SetInsertPoint(eBB);
+                            return static_cast<llvm::Value*>(
+                                builder_->CreateLoad(elemTy, bestA, "smm.ret"));
+                        }
+
+                        // ── minIndex / maxIndex on slice ──────────────────
+                        if (methodName == "minIndex" || methodName == "maxIndex") {
+                            auto* bestA = builder_->CreateAlloca(elemTy, nullptr, "smi.best");
+                            auto* bestIdxA = builder_->CreateAlloca(usizeTy, nullptr, "smi.bi");
+                            auto* z = llvm::ConstantInt::get(usizeTy, 0);
+                            auto* firstPtr = builder_->CreateGEP(elemTy, dataPtr, z, "smi.first");
+                            builder_->CreateStore(builder_->CreateLoad(elemTy, firstPtr, "smi.firstv"), bestA);
+                            builder_->CreateStore(z, bestIdxA);
+                            auto* cBB = llvm::BasicBlock::Create(*context_, "smi.cond", currentFunction_);
+                            auto* bBB = llvm::BasicBlock::Create(*context_, "smi.body", currentFunction_);
+                            auto* eBB = llvm::BasicBlock::Create(*context_, "smi.end", currentFunction_);
+                            auto* iA = builder_->CreateAlloca(usizeTy, nullptr, "smi.idx");
+                            builder_->CreateStore(llvm::ConstantInt::get(usizeTy, 1), iA);
+                            builder_->CreateBr(cBB);
+                            builder_->SetInsertPoint(cBB);
+                            auto* ci = builder_->CreateLoad(usizeTy, iA, "smi.i");
+                            auto* cc = builder_->CreateICmpULT(ci, lenAsUsize, "smi.cmp");
+                            builder_->CreateCondBr(cc, bBB, eBB);
+                            builder_->SetInsertPoint(bBB);
+                            auto* ev = builder_->CreateLoad(elemTy,
+                                builder_->CreateGEP(elemTy, dataPtr,
+                                    builder_->CreateLoad(usizeTy, iA, "smi.ei"), "smi.ev"), "smi.ev");
+                            auto* bv = builder_->CreateLoad(elemTy, bestA, "smi.bv");
+                            llvm::Value* cmp;
+                            if (methodName == "minIndex") {
+                                cmp = elemTy->isIntegerTy()
+                                    ? static_cast<llvm::Value*>(builder_->CreateICmpSLT(ev, bv, "smi.lt"))
+                                    : static_cast<llvm::Value*>(builder_->CreateFCmpOLT(ev, bv, "smi.lt"));
+                            } else {
+                                cmp = elemTy->isIntegerTy()
+                                    ? static_cast<llvm::Value*>(builder_->CreateICmpSGT(ev, bv, "smi.gt"))
+                                    : static_cast<llvm::Value*>(builder_->CreateFCmpOGT(ev, bv, "smi.gt"));
+                            }
+                            auto* selV = builder_->CreateSelect(cmp, ev, bv, "smi.sv");
+                            auto* selI = builder_->CreateSelect(cmp,
+                                builder_->CreateLoad(usizeTy, iA, "smi.ci"),
+                                builder_->CreateLoad(usizeTy, bestIdxA, "smi.cbi"), "smi.si");
+                            builder_->CreateStore(selV, bestA);
+                            builder_->CreateStore(selI, bestIdxA);
+                            auto* nx = builder_->CreateAdd(builder_->CreateLoad(usizeTy, iA, "smi.ni"),
+                                llvm::ConstantInt::get(usizeTy, 1), "smi.nx");
+                            builder_->CreateStore(nx, iA);
+                            builder_->CreateBr(cBB);
+                            builder_->SetInsertPoint(eBB);
+                            return static_cast<llvm::Value*>(
+                                builder_->CreateLoad(usizeTy, bestIdxA, "smi.ret"));
+                        }
+
+                        // ── average on slice ──────────────────────────────
+                        if (methodName == "average") {
+                            auto* f64Ty = llvm::Type::getDoubleTy(*context_);
+                            auto* accA = builder_->CreateAlloca(f64Ty, nullptr, "savg.acc");
+                            builder_->CreateStore(llvm::ConstantFP::get(f64Ty, 0.0), accA);
+                            auto* cBB = llvm::BasicBlock::Create(*context_, "savg.cond", currentFunction_);
+                            auto* bBB = llvm::BasicBlock::Create(*context_, "savg.body", currentFunction_);
+                            auto* eBB = llvm::BasicBlock::Create(*context_, "savg.end", currentFunction_);
+                            auto* iA = builder_->CreateAlloca(usizeTy, nullptr, "savg.idx");
+                            builder_->CreateStore(llvm::ConstantInt::get(usizeTy, 0), iA);
+                            builder_->CreateBr(cBB);
+                            builder_->SetInsertPoint(cBB);
+                            auto* ci = builder_->CreateLoad(usizeTy, iA, "savg.i");
+                            auto* cc = builder_->CreateICmpULT(ci, lenAsUsize, "savg.cmp");
+                            builder_->CreateCondBr(cc, bBB, eBB);
+                            builder_->SetInsertPoint(bBB);
+                            auto* ev = builder_->CreateLoad(elemTy,
+                                builder_->CreateGEP(elemTy, dataPtr,
+                                    builder_->CreateLoad(usizeTy, iA, "savg.ei"), "savg.ev"), "savg.ev");
+                            llvm::Value* fv;
+                            if (elemTy->isIntegerTy())
+                                fv = builder_->CreateSIToFP(ev, f64Ty, "savg.tof");
+                            else
+                                fv = builder_->CreateFPCast(ev, f64Ty, "savg.tof");
+                            auto* av = builder_->CreateLoad(f64Ty, accA, "savg.av");
+                            builder_->CreateStore(builder_->CreateFAdd(av, fv, "savg.add"), accA);
+                            auto* nx = builder_->CreateAdd(builder_->CreateLoad(usizeTy, iA, "savg.ni"),
+                                llvm::ConstantInt::get(usizeTy, 1), "savg.nx");
+                            builder_->CreateStore(nx, iA);
+                            builder_->CreateBr(cBB);
+                            builder_->SetInsertPoint(eBB);
+                            auto* sum = builder_->CreateLoad(f64Ty, accA, "savg.sum");
+                            auto* lenF = builder_->CreateUIToFP(lenAsUsize, f64Ty, "savg.lenf");
+                            return static_cast<llvm::Value*>(
+                                builder_->CreateFDiv(sum, lenF, "savg.ret"));
+                        }
+
+                        // ── isSorted on slice ─────────────────────────────
+                        if (methodName == "isSorted") {
+                            auto* boolTy = llvm::Type::getInt1Ty(*context_);
+                            auto* resA = builder_->CreateAlloca(boolTy, nullptr, "ssrt.res");
+                            builder_->CreateStore(llvm::ConstantInt::get(boolTy, 1), resA);
+                            auto* o1 = llvm::ConstantInt::get(usizeTy, 1);
+                            auto* limit = builder_->CreateSub(lenAsUsize, o1, "ssrt.lim");
+                            auto* cBB = llvm::BasicBlock::Create(*context_, "ssrt.cond", currentFunction_);
+                            auto* bBB = llvm::BasicBlock::Create(*context_, "ssrt.body", currentFunction_);
+                            auto* eBB = llvm::BasicBlock::Create(*context_, "ssrt.end", currentFunction_);
+                            auto* iA = builder_->CreateAlloca(usizeTy, nullptr, "ssrt.idx");
+                            builder_->CreateStore(llvm::ConstantInt::get(usizeTy, 0), iA);
+                            builder_->CreateBr(cBB);
+                            builder_->SetInsertPoint(cBB);
+                            auto* ci = builder_->CreateLoad(usizeTy, iA, "ssrt.i");
+                            auto* cc = builder_->CreateICmpULT(ci, limit, "ssrt.cmp");
+                            builder_->CreateCondBr(cc, bBB, eBB);
+                            builder_->SetInsertPoint(bBB);
+                            auto* i = builder_->CreateLoad(usizeTy, iA, "ssrt.ci");
+                            auto* ip1 = builder_->CreateAdd(i, o1, "ssrt.ip1");
+                            auto* a = builder_->CreateLoad(elemTy,
+                                builder_->CreateGEP(elemTy, dataPtr, i, "ssrt.a"), "ssrt.a");
+                            auto* b = builder_->CreateLoad(elemTy,
+                                builder_->CreateGEP(elemTy, dataPtr, ip1, "ssrt.b"), "ssrt.b");
+                            llvm::Value* gt;
+                            if (elemTy->isIntegerTy())
+                                gt = builder_->CreateICmpSGT(a, b, "ssrt.gt");
+                            else
+                                gt = builder_->CreateFCmpOGT(a, b, "ssrt.gt");
+                            auto* cur = builder_->CreateLoad(boolTy, resA, "ssrt.cur");
+                            auto* notGt = builder_->CreateNot(gt, "ssrt.ngt");
+                            auto* and_ = builder_->CreateAnd(cur, notGt, "ssrt.and");
+                            builder_->CreateStore(and_, resA);
+                            auto* ni = builder_->CreateAdd(i, o1, "ssrt.ni");
+                            builder_->CreateStore(ni, iA);
+                            builder_->CreateBr(cBB);
+                            builder_->SetInsertPoint(eBB);
+                            return static_cast<llvm::Value*>(
+                                builder_->CreateLoad(boolTy, resA, "ssrt.ret"));
+                        }
+
+                        // ── sort / sortDesc on slice ──────────────────────
+                        if (methodName == "sort" || methodName == "sortDesc") {
+                            bool desc = (methodName == "sortDesc");
+                            auto* o1 = llvm::ConstantInt::get(usizeTy, 1);
+                            auto* o0 = llvm::ConstantInt::get(usizeTy, 0);
+                            auto* outerA = builder_->CreateAlloca(usizeTy, nullptr, "ss.outer");
+                            builder_->CreateStore(o0, outerA);
+                            auto* ocBB = llvm::BasicBlock::Create(*context_, "ss.ocond", currentFunction_);
+                            auto* obBB = llvm::BasicBlock::Create(*context_, "ss.obody", currentFunction_);
+                            auto* oeBB = llvm::BasicBlock::Create(*context_, "ss.oend", currentFunction_);
+                            builder_->CreateBr(ocBB);
+                            builder_->SetInsertPoint(ocBB);
+                            auto* oi = builder_->CreateLoad(usizeTy, outerA, "ss.oi");
+                            auto* olim = builder_->CreateSub(lenAsUsize, o1, "ss.olim");
+                            auto* oc = builder_->CreateICmpULT(oi, olim, "ss.oc");
+                            builder_->CreateCondBr(oc, obBB, oeBB);
+                            builder_->SetInsertPoint(obBB);
+                            auto* innerA = builder_->CreateAlloca(usizeTy, nullptr, "ss.inner");
+                            builder_->CreateStore(o0, innerA);
+                            auto* icBB = llvm::BasicBlock::Create(*context_, "ss.icond", currentFunction_);
+                            auto* ibBB = llvm::BasicBlock::Create(*context_, "ss.ibody", currentFunction_);
+                            auto* swBB = llvm::BasicBlock::Create(*context_, "ss.swap", currentFunction_);
+                            auto* inBB = llvm::BasicBlock::Create(*context_, "ss.inext", currentFunction_);
+                            auto* ieBB = llvm::BasicBlock::Create(*context_, "ss.iend", currentFunction_);
+                            builder_->CreateBr(icBB);
+                            builder_->SetInsertPoint(icBB);
+                            auto* ii = builder_->CreateLoad(usizeTy, innerA, "ss.ii");
+                            auto* oov = builder_->CreateLoad(usizeTy, outerA, "ss.oo");
+                            auto* ilim = builder_->CreateSub(
+                                builder_->CreateSub(lenAsUsize, o1, "ss.t1"), oov, "ss.ilim");
+                            auto* ic = builder_->CreateICmpULT(ii, ilim, "ss.ic");
+                            builder_->CreateCondBr(ic, ibBB, ieBB);
+                            builder_->SetInsertPoint(ibBB);
+                            auto* j = builder_->CreateLoad(usizeTy, innerA, "ss.j");
+                            auto* jp1 = builder_->CreateAdd(j, o1, "ss.jp1");
+                            auto* vj = builder_->CreateLoad(elemTy,
+                                builder_->CreateGEP(elemTy, dataPtr, j, "ss.vj"), "ss.vj");
+                            auto* vj1 = builder_->CreateLoad(elemTy,
+                                builder_->CreateGEP(elemTy, dataPtr, jp1, "ss.vj1"), "ss.vj1");
+                            llvm::Value* shouldSwap;
+                            if (!desc) {
+                                if (elemTy->isIntegerTy())
+                                    shouldSwap = builder_->CreateICmpSGT(vj, vj1, "ss.gt");
+                                else
+                                    shouldSwap = builder_->CreateFCmpOGT(vj, vj1, "ss.gt");
+                            } else {
+                                if (elemTy->isIntegerTy())
+                                    shouldSwap = builder_->CreateICmpSLT(vj, vj1, "ss.lt");
+                                else
+                                    shouldSwap = builder_->CreateFCmpOLT(vj, vj1, "ss.lt");
+                            }
+                            builder_->CreateCondBr(shouldSwap, swBB, inBB);
+                            builder_->SetInsertPoint(swBB);
+                            auto* sj = builder_->CreateLoad(usizeTy, innerA, "ss.sj");
+                            auto* sj1 = builder_->CreateAdd(sj, o1, "ss.sj1");
+                            auto* gA = builder_->CreateGEP(elemTy, dataPtr, sj, "ss.ga");
+                            auto* gB = builder_->CreateGEP(elemTy, dataPtr, sj1, "ss.gb");
+                            auto* tA = builder_->CreateLoad(elemTy, gA, "ss.ta");
+                            auto* tB = builder_->CreateLoad(elemTy, gB, "ss.tb");
+                            builder_->CreateStore(tB, gA);
+                            builder_->CreateStore(tA, gB);
+                            builder_->CreateBr(inBB);
+                            builder_->SetInsertPoint(inBB);
+                            auto* ni = builder_->CreateAdd(
+                                builder_->CreateLoad(usizeTy, innerA, "ss.ni"), o1, "ss.nx");
+                            builder_->CreateStore(ni, innerA);
+                            builder_->CreateBr(icBB);
+                            builder_->SetInsertPoint(ieBB);
+                            auto* no = builder_->CreateAdd(
+                                builder_->CreateLoad(usizeTy, outerA, "ss.no"), o1, "ss.nox");
+                            builder_->CreateStore(no, outerA);
+                            builder_->CreateBr(ocBB);
+                            builder_->SetInsertPoint(oeBB);
+                            return static_cast<llvm::Value*>(
+                                llvm::UndefValue::get(llvm::Type::getVoidTy(*context_)));
+                        }
+
+                        // ── copy on slice ────────────────────────────────
+                        if (methodName == "copy") {
+                            auto* ptrTy = llvm::PointerType::getUnqual(*context_);
+                            auto* elemSz = llvm::ConstantInt::get(usizeTy,
+                                module_->getDataLayout().getTypeAllocSize(elemTy));
+                            auto* totalSz = builder_->CreateMul(elemSz, lenAsUsize, "scp.size");
+                            auto allocFn = declareBuiltin("lucis_alloc", ptrTy, {usizeTy});
+                            auto* rawMem = builder_->CreateCall(allocFn, {totalSz}, "scp.mem");
+                            auto* typedPtr = builder_->CreateBitCast(rawMem, ptrFieldTy, "scp.typed");
+                            auto* dstB = builder_->CreateBitCast(typedPtr, ptrTy, "scp.dstb");
+                            auto* srcB = builder_->CreateBitCast(dataPtr, ptrTy, "scp.srcb");
+                            auto memcpyFn = declareBuiltin("memcpy", ptrTy, {ptrTy, ptrTy, usizeTy});
+                            builder_->CreateCall(memcpyFn, {dstB, srcB, totalSz}, "scp.cpy");
+                            llvm::Value* result = llvm::UndefValue::get(sliceTy);
+                            result = builder_->CreateInsertValue(result, typedPtr, 0);
+                            result = builder_->CreateInsertValue(result, lenAsUsize, 1);
+                            return static_cast<llvm::Value*>(result);
+                        }
+
+                        // ── slice(start, end) on slice ────────────────────
+                        if (methodName == "slice") {
+                            if (args.size() < 2) {
+                                std::cerr << "lucis: slice() requires start and end arguments\n";
+                                return static_cast<llvm::Value*>(
+                                    llvm::UndefValue::get(sliceTy));
+                            }
+                            auto* ptrTy = llvm::PointerType::getUnqual(*context_);
+                            auto* startIdx = args[0];
+                            auto* endIdx = args[1];
+                            if (startIdx->getType() != usizeTy)
+                                startIdx = builder_->CreateIntCast(startIdx, usizeTy, true, "ssl.start");
+                            if (endIdx->getType() != usizeTy)
+                                endIdx = builder_->CreateIntCast(endIdx, usizeTy, true, "ssl.end");
+                            emitBoundsCheck(endIdx, lenAsUsize, "ssl_end");
+                            emitBoundsCheck(startIdx, endIdx, "ssl_start");
+                            auto* newLen = builder_->CreateSub(endIdx, startIdx, "ssl.nlen");
+                            auto* elemSz = llvm::ConstantInt::get(usizeTy,
+                                module_->getDataLayout().getTypeAllocSize(elemTy));
+                            auto* totalSz = builder_->CreateMul(elemSz, newLen, "ssl.size");
+                            auto allocFn = declareBuiltin("lucis_alloc", ptrTy, {usizeTy});
+                            auto* rawMem = builder_->CreateCall(allocFn, {totalSz}, "ssl.mem");
+                            auto* typedPtr = builder_->CreateBitCast(rawMem, ptrFieldTy, "ssl.typed");
+                            auto* srcBase = builder_->CreateGEP(elemTy, dataPtr, startIdx, "ssl.src");
+                            auto* dstB = builder_->CreateBitCast(typedPtr, ptrTy, "ssl.dstb");
+                            auto* srcB = builder_->CreateBitCast(srcBase, ptrTy, "ssl.srcb");
+                            auto memcpyFn = declareBuiltin("memcpy", ptrTy, {ptrTy, ptrTy, usizeTy});
+                            builder_->CreateCall(memcpyFn, {dstB, srcB, totalSz}, "ssl.cpy");
+                            llvm::Value* result = llvm::UndefValue::get(sliceTy);
+                            result = builder_->CreateInsertValue(result, typedPtr, 0);
+                            result = builder_->CreateInsertValue(result, newLen, 1);
+                            return static_cast<llvm::Value*>(result);
+                        }
+
+                        // ── toString on slice ─────────────────────────────
+                        if (methodName == "toString") {
+                            auto* ptrTy = llvm::PointerType::getUnqual(*context_);
+                            auto* strTy = llvm::StructType::get(*context_, {ptrTy, usizeTy});
+                            auto* i32Ty = llvm::Type::getInt32Ty(*context_);
+                            auto* elemStructTy = llvm::dyn_cast<llvm::StructType>(elemTy);
+                            bool elemIsStringLike = elemStructTy && elemStructTy->getNumElements() == 2 &&
+                                elemStructTy->getElementType(0)->isPointerTy() &&
+                                elemStructTy->getElementType(1)->isIntegerTy();
+                            if (elemIsStringLike) {
+                                auto* vecTy = getOrCreateVecStructType();
+                                auto* vecA = builder_->CreateAlloca(vecTy, nullptr, "stos.vec");
+                                auto* dg = builder_->CreateStructGEP(vecTy, vecA, 0, "stos.dg");
+                                auto* lg = builder_->CreateStructGEP(vecTy, vecA, 1, "stos.lg");
+                                auto* cg = builder_->CreateStructGEP(vecTy, vecA, 2, "stos.cg");
+                                auto* dataCast = builder_->CreateBitCast(dataPtr, ptrTy, "stos.dc");
+                                builder_->CreateStore(dataCast, dg);
+                                builder_->CreateStore(lenAsUsize, lg);
+                                builder_->CreateStore(lenAsUsize, cg);
+                                auto callee = declareBuiltin("lucis_vec_toString_str", strTy, {ptrTy});
+                                return static_cast<llvm::Value*>(
+                                    builder_->CreateCall(callee, {vecA}, "stos.res"));
+                            }
+                            auto allocFn = declareBuiltin("lucis_allocString", ptrTy, {usizeTy});
+                            auto* perElem = llvm::ConstantInt::get(usizeTy, 24);
+                            auto* total = builder_->CreateMul(lenAsUsize, perElem, "stos.t");
+                            total = builder_->CreateAdd(total, llvm::ConstantInt::get(usizeTy, 2), "stos.t2");
+                            total = builder_->CreateAdd(total,
+                                builder_->CreateMul(lenAsUsize, llvm::ConstantInt::get(usizeTy, 2), "stos.ts"), "stos.t3");
+                            auto* buf = builder_->CreateCall(allocFn, {total}, "stos.buf");
+                            auto snprintfFn = module_->getOrInsertFunction("snprintf",
+                                llvm::FunctionType::get(i32Ty, {ptrTy, usizeTy, ptrTy}, true));
+                            auto* openBr = builder_->CreateGlobalStringPtr("[", "stos.ob");
+                            auto* offA = builder_->CreateAlloca(usizeTy, nullptr, "stos.off");
+                            builder_->CreateStore(llvm::ConstantInt::get(usizeTy, 0), offA);
+                            auto* w = builder_->CreateCall(snprintfFn, {buf, total, openBr}, "stos.w0");
+                            builder_->CreateStore(builder_->CreateIntCast(w, usizeTy, false), offA);
+                            std::string fmtElemStr;
+                            if (elemTy->isIntegerTy())
+                                fmtElemStr = (elemTI && !elemTI->isSigned) ? "%llu" : "%lld";
+                            else if (elemTy->isFloatingPointTy())
+                                fmtElemStr = "%.6g";
+                            else
+                                fmtElemStr = "<?>";
+                            auto* fmtFirst = builder_->CreateGlobalStringPtr(fmtElemStr, "stos.f1");
+                            auto* fmtLater = builder_->CreateGlobalStringPtr(
+                                (std::string(", ") + fmtElemStr).c_str(), "stos.fn");
+                            auto* o0 = llvm::ConstantInt::get(usizeTy, 0);
+                            auto* o1 = llvm::ConstantInt::get(usizeTy, 1);
+                            auto* cBB = llvm::BasicBlock::Create(*context_, "stos.cond", currentFunction_);
+                            auto* bBB = llvm::BasicBlock::Create(*context_, "stos.body", currentFunction_);
+                            auto* eBB = llvm::BasicBlock::Create(*context_, "stos.end", currentFunction_);
+                            auto* iA = builder_->CreateAlloca(usizeTy, nullptr, "stos.idx");
+                            builder_->CreateStore(o0, iA);
+                            builder_->CreateBr(cBB);
+                            builder_->SetInsertPoint(cBB);
+                            auto* ci = builder_->CreateLoad(usizeTy, iA, "stos.i");
+                            auto* cc = builder_->CreateICmpULT(ci, lenAsUsize, "stos.cmp");
+                            builder_->CreateCondBr(cc, bBB, eBB);
+                            builder_->SetInsertPoint(bBB);
+                            auto* idx = builder_->CreateLoad(usizeTy, iA, "stos.ci");
+                            auto* isFirst = builder_->CreateICmpEQ(idx, o0, "stos.fst");
+                            auto* fmtSel = builder_->CreateSelect(isFirst, fmtFirst, fmtLater, "stos.fmt");
+                            auto* elem = builder_->CreateLoad(elemTy,
+                                builder_->CreateGEP(elemTy, dataPtr, idx, "stos.ep"), "stos.elem");
+                            auto* curOff = builder_->CreateLoad(usizeTy, offA, "stos.co");
+                            auto* curPtr = builder_->CreateGEP(
+                                llvm::Type::getInt8Ty(*context_), buf, curOff, "stos.cur");
+                            auto* rem = builder_->CreateSub(total, curOff, "stos.rem");
+                            llvm::Value* printVal = elem;
+                            if (elemTy->isIntegerTy())
+                                printVal = builder_->CreateIntCast(elem, i64Ty,
+                                    elemTI ? elemTI->isSigned : true, "stos.cast");
+                            else if (elemTy->isFloatingPointTy())
+                                printVal = builder_->CreateFPExt(elem,
+                                    llvm::Type::getDoubleTy(*context_), "stos.fext");
+                            else
+                                printVal = builder_->CreateGlobalStringPtr("<?>", "stos.unk");
+                            auto* wr = builder_->CreateCall(snprintfFn,
+                                {curPtr, rem, fmtSel, printVal}, "stos.wr");
+                            auto* newOff = builder_->CreateAdd(curOff,
+                                builder_->CreateIntCast(wr, usizeTy, false), "stos.no");
+                            builder_->CreateStore(newOff, offA);
+                            auto* nxi = builder_->CreateAdd(idx, o1, "stos.ni");
+                            builder_->CreateStore(nxi, iA);
+                            builder_->CreateBr(cBB);
+                            builder_->SetInsertPoint(eBB);
+                            auto* closeBr = builder_->CreateGlobalStringPtr("]", "stos.cb");
+                            auto* finalOff = builder_->CreateLoad(usizeTy, offA, "stos.fo");
+                            auto* finalPtr = builder_->CreateGEP(
+                                llvm::Type::getInt8Ty(*context_), buf, finalOff, "stos.fp");
+                            auto* finalRem = builder_->CreateSub(total, finalOff, "stos.fr");
+                            auto* wc = builder_->CreateCall(snprintfFn, {finalPtr, finalRem, closeBr}, "stos.wc");
+                            auto* totalOff = builder_->CreateAdd(finalOff,
+                                builder_->CreateIntCast(wc, usizeTy, false), "stos.to");
+                            llvm::Value* result = llvm::UndefValue::get(strTy);
+                            result = builder_->CreateInsertValue(result, buf, 0);
+                            result = builder_->CreateInsertValue(result, totalOff, 1);
+                            return static_cast<llvm::Value*>(result);
+                        }
+
+                        // ── join on slice ────────────────────────────────
+                        if (methodName == "join") {
+                            auto* ptrTy = llvm::PointerType::getUnqual(*context_);
+                            auto* strTy = llvm::StructType::get(*context_, {ptrTy, usizeTy});
+                            auto* i32Ty = llvm::Type::getInt32Ty(*context_);
+                            llvm::Value* sepPtr = nullptr;
+                            llvm::Value* sepLen = nullptr;
+                            if (!args.empty()) {
+                                sepPtr = builder_->CreateExtractValue(args[0], 0, "sjn.sep.ptr");
+                                sepLen = builder_->CreateExtractValue(args[0], 1, "sjn.sep.len");
+                            } else {
+                                sepPtr = builder_->CreateGlobalStringPtr("", "sjn.empty");
+                                sepLen = llvm::ConstantInt::get(usizeTy, 0);
+                            }
+                            if (sepLen->getType() != usizeTy)
+                                sepLen = builder_->CreateIntCast(sepLen, usizeTy, false, "sjn.sep.cast");
+                            auto* elemStructTy = llvm::dyn_cast<llvm::StructType>(elemTy);
+                            bool elemIsStringLike = elemStructTy && elemStructTy->getNumElements() == 2 &&
+                                elemStructTy->getElementType(0)->isPointerTy() &&
+                                elemStructTy->getElementType(1)->isIntegerTy();
+                            if (elemIsStringLike) {
+                                auto* vecTy = getOrCreateVecStructType();
+                                auto* vecA = builder_->CreateAlloca(vecTy, nullptr, "sjn.vec");
+                                auto* dg = builder_->CreateStructGEP(vecTy, vecA, 0, "sjn.dg");
+                                auto* lg = builder_->CreateStructGEP(vecTy, vecA, 1, "sjn.lg");
+                                auto* cg = builder_->CreateStructGEP(vecTy, vecA, 2, "sjn.cg");
+                                auto* dataCast = builder_->CreateBitCast(dataPtr, ptrTy, "sjn.dc");
+                                builder_->CreateStore(dataCast, dg);
+                                builder_->CreateStore(lenAsUsize, lg);
+                                builder_->CreateStore(lenAsUsize, cg);
+                                llvm::Value* sep = llvm::UndefValue::get(strTy);
+                                sep = builder_->CreateInsertValue(sep, sepPtr, 0);
+                                sep = builder_->CreateInsertValue(sep, sepLen, 1);
+                                auto callee = declareBuiltin("lucis_vec_join_str", strTy, {ptrTy, strTy});
+                                return static_cast<llvm::Value*>(
+                                    builder_->CreateCall(callee, {vecA, sep}, "sjn.res"));
+                            }
+                            auto allocFn = declareBuiltin("lucis_allocString", ptrTy, {usizeTy});
+                            auto* perElem = llvm::ConstantInt::get(usizeTy, 24);
+                            auto* totalNoSep = builder_->CreateMul(lenAsUsize, perElem, "sjn.tns");
+                            auto* o1 = llvm::ConstantInt::get(usizeTy, 1);
+                            auto* sepCount = builder_->CreateSub(lenAsUsize, o1, "sjn.sc");
+                            auto* sepSpace = builder_->CreateMul(sepCount, sepLen, "sjn.ss");
+                            auto* total = builder_->CreateAdd(totalNoSep, sepSpace, "sjn.total");
+                            auto* buf = builder_->CreateCall(allocFn, {total}, "sjn.buf");
+                            auto snprintfFn = module_->getOrInsertFunction("snprintf",
+                                llvm::FunctionType::get(i32Ty, {ptrTy, usizeTy, ptrTy}, true));
+                            auto memcpyFn = declareBuiltin("memcpy", ptrTy, {ptrTy, ptrTy, usizeTy});
+                            auto* offA = builder_->CreateAlloca(usizeTy, nullptr, "sjn.off");
+                            builder_->CreateStore(llvm::ConstantInt::get(usizeTy, 0), offA);
+                            std::string fmtElemStr;
+                            if (elemTy->isIntegerTy())
+                                fmtElemStr = (elemTI && !elemTI->isSigned) ? "%llu" : "%lld";
+                            else if (elemTy->isFloatingPointTy())
+                                fmtElemStr = "%.6g";
+                            else
+                                fmtElemStr = "<?>";
+                            auto* fmtStr = builder_->CreateGlobalStringPtr(fmtElemStr, "sjn.fmt");
+                            auto* o0 = llvm::ConstantInt::get(usizeTy, 0);
+                            auto* cBB = llvm::BasicBlock::Create(*context_, "sjn.cond", currentFunction_);
+                            auto* bBB = llvm::BasicBlock::Create(*context_, "sjn.body", currentFunction_);
+                            auto* eBB = llvm::BasicBlock::Create(*context_, "sjn.end", currentFunction_);
+                            auto* iA = builder_->CreateAlloca(usizeTy, nullptr, "sjn.idx");
+                            builder_->CreateStore(o0, iA);
+                            builder_->CreateBr(cBB);
+                            builder_->SetInsertPoint(cBB);
+                            auto* ci = builder_->CreateLoad(usizeTy, iA, "sjn.i");
+                            auto* cc = builder_->CreateICmpULT(ci, lenAsUsize, "sjn.cmp");
+                            builder_->CreateCondBr(cc, bBB, eBB);
+                            builder_->SetInsertPoint(bBB);
+                            auto* idx = builder_->CreateLoad(usizeTy, iA, "sjn.ci");
+                            auto* isFirst = builder_->CreateICmpEQ(idx, o0, "sjn.fst");
+                            auto* notFirstBB = llvm::BasicBlock::Create(*context_, "sjn.nfb", currentFunction_);
+                            auto* writeBB = llvm::BasicBlock::Create(*context_, "sjn.wb", currentFunction_);
+                            builder_->CreateCondBr(isFirst, writeBB, notFirstBB);
+                            builder_->SetInsertPoint(notFirstBB);
+                            auto* curOff = builder_->CreateLoad(usizeTy, offA, "sjn.co");
+                            auto* dst = builder_->CreateGEP(
+                                llvm::Type::getInt8Ty(*context_), buf, curOff, "sjn.dst");
+                            builder_->CreateCall(memcpyFn, {dst, sepPtr, sepLen});
+                            builder_->CreateStore(builder_->CreateAdd(curOff, sepLen, "sjn.no"), offA);
+                            builder_->CreateBr(writeBB);
+                            builder_->SetInsertPoint(writeBB);
+                            auto* writeOff = builder_->CreateLoad(usizeTy, offA, "sjn.wo");
+                            auto* writePtr = builder_->CreateGEP(
+                                llvm::Type::getInt8Ty(*context_), buf, writeOff, "sjn.wp");
+                            auto* rem = builder_->CreateSub(total, writeOff, "sjn.rem");
+                            auto* elem = builder_->CreateLoad(elemTy,
+                                builder_->CreateGEP(elemTy, dataPtr, idx, "sjn.ep"), "sjn.elem");
+                            llvm::Value* printVal = elem;
+                            if (elemTy->isIntegerTy())
+                                printVal = builder_->CreateIntCast(elem, i64Ty,
+                                    elemTI ? elemTI->isSigned : true, "sjn.cast");
+                            else if (elemTy->isFloatingPointTy())
+                                printVal = builder_->CreateFPExt(elem,
+                                    llvm::Type::getDoubleTy(*context_), "sjn.fext");
+                            else
+                                printVal = builder_->CreateGlobalStringPtr("<?>", "sjn.unk");
+                            auto* wr = builder_->CreateCall(snprintfFn,
+                                {writePtr, rem, fmtStr, printVal}, "sjn.wr");
+                            auto* newOff = builder_->CreateAdd(writeOff,
+                                builder_->CreateIntCast(wr, usizeTy, false), "sjn.nwo");
+                            builder_->CreateStore(newOff, offA);
+                            auto* nxi = builder_->CreateAdd(idx, o1, "sjn.ni");
+                            builder_->CreateStore(nxi, iA);
+                            builder_->CreateBr(cBB);
+                            builder_->SetInsertPoint(eBB);
+                            auto* finalLen = builder_->CreateLoad(usizeTy, offA, "sjn.fl");
+                            llvm::Value* result = llvm::UndefValue::get(strTy);
+                            result = builder_->CreateInsertValue(result, buf, 0);
+                            result = builder_->CreateInsertValue(result, finalLen, 1);
+                            return static_cast<llvm::Value*>(result);
                         }
                     }
                 }
@@ -19303,6 +20344,8 @@ IRGen::visitMethodCallExpr(LucisParser::MethodCallExprContext* ctx) {
                 auto* idx  = args[0];
                 if (idx->getType() != i64Ty)
                     idx = builder_->CreateIntCast(idx, i64Ty, true);
+                auto* arrLenVal = llvm::ConstantInt::get(i64Ty, arrLen);
+                emitBoundsCheck(idx, arrLenVal, "arr_at");
                 auto* zero = llvm::ConstantInt::get(i64Ty, 0);
                 auto* gep  = builder_->CreateInBoundsGEP(arrTy, arrAlloca, {zero, idx}, "at_ptr");
                 return static_cast<llvm::Value*>(builder_->CreateLoad(elemTy, gep, "at"));
@@ -19566,18 +20609,24 @@ IRGen::visitMethodCallExpr(LucisParser::MethodCallExprContext* ctx) {
                 return static_cast<llvm::Value*>(
                     llvm::UndefValue::get(llvm::Type::getVoidTy(*context_)));
             }
-            // ── copy: return a new array (load all elements) ─────────────
+            // ── copy: return a new array (heap alloc + memcpy + free) ─
             if (methodName == "copy") {
-                auto* newAlloca = builder_->CreateAlloca(arrTy, nullptr, "copy");
-                auto* zero = llvm::ConstantInt::get(i64Ty, 0);
-                for (uint64_t i = 0; i < arrLen; i++) {
-                    auto* idx  = llvm::ConstantInt::get(i64Ty, i);
-                    auto* srcGep = builder_->CreateInBoundsGEP(arrTy, arrAlloca, {zero, idx}, "src");
-                    auto* dstGep = builder_->CreateInBoundsGEP(arrTy, newAlloca, {zero, idx}, "dst");
-                    builder_->CreateStore(builder_->CreateLoad(elemTy, srcGep), dstGep);
-                }
-                return static_cast<llvm::Value*>(
-                    builder_->CreateLoad(arrTy, newAlloca, "copy_val"));
+                auto* ptrTy = llvm::PointerType::getUnqual(*context_);
+                auto* usizeTy = module_->getDataLayout().getIntPtrType(*context_);
+                auto* totalSz = llvm::ConstantInt::get(usizeTy,
+                    module_->getDataLayout().getTypeAllocSize(arrTy));
+                auto allocFn = declareBuiltin("lucis_alloc", ptrTy, {usizeTy});
+                auto* rawMem = builder_->CreateCall(allocFn, {totalSz}, "copy.mem");
+                auto* voidTy = llvm::Type::getVoidTy(*context_);
+                auto memcpyFn = declareBuiltin("memcpy", voidTy, {ptrTy, ptrTy, usizeTy});
+                auto* srcPtr = builder_->CreateBitCast(arrAlloca, ptrTy, "copy.src");
+                builder_->CreateCall(memcpyFn, {rawMem, srcPtr, totalSz}, "copy.cpy");
+                auto* typedPtr = builder_->CreateBitCast(rawMem,
+                    llvm::PointerType::getUnqual(arrTy), "copy.typed");
+                auto* result = builder_->CreateLoad(arrTy, typedPtr, "copy_val");
+                auto freeFn = declareBuiltin("lucis_free", voidTy, {ptrTy});
+                builder_->CreateCall(freeFn, {rawMem});
+                return static_cast<llvm::Value*>(result);
             }
             // ── slice(start, end): returns a fixed array when bounds are constant ──
             // If bounds are not compile-time constants, fall back to full-size copy.
@@ -19606,62 +20655,47 @@ IRGen::visitMethodCallExpr(LucisParser::MethodCallExprContext* ctx) {
 
                     uint64_t outLen = e - s;
                     auto* outArrTy = llvm::ArrayType::get(elemTy, outLen);
-                    auto* outAlloca = builder_->CreateAlloca(outArrTy, nullptr, "slice_const");
-
-                    auto* totalSz = llvm::ConstantInt::get(i64Ty,
+                    auto* ptrTy = llvm::PointerType::getUnqual(*context_);
+                    auto* usizeTy = module_->getDataLayout().getIntPtrType(*context_);
+                    auto* totalSz = llvm::ConstantInt::get(usizeTy,
                         module_->getDataLayout().getTypeAllocSize(outArrTy));
-                    builder_->CreateMemSet(outAlloca, builder_->getInt8(0), totalSz,
-                        llvm::MaybeAlign(module_->getDataLayout().getABITypeAlign(outArrTy)));
-
-                    auto* zero = llvm::ConstantInt::get(i64Ty, 0);
-                    for (uint64_t i = 0; i < outLen; i++) {
-                        auto* srcI = llvm::ConstantInt::get(i64Ty, s + i);
-                        auto* dstI = llvm::ConstantInt::get(i64Ty, i);
-                        auto* srcGep = builder_->CreateInBoundsGEP(arrTy, arrAlloca, {zero, srcI}, "slc_src");
-                        auto* dstGep = builder_->CreateInBoundsGEP(outArrTy, outAlloca, {zero, dstI}, "slc_dst");
-                        builder_->CreateStore(builder_->CreateLoad(elemTy, srcGep), dstGep);
-                    }
-
-                    return static_cast<llvm::Value*>(
-                        builder_->CreateLoad(outArrTy, outAlloca, "slice_const_val"));
+                    auto allocFn = declareBuiltin("lucis_alloc", ptrTy, {usizeTy});
+                    auto* rawMem = builder_->CreateCall(allocFn, {totalSz}, "slc.mem");
+                    auto* voidTy = llvm::Type::getVoidTy(*context_);
+                    auto memcpyFn = declareBuiltin("memcpy", voidTy, {ptrTy, ptrTy, usizeTy});
+                    auto* srcBase = builder_->CreateGEP(arrTy, arrAlloca,
+                        {llvm::ConstantInt::get(i64Ty, 0), startIdx}, "slc.src");
+                    auto* dstPtr = builder_->CreateBitCast(rawMem, ptrTy, "slc.dst");
+                    auto* srcPtr = builder_->CreateBitCast(srcBase, ptrTy, "slc.srcb");
+                    builder_->CreateCall(memcpyFn, {dstPtr, srcPtr, totalSz}, "slc.cpy");
+                    auto* typedPtr = builder_->CreateBitCast(rawMem,
+                        llvm::PointerType::getUnqual(outArrTy), "slc.typed");
+                    auto* constResult = builder_->CreateLoad(outArrTy, typedPtr, "slice_const_val");
+                    auto freeFn = declareBuiltin("lucis_free", voidTy, {ptrTy});
+                    builder_->CreateCall(freeFn, {rawMem});
+                    return static_cast<llvm::Value*>(constResult);
                 }
 
-                auto* newAlloca = builder_->CreateAlloca(arrTy, nullptr, "slice");
-                auto* totalSz = llvm::ConstantInt::get(i64Ty,
+                // Runtime-slice: heap alloc + memcpy from start..end
+                auto* ptrTy = llvm::PointerType::getUnqual(*context_);
+                auto* usizeTy = module_->getDataLayout().getIntPtrType(*context_);
+                auto* totalSz = llvm::ConstantInt::get(usizeTy,
                     module_->getDataLayout().getTypeAllocSize(arrTy));
-                builder_->CreateMemSet(newAlloca, builder_->getInt8(0), totalSz,
-                    llvm::MaybeAlign(module_->getDataLayout().getABITypeAlign(arrTy)));
-
-                // Copy elements from start..end
-                auto* idxAlloca = builder_->CreateAlloca(i64Ty, nullptr, "sl_idx");
-                auto* dstIdxAlloca = builder_->CreateAlloca(i64Ty, nullptr, "sl_dst");
-                builder_->CreateStore(startIdx, idxAlloca);
-                builder_->CreateStore(llvm::ConstantInt::get(i64Ty, 0), dstIdxAlloca);
-                auto* condBB = llvm::BasicBlock::Create(*context_, "sl.cond", currentFunction_);
-                auto* bodyBB = llvm::BasicBlock::Create(*context_, "sl.body", currentFunction_);
-                auto* endBB  = llvm::BasicBlock::Create(*context_, "sl.end", currentFunction_);
-                builder_->CreateBr(condBB);
-
-                builder_->SetInsertPoint(condBB);
-                auto* curIdx = builder_->CreateLoad(i64Ty, idxAlloca, "sl_cur");
-                builder_->CreateCondBr(builder_->CreateICmpULT(curIdx, endIdx), bodyBB, endBB);
-
-                builder_->SetInsertPoint(bodyBB);
-                auto* srcI = builder_->CreateLoad(i64Ty, idxAlloca, "src_i");
-                auto* dstI = builder_->CreateLoad(i64Ty, dstIdxAlloca, "dst_i");
-                auto* zero = llvm::ConstantInt::get(i64Ty, 0);
-                auto* srcGep = builder_->CreateInBoundsGEP(arrTy, arrAlloca, {zero, srcI}, "sl_src");
-                auto* dstGep = builder_->CreateInBoundsGEP(arrTy, newAlloca, {zero, dstI}, "sl_dst");
-                builder_->CreateStore(builder_->CreateLoad(elemTy, srcGep), dstGep);
-                builder_->CreateStore(
-                    builder_->CreateAdd(srcI, llvm::ConstantInt::get(i64Ty, 1)), idxAlloca);
-                builder_->CreateStore(
-                    builder_->CreateAdd(dstI, llvm::ConstantInt::get(i64Ty, 1)), dstIdxAlloca);
-                builder_->CreateBr(condBB);
-
-                builder_->SetInsertPoint(endBB);
-                return static_cast<llvm::Value*>(
-                    builder_->CreateLoad(arrTy, newAlloca, "slice_val"));
+                auto allocFn = declareBuiltin("lucis_alloc", ptrTy, {usizeTy});
+                auto* rawMem = builder_->CreateCall(allocFn, {totalSz}, "sl.mem");
+                auto* voidTy = llvm::Type::getVoidTy(*context_);
+                auto memcpyFn = declareBuiltin("memcpy", voidTy, {ptrTy, ptrTy, usizeTy});
+                auto* srcBase = builder_->CreateGEP(arrTy, arrAlloca,
+                    {llvm::ConstantInt::get(i64Ty, 0), startIdx}, "sl.src");
+                auto* dstPtr = builder_->CreateBitCast(rawMem, ptrTy, "sl.dst");
+                auto* srcPtr = builder_->CreateBitCast(srcBase, ptrTy, "sl.srcb");
+                builder_->CreateCall(memcpyFn, {dstPtr, srcPtr, totalSz}, "sl.cpy");
+                auto* typedPtr = builder_->CreateBitCast(rawMem,
+                    llvm::PointerType::getUnqual(arrTy), "sl.typed");
+                auto* sliceResult = builder_->CreateLoad(arrTy, typedPtr, "slice_val");
+                auto freeFn = declareBuiltin("lucis_free", voidTy, {ptrTy});
+                builder_->CreateCall(freeFn, {rawMem});
+                return static_cast<llvm::Value*>(sliceResult);
             }
             // ── sum: accumulate all elements (numeric only) ──────────────
             if (methodName == "sum") {
@@ -20072,6 +21106,8 @@ IRGen::visitMethodCallExpr(LucisParser::MethodCallExprContext* ctx) {
                     else if (elemTy->isFloatTy())
                         printVal = builder_->CreateFPExt(elem,
                             llvm::Type::getDoubleTy(*context_), "toD");
+                    else
+                        printVal = builder_->CreateGlobalStringPtr("<?>", "unk");
                     std::vector<llvm::Value*> fmtArgs = {ptr, rem, fmtStr, printVal};
                     auto* w = builder_->CreateCall(snprintfCallee, fmtArgs, "w");
                     auto* newOff = builder_->CreateAdd(off,
@@ -20201,6 +21237,8 @@ IRGen::visitMethodCallExpr(LucisParser::MethodCallExprContext* ctx) {
                     else if (elemTy->isFloatTy())
                         printVal = builder_->CreateFPExt(elem,
                             llvm::Type::getDoubleTy(*context_), "toD");
+                    else
+                        printVal = builder_->CreateGlobalStringPtr("<?>", "unk");
                     std::vector<llvm::Value*> fmtArgs = {cur, rem, fmtStr, printVal};
                     auto* w = builder_->CreateCall(snprintfCallee, fmtArgs, "w");
                     auto* newOff = builder_->CreateAdd(off,
@@ -22452,7 +23490,9 @@ llvm::StructType* IRGen::ensureGenericStructType(const std::string& mangledName,
 
     std::vector<llvm::Type*> fieldTypes;
     for (auto& field : instanceTI->fields) {
-        auto* llTy = field.typeInfo->toLLVMType(*context_, module_->getDataLayout());
+        auto* llTy = buildFieldLLVMType(field.typeInfo,
+                                        field.arrayDims,
+                                        field.arraySizes);
         fieldTypes.push_back(llTy);
     }
     structType->setBody(fieldTypes);
@@ -22506,8 +23546,30 @@ const TypeInfo* IRGen::instantiateGenericStruct(
     for (auto* field : tmpl.decl->structField()) {
         auto* fieldTI = resolveTypeInfoWithSubst(field->typeSpec(), subst);
         if (!fieldTI) fieldTI = typeRegistry_.lookup("int32");
-        fieldTypes.push_back(fieldTI->toLLVMType(*context_, module_->getDataLayout()));
-        ti.fields.push_back({ field->IDENTIFIER()->getText(), fieldTI });
+        // Extract array dims/sizes from the typeSpec
+        unsigned fieldDims = 0;
+        std::vector<unsigned> fieldSizes;
+        {
+            auto* spec = field->typeSpec();
+            while (spec && spec->LBRACKET()) {
+                fieldDims++;
+                if (spec->INT_LIT())
+                    fieldSizes.push_back(static_cast<unsigned>(
+                        std::stoul(spec->INT_LIT()->getText())));
+                spec = spec->typeSpec(0);
+            }
+        }
+        llvm::Type* fieldLLTy = fieldTI->toLLVMType(*context_, module_->getDataLayout());
+        if (fieldDims > 0 && !fieldSizes.empty()) {
+            for (auto it = fieldSizes.rbegin(); it != fieldSizes.rend(); ++it)
+                fieldLLTy = llvm::ArrayType::get(fieldLLTy, *it);
+        } else if (fieldDims > 0 && fieldSizes.empty()) {
+            auto* ptrTy = llvm::PointerType::getUnqual(*context_);
+            auto* i64Ty = llvm::Type::getInt64Ty(*context_);
+            fieldLLTy = llvm::StructType::get(*context_, {ptrTy, i64Ty});
+        }
+        fieldTypes.push_back(fieldLLTy);
+        ti.fields.push_back({ field->IDENTIFIER()->getText(), fieldTI, fieldDims, fieldSizes });
     }
     structLLTy->setBody(fieldTypes);
 

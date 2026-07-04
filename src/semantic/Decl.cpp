@@ -11,8 +11,6 @@ namespace semantic {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-static constexpr unsigned kOpaqueUnsizedArrayPayloadBytes = 4096;
-
 static void cloneFields(std::vector<FieldInfo>& dst,
                         const std::vector<FieldInfo>& src) {
     dst.reserve(src.size());
@@ -190,9 +188,10 @@ llvm::Type* Decl::toLLVMType(llvm::LLVMContext& ctx,
                 llvm::Type* ft = baseTy;
                 if (f.arrayDims > 0) {
                     if (f.arraySizes.empty()) {
-                        ft = llvm::ArrayType::get(
-                            llvm::Type::getInt8Ty(ctx),
-                            kOpaqueUnsizedArrayPayloadBytes);
+                        ft = llvm::StructType::get(ctx, {
+                            llvm::PointerType::getUnqual(ctx),
+                            dl.getIntPtrType(ctx)
+                        });
                     } else {
                         for (auto it = f.arraySizes.rbegin();
                              it != f.arraySizes.rend(); ++it)

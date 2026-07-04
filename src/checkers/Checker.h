@@ -69,6 +69,7 @@ private:
 
         const TypeInfo* type;
         unsigned arrayDims = 0;
+        std::vector<unsigned> arraySizes;
         bool initialized = true;  // false when declared without initializer
         bool used = false;         // set to true when the variable is read
         antlr4::Token* declToken = nullptr; // for warning location
@@ -92,6 +93,9 @@ private:
 
     // Top-level const variables, persisted across function-scope clears
     std::unordered_map<std::string, VarInfo> globalVars_;
+
+    // Compile-time known integer values (for consts and locals initialized with literals)
+    std::unordered_map<std::string, int64_t> compileTimeValues_;
 
     // Labels declared in the current function (for asm goto validation)
     std::unordered_set<std::string> currentFunctionLabels_;
@@ -200,6 +204,8 @@ private:
                                  LucisParser::ExpressionContext* expr,
                                  antlr4::ParserRuleContext* ctx);
     unsigned resolveExprArrayDims(LucisParser::ExpressionContext* expr);
+    unsigned resolveArrayLitDims(LucisParser::ArrayLitExprContext* arrLit);
+    std::vector<unsigned> extractArraySizesFromSpec(LucisParser::TypeSpecContext* spec);
 
     // ── Top-level checks ─────────────────────────────────────────────
     void checkUseDecls(LucisParser::ProgramContext* tree);

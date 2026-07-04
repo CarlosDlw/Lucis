@@ -360,6 +360,9 @@ private:
     // C string constants: name → string value
     std::unordered_map<std::string, std::string> cStringConstants_;
 
+    // Compile-time known integer values (for consts and locals initialized with literals)
+    std::unordered_map<std::string, int64_t> compileTimeValues_;
+
     // C struct literal macros: name → CStructMacro pointer (owned by CBindings)
     std::unordered_map<std::string, const CStructMacro*> cStructMacros_;
 
@@ -554,6 +557,9 @@ private:
     void                emitScopeCallback(LucisParser::ScopeCallbackContext* ctx);
     void                emitDivByZeroGuard(llvm::Value* divisor,
                                            antlr4::Token* opToken);
+    void                emitBoundsCheck(llvm::Value* index,
+                                        llvm::Value* length,
+                                        const std::string& name);
     bool                requireArgs(const std::string& funcName,
                                     const std::vector<llvm::Value*>& args,
                                     size_t expected);

@@ -1447,7 +1447,7 @@ bool Checker::check(LucisParser::ProgramContext* tree) {
             auto decls = cd->constDeclarator();
             for (auto* d : decls) {
                 auto name = d->IDENTIFIER()->getText();
-                VarInfo vi{typeRegistry_.lookup("int32"), 0, true, false, nullptr};
+VarInfo vi{typeRegistry_.lookup("int32"), 0, {}, true, false, nullptr};
                 vi.isConst = true;
                 vi.scopeDepth = 0;
                 locals_[name] = vi;
@@ -1540,6 +1540,30 @@ const TypeInfo* Checker::resolveTypeSpec(LucisParser::TypeSpecContext* ctx,
             if (size <= 0) {
                 error(cur, "array size must be a positive integer, got " +
                       cur->INT_LIT()->getText());
+                return nullptr;
+            }
+        } else if (cur->IDENTIFIER()) {
+            // Fixed-size array [IDENTIFIER]T — must be a const with compile-time value
+            auto identName = cur->IDENTIFIER()->getText();
+            
+            // Check if it's a const variable with known value
+            auto lit = locals_.find(identName);
+            if (lit != locals_.end() && lit->second.isConst) {
+                auto cit = compileTimeValues_.find(identName);
+                if (cit != compileTimeValues_.end()) {
+                    int64_t size = cit->second;
+                    if (size <= 0) {
+                        error(cur, "array size must be a positive integer, got '" +
+                              identName + "' = " + std::to_string(size));
+                        return nullptr;
+                    }
+                } else {
+                    error(cur, "const '" + identName + "' must have a literal initializer to be used as array size");
+                    return nullptr;
+                }
+            } else {
+                error(cur, "array dimension must be a compile-time constant (literal or const); '" +
+                      identName + "' is not a const");
                 return nullptr;
             }
         }
@@ -2000,9 +2024,15 @@ bool Checker::isAssignable(const TypeInfo* lhs, const TypeInfo* rhs) {
     if (lhs == rhs) return true;
     if (lhs->name == rhs->name) return true;
 
-    // Integer ↔ integer (same signedness required, any width allowed)
-    if (lhs->kind == TypeKind::Integer && rhs->kind == TypeKind::Integer)
-        return lhs->isSigned == rhs->isSigned;
+    // Integer ↔ integer (same signedness required)
+    if (lhs->kind == TypeKind::Integer && rhs->kind == TypeKind::Integer) {
+        if (lhs->isSigned == rhs->isSigned) return true;
+        unsigned lhsBW = lhs->bitWidth == 0 ? 64 : lhs->bitWidth;
+        unsigned rhsBW = rhs->bitWidth == 0 ? 64 : rhs->bitWidth;
+        // Unsigned → wider signed: safe (no sign loss)
+        if (!lhs->isSigned && rhs->isSigned && lhsBW <= rhsBW) return true;
+        if (!rhs->isSigned && lhs->isSigned && rhsBW <= lhsBW) return true;
+    }
 
     // Enum ↔ integer (C enums are integers)
     if (lhs->kind == TypeKind::Enum && rhs->kind == TypeKind::Integer)
@@ -2202,7 +2232,7 @@ const TypeInfo* Checker::resolveLambdaExpr(LucisParser::LambdaExprContext* lexpr
             paramTypes.push_back(ti);
             paramNames.insert(pname);
             // Temporarily register as local for body resolution
-            locals_[pname] = {ti, dims, true, true, nullptr};
+            locals_[pname] = {ti, dims, {}, true, true, nullptr};
         }
     }
 
@@ -2284,7 +2314,7 @@ const TypeInfo* Checker::resolveLambdaBlockExpr(LucisParser::LambdaBlockExprCont
             auto pname = p->IDENTIFIER()->getText();
             paramTypes.push_back(ti);
             paramNames.insert(pname);
-            locals_[pname] = {ti, dims, true, true, nullptr};
+            locals_[pname] = {ti, dims, {}, true, true, nullptr};
         }
     }
 
@@ -2307,7 +2337,7 @@ const TypeInfo* Checker::resolveLambdaBlockExpr(LucisParser::LambdaBlockExprCont
                 auto* ti = typeSpec ? resolveTypeSpec(typeSpec, dims) : nullptr;
                 if (!ti) continue;
                 auto vname = d->IDENTIFIER()->getText();
-                locals_[vname] = {ti, dims, true, true, nullptr};
+                locals_[vname] = {ti, dims, {}, true, true, nullptr};
                 if (auto* initExpr = d->expression()) {
                     resolveExprType(initExpr);
                 }
@@ -2889,7 +2919,7 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
                         }
                         auto* payloadType = matchedVariant->payloadFields[0].typeInfo;
                         armBindName = bindName;
-                        locals_[bindName] = {payloadType, 0, true, true, nullptr};
+                        locals_[bindName] = {payloadType, 0, {}, true, true, nullptr};
                     }
                 }
             }
@@ -3098,7 +3128,7 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
         VarInfo savedInfo;
         if (hadSaved) savedInfo = saved->second;
 
-        locals_["it"] = {errPayloadTI, 0, true, true, nullptr};
+        locals_["it"] = {errPayloadTI, 0, {}, true, true, nullptr};
 
         ++unwrapCatchItDepth_;
         auto* retCtx = currentReturnType_ ? currentReturnType_ : typeRegistry_.lookup("void");
@@ -3313,6 +3343,8 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
                              "' does not allow mixed numeric kinds ('" +
                              lhs->name + "' and '" + rhs->name +
                              "'); cast explicitly");
+        } else if (lhs && rhs && lhs->kind == TypeKind::Integer && rhs->kind == TypeKind::Integer) {
+            // Integer ↔ integer comparison always allowed (sign/width mismatches handled in IR)
         } else if (lhs && rhs &&
                    !(isAssignable(lhs, rhs) || isAssignable(rhs, lhs))) {
             error(expr, "operator '" + opText +
@@ -3707,7 +3739,7 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
         while (spec && spec->LBRACKET()) {
             if (!spec->INT_LIT()) {
                 error(expr, "sizeof: unsized array type is not allowed; use fixed-size '[N]T'");
-                return typeRegistry_.lookup("int64");
+                return typeRegistry_.lookup("usize");
             }
             if (spec->typeSpec().empty()) break;
             spec = spec->typeSpec(0);
@@ -3716,7 +3748,7 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
         unsigned dims = 0;
         auto* ti = resolveTypeSpec(sz->typeSpec(), dims);
         if (!ti) error(expr, "sizeof: unknown type");
-        return typeRegistry_.lookup("int64");
+        return typeRegistry_.lookup("usize");
     }
 
     // ── Typeof: typeof(expr) ────────────────────────────────────────
@@ -4245,7 +4277,7 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
             if (auto* ident = dynamic_cast<LucisParser::IdentExprContext*>(fa->expression())) {
                 auto it = locals_.find(ident->IDENTIFIER()->getText());
                 if (it != locals_.end() && it->second.arrayDims > 0)
-                    return typeRegistry_.lookup("int64");
+                    return typeRegistry_.lookup("usize");
             }
             // .len/.length on string → usize
             if (baseType && baseType->kind == TypeKind::String)
@@ -5662,7 +5694,7 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
         if (hadPrev) prevInfo = prev->second;
 
         if (varType)
-            locals_[varName] = { varType, varDims, true, true, nullptr };
+            locals_[varName] = { varType, varDims, {}, true, true, nullptr };
 
         // Resolve iterable expression
         resolveExprType(lc->expression(1));
@@ -6200,7 +6232,7 @@ void Checker::checkUnionDecl(LucisParser::UnionDeclContext* decl) {
                              "' in union '" + name + "'");
             continue;
         }
-        ti.fields.push_back({ fieldName, fieldTI });
+        ti.fields.push_back({ fieldName, fieldTI, fieldDims });
     }
 
     syncToSemanticDB_Union(ti, currentModulePath_, decl);
@@ -6436,7 +6468,7 @@ void Checker::checkExtendMethodBodies(LucisParser::ExtendDeclContext* decl) {
         // Register 'self' for instance methods as *StructName
         if (isInstance) {
             auto* ptrType = getPointerType(structTI);
-            locals_["self"] = {ptrType, 0, true, true, nullptr};
+            locals_["self"] = {ptrType, 0, {}, true, true, nullptr};
         }
 
         // Register parameters
@@ -6460,9 +6492,9 @@ void Checker::checkExtendMethodBodies(LucisParser::ExtendDeclContext* decl) {
             }
 
             if (param->SPREAD())
-                locals_[paramName] = {pType, 1, true, true, nullptr};
+                locals_[paramName] = {pType, 1, {}, true, true, nullptr};
             else
-                locals_[paramName] = {pType, pDims, true, true, nullptr};
+locals_[paramName] = {pType, pDims, {}, true, true, nullptr};
         }
 
         auto* prevRet = currentReturnType_;
@@ -6619,7 +6651,7 @@ void Checker::checkFunction(LucisParser::FunctionDeclContext* func) {
                 continue;
             }
 
-            locals_[paramName] = {pType, pDims, true, true, nullptr};
+            locals_[paramName] = {pType, pDims, {}, true, true, nullptr};
         }
     }
 
@@ -6953,7 +6985,7 @@ void Checker::checkStmt(LucisParser::StatementContext* stmt,
             VarInfo prevInfo;
             if (hadPrev) prevInfo = prev->second;
             if (catchType)
-                locals_[catchVarName] = {catchType, catchDims, true, true, nullptr};
+                locals_[catchVarName] = {catchType, catchDims, {}, true, true, nullptr};
             checkBlock(cc->block(), retType);
             if (hadPrev)
                 locals_[catchVarName] = prevInfo;
@@ -7178,7 +7210,7 @@ void Checker::checkIfStmt(LucisParser::IfStmtContext* stmt,
     // Check if-body
     auto [ifBindName, ifBindTI] = extractIsBinding(stmt->expression());
     if (!ifBindName.empty() && ifBindTI)
-        locals_[ifBindName] = {ifBindTI, 0, true, true, nullptr};
+        locals_[ifBindName] = {ifBindTI, 0, {}, true, true, nullptr};
     branchInits.emplace_back();
     checkIfBodyTracked(stmt->ifBody(), branchInits.back());
     if (!ifBindName.empty()) locals_.erase(ifBindName);
@@ -7191,7 +7223,7 @@ void Checker::checkIfStmt(LucisParser::IfStmtContext* stmt,
                           "', expected 'bool' or numeric type");
         auto [eifBindName, eifBindTI] = extractIsBinding(elseIf->expression());
         if (!eifBindName.empty() && eifBindTI)
-            locals_[eifBindName] = {eifBindTI, 0, true, true, nullptr};
+            locals_[eifBindName] = {eifBindTI, 0, {}, true, true, nullptr};
         branchInits.emplace_back();
         checkIfBodyTracked(elseIf->ifBody(), branchInits.back());
         if (!eifBindName.empty()) locals_.erase(eifBindName);
@@ -7239,7 +7271,7 @@ void Checker::checkForInStmt(LucisParser::ForInStmtContext* stmt,
 
     // Register the loop variable
     if (iterType)
-        locals_[iterName] = {iterType, dims, true, true, nullptr};
+        locals_[iterName] = {iterType, dims, {}, true, true, nullptr};
 
     loopDepth_++;
     checkBlock(stmt->block(), retType);
@@ -7268,7 +7300,7 @@ void Checker::checkForClassicStmt(LucisParser::ForClassicStmtContext* stmt,
 
     // Register the loop variable
     if (varType)
-        locals_[varName] = {varType, dims, true, true, nullptr};
+        locals_[varName] = {varType, dims, {}, true, true, nullptr};
 
     // Check condition expression
     auto* condType = resolveExprType(exprs[1]);
@@ -7410,7 +7442,7 @@ void Checker::checkConstDeclStmt(LucisParser::ConstDeclStmtContext* stmt) {
         // Function-scoped const: register if not already in locals_
         bool isFunctionScoped = (it == locals_.end());
         if (isFunctionScoped) {
-            VarInfo vi{typeRegistry_.lookup("int32"), 0, true, false, nullptr};
+            VarInfo vi{typeRegistry_.lookup("int32"), 0, {}, true, false, nullptr};
             vi.isConst = true;
             vi.scopeDepth = scopeDepth_;
             vi.declToken = d->IDENTIFIER()->getSymbol();
@@ -7471,6 +7503,13 @@ void Checker::checkConstDeclStmt(LucisParser::ConstDeclStmtContext* stmt) {
             if (!isFunctionScoped)
                 globalVars_[name] = it->second;
         }
+
+        // Store compile-time integer literal value for use in array dimensions
+        if (d->expression()) {
+            if (auto* intLit = dynamic_cast<LucisParser::IntLitExprContext*>(d->expression())) {
+                compileTimeValues_[name] = std::stoll(intLit->getText());
+            }
+        }
     }
 }
 
@@ -7500,7 +7539,7 @@ void Checker::checkVarDeclStmt(LucisParser::VarDeclStmtContext* stmt) {
                 error(stmt, "variable '" + varName + "' already declared in this scope");
                 continue;
             }
-            VarInfo vi{initType->tupleElements[i], 0, true, false, nullptr};
+            VarInfo vi{initType->tupleElements[i], 0, {}, true, false, nullptr};
             vi.declToken = ids[i]->getSymbol();
             vi.scopeDepth = scopeDepth_;
             updateOwnershipOnInitialization(vi, stmt->expression());
@@ -7571,11 +7610,7 @@ void Checker::checkVarDeclStmt(LucisParser::VarDeclStmtContext* stmt) {
                     return;
                 }
                 typeInfo = initType;
-                if (auto* arrLit = dynamic_cast<LucisParser::ArrayLitExprContext*>(d->expression())) {
-                    if (!arrLit->expression().empty()) arrayDims = 1;
-                } else {
-                    arrayDims = resolveExprArrayDims(d->expression());
-                }
+                arrayDims = resolveExprArrayDims(d->expression());
                 break;
             }
         }
@@ -7602,7 +7637,8 @@ void Checker::checkVarDeclStmt(LucisParser::VarDeclStmtContext* stmt) {
                     error(d, "type 'auto' requires an initializer for '" + varName + "'");
                     continue;
                 }
-                VarInfo vi{typeInfo, arrayDims, true, false, nullptr};
+std::vector<unsigned> arraySizes = extractArraySizesFromSpec(stmt->typeSpec());
+            VarInfo vi{typeInfo, arrayDims, arraySizes, true, false, nullptr};
                 vi.declToken = d->IDENTIFIER()->getSymbol();
                 vi.scopeDepth = scopeDepth_;
                 updateOwnershipOnInitialization(vi, lastInitDecl->expression());
@@ -7619,11 +7655,16 @@ void Checker::checkVarDeclStmt(LucisParser::VarDeclStmtContext* stmt) {
                          "' has type 'void'");
                 continue;
             }
-            VarInfo vi{initType, arrayDims, true, false, nullptr};
+            std::vector<unsigned> arraySizes = extractArraySizesFromSpec(stmt->typeSpec());
+            VarInfo vi{initType, arrayDims, arraySizes, true, false, nullptr};
             vi.declToken = d->IDENTIFIER()->getSymbol();
             vi.scopeDepth = scopeDepth_;
             updateOwnershipOnInitialization(vi, d->expression());
             locals_[varName] = vi;
+            // Store compile-time integer literal value for use in array dimensions
+            if (auto* intLit = dynamic_cast<LucisParser::IntLitExprContext*>(d->expression())) {
+                compileTimeValues_[varName] = std::stoll(intLit->getText());
+            }
             markExprAsMoved(d->expression(), stmt);
             trackVarBufferFromExpr(varName, d->expression(), initType);
             trackVarNumericRangeFromExpr(varName, d->expression(), initType);
@@ -7637,7 +7678,8 @@ void Checker::checkVarDeclStmt(LucisParser::VarDeclStmtContext* stmt) {
                 (typeInfo->kind == TypeKind::Extended ||
                  typeInfo->kind == TypeKind::Struct ||
                  arrayDims > 0);
-            VarInfo vi{typeInfo, arrayDims, autoInit, false, nullptr};
+            std::vector<unsigned> arraySizes = extractArraySizesFromSpec(stmt->typeSpec());
+            VarInfo vi{typeInfo, arrayDims, arraySizes, autoInit, false, nullptr};
             vi.declToken = d->IDENTIFIER()->getSymbol();
             vi.scopeDepth = scopeDepth_;
             vi.ownership = autoInit && isDropTrackedType(typeInfo, arrayDims)
@@ -7703,11 +7745,16 @@ void Checker::checkVarDeclStmt(LucisParser::VarDeclStmtContext* stmt) {
 
         checkNegativeToUnsigned(typeInfo, d->expression(), d);
 
-        VarInfo vi{typeInfo, arrayDims, true, false, nullptr};
+std::vector<unsigned> arraySizes = extractArraySizesFromSpec(stmt->typeSpec());
+            VarInfo vi{typeInfo, arrayDims, arraySizes, true, false, nullptr};
         vi.declToken = d->IDENTIFIER()->getSymbol();
         vi.scopeDepth = scopeDepth_;
         updateOwnershipOnInitialization(vi, d->expression());
         locals_[varName] = vi;
+        // Store compile-time integer literal value for use in array dimensions
+        if (auto* intLit = dynamic_cast<LucisParser::IntLitExprContext*>(d->expression())) {
+            compileTimeValues_[varName] = std::stoll(intLit->getText());
+        }
         markExprAsMoved(d->expression(), stmt);
         trackVarBufferFromExpr(varName, d->expression(), typeInfo);
         trackVarNumericRangeFromExpr(varName, d->expression(), typeInfo);
@@ -8864,6 +8911,37 @@ void Checker::checkReturnStmt(LucisParser::ReturnStmtContext* stmt,
     markExprAsMoved(expr, stmt);
 }
 
+unsigned Checker::resolveArrayLitDims(LucisParser::ArrayLitExprContext* arrLit) {
+    if (!arrLit || arrLit->expression().empty()) return 1;
+    unsigned maxInner = 0;
+    for (auto* elem : arrLit->expression()) {
+        if (auto* inner = dynamic_cast<LucisParser::ArrayLitExprContext*>(elem)) {
+            unsigned innerDims = resolveArrayLitDims(inner);
+            if (innerDims > maxInner) maxInner = innerDims;
+        }
+    }
+    if (maxInner > 0)
+        return maxInner + 1;
+    return 1;
+}
+
+std::vector<unsigned> Checker::extractArraySizesFromSpec(LucisParser::TypeSpecContext* spec) {
+    std::vector<unsigned> sizes;
+    while (spec && spec->LBRACKET()) {
+        if (spec->INT_LIT()) {
+            sizes.push_back(static_cast<unsigned>(std::stoul(spec->INT_LIT()->getText())));
+        } else if (spec->IDENTIFIER()) {
+            auto identName = spec->IDENTIFIER()->getText();
+            auto it = compileTimeValues_.find(identName);
+            if (it != compileTimeValues_.end()) {
+                sizes.push_back(static_cast<unsigned>(it->second));
+            }
+        }
+        spec = spec->typeSpec().empty() ? nullptr : spec->typeSpec(0);
+    }
+    return sizes;
+}
+
 unsigned Checker::resolveExprArrayDims(LucisParser::ExpressionContext* expr) {
     if (!expr) return 0;
     if (auto* id = dynamic_cast<LucisParser::IdentExprContext*>(expr)) {
@@ -8889,6 +8967,8 @@ unsigned Checker::resolveExprArrayDims(LucisParser::ExpressionContext* expr) {
     }
     if (auto* paren = dynamic_cast<LucisParser::ParenExprContext*>(expr))
         return resolveExprArrayDims(paren->expression());
+    if (auto* arrLit = dynamic_cast<LucisParser::ArrayLitExprContext*>(expr))
+        return resolveArrayLitDims(arrLit);
     if (auto* deref = dynamic_cast<LucisParser::DerefExprContext*>(expr))
         return resolveExprArrayDims(deref->expression());
     if (auto* cu = dynamic_cast<LucisParser::CatchUnwrapExprContext*>(expr)) {
@@ -8910,6 +8990,17 @@ unsigned Checker::resolveExprArrayDims(LucisParser::ExpressionContext* expr) {
         if (!pattern.okVariant || pattern.okVariant->payloadFields.empty())
             return 0;
         return pattern.okVariant->payloadFields[0].arrayDims;
+    }
+    if (auto* fa = dynamic_cast<LucisParser::FieldAccessExprContext*>(expr)) {
+        auto* baseType = resolveExprType(fa->expression());
+        if (baseType && (baseType->kind == TypeKind::Struct || baseType->kind == TypeKind::Union)) {
+            auto fieldName = fa->IDENTIFIER()->getText();
+            for (auto& field : baseType->fields) {
+                if (field.name == fieldName)
+                    return field.arrayDims;
+            }
+        }
+        return 0;
     }
     if (dynamic_cast<LucisParser::ArrayLitExprContext*>(expr))
         return 1;
@@ -9304,7 +9395,7 @@ const TypeInfo* Checker::instantiateGenericStruct(
             instantiatingGenerics_.erase(mangledName);
             continue;
         }
-        ti.fields.push_back({ fieldName, fieldTI });
+        ti.fields.push_back({ fieldName, fieldTI, fieldDims });
     }
 
     // Register concrete type (updates the skeleton registered above)
@@ -9421,7 +9512,7 @@ const TypeInfo* Checker::instantiateGenericUnion(
             instantiatingGenerics_.erase(mangledName);
             continue;
         }
-        ti.fields.push_back({ fieldName, fieldTI });
+        ti.fields.push_back({ fieldName, fieldTI, fieldDims });
     }
 
     typeRegistry_.registerType(std::move(ti));
@@ -9658,7 +9749,7 @@ const TypeInfo* Checker::instantiateGenericFunc(
             unsigned pDims = 0;
             auto* pType = resolveTypeSpecWithSubst(param->typeSpec(), subst, pDims);
             if (!pType) continue;
-            locals_[paramName] = { pType, pDims, true, true, nullptr };
+            locals_[paramName] = { pType, pDims, {}, true, true, nullptr };
         }
     }
 
