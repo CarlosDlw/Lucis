@@ -15970,6 +15970,58 @@ std::any IRGen::visitEqExpr(LucisParser::EqExprContext* ctx) {
                 result = builder_->CreateNot(result, "arr_neq");
             return static_cast<llvm::Value*>(result);
         }
+        // Arrays of different sizes: never equal
+        if (ctx->op->getType() == LucisLexer::EQ)
+            return static_cast<llvm::Value*>(llvm::ConstantInt::getFalse(*context_));
+        else
+            return static_cast<llvm::Value*>(llvm::ConstantInt::getTrue(*context_));
+    }
+
+    // Slice comparison: compare lengths, then data via memcmp
+    if (lhs->getType()->isStructTy() && rhs->getType()->isStructTy()) {
+        auto* lhsST = llvm::dyn_cast<llvm::StructType>(lhs->getType());
+        auto* rhsST = llvm::dyn_cast<llvm::StructType>(rhs->getType());
+        if (lhsST && rhsST && lhsST->getNumElements() == 2 && rhsST->getNumElements() == 2 &&
+            lhsST->getElementType(0)->isPointerTy() && rhsST->getElementType(0)->isPointerTy() &&
+            lhsST->getElementType(1)->isIntegerTy() && rhsST->getElementType(1)->isIntegerTy() &&
+            !(lhsTI && lhsTI->kind == TypeKind::String)) {
+            auto* i32Ty = llvm::Type::getInt32Ty(*context_);
+            auto* i64Ty = llvm::Type::getInt64Ty(*context_);
+            auto* ptrTy = llvm::PointerType::getUnqual(*context_);
+            auto* boolTy = llvm::Type::getInt1Ty(*context_);
+
+            auto* lPtr = builder_->CreateExtractValue(lhs, 0, "sl_ptr");
+            auto* lLen = builder_->CreateExtractValue(lhs, 1, "sl_len");
+            auto* rPtr = builder_->CreateExtractValue(rhs, 0, "sr_ptr");
+            auto* rLen = builder_->CreateExtractValue(rhs, 1, "sr_len");
+
+            // Compare lengths
+            auto* lenEq = builder_->CreateICmpEQ(lLen, rLen, "sl_len_eq");
+
+            // Compute element size from TypeInfo
+            uint64_t elemSizeBytes = 1;
+            if (lhsTI) {
+                auto* elemLLTy = lhsTI->toLLVMType(*context_, module_->getDataLayout());
+                elemSizeBytes = module_->getDataLayout().getTypeAllocSize(elemLLTy);
+            }
+            auto* elemSizeVal = llvm::ConstantInt::get(i64Ty, elemSizeBytes);
+
+            // byteLen = lLen * elemSize
+            auto* byteLen = builder_->CreateMul(lLen, elemSizeVal, "sl_bytes");
+
+            // memcmp(lPtr, rPtr, byteLen) == 0
+            llvm::SmallVector<llvm::Type*, 3> memcmpArgs = {ptrTy, ptrTy, i64Ty};
+            auto memcmpFn = declareBuiltin("memcmp", i32Ty, memcmpArgs);
+            auto* cmpResult = builder_->CreateCall(memcmpFn, {lPtr, rPtr, byteLen}, "sl_memcmp");
+            auto* zero = llvm::ConstantInt::get(i32Ty, 0);
+            auto* dataEq = builder_->CreateICmpEQ(cmpResult, zero, "sl_data_eq");
+
+            // Both conditions must be true
+            auto* result = builder_->CreateAnd(lenEq, dataEq, "slice_eq");
+            if (ctx->op->getType() == LucisLexer::NEQ)
+                result = builder_->CreateNot(result, "slice_neq");
+            return static_cast<llvm::Value*>(result);
+        }
     }
 
     // Generic struct equality fallback: compare first integer field (enum-like discriminant)
