@@ -14,10 +14,24 @@
 #include "_runtime/console.h"
  
 /**
- * Standard file descriptors.
+ * STDIN is file descriptor 0
+ * 
+ * @since 0.0.1 beta
 */
 const STDIN: int32 = 0;
+
+/**
+ * STDOUT is file descriptor 1
+ * 
+ * @since 0.0.1 beta
+*/
 const STDOUT: int32 = 1;
+
+/**
+ * STDERR is file descriptor 2
+ * 
+ * @since 0.0.1 beta
+*/
 const STDERR: int32 = 2;
 
 /**
