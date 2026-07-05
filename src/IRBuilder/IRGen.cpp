@@ -8141,12 +8141,28 @@ std::any IRGen::visitIdentExpr(LucisParser::IdentExprContext* ctx) {
     // ── User-imported constant from another module ─────────────────────
     if (userImports_.count(name)) {
         std::string globalName = "const_" + name;
-        // Declare the global (creates a forward declaration if not yet defined;
-        // linker resolves it when the defining module is linked in).
         auto* gv = module_->getGlobalVariable(globalName);
-        if (!gv)
-            gv = module_->getOrInsertGlobal(globalName,
-                                            llvm::Type::getInt32Ty(*context_));
+        if (!gv) {
+            // Determine LLVM type from the defining module's declaration
+            llvm::Type* llvmType = llvm::Type::getInt32Ty(*context_);
+            auto modPath = userImports_[name];
+            if (moduleRegistry_) {
+                auto* sym = moduleRegistry_->findSymbol(modPath, name);
+                if (sym && sym->kind == ExportedSymbol::Constant) {
+                    if (auto* cd = dynamic_cast<LucisParser::ConstDeclaratorContext*>(sym->decl)) {
+                        const TypeInfo* typeInfo = nullptr;
+                        if (cd->typeSpec()) {
+                            typeInfo = resolveTypeInfo(cd->typeSpec());
+                        } else if (cd->expression()) {
+                            typeInfo = resolveExprTypeInfo(cd->expression());
+                        }
+                        if (typeInfo)
+                            llvmType = typeInfo->toLLVMType(*context_, module_->getDataLayout());
+                    }
+                }
+            }
+            gv = module_->getOrInsertGlobal(globalName, llvmType);
+        }
         if (gv) {
             auto* loadedTy = gv->getValueType();
             return static_cast<llvm::Value*>(

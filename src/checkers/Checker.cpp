@@ -2606,11 +2606,16 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
             if (moduleRegistry_) {
                 auto* sym = moduleRegistry_->findSymbol(modPath, name);
                 if (sym && sym->kind == ExportedSymbol::Constant) {
-                    // If const has explicit type spec, resolve it; otherwise default to int32
+                    // If const has explicit type spec, resolve it; otherwise infer from expression
                     if (auto* cd = dynamic_cast<LucisParser::ConstDeclaratorContext*>(sym->decl)) {
                         if (cd->typeSpec()) {
                             unsigned dims = 0;
                             auto* ti = resolveTypeSpec(cd->typeSpec(), dims);
+                            if (ti) return ti;
+                        }
+                        // Infer type from initializer expression
+                        if (cd->expression()) {
+                            auto* ti = resolveExprType(cd->expression());
                             if (ti) return ti;
                         }
                     }
