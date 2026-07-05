@@ -3067,8 +3067,24 @@ void CompletionProvider::addLocalDecls(std::vector<CompletionItem> &items,
       item.detail = formatFuncSignature(func);
 
       // Build snippet with parameter placeholders
-      if (auto *params = func->paramList();
-          params && !params->param().empty()) {
+      if (func->typeParamList()) {
+        // Generic function: snippet with <${1:T}> and param placeholders
+        std::string snippet = name + "<${1:T}>(";
+        if (auto *params = func->paramList();
+            params && !params->param().empty()) {
+          auto paramList = params->param();
+          for (size_t i = 0; i < paramList.size(); i++) {
+            if (i > 0)
+              snippet += ", ";
+            snippet += "${" + std::to_string(i + 2) + ":" +
+                       safeText(paramList[i]->IDENTIFIER()) + "}";
+          }
+        }
+        snippet += ")";
+        item.insertText = snippet;
+        item.insertTextFormat = InsertTextFormat::Snippet;
+      } else if (auto *params = func->paramList();
+                 params && !params->param().empty()) {
         std::string snippet = name + "(";
         auto paramList = params->param();
         for (size_t i = 0; i < paramList.size(); i++) {
@@ -5140,6 +5156,20 @@ void CompletionProvider::addTypeNames(std::vector<CompletionItem> &items,
     items.push_back(std::move(ci));
   }
 
+  // Type constraint keywords (valid inside <T: ...>)
+  static const char *constraints[] = {
+      "Numeric", "Integer", "Float", "Signed", "Unsigned", "Bool", "String",
+  };
+  for (auto *c : constraints) {
+    if (!matchesPrefix(c, prefix))
+      continue;
+    CompletionItem ci;
+    ci.label = c;
+    ci.kind = CompletionKind::Keyword;
+    ci.detail = "type constraint";
+    items.push_back(std::move(ci));
+  }
+
   // Types registered by intrinsics (e.g. va_list) or other dynamic sources
   for (auto &typeName : typeRegistry_.allTypes()) {
     if (addedPrimitives.count(typeName))
@@ -6272,7 +6302,26 @@ CompletionProvider::formatFuncSignature(LucisParser::FunctionDeclContext *func) 
   std::string sig;
   if (func->COMPTIME())
     sig = "comptime ";
-  sig += "fn " + safeIdAt(func, 0) + "(";
+  sig += "fn " + safeIdAt(func, 0);
+
+  // Add type parameters if generic
+  if (auto *tpl = func->typeParamList()) {
+    sig += "<";
+    bool first = true;
+    for (auto *tp : tpl->typeParam()) {
+      if (!first)
+        sig += ", ";
+      first = false;
+      auto ids = tp->IDENTIFIER();
+      if (!ids.empty())
+        sig += ids[0]->getText();
+      if (tp->COLON() && ids.size() >= 2)
+        sig += ": " + ids[1]->getText();
+    }
+    sig += ">";
+  }
+
+  sig += "(";
   if (auto *params = func->paramList()) {
     bool first = true;
     for (auto *p : params->param()) {

@@ -3491,7 +3491,7 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
     if (auto* isE = dynamic_cast<LucisParser::IsExprContext*>(expr)) {
         auto* lhsType = resolveExprType(isE->expression());
         unsigned dims = 0;
-        auto* rhsType = resolveTypeSpec(isE->typeSpec(), dims);
+        auto* rhsType = resolveTypeSpecInContext(isE->typeSpec(), dims);
 
         // Variant identity check: value is EnumType::Variant
         if (isE->SCOPE()) {
@@ -3675,7 +3675,7 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
     if (auto* cast = dynamic_cast<LucisParser::CastExprContext*>(expr)) {
         auto* srcType = resolveExprType(cast->expression());
         unsigned dims = 0;
-        auto* dstType = resolveTypeSpec(cast->typeSpec(), dims);
+        auto* dstType = resolveTypeSpecInContext(cast->typeSpec(), dims);
 
         if (srcType && dstType && srcType != dstType) {
             auto sk = srcType->kind;
@@ -3751,7 +3751,7 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
         }
 
         unsigned dims = 0;
-        auto* ti = resolveTypeSpec(sz->typeSpec(), dims);
+        auto* ti = resolveTypeSpecInContext(sz->typeSpec(), dims);
         if (!ti) error(expr, "sizeof: unknown type");
         return typeRegistry_.lookup("usize");
     }
@@ -9290,12 +9290,46 @@ const TypeInfo* Checker::resolveTypeParamConstraint(const std::string& constrain
         ti.kind = TypeKind::Float;
         return ti;
     }();
+    static const TypeInfo signedConstraint = [] {
+        TypeInfo ti;
+        ti.name = "signed";
+        ti.kind = TypeKind::Integer;
+        ti.isSigned = true;
+        return ti;
+    }();
+    static const TypeInfo unsignedConstraint = [] {
+        TypeInfo ti;
+        ti.name = "unsigned";
+        ti.kind = TypeKind::Integer;
+        ti.isSigned = false;
+        return ti;
+    }();
+    static const TypeInfo boolConstraint = [] {
+        TypeInfo ti;
+        ti.name = "bool";
+        ti.kind = TypeKind::Bool;
+        return ti;
+    }();
+    static const TypeInfo stringConstraint = [] {
+        TypeInfo ti;
+        ti.name = "string";
+        ti.kind = TypeKind::String;
+        return ti;
+    }();
     if (constraintName == "numeric" || constraintName == "Numeric")
         return &numericConstraint;
     if (constraintName == "integer" || constraintName == "Integer")
         return &integerConstraint;
     if (constraintName == "float" || constraintName == "Float")
         return &floatConstraint;
+    if (constraintName == "signed" || constraintName == "Signed")
+        return &signedConstraint;
+    if (constraintName == "unsigned" || constraintName == "Unsigned")
+        return &unsignedConstraint;
+    if (constraintName == "bool" || constraintName == "Bool")
+        return &boolConstraint;
+    if (constraintName == "string" || constraintName == "String")
+        return &stringConstraint;
 
     auto* ti = typeRegistry_.lookup(constraintName);
     if (!ti) {
@@ -9326,6 +9360,30 @@ bool Checker::satisfiesConstraint(const TypeInfo* typeArg,
     } else if (constraint->name == "float") {
         if (typeArg->kind != TypeKind::Float) {
             error(ctx, "type argument for '" + paramName + "' must be a float, got '" +
+                       typeArg->name + "'");
+            return false;
+        }
+    } else if (constraint->name == "signed") {
+        if (typeArg->kind != TypeKind::Integer || !typeArg->isSigned) {
+            error(ctx, "type argument for '" + paramName + "' must be a signed integer, got '" +
+                       typeArg->name + "'");
+            return false;
+        }
+    } else if (constraint->name == "unsigned") {
+        if (typeArg->kind != TypeKind::Integer || typeArg->isSigned) {
+            error(ctx, "type argument for '" + paramName + "' must be an unsigned integer, got '" +
+                       typeArg->name + "'");
+            return false;
+        }
+    } else if (constraint->name == "bool") {
+        if (typeArg->kind != TypeKind::Bool) {
+            error(ctx, "type argument for '" + paramName + "' must be a bool, got '" +
+                       typeArg->name + "'");
+            return false;
+        }
+    } else if (constraint->name == "string") {
+        if (typeArg->kind != TypeKind::String) {
+            error(ctx, "type argument for '" + paramName + "' must be a string, got '" +
                        typeArg->name + "'");
             return false;
         }

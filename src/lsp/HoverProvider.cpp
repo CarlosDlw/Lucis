@@ -585,6 +585,65 @@ std::optional<HoverResult> HoverProvider::hoverIdent(
         }
     }
 
+    // 1.2) Generic type parameter — hover over T in fn foo<T: Constraint>(...)
+    {
+        size_t tokenLine = cursorLine + 1; // to 1-based
+        auto findTypeParam = [&](LucisParser::TypeParamListContext* tpl)
+            -> std::string {
+            if (!tpl) return {};
+            for (auto* tp : tpl->typeParam()) {
+                auto ids = tp->IDENTIFIER();
+                if (ids.empty()) continue;
+                if (ids[0]->getText() == name) {
+                    if (tp->COLON() && ids.size() >= 2)
+                        return ids[1]->getText();
+                    return "any";
+                }
+            }
+            return {};
+        };
+        auto showHover = [&](const std::string& kind,
+                             const std::string& constraint) {
+            std::string detail = kind + " type parameter '" + name + "'";
+            if (!constraint.empty() && constraint != "any")
+                detail += "\n  constraint: " + constraint;
+            return makeResult(token, "```lucis\n" + detail + "\n```");
+        };
+        // Check enclosing function
+        if (func) {
+            auto c = findTypeParam(func->typeParamList());
+            if (!c.empty())
+                return showHover("function", c);
+        }
+        // Check enclosing struct/union/enum in top-level decls
+        for (auto* tld : tree->topLevelDecl()) {
+            if (auto* sd = tld->structDecl()) {
+                auto* es = sd->getStart();
+                auto* ee = sd->getStop();
+                if (es && ee && tokenLine >= es->getLine() && tokenLine <= ee->getLine()) {
+                    auto c = findTypeParam(sd->typeParamList());
+                    if (!c.empty()) return showHover("struct", c);
+                }
+            }
+            if (auto* ud = tld->unionDecl()) {
+                auto* es = ud->getStart();
+                auto* ee = ud->getStop();
+                if (es && ee && tokenLine >= es->getLine() && tokenLine <= ee->getLine()) {
+                    auto c = findTypeParam(ud->typeParamList());
+                    if (!c.empty()) return showHover("union", c);
+                }
+            }
+            if (auto* ed = tld->enumDecl()) {
+                auto* es = ed->getStart();
+                auto* ee = ed->getStop();
+                if (es && ee && tokenLine >= es->getLine() && tokenLine <= ee->getLine()) {
+                    auto c = findTypeParam(ed->typeParamList());
+                    if (!c.empty()) return showHover("enum", c);
+                }
+            }
+        }
+    }
+
     // 1.5) `self` keyword inside extend block method
     if (name == "self") {
         size_t tokenLine = cursorLine + 1; // to 1-based

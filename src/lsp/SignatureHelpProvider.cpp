@@ -242,7 +242,25 @@ SignatureInfo SignatureHelpProvider::buildFromFunction(
     std::string name = safeIdAt(func, 0);
 
     std::ostringstream label;
-    label << "fn " << name << "(";
+    label << "fn " << name;
+
+    // Show type parameters
+    if (auto* tpl = func->typeParamList()) {
+        label << "<";
+        bool first = true;
+        for (auto* tp : tpl->typeParam()) {
+            if (!first) label << ", ";
+            first = false;
+            auto ids = tp->IDENTIFIER();
+            if (!ids.empty())
+                label << ids[0]->getText();
+            if (tp->COLON() && ids.size() >= 2)
+                label << ": " << ids[1]->getText();
+        }
+        label << ">";
+    }
+
+    label << "(";
 
     if (auto* pl = func->paramList()) {
         auto params = pl->param();
