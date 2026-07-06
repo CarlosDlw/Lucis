@@ -23,9 +23,10 @@ static lucis_proc_str_result make_result(const char* s) {
     lucis_proc_str_result res;
     if (s) {
         size_t len = strlen(s);
-        char* out = (char*)lucis_allocString(len);
+        char* out = (char*)lucis_allocString(len + 1);
         if (out) {
             memcpy(out, s, len);
+            out[len] = '\0';
             res.ptr = out;
             res.len = len;
         } else {
@@ -115,13 +116,19 @@ lucis_proc_str_result lucis_execOutput(const char* cmd, size_t cmd_len) {
     pclose(fp);
 
     // Copy into tracked memory
-    char* tracked = (char*)lucis_allocString(len);
+    char* tracked = (char*)lucis_allocString(len + 1);
     if (tracked) {
         memcpy(tracked, buf, len);
+        tracked[len] = '\0';
         free(buf);
         res.ptr = tracked;
     } else {
-        res.ptr = buf;
+        // Ensure null-termination even if tracked allocation fails
+        buf = (char*)realloc(buf, len + 1);
+        if (buf) {
+            buf[len] = '\0';
+            res.ptr = buf;
+        }
     }
     res.len = len;
     return res;
@@ -168,15 +175,16 @@ lucis_proc_str_result lucis_homeDir(void) {
     return make_result(home);
 }
 
-/* ── executablePath ──────────────────────────────────────────────────── */
+/* ── lucisExecutable path ──────────────────────────────────────────────────── */
 lucis_proc_str_result lucis_executablePath(void) {
     lucis_proc_str_result res = {NULL, 0};
     char buf[PATH_MAX];
     ssize_t len = readlink("/proc/self/exe", buf, sizeof(buf) - 1);
     if (len > 0) {
-        char* out = (char*)lucis_allocString((size_t)len);
+        char* out = (char*)lucis_allocString((size_t)len + 1);
         if (out) {
             memcpy(out, buf, (size_t)len);
+            out[len] = '\0';
             res.ptr = out;
             res.len = (size_t)len;
         }

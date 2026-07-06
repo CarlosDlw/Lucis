@@ -546,12 +546,12 @@ fn hideCursor(int32 fd) bool {
 /**
  * Moves the cursor to the given position (0-indexed).
  * @param fd File descriptor
- * @param row Row (0 = top)
- * @param col Column (0 = left)
+ * @param cols Column (0 = left)
+ * @param rows Row (0 = top)
  * @return true on success
  */
-fn moveCursor(int32 fd, int32 row, int32 col) bool {
-    return __lucis_console_move_cursor(fd, row, col);
+fn moveCursor(int32 fd, int32 cols, int32 rows) bool {
+    ret __lucis_console_move_cursor(fd, rows, cols);
 }
 
 /**
@@ -1114,13 +1114,13 @@ extend Terminal {
     }
 
     /**
-     * Moves cursor to (row, col). Both are 0-indexed.
-     * @param row Target row (0 = top)
-     * @param col Target column (0 = left)
+     * Moves cursor to (cols, rows). Both are 0-indexed.
+     * @param cols Column (0 = left)
+     * @param rows Row (0 = top)
      * @return true on success
      */
-    fn moveCursor(&self, int32 row, int32 col) bool {
-        ret __lucis_console_move_cursor(self->fd, row, col);
+    fn moveCursor(&self, int32 cols, int32 rows) bool {
+        ret __lucis_console_move_cursor(self->fd, rows, cols);
     }
 
     /**
