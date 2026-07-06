@@ -7733,7 +7733,7 @@ std::vector<unsigned> arraySizes = extractArraySizesFromSpec(stmt->typeSpec());
                         // c-string includes null terminator: content + 1
                         if (cstrLen && !sizes.empty() && sizes[0] == static_cast<unsigned>(*cstrLen + 1)) {
                             cstrToArrayOk = true;
-                        } else if (cstrLen) {
+                        } else if (cstrLen && !sizes.empty()) {
                             error(d, "c-string literal length (" + std::to_string(*cstrLen + 1) +
                                   ") does not match array size (" + std::to_string(sizes[0]) + ")");
                         }
