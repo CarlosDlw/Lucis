@@ -210,12 +210,12 @@ bool __lucis_console_leave_alt_screen(int fd)
 
 bool __lucis_console_save_cursor(int fd)
 {
-    return ansi_write(fd, "\x1b7", 2);
+    return ansi_write(fd, "\x1b" "7", 2);
 }
 
 bool __lucis_console_restore_cursor(int fd)
 {
-    return ansi_write(fd, "\x1b8", 2);
+    return ansi_write(fd, "\x1b" "8", 2);
 }
 
 /* ── Insert / delete lines ────────────────────────────────────── */
