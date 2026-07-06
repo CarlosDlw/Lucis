@@ -2,402 +2,947 @@
 #include "_runtime/terminal.h"
 #include "_runtime/console.h"
 
+/**
+ * Terminal and console I/O for Lucis.
+ *
+ * Provides low-level C bindings and a high-level struct API for
+ * terminal manipulation: raw mode, ANSI escape sequences, TTY
+ * state control, cursor movement, colors, styles, and mouse input.
+ *
+ * @module terminal
+ */
+
 // ── File descriptors ──────────────────────────────────────────
+
+/** Standard input file descriptor (0). */
 const STDIN: int32 = 0;
+
+/** Standard output file descriptor (1). */
 const STDOUT: int32 = 1;
+
+/** Standard error file descriptor (2). */
 const STDERR: int32 = 2;
 
-// ── Control character array size ──────────────────────────────
+/** Size of the terminal control-character array (POSIX NCCS). */
 const NCCS: int32 = 32;
 
 // ── Control character indices (POSIX termios c_cc) ────────────
-const VINTR:    int32 = 0;   // SIGINT (Ctrl+C)
-const VQUIT:    int32 = 1;   // SIGQUIT (Ctrl+\)
-const VERASE:   int32 = 2;   // erase (Backspace)
-const VKILL:    int32 = 3;   // kill line (Ctrl+U)
-const VEOF:     int32 = 4;   // EOF (Ctrl+D)
-const VTIME:    int32 = 5;   // inter-character timer
-const VMIN:     int32 = 6;   // minimum chars for read
-const VSWTC:    int32 = 7;   // switch character
-const VSTART:   int32 = 8;   // resume output (Ctrl+Q)
-const VSTOP:    int32 = 9;   // pause output (Ctrl+S)
-const VSUSP:    int32 = 10;  // suspend (Ctrl+Z)
-const VEOL:     int32 = 11;  // alternate EOL
-const VREPRINT: int32 = 12;  // reprint line (Ctrl+R)
-const VDISCARD: int32 = 13;  // discard output (Ctrl+O)
-const VWERASE:  int32 = 14;  // word erase (Ctrl+W)
-const VLNEXT:   int32 = 15;  // literal next (Ctrl+V)
-const VEOL2:    int32 = 16;  // second alternate EOL
+
+/** Index for VINTR — SIGINT on character (default Ctrl+C). */
+const VINTR:    int32 = 0;
+/** Index for VQUIT — SIGQUIT on character (default Ctrl+\). */
+const VQUIT:    int32 = 1;
+/** Index for VERASE — erase one character (default Backspace). */
+const VERASE:   int32 = 2;
+/** Index for VKILL — kill the current line (default Ctrl+U). */
+const VKILL:    int32 = 3;
+/** Index for VEOF — end-of-file (default Ctrl+D). */
+const VEOF:     int32 = 4;
+/** Index for VTIME — inter-character timer (in deciseconds). */
+const VTIME:    int32 = 5;
+/** Index for VMIN — minimum number of characters for non-canonical read. */
+const VMIN:     int32 = 6;
+/** Index for VSWTC — switch character (System V). */
+const VSWTC:    int32 = 7;
+/** Index for VSTART — resume output (default Ctrl+Q). */
+const VSTART:   int32 = 8;
+/** Index for VSTOP — pause output (default Ctrl+S). */
+const VSTOP:    int32 = 9;
+/** Index for VSUSP — suspend the process (default Ctrl+Z). */
+const VSUSP:    int32 = 10;
+/** Index for VEOL — alternate end-of-line. */
+const VEOL:     int32 = 11;
+/** Index for VREPRINT — reprint the current line (default Ctrl+R). */
+const VREPRINT: int32 = 12;
+/** Index for VDISCARD — discard pending output (default Ctrl+O). */
+const VDISCARD: int32 = 13;
+/** Index for VWERASE — erase one word (default Ctrl+W). */
+const VWERASE:  int32 = 14;
+/** Index for VLNEXT — literal next character (default Ctrl+V). */
+const VLNEXT:   int32 = 15;
+/** Index for VEOL2 — second alternate end-of-line. */
+const VEOL2:    int32 = 16;
 
 // ── Baud rate constants ───────────────────────────────────────
-const B0:      int32 = 0;       // hang up / no baud
+
+/** Hang up / no baud rate. */
+const B0:      int32 = 0;
+/** 50 baud. */
 const B50:     int32 = 50;
+/** 75 baud. */
 const B75:     int32 = 75;
+/** 110 baud. */
 const B110:    int32 = 110;
+/** 134 baud. */
 const B134:    int32 = 134;
+/** 150 baud. */
 const B150:    int32 = 150;
+/** 200 baud. */
 const B200:    int32 = 200;
+/** 300 baud. */
 const B300:    int32 = 300;
+/** 600 baud. */
 const B600:    int32 = 600;
+/** 1200 baud. */
 const B1200:   int32 = 1200;
+/** 1800 baud. */
 const B1800:   int32 = 1800;
+/** 2400 baud. */
 const B2400:   int32 = 2400;
+/** 4800 baud. */
 const B4800:   int32 = 4800;
+/** 9600 baud. */
 const B9600:   int32 = 9600;
+/** 19200 baud. */
 const B19200:  int32 = 19200;
+/** 38400 baud. */
 const B38400:  int32 = 38400;
+/** 57600 baud. */
 const B57600:  int32 = 57600;
+/** 115200 baud. */
 const B115200: int32 = 115200;
+/** 230400 baud. */
 const B230400: int32 = 230400;
 
 // ── TTY queries ───────────────────────────────────────────────
+
+/**
+ * Checks whether the given file descriptor refers to a TTY.
+ * @param fd The file descriptor to check
+ * @return true if fd is a terminal
+ */
 fn isTTY(int32 fd) bool {
     return __lucis_tty_isatty(fd);
 }
 
 // ── Raw I/O ───────────────────────────────────────────────────
+
+/**
+ * Low-level read from a file descriptor.
+ * @param fd File descriptor to read from
+ * @param buf Buffer to store read bytes
+ * @param size Maximum number of bytes to read
+ * @return Number of bytes read, or -1 on error
+ */
 fn read(int32 fd, *uint8 buf, usize size) int32 {
     return __lucis_tty_read(fd, buf, size);
 }
 
+/**
+ * Low-level write to a file descriptor.
+ * @param fd File descriptor to write to
+ * @param buf Buffer with data to write
+ * @param size Number of bytes to write
+ * @return Number of bytes written, or -1 on error
+ */
 fn write(int32 fd, *uint8 buf, usize size) int32 {
     return __lucis_tty_write(fd, buf, size);
 }
 
 // ── Flush ─────────────────────────────────────────────────────
+
+/**
+ * Discards input data that has been received but not yet read.
+ * @param fd File descriptor
+ * @return true on success
+ */
 fn flushInput(int32 fd) bool {
     return __lucis_tty_flush_input(fd);
 }
 
+/**
+ * Discards output data that has been written but not yet sent.
+ * @param fd File descriptor
+ * @return true on success
+ */
 fn flushOutput(int32 fd) bool {
     return __lucis_tty_flush_output(fd);
 }
 
+/**
+ * Flushes both input and output buffers.
+ * @param fd File descriptor
+ * @return true on success
+ */
 fn flush(int32 fd) bool {
     return __lucis_tty_flush_io(fd);
 }
 
 // ── Terminal state ────────────────────────────────────────────
+
+/**
+ * Saves the current terminal state into a TerminalState struct.
+ * @param fd File descriptor
+ * @param state Pointer to a TerminalState to fill
+ * @return true on success
+ */
 fn getState(int32 fd, *TerminalState state) bool {
     return __lucis_terminal_get_state(fd, state);
 }
 
+/**
+ * Restores a previously saved terminal state.
+ * @param fd File descriptor
+ * @param state Pointer to the saved TerminalState
+ * @return true on success
+ */
 fn setState(int32 fd, *TerminalState state) bool {
     return __lucis_terminal_set_state(fd, state);
 }
 
 // ── Mode helpers ──────────────────────────────────────────────
+
+/**
+ * Enables raw terminal mode (disables line buffering, echo, signal keys).
+ * @param fd File descriptor
+ * @return true on success
+ */
 fn enableRaw(int32 fd) bool {
     return __lucis_terminal_enable_raw(fd);
 }
 
+/**
+ * Restores cooked (normal) terminal mode.
+ * @param fd File descriptor
+ * @return true on success
+ */
 fn disableRaw(int32 fd) bool {
     return __lucis_terminal_disable_raw(fd);
 }
 
+/**
+ * Enables local echo (typed characters are displayed).
+ * @param fd File descriptor
+ * @return true on success
+ */
 fn enableEcho(int32 fd) bool {
     return __lucis_terminal_enable_echo(fd);
 }
 
+/**
+ * Disables local echo (typed characters are not displayed).
+ * @param fd File descriptor
+ * @return true on success
+ */
 fn disableEcho(int32 fd) bool {
     return __lucis_terminal_disable_echo(fd);
 }
 
+/**
+ * Enables canonical (line-buffered) input mode.
+ * @param fd File descriptor
+ * @return true on success
+ */
 fn enableCanonical(int32 fd) bool {
     return __lucis_terminal_enable_canonical(fd);
 }
 
+/**
+ * Disables canonical mode (processes input character-by-character).
+ * @param fd File descriptor
+ * @return true on success
+ */
 fn disableCanonical(int32 fd) bool {
     return __lucis_terminal_disable_canonical(fd);
 }
 
 // ── Speed ─────────────────────────────────────────────────────
+
+/**
+ * Sets the input baud rate.
+ * @param fd File descriptor
+ * @param speed Baud rate constant (e.g. B9600, B115200)
+ * @return true on success
+ */
 fn setInputSpeed(int32 fd, int32 speed) bool {
     return __lucis_terminal_set_input_speed(fd, speed);
 }
 
+/**
+ * Sets the output baud rate.
+ * @param fd File descriptor
+ * @param speed Baud rate constant (e.g. B9600, B115200)
+ * @return true on success
+ */
 fn setOutputSpeed(int32 fd, int32 speed) bool {
     return __lucis_terminal_set_output_speed(fd, speed);
 }
 
 // ── Control characters ────────────────────────────────────────
+
+/**
+ * Reads a control-character value from the terminal's termios c_cc array.
+ * @param fd File descriptor
+ * @param idx The control character index (e.g. VEOF, VINTR)
+ * @param out Pointer to store the character value
+ * @return true on success
+ */
 fn getControlChar(int32 fd, int32 idx, *uint8 out) bool {
     return __lucis_terminal_get_control_char(fd, idx, out);
 }
 
+/**
+ * Writes a value into the terminal's termios c_cc array.
+ * @param fd File descriptor
+ * @param idx The control character index (e.g. VEOF, VINTR)
+ * @param val The new character value
+ * @return true on success
+ */
 fn setControlChar(int32 fd, int32 idx, uint8 val) bool {
     return __lucis_terminal_set_control_char(fd, idx, val);
 }
 
+/**
+ * Sets the interrupt character (default Ctrl+C / 0x03).
+ * @param fd File descriptor
+ * @param c New character
+ * @return true on success
+ */
 fn setIntrChar(int32 fd, uint8 c) bool {
     return __lucis_terminal_set_intr(fd, c);
 }
 
+/**
+ * Sets the quit character (default Ctrl+\ / 0x1c).
+ * @param fd File descriptor
+ * @param c New character
+ * @return true on success
+ */
 fn setQuitChar(int32 fd, uint8 c) bool {
     return __lucis_terminal_set_quit(fd, c);
 }
 
+/**
+ * Sets the erase character (default Backspace / 0x7f).
+ * @param fd File descriptor
+ * @param c New character
+ * @return true on success
+ */
 fn setEraseChar(int32 fd, uint8 c) bool {
     return __lucis_terminal_set_erase(fd, c);
 }
 
+/**
+ * Sets the kill-line character (default Ctrl+U / 0x15).
+ * @param fd File descriptor
+ * @param c New character
+ * @return true on success
+ */
 fn setKillChar(int32 fd, uint8 c) bool {
     return __lucis_terminal_set_kill(fd, c);
 }
 
+/**
+ * Sets the end-of-file character (default Ctrl+D / 0x04).
+ * @param fd File descriptor
+ * @param c New character
+ * @return true on success
+ */
 fn setEofChar(int32 fd, uint8 c) bool {
     return __lucis_terminal_set_eof(fd, c);
 }
 
+/**
+ * Sets the start (resume output) character (default Ctrl+Q / 0x11).
+ * @param fd File descriptor
+ * @param c New character
+ * @return true on success
+ */
 fn setStartChar(int32 fd, uint8 c) bool {
     return __lucis_terminal_set_start(fd, c);
 }
 
+/**
+ * Sets the stop (pause output) character (default Ctrl+S / 0x13).
+ * @param fd File descriptor
+ * @param c New character
+ * @return true on success
+ */
 fn setStopChar(int32 fd, uint8 c) bool {
     return __lucis_terminal_set_stop(fd, c);
 }
 
+/**
+ * Sets the suspend-process character (default Ctrl+Z / 0x1a).
+ * @param fd File descriptor
+ * @param c New character
+ * @return true on success
+ */
 fn setSuspChar(int32 fd, uint8 c) bool {
     return __lucis_terminal_set_susp_char(fd, c);
 }
 
+/**
+ * Sets the alternate end-of-line character.
+ * @param fd File descriptor
+ * @param c New character
+ * @return true on success
+ */
 fn setEolChar(int32 fd, uint8 c) bool {
     return __lucis_terminal_set_eol(fd, c);
 }
 
+/**
+ * Sets the second alternate end-of-line character.
+ * @param fd File descriptor
+ * @param c New character
+ * @return true on success
+ */
 fn setEol2Char(int32 fd, uint8 c) bool {
     return __lucis_terminal_set_eol2(fd, c);
 }
 
+/**
+ * Sets the reprint character (default Ctrl+R / 0x12).
+ * @param fd File descriptor
+ * @param c New character
+ * @return true on success
+ */
 fn setReprintChar(int32 fd, uint8 c) bool {
     return __lucis_terminal_set_reprint(fd, c);
 }
 
+/**
+ * Sets the word-erase character (default Ctrl+W / 0x17).
+ * @param fd File descriptor
+ * @param c New character
+ * @return true on success
+ */
 fn setWEraseChar(int32 fd, uint8 c) bool {
     return __lucis_terminal_set_werase(fd, c);
 }
 
+/**
+ * Sets the literal-next character (default Ctrl+V / 0x16).
+ * @param fd File descriptor
+ * @param c New character
+ * @return true on success
+ */
 fn setLNextChar(int32 fd, uint8 c) bool {
     return __lucis_terminal_set_lnext(fd, c);
 }
 
+/**
+ * Sets the discard-output character (default Ctrl+O / 0x0f).
+ * @param fd File descriptor
+ * @param c New character
+ * @return true on success
+ */
 fn setDiscardChar(int32 fd, uint8 c) bool {
     return __lucis_terminal_set_discard(fd, c);
 }
 
 // ── Flow control ──────────────────────────────────────────────
+
+/**
+ * Enables hardware (RTS/CTS) flow control.
+ * @param fd File descriptor
+ * @return true on success
+ */
 fn enableFlowControl(int32 fd) bool {
     return __lucis_terminal_enable_flow_control(fd);
 }
 
+/**
+ * Disables hardware flow control.
+ * @param fd File descriptor
+ * @return true on success
+ */
 fn disableFlowControl(int32 fd) bool {
     return __lucis_terminal_disable_flow_control(fd);
 }
 
 // ── Blocking modes ────────────────────────────────────────────
+
+/**
+ * Sets the terminal to non-blocking read mode.
+ * Reads will return immediately with whatever data is available.
+ * @param fd File descriptor
+ * @return true on success
+ */
 fn setNonBlocking(int32 fd) bool {
     return __lucis_terminal_set_nonblocking(fd);
 }
 
+/**
+ * Sets blocking read with minimum character and timeout thresholds.
+ * @param fd File descriptor
+ * @param min Minimum number of bytes before read returns
+ * @param time Timeout in deciseconds (0 = no timeout)
+ * @return true on success
+ */
 fn setBlocking(int32 fd, int32 min, int32 time) bool {
     return __lucis_terminal_set_blocking(fd, min, time);
 }
 
 // ── Signal handling ───────────────────────────────────────────
+
+/**
+ * Enables terminal-generated signals (SIGINT, SIGQUIT, SIGTSTP).
+ * @param fd File descriptor
+ * @return true on success
+ */
 fn enableSignals(int32 fd) bool {
     return __lucis_terminal_enable_signals(fd);
 }
 
+/**
+ * Disables terminal-generated signals (ISIG off).
+ * @param fd File descriptor
+ * @return true on success
+ */
 fn disableSignals(int32 fd) bool {
     return __lucis_terminal_disable_signals(fd);
 }
 
 // ── Console / Screen ──────────────────────────────────────────
+
+/**
+ * Gets the terminal window size (rows and columns).
+ * @param fd File descriptor
+ * @param cs Pointer to a ConsoleSize struct to fill
+ * @return true on success
+ */
 fn getConsoleSize(int32 fd, *ConsoleSize cs) bool {
     return __lucis_console_get_size(fd, cs);
 }
 
+/**
+ * Clears the entire terminal screen and moves cursor to (0,0).
+ * @param fd File descriptor
+ * @return true on success
+ */
 fn clear(int32 fd) bool {
     return __lucis_console_clear(fd);
 }
 
+/**
+ * Clears the current line from cursor position to end of line.
+ * @param fd File descriptor
+ * @return true on success
+ */
 fn clearLine(int32 fd) bool {
     return __lucis_console_clear_line(fd);
 }
 
+/**
+ * Shows the cursor if it was hidden.
+ * @param fd File descriptor
+ * @return true on success
+ */
 fn showCursor(int32 fd) bool {
     return __lucis_console_show_cursor(fd);
 }
 
+/**
+ * Hides the cursor.
+ * @param fd File descriptor
+ * @return true on success
+ */
 fn hideCursor(int32 fd) bool {
     return __lucis_console_hide_cursor(fd);
 }
 
+/**
+ * Moves the cursor to the given position (0-indexed).
+ * @param fd File descriptor
+ * @param row Row (0 = top)
+ * @param col Column (0 = left)
+ * @return true on success
+ */
 fn moveCursor(int32 fd, int32 row, int32 col) bool {
     return __lucis_console_move_cursor(fd, row, col);
 }
 
+/**
+ * Moves the cursor up by a number of rows.
+ * @param fd File descriptor
+ * @param count Number of rows to move up
+ * @return true on success
+ */
 fn moveUp(int32 fd, int32 count) bool {
     return __lucis_console_move_up(fd, count);
 }
 
+/**
+ * Moves the cursor down by a number of rows.
+ * @param fd File descriptor
+ * @param count Number of rows to move down
+ * @return true on success
+ */
 fn moveDown(int32 fd, int32 count) bool {
     return __lucis_console_move_down(fd, count);
 }
 
+/**
+ * Moves the cursor left by a number of columns.
+ * @param fd File descriptor
+ * @param count Number of columns to move left
+ * @return true on success
+ */
 fn moveLeft(int32 fd, int32 count) bool {
     return __lucis_console_move_left(fd, count);
 }
 
+/**
+ * Moves the cursor right by a number of columns.
+ * @param fd File descriptor
+ * @param count Number of columns to move right
+ * @return true on success
+ */
 fn moveRight(int32 fd, int32 count) bool {
     return __lucis_console_move_right(fd, count);
 }
 
-// ── Style constants (bitmask) ──────────────────────────────────
+// ── Style constants (bitmask) ─────────────────────────────────
+
+/** Bold style flag. */
 const STYLE_BOLD:      int32 = 1;
+/** Dim / faint style flag. */
 const STYLE_DIM:       int32 = 2;
+/** Italic style flag. */
 const STYLE_ITALIC:    int32 = 4;
+/** Underline style flag. */
 const STYLE_UNDERLINE: int32 = 8;
+/** Reverse video style flag. */
 const STYLE_REVERSE:   int32 = 16;
+/** Strikethrough style flag. */
 const STYLE_STRIKE:    int32 = 32;
 
-// ── Color constants (ANSI 16-color palette) ────────────────────
+// ── Color constants (ANSI 16-color palette) ───────────────────
+
+/** ANSI color 0: Black. */
 const COLOR_BLACK:        int32 = 0;
+/** ANSI color 1: Red. */
 const COLOR_RED:          int32 = 1;
+/** ANSI color 2: Green. */
 const COLOR_GREEN:        int32 = 2;
+/** ANSI color 3: Yellow. */
 const COLOR_YELLOW:       int32 = 3;
+/** ANSI color 4: Blue. */
 const COLOR_BLUE:         int32 = 4;
+/** ANSI color 5: Magenta. */
 const COLOR_MAGENTA:      int32 = 5;
+/** ANSI color 6: Cyan. */
 const COLOR_CYAN:         int32 = 6;
+/** ANSI color 7: White. */
 const COLOR_WHITE:        int32 = 7;
+/** ANSI color 8: Bright black (dark gray). */
 const COLOR_BRIGHT_BLACK:   int32 = 8;
+/** ANSI color 9: Bright red. */
 const COLOR_BRIGHT_RED:     int32 = 9;
+/** ANSI color 10: Bright green. */
 const COLOR_BRIGHT_GREEN:   int32 = 10;
+/** ANSI color 11: Bright yellow. */
 const COLOR_BRIGHT_YELLOW:  int32 = 11;
+/** ANSI color 12: Bright blue. */
 const COLOR_BRIGHT_BLUE:    int32 = 12;
+/** ANSI color 13: Bright magenta. */
 const COLOR_BRIGHT_MAGENTA: int32 = 13;
+/** ANSI color 14: Bright cyan. */
 const COLOR_BRIGHT_CYAN:    int32 = 14;
+/** ANSI color 15: Bright white. */
 const COLOR_BRIGHT_WHITE:   int32 = 15;
 
-// ── Style functions ────────────────────────────────────────────
+// ── Style functions ───────────────────────────────────────────
+
+/**
+ * Applies or removes one or more style attributes as a bitmask.
+ * @param fd File descriptor
+ * @param style Bitmask of STYLE_* constants
+ * @param on true to enable, false to disable
+ * @return true on success
+ */
 fn setStyle(int32 fd, int32 style, bool on) bool {
     ret __lucis_console_set_style(fd, style, on);
 }
 
+/**
+ * Enables bold text.
+ * @param fd File descriptor
+ * @return true on success
+ */
 fn bold(int32 fd) bool {
     ret __lucis_console_sgr(fd, c"\x1b[1m");
 }
 
+/**
+ * Enables dim / faint text.
+ * @param fd File descriptor
+ * @return true on success
+ */
 fn dim(int32 fd) bool {
     ret __lucis_console_sgr(fd, c"\x1b[2m");
 }
 
+/**
+ * Enables italic text.
+ * @param fd File descriptor
+ * @return true on success
+ */
 fn italic(int32 fd) bool {
     ret __lucis_console_sgr(fd, c"\x1b[3m");
 }
 
+/**
+ * Enables underline text.
+ * @param fd File descriptor
+ * @return true on success
+ */
 fn underline(int32 fd) bool {
     ret __lucis_console_sgr(fd, c"\x1b[4m");
 }
 
+/**
+ * Enables reverse video (swap foreground and background).
+ * @param fd File descriptor
+ * @return true on success
+ */
 fn reverse(int32 fd) bool {
     ret __lucis_console_sgr(fd, c"\x1b[7m");
 }
 
+/**
+ * Enables strikethrough text.
+ * @param fd File descriptor
+ * @return true on success
+ */
 fn strikethrough(int32 fd) bool {
     ret __lucis_console_sgr(fd, c"\x1b[9m");
 }
 
+/**
+ * Resets all style and color attributes to the terminal default.
+ * @param fd File descriptor
+ * @return true on success
+ */
 fn resetStyle(int32 fd) bool {
     ret __lucis_console_reset_attrs(fd);
 }
 
-// ── Color functions ────────────────────────────────────────────
+// ── Color functions ───────────────────────────────────────────
+
+/**
+ * Sets the foreground color using the ANSI 16-color palette.
+ * @param fd File descriptor
+ * @param color One of the COLOR_* constants (0-15)
+ * @return true on success
+ */
 fn setForeground(int32 fd, int32 color) bool {
     ret __lucis_console_set_fg(fd, color);
 }
 
+/**
+ * Sets the background color using the ANSI 16-color palette.
+ * @param fd File descriptor
+ * @param color One of the COLOR_* constants (0-15)
+ * @return true on success
+ */
 fn setBackground(int32 fd, int32 color) bool {
     ret __lucis_console_set_bg(fd, color);
 }
 
+/**
+ * Sets the foreground color using the 256-color palette.
+ * @param fd File descriptor
+ * @param color 256-color index (0-255)
+ * @return true on success
+ */
 fn setForeground256(int32 fd, int32 color) bool {
     ret __lucis_console_set_fg_256(fd, color);
 }
 
+/**
+ * Sets the background color using the 256-color palette.
+ * @param fd File descriptor
+ * @param color 256-color index (0-255)
+ * @return true on success
+ */
 fn setBackground256(int32 fd, int32 color) bool {
     ret __lucis_console_set_bg_256(fd, color);
 }
 
+/**
+ * Sets the foreground color using 24-bit truecolor RGB.
+ * @param fd File descriptor
+ * @param r Red channel (0-255)
+ * @param g Green channel (0-255)
+ * @param b Blue channel (0-255)
+ * @return true on success
+ */
 fn setForegroundRGB(int32 fd, int32 r, int32 g, int32 b) bool {
     ret __lucis_console_set_fg_rgb(fd, r, g, b);
 }
 
+/**
+ * Sets the background color using 24-bit truecolor RGB.
+ * @param fd File descriptor
+ * @param r Red channel (0-255)
+ * @param g Green channel (0-255)
+ * @param b Blue channel (0-255)
+ * @return true on success
+ */
 fn setBackgroundRGB(int32 fd, int32 r, int32 g, int32 b) bool {
     ret __lucis_console_set_bg_rgb(fd, r, g, b);
 }
 
 // ── Alternate screen ───────────────────────────────────────────
+
+/**
+ * Switches to the alternate terminal screen buffer.
+ * Useful for full-screen applications; the original screen is restored
+ * on leaveAltScreen.
+ * @param fd File descriptor
+ * @return true on success
+ */
 fn enterAltScreen(int32 fd) bool {
     ret __lucis_console_enter_alt_screen(fd);
 }
 
+/**
+ * Returns from the alternate screen buffer to the normal screen.
+ * The original screen content is preserved.
+ * @param fd File descriptor
+ * @return true on success
+ */
 fn leaveAltScreen(int32 fd) bool {
     ret __lucis_console_leave_alt_screen(fd);
 }
 
 // ── Cursor save / restore ──────────────────────────────────────
+
+/**
+ * Saves the current cursor position for later restoration.
+ * @param fd File descriptor
+ * @return true on success
+ */
 fn saveCursor(int32 fd) bool {
     ret __lucis_console_save_cursor(fd);
 }
 
+/**
+ * Restores the cursor to the position saved by saveCursor.
+ * @param fd File descriptor
+ * @return true on success
+ */
 fn restoreCursor(int32 fd) bool {
     ret __lucis_console_restore_cursor(fd);
 }
 
 // ── Insert / delete lines ──────────────────────────────────────
+
+/**
+ * Inserts blank lines at the current cursor row.
+ * Existing lines below are shifted down.
+ * @param fd File descriptor
+ * @param n Number of lines to insert
+ * @return true on success
+ */
 fn insertLines(int32 fd, int32 n) bool {
     ret __lucis_console_insert_lines(fd, n);
 }
 
+/**
+ * Deletes lines at the current cursor row.
+ * Lines below shift up to fill the gap.
+ * @param fd File descriptor
+ * @param n Number of lines to delete
+ * @return true on success
+ */
 fn deleteLines(int32 fd, int32 n) bool {
     ret __lucis_console_delete_lines(fd, n);
 }
 
 // ── Scroll region ──────────────────────────────────────────────
+
+/**
+ * Restricts scrolling to a rectangular region of the screen.
+ * Positions are 0-indexed. Use resetScrollRegion to restore.
+ * @param fd File descriptor
+ * @param top Top row of the scroll region
+ * @param bottom Bottom row of the scroll region (inclusive)
+ * @return true on success
+ */
 fn setScrollRegion(int32 fd, int32 top, int32 bottom) bool {
     ret __lucis_console_set_scroll_region(fd, top, bottom);
 }
 
+/**
+ * Resets the scroll region to the full screen.
+ * @param fd File descriptor
+ * @return true on success
+ */
 fn resetScrollRegion(int32 fd) bool {
     ret __lucis_console_reset_scroll_region(fd);
 }
 
 // ── Mouse tracking ─────────────────────────────────────────────
+
+/**
+ * Enables basic mouse-click tracking (X10 mode).
+ * @param fd File descriptor
+ * @return true on success
+ */
 fn enableMouse(int32 fd) bool {
     ret __lucis_console_enable_mouse(fd, 1000);
 }
 
+/**
+ * Enables mouse tracking with drag events (button press + motion).
+ * @param fd File descriptor
+ * @return true on success
+ */
 fn enableMouseDrag(int32 fd) bool {
     ret __lucis_console_enable_mouse(fd, 1002);
 }
 
+/**
+ * Enables mouse tracking for any motion (press, drag, move).
+ * @param fd File descriptor
+ * @return true on success
+ */
 fn enableMouseMotion(int32 fd) bool {
     ret __lucis_console_enable_mouse(fd, 1003);
 }
 
+/**
+ * Disables all mouse tracking modes.
+ * @param fd File descriptor
+ * @return true on success
+ */
 fn disableMouse(int32 fd) bool {
     ret __lucis_console_disable_mouse(fd);
 }
 
+/**
+ * Enables SGR-encoded mouse input (preferred format).
+ * Coordinates are reported as \x1b[<X;Y;M with unbounded range.
+ * @param fd File descriptor
+ * @return true on success
+ */
 fn enableSGRMouse(int32 fd) bool {
     ret __lucis_console_enable_sgr_mouse(fd);
 }
 
+/**
+ * Disables SGR mouse encoding (reverts to default X10 format).
+ * @param fd File descriptor
+ * @return true on success
+ */
 fn disableSGRMouse(int32 fd) bool {
     ret __lucis_console_disable_sgr_mouse(fd);
 }
 
+/**
+ * Captured terminal state: raw, echo, canonical flags, speeds and control chars.
+ *
+ * @field raw Whether raw mode was enabled
+ * @field echo Whether echo was enabled
+ * @field canonical Whether canonical mode was enabled
+ * @field inputSpeed Input baud rate at capture time
+ * @field outputSpeed Output baud rate at capture time
+ * @field controlChars Saved termios c_cc array
+ */
 struct TerminalState {
     bool raw;
     bool echo;
@@ -409,322 +954,696 @@ struct TerminalState {
     [32]uint8 controlChars;
 }
 
+/**
+ * Terminal window dimensions.
+ *
+ * @field rows Number of rows (lines)
+ * @field cols Number of columns (characters per line)
+ */
 struct ConsoleSize {
     int32 rows;
     int32 cols;
 }
 
+/**
+ * High-level terminal wrapper.
+ *
+ * Opens a file descriptor, saves its initial state, and provides
+ * instance methods for all terminal operations. Use Terminal::open
+ * to create a new instance and defer .restore() to ensure cleanup.
+ *
+ * @field fd Underlying file descriptor
+ * @field saved Captured state from construction time
+ */
 struct Terminal {
     int32 fd;
     TerminalState saved;
 }
 
 extend Terminal {
+    /**
+     * Opens a terminal wrapper for the given file descriptor.
+     * The current terminal state is saved for later restoration.
+     * @param fd File descriptor (usually STDOUT)
+     * @return A new Terminal instance
+     * @example
+     *   Terminal t = Terminal::open(STDOUT);
+     *   defer t.restore();
+     */
     fn open(int32 fd) Terminal {
         Terminal t = Terminal { fd: fd, saved: TerminalState { raw: false, echo: false, canonical: false, inputSpeed: 0, outputSpeed: 0, controlChars: [] } };
         t.save();
         ret t;
     }
 
+    /**
+     * Saves the current terminal state into this instance.
+     * @return true on success
+     */
     fn save(&self) bool {
         ret __lucis_terminal_get_state(self->fd, &self->saved);
     }
 
+    /**
+     * Restores the terminal to the previously saved state.
+     * Should be called before program exit (typically via defer).
+     * @return true on success
+     */
     fn restore(&self) bool {
         ret __lucis_terminal_set_state(self->fd, &self->saved);
     }
 
+    /**
+     * Enables raw (non-canonical, no-echo) terminal mode.
+     * @return true on success
+     */
     fn enterRaw(&self) bool {
         ret __lucis_terminal_enable_raw(self->fd);
     }
 
+    /**
+     * Restores cooked terminal mode from raw.
+     * @return true on success
+     */
     fn leaveRaw(&self) bool {
         ret __lucis_terminal_disable_raw(self->fd);
     }
 
+    /**
+     * Returns true if the underlying fd is a TTY.
+     * @return true if fd is a terminal
+     */
     fn isTTY(&self) bool {
         ret __lucis_tty_isatty(self->fd);
     }
 
+    /**
+     * Reads raw bytes from the terminal.
+     * @param buf Destination buffer
+     * @param size Maximum bytes to read
+     * @return Number of bytes read, or -1 on error
+     */
     fn read(&self, *uint8 buf, usize size) int32 {
         ret __lucis_tty_read(self->fd, buf, size);
     }
 
+    /**
+     * Writes raw bytes to the terminal.
+     * @param buf Source buffer
+     * @param size Number of bytes to write
+     * @return Number of bytes written, or -1 on error
+     */
     fn write(&self, *uint8 buf, usize size) int32 {
         ret __lucis_tty_write(self->fd, buf, size);
     }
 
+    /**
+     * Flushes both input and output buffers.
+     * @return true on success
+     */
     fn flush(&self) bool {
         ret __lucis_tty_flush_io(self->fd);
     }
 
+    /**
+     * Discards pending input data.
+     * @return true on success
+     */
     fn flushInput(&self) bool {
         ret __lucis_tty_flush_input(self->fd);
     }
 
+    /**
+     * Discards pending output data.
+     * @return true on success
+     */
     fn flushOutput(&self) bool {
         ret __lucis_tty_flush_output(self->fd);
     }
 
+    /**
+     * Clears the entire screen.
+     * @return true on success
+     */
     fn clear(&self) bool {
         ret __lucis_console_clear(self->fd);
     }
 
+    /**
+     * Clears from cursor to end of line.
+     * @return true on success
+     */
     fn clearLine(&self) bool {
         ret __lucis_console_clear_line(self->fd);
     }
 
+    /**
+     * Shows the cursor if previously hidden.
+     * @return true on success
+     */
     fn showCursor(&self) bool {
         ret __lucis_console_show_cursor(self->fd);
     }
 
+    /**
+     * Hides the cursor.
+     * @return true on success
+     */
     fn hideCursor(&self) bool {
         ret __lucis_console_hide_cursor(self->fd);
     }
 
+    /**
+     * Moves cursor to (row, col). Both are 0-indexed.
+     * @param row Target row (0 = top)
+     * @param col Target column (0 = left)
+     * @return true on success
+     */
     fn moveCursor(&self, int32 row, int32 col) bool {
         ret __lucis_console_move_cursor(self->fd, row, col);
     }
 
+    /**
+     * Moves cursor up by count rows.
+     * @param count Number of rows
+     * @return true on success
+     */
     fn moveUp(&self, int32 count) bool {
         ret __lucis_console_move_up(self->fd, count);
     }
 
+    /**
+     * Moves cursor down by count rows.
+     * @param count Number of rows
+     * @return true on success
+     */
     fn moveDown(&self, int32 count) bool {
         ret __lucis_console_move_down(self->fd, count);
     }
 
+    /**
+     * Moves cursor left by count columns.
+     * @param count Number of columns
+     * @return true on success
+     */
     fn moveLeft(&self, int32 count) bool {
         ret __lucis_console_move_left(self->fd, count);
     }
 
+    /**
+     * Moves cursor right by count columns.
+     * @param count Number of columns
+     * @return true on success
+     */
     fn moveRight(&self, int32 count) bool {
         ret __lucis_console_move_right(self->fd, count);
     }
 
+    /**
+     * Gets the terminal size (rows and columns).
+     * @param cs Pointer to a ConsoleSize to fill
+     * @return true on success
+     */
     fn getConsoleSize(&self, *ConsoleSize cs) bool {
         ret __lucis_console_get_size(self->fd, cs);
     }
 
+    /**
+     * Enables local echo.
+     * @return true on success
+     */
     fn enableEcho(&self) bool {
         ret __lucis_terminal_enable_echo(self->fd);
     }
 
+    /**
+     * Disables local echo.
+     * @return true on success
+     */
     fn disableEcho(&self) bool {
         ret __lucis_terminal_disable_echo(self->fd);
     }
 
+    /**
+     * Enables canonical (line-buffered) input.
+     * @return true on success
+     */
     fn enableCanonical(&self) bool {
         ret __lucis_terminal_enable_canonical(self->fd);
     }
 
+    /**
+     * Disables canonical (character-by-character) input.
+     * @return true on success
+     */
     fn disableCanonical(&self) bool {
         ret __lucis_terminal_disable_canonical(self->fd);
     }
 
+    /**
+     * Sets the input baud rate.
+     * @param speed Baud rate constant (e.g. B9600)
+     * @return true on success
+     */
     fn setInputSpeed(&self, int32 speed) bool {
         ret __lucis_terminal_set_input_speed(self->fd, speed);
     }
 
+    /**
+     * Sets the output baud rate.
+     * @param speed Baud rate constant (e.g. B9600)
+     * @return true on success
+     */
     fn setOutputSpeed(&self, int32 speed) bool {
         ret __lucis_terminal_set_output_speed(self->fd, speed);
     }
 
+    /**
+     * Switches to non-blocking read mode.
+     * @return true on success
+     */
     fn setNonBlocking(&self) bool {
         ret __lucis_terminal_set_nonblocking(self->fd);
     }
 
+    /**
+     * Sets blocking read with minimum bytes and timeout.
+     * @param min Minimum bytes before read returns
+     * @param time Timeout in deciseconds
+     * @return true on success
+     */
     fn setBlocking(&self, int32 min, int32 time) bool {
         ret __lucis_terminal_set_blocking(self->fd, min, time);
     }
 
+    /**
+     * Enables hardware flow control.
+     * @return true on success
+     */
     fn enableFlowControl(&self) bool {
         ret __lucis_terminal_enable_flow_control(self->fd);
     }
 
+    /**
+     * Disables hardware flow control.
+     * @return true on success
+     */
     fn disableFlowControl(&self) bool {
         ret __lucis_terminal_disable_flow_control(self->fd);
     }
 
+    /**
+     * Enables terminal-generated signals (SIGINT, SIGQUIT, SIGTSTP).
+     * @return true on success
+     */
     fn enableSignals(&self) bool {
         ret __lucis_terminal_enable_signals(self->fd);
     }
 
+    /**
+     * Disables terminal-generated signals (ISIG off).
+     * @return true on success
+     */
     fn disableSignals(&self) bool {
         ret __lucis_terminal_disable_signals(self->fd);
     }
 
+    /**
+     * Sets the interrupt character (default Ctrl+C).
+     * @param c New character
+     * @return true on success
+     */
     fn setIntrChar(&self, uint8 c) bool {
         ret __lucis_terminal_set_intr(self->fd, c);
     }
 
+    /**
+     * Sets the quit character (default Ctrl+\)
+     * @param c New character
+     * @return true on success
+     */
     fn setQuitChar(&self, uint8 c) bool {
         ret __lucis_terminal_set_quit(self->fd, c);
     }
 
+    /**
+     * Sets the erase character (default Backspace).
+     * @param c New character
+     * @return true on success
+     */
     fn setEraseChar(&self, uint8 c) bool {
         ret __lucis_terminal_set_erase(self->fd, c);
     }
 
+    /**
+     * Sets the kill-line character (default Ctrl+U).
+     * @param c New character
+     * @return true on success
+     */
     fn setKillChar(&self, uint8 c) bool {
         ret __lucis_terminal_set_kill(self->fd, c);
     }
 
+    /**
+     * Sets the EOF character (default Ctrl+D).
+     * @param c New character
+     * @return true on success
+     */
     fn setEofChar(&self, uint8 c) bool {
         ret __lucis_terminal_set_eof(self->fd, c);
     }
 
+    /**
+     * Sets the suspend character (default Ctrl+Z).
+     * @param c New character
+     * @return true on success
+     */
     fn setSuspChar(&self, uint8 c) bool {
         ret __lucis_terminal_set_susp_char(self->fd, c);
     }
 
+    /**
+     * Sets the alternate EOL character.
+     * @param c New character
+     * @return true on success
+     */
     fn setEolChar(&self, uint8 c) bool {
         ret __lucis_terminal_set_eol(self->fd, c);
     }
 
+    /**
+     * Sets the second alternate EOL character.
+     * @param c New character
+     * @return true on success
+     */
     fn setEol2Char(&self, uint8 c) bool {
         ret __lucis_terminal_set_eol2(self->fd, c);
     }
 
+    /**
+     * Sets the start (resume output) character (default Ctrl+Q).
+     * @param c New character
+     * @return true on success
+     */
     fn setStartChar(&self, uint8 c) bool {
         ret __lucis_terminal_set_start(self->fd, c);
     }
 
+    /**
+     * Sets the stop (pause output) character (default Ctrl+S).
+     * @param c New character
+     * @return true on success
+     */
     fn setStopChar(&self, uint8 c) bool {
         ret __lucis_terminal_set_stop(self->fd, c);
     }
 
+    /**
+     * Sets the reprint character (default Ctrl+R).
+     * @param c New character
+     * @return true on success
+     */
     fn setReprintChar(&self, uint8 c) bool {
         ret __lucis_terminal_set_reprint(self->fd, c);
     }
 
+    /**
+     * Sets the word-erase character (default Ctrl+W).
+     * @param c New character
+     * @return true on success
+     */
     fn setWEraseChar(&self, uint8 c) bool {
         ret __lucis_terminal_set_werase(self->fd, c);
     }
 
+    /**
+     * Sets the literal-next character (default Ctrl+V).
+     * @param c New character
+     * @return true on success
+     */
     fn setLNextChar(&self, uint8 c) bool {
         ret __lucis_terminal_set_lnext(self->fd, c);
     }
 
+    /**
+     * Sets the discard-output character (default Ctrl+O).
+     * @param c New character
+     * @return true on success
+     */
     fn setDiscardChar(&self, uint8 c) bool {
         ret __lucis_terminal_set_discard(self->fd, c);
     }
 
     // ── Style ──────────────────────────────────────────────────
+
+    /**
+     * Sets or clears style attributes using a bitmask.
+     * @param style Bitmask of STYLE_* constants
+     * @param on true to enable, false to disable
+     * @return true on success
+     */
     fn setStyle(&self, int32 style, bool on) bool {
         ret __lucis_console_set_style(self->fd, style, on);
     }
 
+    /**
+     * Enables bold text.
+     * @return true on success
+     */
     fn bold(&self) bool {
         ret __lucis_console_sgr(self->fd, c"\x1b[1m");
     }
 
+    /**
+     * Enables dim text.
+     * @return true on success
+     */
     fn dim(&self) bool {
         ret __lucis_console_sgr(self->fd, c"\x1b[2m");
     }
 
+    /**
+     * Enables italic text.
+     * @return true on success
+     */
     fn italic(&self) bool {
         ret __lucis_console_sgr(self->fd, c"\x1b[3m");
     }
 
+    /**
+     * Enables underline text.
+     * @return true on success
+     */
     fn underline(&self) bool {
         ret __lucis_console_sgr(self->fd, c"\x1b[4m");
     }
 
+    /**
+     * Enables reverse video.
+     * @return true on success
+     */
     fn reverse(&self) bool {
         ret __lucis_console_sgr(self->fd, c"\x1b[7m");
     }
 
+    /**
+     * Enables strikethrough text.
+     * @return true on success
+     */
     fn strikethrough(&self) bool {
         ret __lucis_console_sgr(self->fd, c"\x1b[9m");
     }
 
+    /**
+     * Resets all style and color attributes.
+     * @return true on success
+     */
     fn resetStyle(&self) bool {
         ret __lucis_console_reset_attrs(self->fd);
     }
 
     // ── Color ──────────────────────────────────────────────────
+
+    /**
+     * Sets foreground using the 16-color ANSI palette.
+     * @param color One of the COLOR_* constants (0-15)
+     * @return true on success
+     */
     fn setForeground(&self, int32 color) bool {
         ret __lucis_console_set_fg(self->fd, color);
     }
 
+    /**
+     * Sets background using the 16-color ANSI palette.
+     * @param color One of the COLOR_* constants (0-15)
+     * @return true on success
+     */
     fn setBackground(&self, int32 color) bool {
         ret __lucis_console_set_bg(self->fd, color);
     }
 
+    /**
+     * Sets foreground using the 256-color palette.
+     * @param color Color index (0-255)
+     * @return true on success
+     */
     fn setForeground256(&self, int32 color) bool {
         ret __lucis_console_set_fg_256(self->fd, color);
     }
 
+    /**
+     * Sets background using the 256-color palette.
+     * @param color Color index (0-255)
+     * @return true on success
+     */
     fn setBackground256(&self, int32 color) bool {
         ret __lucis_console_set_bg_256(self->fd, color);
     }
 
+    /**
+     * Sets foreground using 24-bit truecolor.
+     * @param r Red (0-255)
+     * @param g Green (0-255)
+     * @param b Blue (0-255)
+     * @return true on success
+     */
     fn setForegroundRGB(&self, int32 r, int32 g, int32 b) bool {
         ret __lucis_console_set_fg_rgb(self->fd, r, g, b);
     }
 
+    /**
+     * Sets background using 24-bit truecolor.
+     * @param r Red (0-255)
+     * @param g Green (0-255)
+     * @param b Blue (0-255)
+     * @return true on success
+     */
     fn setBackgroundRGB(&self, int32 r, int32 g, int32 b) bool {
         ret __lucis_console_set_bg_rgb(self->fd, r, g, b);
     }
 
     // ── Alternate screen ───────────────────────────────────────
+
+    /**
+     * Switches to the alternate screen buffer.
+     * @return true on success
+     */
     fn enterAltScreen(&self) bool {
         ret __lucis_console_enter_alt_screen(self->fd);
     }
 
+    /**
+     * Leaves the alternate screen buffer.
+     * @return true on success
+     */
     fn leaveAltScreen(&self) bool {
         ret __lucis_console_leave_alt_screen(self->fd);
     }
 
     // ── Cursor save / restore ──────────────────────────────────
+
+    /**
+     * Saves the cursor position.
+     * @return true on success
+     */
     fn saveCursor(&self) bool {
         ret __lucis_console_save_cursor(self->fd);
     }
 
+    /**
+     * Restores the cursor to the saved position.
+     * @return true on success
+     */
     fn restoreCursor(&self) bool {
         ret __lucis_console_restore_cursor(self->fd);
     }
 
     // ── Insert / delete lines ──────────────────────────────────
+
+    /**
+     * Inserts n blank lines at the cursor position.
+     * @param n Number of lines
+     * @return true on success
+     */
     fn insertLines(&self, int32 n) bool {
         ret __lucis_console_insert_lines(self->fd, n);
     }
 
+    /**
+     * Deletes n lines at the cursor position.
+     * @param n Number of lines
+     * @return true on success
+     */
     fn deleteLines(&self, int32 n) bool {
         ret __lucis_console_delete_lines(self->fd, n);
     }
 
     // ── Scroll region ──────────────────────────────────────────
+
+    /**
+     * Sets the scroll region (0-indexed, inclusive).
+     * @param top Top row
+     * @param bottom Bottom row
+     * @return true on success
+     */
     fn setScrollRegion(&self, int32 top, int32 bottom) bool {
         ret __lucis_console_set_scroll_region(self->fd, top, bottom);
     }
 
+    /**
+     * Resets scroll region to full screen.
+     * @return true on success
+     */
     fn resetScrollRegion(&self) bool {
         ret __lucis_console_reset_scroll_region(self->fd);
     }
 
     // ── Mouse tracking ─────────────────────────────────────────
+
+    /**
+     * Enables click-only mouse tracking.
+     * @return true on success
+     */
     fn enableMouse(&self) bool {
         ret __lucis_console_enable_mouse(self->fd, 1000);
     }
 
+    /**
+     * Enables mouse tracking with drag events.
+     * @return true on success
+     */
     fn enableMouseDrag(&self) bool {
         ret __lucis_console_enable_mouse(self->fd, 1002);
     }
 
+    /**
+     * Enables mouse tracking for any motion.
+     * @return true on success
+     */
     fn enableMouseMotion(&self) bool {
         ret __lucis_console_enable_mouse(self->fd, 1003);
     }
 
+    /**
+     * Disables all mouse tracking modes.
+     * @return true on success
+     */
     fn disableMouse(&self) bool {
         ret __lucis_console_disable_mouse(self->fd);
     }
 
+    /**
+     * Enables SGR-encoded mouse input (preferred format).
+     * @return true on success
+     */
     fn enableSGRMouse(&self) bool {
         ret __lucis_console_enable_sgr_mouse(self->fd);
     }
 
+    /**
+     * Disables SGR mouse encoding.
+     * @return true on success
+     */
     fn disableSGRMouse(&self) bool {
         ret __lucis_console_disable_sgr_mouse(self->fd);
     }
