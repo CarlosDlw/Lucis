@@ -4792,6 +4792,62 @@ std::any IRGen::visitCallStmt(LucisParser::CallStmtContext* ctx) {
             argTypes.push_back(resolveExprTypeInfo(exprCtx));
     }
 
+    // ── Generic function templates (checked before builtins to allow override) ──
+    {
+        std::vector<const TypeInfo*> argTypes;
+        if (auto* argList = ctx->argList()) {
+            for (auto* exprCtx : argList->expression())
+                argTypes.push_back(resolveExprTypeInfo(exprCtx));
+        }
+
+        auto fit = genericFuncTemplates_.find(funcName);
+        if (fit != genericFuncTemplates_.end()) {
+            std::vector<LucisParser::ParamContext*> formalParams;
+            if (auto* paramList = fit->second.decl->paramList())
+                formalParams = paramList->param();
+
+            if (argTypes.size() == formalParams.size()) {
+                auto inferred = inferGenericTypeArgs(fit->second.typeParams, formalParams, argTypes);
+                if (inferred) {
+                    if (auto* genericFn = instantiateGenericFunc(funcName, fit->second, *inferred)) {
+                        std::vector<llvm::Value*> args;
+                        if (auto* argList = ctx->argList()) {
+                            auto* fnType = genericFn->getFunctionType();
+                            size_t paramIdx = 0;
+                            for (auto* exprCtx : argList->expression()) {
+                                auto* argVal = castValue(visit(exprCtx));
+                                if (paramIdx < fnType->getNumParams()) {
+                                    auto* paramTy = fnType->getParamType(paramIdx);
+                                    if (argVal->getType() != paramTy) {
+                                        if (argVal->getType()->isIntegerTy() && paramTy->isIntegerTy())
+                                            argVal = builder_->CreateIntCast(argVal, paramTy, true);
+                                        else if (argVal->getType()->isFloatingPointTy() && paramTy->isFloatingPointTy()) {
+                                            if (argVal->getType()->getPrimitiveSizeInBits() > paramTy->getPrimitiveSizeInBits())
+                                                argVal = builder_->CreateFPTrunc(argVal, paramTy);
+                                            else
+                                                argVal = builder_->CreateFPExt(argVal, paramTy);
+                                        }
+                                    }
+                                }
+                                args.push_back(argVal);
+                                paramIdx++;
+                            }
+                        }
+                        builder_->CreateCall(genericFn, args);
+
+                        if (ctx->argList()) {
+                            auto exprs = ctx->argList()->expression();
+                            for (size_t i = 0; i < exprs.size() && i < args.size(); i++)
+                                cleanupTempArg(exprs[i], args[i]);
+                        }
+
+                        return {};
+                    }
+                }
+            }
+        }
+    }
+
     // ── Global builtins (always available, no import required) ──────────
     if (globalBuiltins_.count(funcName)) {
         auto* ptrTy   = llvm::PointerType::getUnqual(*context_);
@@ -11531,6 +11587,23 @@ std::any IRGen::visitFnCallExpr(LucisParser::FnCallExprContext* ctx) {
             }
 
         // ── Global builtins (value-returning: toInt, toFloat, toBool, toString) ──
+        // Check generic function templates first to allow user-defined overrides
+        if (globalBuiltins_.count(calleeName) && genericFuncTemplates_.count(calleeName)) {
+            std::vector<const TypeInfo*> argTypes;
+            if (auto* argList = ctx->argList()) {
+                for (auto* exprCtx : argList->expression())
+                    argTypes.push_back(resolveExprTypeInfo(exprCtx));
+            }
+            auto fit = genericFuncTemplates_.find(calleeName);
+            if (fit != genericFuncTemplates_.end()) {
+                std::vector<LucisParser::ParamContext*> formalParams;
+                if (auto* paramList = fit->second.decl->paramList())
+                    formalParams = paramList->param();
+                if (argTypes.size() == formalParams.size() &&
+                    inferGenericTypeArgs(fit->second.typeParams, formalParams, argTypes))
+                    goto generic_template_handled;
+            }
+        }
         if (globalBuiltins_.count(calleeName)) {
             auto* ptrTy   = llvm::PointerType::getUnqual(*context_);
             auto* usizeTy = module_->getDataLayout().getIntPtrType(*context_);
@@ -14322,6 +14395,7 @@ std::any IRGen::visitFnCallExpr(LucisParser::FnCallExprContext* ctx) {
             }
         }
 
+generic_template_handled:
         if (!fnTI) {
             std::vector<const TypeInfo*> argTypes;
             if (auto* argList = ctx->argList()) {
