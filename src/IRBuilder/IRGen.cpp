@@ -2781,7 +2781,21 @@ std::any IRGen::visitVarDeclStmt(LucisParser::VarDeclStmtContext* ctx) {
                 for (auto it = sizes.rbegin(); it != sizes.rend(); ++it)
                     arrTy = llvm::ArrayType::get(arrTy, *it);
                 auto* alloca = builder_->CreateAlloca(arrTy, nullptr, name);
-                builder_->CreateStore(llvm::Constant::getNullValue(arrTy), alloca);
+                // [N]uint8 = c"..." → memcpy from global string
+                if (dynamic_cast<LucisParser::CStrLitExprContext*>(d->expression())) {
+                    auto* ptrTy   = llvm::PointerType::getUnqual(*context_);
+                    auto* usizeTy = module_->getDataLayout().getIntPtrType(*context_);
+                    auto* voidTy  = llvm::Type::getVoidTy(*context_);
+                    auto* dst = builder_->CreateConstGEP2_32(arrTy, alloca, 0, 0, name + ".gep");
+                    auto* dstB = builder_->CreateBitCast(dst, ptrTy, name + ".dst");
+                    auto* srcB = builder_->CreateBitCast(val, ptrTy, name + ".src");
+                    auto memcpyFn = declareBuiltin("memcpy", ptrTy, {ptrTy, ptrTy, usizeTy});
+                    builder_->CreateCall(memcpyFn, {dstB, srcB,
+                        llvm::ConstantInt::get(usizeTy, module_->getDataLayout().getTypeAllocSize(arrTy))},
+                        name + ".cpy");
+                } else {
+                    builder_->CreateStore(llvm::Constant::getNullValue(arrTy), alloca);
+                }
                 locals_[name] = { alloca, ti, dims };
                 continue;
             }

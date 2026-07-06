@@ -7722,8 +7722,28 @@ std::vector<unsigned> arraySizes = extractArraySizesFromSpec(stmt->typeSpec());
                 }
             }
         } else if (initType && !isAssignable(typeInfo, initType)) {
-            error(d, "type mismatch: cannot assign '" + initType->name +
+            // Special case: [N]uint8 = c"..." — allow if sizes match
+            bool cstrToArrayOk = false;
+            if (arrayDims > 0 && initType->kind == TypeKind::Pointer) {
+                if (auto* cexpr = dynamic_cast<LucisParser::CStrLitExprContext*>(d->expression())) {
+                    // typeInfo is the element type (e.g., uint8) when arrayDims > 0
+                    if (typeInfo && (typeInfo->name == "uint8" || typeInfo->name == "char")) {
+                        auto cstrLen = tryGetCStringLiteralLen(d->expression());
+                        auto sizes   = extractArraySizesFromSpec(stmt->typeSpec());
+                        // c-string includes null terminator: content + 1
+                        if (cstrLen && !sizes.empty() && sizes[0] == static_cast<unsigned>(*cstrLen + 1)) {
+                            cstrToArrayOk = true;
+                        } else if (cstrLen) {
+                            error(d, "c-string literal length (" + std::to_string(*cstrLen + 1) +
+                                  ") does not match array size (" + std::to_string(sizes[0]) + ")");
+                        }
+                    }
+                }
+            }
+            if (!cstrToArrayOk) {
+                error(d, "type mismatch: cannot assign '" + initType->name +
                       "' to variable '" + varName + "' of type '" + typeInfo->name + "'");
+            }
         } else if (initType) {
             bool isArrayLit = dynamic_cast<LucisParser::ArrayLitExprContext*>(d->expression()) != nullptr;
             if (arrayDims == 0 && isArrayLit) {
