@@ -2764,6 +2764,16 @@ std::any IRGen::visitVarDeclStmt(LucisParser::VarDeclStmtContext* ctx) {
                     sizes = aliasArraySizes;
                 // Dynamic array []T with empty initializer → {null, 0}
                 if (sizes.empty() && dims > 0) {
+                    // Check if initializer is a c-string: []uint8 = c"..." → infer size
+                    if (dynamic_cast<LucisParser::CStrLitExprContext*>(d->expression())) {
+                        if (auto* gv = llvm::dyn_cast<llvm::GlobalVariable>(val->stripPointerCasts())) {
+                            if (auto* cda = llvm::dyn_cast_or_null<llvm::ConstantDataArray>(gv->getInitializer())) {
+                                sizes.push_back(cda->getNumElements());
+                            }
+                        }
+                    }
+                }
+                if (sizes.empty() && dims > 0) {
                     auto* ptrTy = llvm::PointerType::getUnqual(*context_);
                     auto* i64Ty = llvm::Type::getInt64Ty(*context_);
                     auto* sliceTy = llvm::StructType::get(*context_, {ptrTy, i64Ty});

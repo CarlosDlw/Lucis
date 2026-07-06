@@ -7704,6 +7704,7 @@ std::vector<unsigned> arraySizes = extractArraySizesFromSpec(stmt->typeSpec());
 
         // Explicit type with initializer — validate
         auto* initType = resolveExprType(d->expression());
+        std::vector<unsigned> arraySizes = extractArraySizesFromSpec(stmt->typeSpec());
 
         if (typeInfo->kind == TypeKind::Extended &&
             dynamic_cast<LucisParser::ArrayLitExprContext*>(d->expression())) {
@@ -7729,13 +7730,19 @@ std::vector<unsigned> arraySizes = extractArraySizesFromSpec(stmt->typeSpec());
                     // typeInfo is the element type (e.g., uint8) when arrayDims > 0
                     if (typeInfo && (typeInfo->name == "uint8" || typeInfo->name == "char")) {
                         auto cstrLen = tryGetCStringLiteralLen(d->expression());
-                        auto sizes   = extractArraySizesFromSpec(stmt->typeSpec());
                         // c-string includes null terminator: content + 1
-                        if (cstrLen && !sizes.empty() && sizes[0] == static_cast<unsigned>(*cstrLen + 1)) {
-                            cstrToArrayOk = true;
-                        } else if (cstrLen && !sizes.empty()) {
-                            error(d, "c-string literal length (" + std::to_string(*cstrLen + 1) +
-                                  ") does not match array size (" + std::to_string(sizes[0]) + ")");
+                        if (cstrLen) {
+                            unsigned inferred = static_cast<unsigned>(*cstrLen + 1);
+                            if (arraySizes.empty()) {
+                                // []uint8 = c"..." → infer size
+                                arraySizes.push_back(inferred);
+                                cstrToArrayOk = true;
+                            } else if (arraySizes[0] == inferred) {
+                                cstrToArrayOk = true;
+                            } else {
+                                error(d, "c-string literal length (" + std::to_string(inferred) +
+                                      ") does not match array size (" + std::to_string(arraySizes[0]) + ")");
+                            }
                         }
                     }
                 }
@@ -7778,7 +7785,6 @@ std::vector<unsigned> arraySizes = extractArraySizesFromSpec(stmt->typeSpec());
 
         checkNegativeToUnsigned(typeInfo, d->expression(), d);
 
-std::vector<unsigned> arraySizes = extractArraySizesFromSpec(stmt->typeSpec());
             VarInfo vi{typeInfo, arrayDims, arraySizes, true, false, nullptr};
         vi.declToken = d->IDENTIFIER()->getSymbol();
         vi.scopeDepth = scopeDepth_;
