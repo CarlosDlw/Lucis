@@ -505,6 +505,7 @@ bool Checker::isDropTrackedType(const TypeInfo* type, unsigned arrayDims) const 
     if (!type || arrayDims > 0) return false;
     if (type->kind == TypeKind::String) return true;
     if (type->kind == TypeKind::Extended) return true;
+    if (type->dropTracked) return true;
     return false;
 }
 
@@ -6448,6 +6449,11 @@ void Checker::checkExtendDecl(LucisParser::ExtendDeclContext* decl) {
             auto* pType = resolveTypeSpec(param->typeSpec(), pDims);
             if (!pType) continue;
             info.paramTypes.push_back(pType);
+        }
+
+        if (methodName == "drop" && !info.isStatic && info.paramTypes.empty()) {
+            if (auto* mutTI = typeRegistry_.lookupMutable(structName))
+                mutTI->dropTracked = true;
         }
 
         structMethods_[structName].push_back(std::move(info));

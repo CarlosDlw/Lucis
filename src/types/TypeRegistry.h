@@ -12,6 +12,9 @@ public:
     // Lookup by language name ("int32", "uint8", "float", etc.)
     const TypeInfo* lookup(const std::string& name) const;
 
+    // Mutable access for marking type flags (e.g. dropTracked)
+    TypeInfo* lookupMutable(const std::string& name);
+
     // Register a new type (for future struct/alias support)
     void registerType(TypeInfo info);
 

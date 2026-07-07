@@ -912,6 +912,11 @@ std::any IRGen::visitExtendDecl(LucisParser::ExtendDeclContext* ctx) {
         else
             structMethods_[structName][methodName] = { fn, retTI };
 
+        if (methodName == "drop" && !isStatic && params.empty()) {
+            if (auto* mutTI = typeRegistry_.lookupMutable(structName))
+                mutTI->dropTracked = true;
+        }
+
         loweringInfos.push_back(ExtendMethodLoweringInfo{
             method,
             isStatic,
@@ -18353,12 +18358,13 @@ void IRGen::emitAutoCleanups(const std::string& skipVar) {
 }
 
 void IRGen::emitCleanupForLocal(const std::string& name, const VarInfo& info) {
+    if (info.isParam) return;
+    if (info.consumed) return;
+    if (!info.typeInfo) return;
+    if (info.arrayDims > 0) return;
     auto* voidTy = llvm::Type::getVoidTy(*context_);
     auto* ptrTy  = llvm::PointerType::getUnqual(*context_);
     auto* usizeTy = typeRegistry_.lookup("usize")->toLLVMType(*context_, module_->getDataLayout());
-    if (info.isParam) return;
-    if (!info.typeInfo) return;
-    if (info.arrayDims > 0) return;
 
     if (info.typeInfo->kind == TypeKind::String) {
         if (info.isBorrowed) return;
@@ -18367,6 +18373,15 @@ void IRGen::emitCleanupForLocal(const std::string& name, const VarInfo& info) {
         auto* strLen = builder_->CreateExtractValue(value, 1, name + "_len");
         auto callee = declareBuiltin("lucis_freeStr", voidTy, {ptrTy, usizeTy});
         builder_->CreateCall(callee, {strPtr, strLen});
+        return;
+    }
+
+    // ── User-defined drop() method ───────────────────────────────────
+    if (info.typeInfo->dropTracked && !info.isBorrowed) {
+        auto* me = findMethodEntryInChain(info.typeInfo, "drop");
+        if (me && me->fn) {
+            builder_->CreateCall(me->fn, {info.alloca});
+        }
         return;
     }
 
@@ -18583,6 +18598,7 @@ void IRGen::emitAllCleanups(const std::string& skipVar) {
 bool IRGen::isDropTrackedLocal(const VarInfo& info) const {
     if (!info.typeInfo || info.arrayDims > 0) return false;
     if (info.typeInfo->kind == TypeKind::String && info.isBorrowed) return false;
+    if (info.typeInfo->dropTracked && !info.isBorrowed) return true;
     return info.typeInfo->kind == TypeKind::String ||
            info.typeInfo->kind == TypeKind::Extended;
 }
@@ -18602,6 +18618,7 @@ bool IRGen::isBorrowedStringValueExpr(LucisParser::ExpressionContext* expr) cons
 void IRGen::consumeLocalByName(const std::string& name) {
     auto it = locals_.find(name);
     if (it == locals_.end()) return;
+    it->second.consumed = true;
     if (isDropTrackedLocal(it->second)) {
         auto* nullVal = llvm::Constant::getNullValue(it->second.alloca->getAllocatedType());
         builder_->CreateStore(nullVal, it->second.alloca);
@@ -23859,6 +23876,11 @@ const TypeInfo* IRGen::instantiateGenericStruct(
                 staticStructMethods_[mangledName][methodName] = { fn, retTI };
             else
                 structMethods_[mangledName][methodName] = { fn, retTI };
+
+            if (methodName == "drop" && !isStatic && params.empty()) {
+                if (auto* mutTI = typeRegistry_.lookupMutable(mangledName))
+                    mutTI->dropTracked = true;
+            }
 
             // Emit body
             auto* savedFunc = currentFunction_;

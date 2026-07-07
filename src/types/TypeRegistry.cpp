@@ -9,6 +9,11 @@ const TypeInfo* TypeRegistry::lookup(const std::string& name) const {
     return it != types_.end() ? &it->second : nullptr;
 }
 
+TypeInfo* TypeRegistry::lookupMutable(const std::string& name) {
+    auto it = types_.find(name);
+    return it != types_.end() ? &it->second : nullptr;
+}
+
 void TypeRegistry::registerType(TypeInfo info) {
     types_[info.name] = std::move(info);
 }

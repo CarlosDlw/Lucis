@@ -1,0 +1,83 @@
+
+use std::log::println;
+use std::test::{ assertEqual };
+
+struct HasDrop {
+    *int32 counter;
+}
+
+extend HasDrop {
+    fn drop(&self) void {
+        if self.counter != null {
+            self.counter[0] = self.counter[0] + 1;
+        }
+    }
+}
+
+struct Dropper {
+    int32 id;
+}
+
+extend Dropper {
+    fn drop(&self) void {
+    }
+}
+
+fn testEarlyReturn1(*int32 c4) void {
+    HasDrop x = HasDrop { counter: c4 };
+    ret;
+}
+
+fn testEarlyReturn2(*int32 c4) void {
+    HasDrop x = HasDrop { counter: c4 };
+    HasDrop y = HasDrop { counter: c4 };
+    ret;
+}
+
+fn testAutoDrop() int32 {
+    println("[Testing auto destructor...]");
+
+    // Test 1: single var drop on scope exit
+    int32 c = 0;
+    {
+        HasDrop x = HasDrop { counter: &c };
+    }
+    assertEqual(c, 1);
+
+    // Test 2: multiple vars both dropped
+    int32 c2 = 0;
+    int32 c3 = 0;
+    {
+        HasDrop a = HasDrop { counter: &c2 };
+        HasDrop b = HasDrop { counter: &c3 };
+    }
+    assertEqual(c2, 1);
+    assertEqual(c3, 1);
+
+    // Test 3: drop on return
+    int32 c4 = 0;
+    testEarlyReturn1(&c4);
+    assertEqual(c4, 1);
+    c4 = 0;
+    testEarlyReturn2(&c4);
+    assertEqual(c4, 2);
+
+    // Test 4: struct with drop (no fields) works without crash
+    {
+        Dropper d = Dropper { id: 42 };
+    }
+
+    // Test 5: nested scopes
+    int32 c5 = 0;
+    {
+        HasDrop a = HasDrop { counter: &c5 };
+        {
+            HasDrop b = HasDrop { counter: &c5 };
+        }
+        assertEqual(c5, 1);
+    }
+    assertEqual(c5, 2);
+
+    println("✔ auto destructor tests passed");
+    ret 0;
+}
