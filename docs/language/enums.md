@@ -58,6 +58,69 @@ enum Result<V, E> {
 
 ---
 
+## Explicit Discriminants
+
+Each enum variant is assigned an integer discriminant (tag value) that identifies
+the variant at runtime. By default, discriminants are assigned sequentially starting
+from `0`. You can override this with `= expression`:
+
+```
+enum Color {
+    Red   = 0,
+    Green = 1,
+    Blue  = 2,
+}
+
+enum HttpStatus {
+    Ok       = 200,
+    NotFound = 404,
+    Error    = 500,
+}
+```
+
+### Mixed explicit and implicit
+
+When a variant has an explicit discriminant, subsequent implicit variants continue
+sequentially from that value:
+
+```
+enum Mixed {
+    First,         // 0
+    Second = 10,   // 10
+    Third,         // 11
+    Fourth = 7,    // 7
+    Fifth,         // 8
+}
+```
+
+### Discriminant expressions
+
+The expression after `=` must be a compile-time constant unsigned integer.
+Simple literals, suffixed integer literals (`0u32`, `42i64`), and basic arithmetic
+are supported.
+
+Duplicate discriminant values are rejected at compile time:
+
+```
+enum Foo {
+    A = 1,
+    B = 1,  // compile error: duplicate discriminant 1
+}
+```
+
+Discriminants can be specified on any variant kind — unit, tuple payload, or named
+payload:
+
+```
+enum Shape {
+    Unit,
+    Circle { r: float64 } = 5,
+    Rect(float64, float64) = 10,
+}
+```
+
+---
+
 ## Using Enum Values
 
 Enum variants are accessed with the `::` (scope resolution) operator:
