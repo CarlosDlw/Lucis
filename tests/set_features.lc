@@ -1,0 +1,107 @@
+
+use std::log::println;
+use std::test::{ assertEqual };
+
+fn testSetFeatures() int32 {
+    println("[Testing set features...]");
+
+    // ── set<int32> ────────────────────────────────────────────────────
+    set<int32> s;
+    assertEqual(s.isEmpty(), true);
+    assertEqual(s.len(), 0);
+
+    // add
+    assertEqual(s.add(10), true);
+    assertEqual(s.add(20), true);
+    assertEqual(s.add(30), true);
+    assertEqual(s.len(), 3);
+    assertEqual(s.isEmpty(), false);
+
+    // has
+    assertEqual(s.has(10), true);
+    assertEqual(s.has(99), false);
+
+    // add duplicate
+    assertEqual(s.add(10), false);
+    assertEqual(s.len(), 3);
+
+    // remove
+    assertEqual(s.remove(20), true);
+    assertEqual(s.has(20), false);
+    assertEqual(s.len(), 2);
+    assertEqual(s.remove(999), false);
+
+    // values
+    vec<int32> vals = s.values();
+    assertEqual(vals.len(), 2);
+    bool found10 = false;
+    bool found30 = false;
+    for int32 i in 0..vals.len() {
+        int32 v = vals[i as uint32];
+        if v == 10 { found10 = true; }
+        else if v == 30 { found30 = true; }
+    }
+    assertEqual(found10, true);
+    assertEqual(found30, true);
+
+    // clear
+    s.clear();
+    assertEqual(s.len(), 0);
+    assertEqual(s.isEmpty(), true);
+
+    // ── set<string> ───────────────────────────────────────────────────
+    set<string> ss;
+    assertEqual(ss.add("alpha"), true);
+    assertEqual(ss.add("beta"), true);
+    assertEqual(ss.add("gamma"), true);
+    assertEqual(ss.len(), 3);
+
+    assertEqual(ss.has("alpha"), true);
+    assertEqual(ss.has("delta"), false);
+
+    // Duplicate add (tests leak fix)
+    assertEqual(ss.add("alpha"), false);
+    assertEqual(ss.len(), 3);
+
+    // remove string
+    assertEqual(ss.remove("beta"), true);
+    assertEqual(ss.has("beta"), false);
+    assertEqual(ss.len(), 2);
+
+    // values string
+    vec<string> svals = ss.values();
+    assertEqual(vals.len(), 2);
+
+    // clear string
+    ss.clear();
+    assertEqual(ss.len(), 0);
+
+    // ── Stress: many entries ──────────────────────────────────────────
+    set<int32> stress;
+    for int32 i in 0..100 {
+        assertEqual(stress.add(i), true);
+    }
+    assertEqual(stress.len(), 100);
+    for int32 i in 0..100 {
+        assertEqual(stress.has(i), true);
+    }
+    // Remove metade
+    for int32 i in 0..100 {
+        if i % 2 == 0 {
+            assertEqual(stress.remove(i), true);
+        }
+    }
+    assertEqual(stress.len(), 50);
+    for int32 i in 0..100 {
+        if i % 2 == 0 {
+            assertEqual(stress.has(i), false);
+        } else {
+            assertEqual(stress.has(i), true);
+        }
+    }
+    stress.clear();
+    assertEqual(stress.len(), 0);
+
+    println("✔ set features tests passed");
+    ret 0;
+}

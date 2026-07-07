@@ -274,7 +274,22 @@ int lucis_set_isEmpty_str(const lucis_set_header* s) {
 }
 
 int lucis_set_add_str(lucis_set_header* s, lucis_set_string elem) {
-    return set_core_add(s, &elem, hash_str, eq_str);
+    uint64_t h = hash_str(&elem);
+    int found;
+    size_t slot = set_core_find(s, &elem, h, eq_str, &found);
+    if (found) {
+        lucis_set_string* stored = set_key_at(s, slot);
+        if (stored->ptr != elem.ptr)
+            lucis_freeStr(elem.ptr, elem.len);
+        return 0;
+    }
+    if ((s->len + 1) * SET_LOAD_FACTOR_DEN > s->cap * SET_LOAD_FACTOR_NUM)
+        set_core_grow(s, hash_str, eq_str);
+    s->states[slot] = SET_STATE_OCCUPIED;
+    s->hashes[slot] = h;
+    memcpy(set_key_at(s, slot), &elem, s->key_size);
+    s->len++;
+    return 1;
 }
 
 int lucis_set_has_str(lucis_set_header* s, lucis_set_string elem) {

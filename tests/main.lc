@@ -62,6 +62,7 @@ use tests::unions_full::testUnionsFull;
 use tests::const_features::testConstFeatures;
 use tests::vec_pointers::testVecPointers;
 use tests::map_features::testMapFeatures;
+use tests::set_features::testSetFeatures;
 use tests::void_types::testVoidTypes;
 use tests::stdstr::testStdstr;
 use tests::stdconv::testStdConv;
@@ -115,6 +116,7 @@ fn main() int32 {
     testConstFeatures();
     testVecPointers();
     testMapFeatures();
+    testSetFeatures();
     testSysMemory();
     testSysVolatile();
     testSysBitOps();
