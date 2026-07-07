@@ -331,7 +331,10 @@ void lucis_map_set_str_##VS(lucis_map_header* m,                           \
     int found;                                                                 \
     size_t slot = map_core_find(m, &key, h, eq_key_str, &found);              \
     if (found) {                                                               \
-        lucis_freeStr(key.ptr, key.len);                                         \
+        lucis_map_string* stored_key = key_at(m, slot);                        \
+        if (stored_key->ptr != key.ptr)                                        \
+            lucis_freeStr(stored_key->ptr, stored_key->len);                   \
+        memcpy(stored_key, &key, m->key_size);                                 \
         memcpy(val_at(m, slot), &val, m->val_size);                            \
         return;                                                                 \
     }                                                                           \
@@ -547,12 +550,15 @@ void lucis_map_set_str_str(lucis_map_header* m,
     int found;
     size_t slot = map_core_find(m, &key, h, eq_key_str, &found);
     if (found) {
-        lucis_map_string* old_val =
-            (lucis_map_string*)((uint8_t*)m->values + slot * m->val_size);
-        lucis_freeStr(key.ptr, key.len);
+        lucis_map_string* stored_key = key_at(m, slot);
+        if (stored_key->ptr != key.ptr)
+            lucis_freeStr(stored_key->ptr, stored_key->len);
+        memcpy(stored_key, &key, m->key_size);
+
+        lucis_map_string* old_val = val_at(m, slot);
         if (old_val->ptr != val.ptr || old_val->len != val.len)
             lucis_freeStr(old_val->ptr, old_val->len);
-        memcpy(val_at(m, slot), &val, m->val_size);
+        memcpy(old_val, &val, m->val_size);
         return;
     }
     map_core_set(m, &key, &val, hash_key_str, eq_key_str);
@@ -695,7 +701,10 @@ void lucis_map_set_str_raw(lucis_map_header* m, lucis_map_string key,
     int found;
     size_t slot = map_core_find(m, &key, h, eq_key_str, &found);
     if (found) {
-        lucis_freeStr(key.ptr, key.len);
+        lucis_map_string* stored_key = key_at(m, slot);
+        if (stored_key->ptr != key.ptr)
+            lucis_freeStr(stored_key->ptr, stored_key->len);
+        memcpy(stored_key, &key, m->key_size);
         memcpy(val_at(m, slot), val, m->val_size);
         return;
     }

@@ -1,0 +1,128 @@
+
+use std::log::println;
+use std::test::{ assertEqual };
+
+fn testMapFeatures() int32 {
+    println("[Testing map features...]");
+
+    // ── map<int32, int32> ──────────────────────────────────────────────
+    map<int32, int32> m;
+    m[10] = 100;
+    m[20] = 200;
+    assertEqual(m[10], 100);
+    assertEqual(m[20], 200);
+
+    // Update
+    m[10] = 999;
+    assertEqual(m[10], 999);
+
+    // has / len / isEmpty
+    assertEqual(m.has(10), true);
+    assertEqual(m.has(99), false);
+    assertEqual(m.len(), 2);
+    assertEqual(m.isEmpty(), false);
+
+    // remove
+    assertEqual(m.remove(20), true);
+    assertEqual(m.has(20), false);
+    assertEqual(m.len(), 1);
+
+    // clear
+    m.clear();
+    assertEqual(m.len(), 0);
+    assertEqual(m.isEmpty(), true);
+
+    // ── map<string, int32> ─────────────────────────────────────────────
+    map<string, int32> sm;
+    sm["alpha"] = 10;
+    sm["beta"] = 20;
+    assertEqual(sm["alpha"], 10);
+    assertEqual(sm["beta"], 20);
+
+    sm["alpha"] = 100;
+    assertEqual(sm["alpha"], 100);
+
+    assertEqual(sm.has("alpha"), true);
+    assertEqual(sm.has("gamma"), false);
+    assertEqual(sm.len(), 2);
+
+    assertEqual(sm.remove("beta"), true);
+    assertEqual(sm.len(), 1);
+
+    sm.clear();
+    assertEqual(sm.len(), 0);
+
+    // ── map<string, string> ────────────────────────────────────────────
+    map<string, string> ss;
+    ss["name"] = "Carlos";
+    ss["city"] = "SP";
+    assertEqual(ss["name"], "Carlos");
+    assertEqual(ss["city"], "SP");
+
+    ss["city"] = "RJ";
+    assertEqual(ss["city"], "RJ");
+
+    ss.clear();
+    assertEqual(ss.len(), 0);
+
+    // ── getOrDefault ────────────────────────────────────────────────────
+    map<int32, string> gm;
+    gm[1] = "um";
+    assertEqual(gm.getOrDefault(1, "default"), "um");
+    assertEqual(gm.getOrDefault(99, "default"), "default");
+
+    // ── keys / values ───────────────────────────────────────────────────
+    map<string, int32> km;
+    km["a"] = 10;
+    km["b"] = 20;
+    km["c"] = 30;
+
+    vec<string> keys = km.keys();
+    assertEqual(keys.len(), 3);
+
+    vec<int32> values = km.values();
+    assertEqual(values.len(), 3);
+
+    bool found10 = false;
+    bool found20 = false;
+    bool found30 = false;
+    for int32 i in 0..3 {
+        int32 v = values[i as uint32];
+        if v == 10 { found10 = true; }
+        else if v == 20 { found20 = true; }
+        else if v == 30 { found30 = true; }
+    }
+    assertEqual(found10, true);
+    assertEqual(found20, true);
+    assertEqual(found30, true);
+
+    // ── Stress: many entries ────────────────────────────────────────────
+    map<int32, int32> stress;
+    for int32 i in 0..50 {
+        stress[i] = i * 10;
+    }
+    assertEqual(stress.len(), 50);
+    for int32 i in 0..50 {
+        assertEqual(stress[i], i * 10);
+    }
+    // Remove metade
+    for int32 i in 0..50 {
+        if i % 2 == 0 {
+            stress.remove(i);
+        }
+    }
+    assertEqual(stress.len(), 25);
+    for int32 i in 0..50 {
+        if i % 2 == 0 {
+            assertEqual(stress.has(i), false);
+        } else {
+            assertEqual(stress.has(i), true);
+            assertEqual(stress[i], i * 10);
+        }
+    }
+    stress.clear();
+    assertEqual(stress.len(), 0);
+
+    println("✔ map features tests passed");
+    ret 0;
+}
