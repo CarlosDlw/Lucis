@@ -375,12 +375,14 @@ public:
     std::vector<TypeSpecContext *> typeSpec();
     TypeSpecContext* typeSpec(size_t i);
     antlr4::tree::TerminalNode *RPAREN();
-    std::vector<antlr4::tree::TerminalNode *> COMMA();
-    antlr4::tree::TerminalNode* COMMA(size_t i);
     antlr4::tree::TerminalNode *LBRACE();
     std::vector<EnumPayloadFieldContext *> enumPayloadField();
     EnumPayloadFieldContext* enumPayloadField(size_t i);
     antlr4::tree::TerminalNode *RBRACE();
+    antlr4::tree::TerminalNode *ASSIGN();
+    ExpressionContext *expression();
+    std::vector<antlr4::tree::TerminalNode *> COMMA();
+    antlr4::tree::TerminalNode* COMMA(size_t i);
 
 
     virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;

@@ -6271,6 +6271,7 @@ void Checker::checkEnumDecl(LucisParser::EnumDeclContext* decl) {
     ti.builtinSuffix = "i32";
 
     std::unordered_set<std::string> seen;
+    unsigned nextDiscriminant = 0;
     for (auto* variantDecl : decl->enumVariant()) {
         auto variant = variantDecl->IDENTIFIER()->getText();
         if (!seen.insert(variant).second) {
@@ -6283,8 +6284,36 @@ void Checker::checkEnumDecl(LucisParser::EnumDeclContext* decl) {
 
         EnumVariantInfo info;
         info.name = variant;
-        info.discriminant = static_cast<unsigned>(ti.enumVariantInfos.size());
         info.isError = (variantDecl->ATTR_ERROR() != nullptr);
+
+        if (variantDecl->ASSIGN()) {
+            auto discVal = tryEvalUSizeExpr(variantDecl->expression());
+            if (!discVal) {
+                error(variantDecl->expression(),
+                      "enum variant discriminant must be a compile-time constant unsigned integer");
+                continue;
+            }
+            info.discriminant = static_cast<unsigned>(*discVal);
+            if (static_cast<uint64_t>(info.discriminant) != *discVal) {
+                error(variantDecl->expression(),
+                      "enum variant discriminant value too large");
+                continue;
+            }
+            bool dup = false;
+            for (auto& existing : ti.enumVariantInfos) {
+                if (existing.discriminant == info.discriminant) {
+                    error(variantDecl,
+                          "duplicate enum variant discriminant " + std::to_string(info.discriminant) +
+                          " in enum '" + name + "'");
+                    dup = true;
+                    break;
+                }
+            }
+            if (dup) continue;
+            nextDiscriminant = info.discriminant + 1;
+        } else {
+            info.discriminant = nextDiscriminant++;
+        }
 
         if (variantDecl->LPAREN()) {
             info.payloadKind = EnumPayloadKind::Tuple;

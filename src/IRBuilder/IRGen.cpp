@@ -25,6 +25,61 @@
 
 #include <cctype>
 #include <iostream>
+#include <optional>
+
+// Evaluate enum discriminant expression (already validated by Checker).
+static uint64_t evalEnumDiscExpr(LucisParser::ExpressionContext* expr) {
+    if (!expr) return 0;
+    // Unwrap casts and parentheses
+    while (true) {
+        if (auto* c = dynamic_cast<LucisParser::CastExprContext*>(expr)) {
+            expr = c->expression();
+        } else if (auto* p = dynamic_cast<LucisParser::ParenExprContext*>(expr)) {
+            expr = p->expression();
+        } else {
+            break;
+        }
+    }
+    // Plain integer literal
+    if (auto* lit = dynamic_cast<LucisParser::IntLitExprContext*>(expr)) {
+        auto s = lit->INT_LIT()->getText();
+        s.erase(std::remove(s.begin(), s.end(), '_'), s.end());
+        return std::stoull(s);
+    }
+    // Suffixed integer literal
+    auto stripSuffix = [](const std::string& text) -> std::optional<uint64_t> {
+        static const std::vector<std::string> suffixes = {
+            "i8", "i16", "i32", "i64", "i128", "iinf", "isize",
+            "u8", "u16", "u32", "u64", "u128", "usize"
+        };
+        for (auto& suf : suffixes) {
+            if (text.size() > suf.size() &&
+                text.compare(text.size() - suf.size(), suf.size(), suf) == 0) {
+                auto num = text.substr(0, text.size() - suf.size());
+                num.erase(std::remove(num.begin(), num.end(), '_'), num.end());
+                return std::stoull(num);
+            }
+        }
+        return std::nullopt;
+    };
+    if (auto* si = dynamic_cast<LucisParser::SuffixedIntLitExprContext*>(expr)) {
+        auto v = stripSuffix(si->SUFFIXED_INT()->getText());
+        if (v) return *v;
+    }
+    if (auto* sh = dynamic_cast<LucisParser::SuffixedHexLitExprContext*>(expr)) {
+        auto v = stripSuffix(sh->SUFFIXED_HEX()->getText());
+        if (v) return *v;
+    }
+    if (auto* so = dynamic_cast<LucisParser::SuffixedOctLitExprContext*>(expr)) {
+        auto v = stripSuffix(so->SUFFIXED_OCT()->getText());
+        if (v) return *v;
+    }
+    if (auto* sb = dynamic_cast<LucisParser::SuffixedBinLitExprContext*>(expr)) {
+        auto v = stripSuffix(sb->SUFFIXED_BIN()->getText());
+        if (v) return *v;
+    }
+    return 0;
+}
 
 IRGen::IRGen()
     : intrinsicRegistry_(typeRegistry_) {
@@ -721,13 +776,20 @@ std::any IRGen::visitEnumDecl(LucisParser::EnumDeclContext* ctx) {
     ti.isSigned = false;
     ti.builtinSuffix = "i32";
 
+    unsigned nextDiscriminant = 0;
     for (auto* variantDecl : ctx->enumVariant()) {
         auto variantName = variantDecl->IDENTIFIER()->getText();
         ti.enumVariants.push_back(variantName);
 
         EnumVariantInfo info;
         info.name = variantName;
-        info.discriminant = static_cast<unsigned>(ti.enumVariantInfos.size());
+        if (variantDecl->ASSIGN()) {
+            info.discriminant = static_cast<unsigned>(
+                evalEnumDiscExpr(variantDecl->expression()));
+            nextDiscriminant = info.discriminant + 1;
+        } else {
+            info.discriminant = nextDiscriminant++;
+        }
 
         if (variantDecl->LPAREN()) {
             info.payloadKind = EnumPayloadKind::Tuple;
@@ -23967,14 +24029,21 @@ const TypeInfo* IRGen::instantiateGenericEnum(
     typeRegistry_.registerType(skeleton);
 
     TypeInfo ti = skeleton;
+    unsigned nextDiscriminant = 0;
     for (auto* variantDecl : tmpl.decl->enumVariant()) {
         auto variantName = variantDecl->IDENTIFIER()->getText();
         ti.enumVariants.push_back(variantName);
 
         EnumVariantInfo info;
         info.name = variantName;
-        info.discriminant = static_cast<unsigned>(ti.enumVariantInfos.size());
         info.isError = (variantDecl->ATTR_ERROR() != nullptr);
+        if (variantDecl->ASSIGN()) {
+            info.discriminant = static_cast<unsigned>(
+                evalEnumDiscExpr(variantDecl->expression()));
+            nextDiscriminant = info.discriminant + 1;
+        } else {
+            info.discriminant = nextDiscriminant++;
+        }
 
         if (variantDecl->LPAREN()) {
             info.payloadKind = EnumPayloadKind::Tuple;

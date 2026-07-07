@@ -1,0 +1,103 @@
+
+use std::log::println;
+use std::test::{ assertEqual };
+
+enum Color {
+    Red = 0,
+    Green = 1,
+    Blue = 2,
+}
+
+enum Status {
+    Ok = 200,
+    NotFound = 404,
+    Error = 500,
+}
+
+enum Mixed {
+    First,
+    Second = 10,
+    Third,
+    Fourth = 7,
+    Fifth,
+}
+
+fn testEnumExplicitDiscriminants() int32 {
+    println("[Testing enum: explicit discriminants...]");
+
+    assertEqual(Color::Red is Color::Red, true);
+    assertEqual(Color::Green is Color::Green, true);
+    assertEqual(Color::Blue is Color::Blue, true);
+
+    {
+        Color c = Color::Red;
+        int32 code = -1;
+        switch c {
+            case Color::Red    { code = 0; }
+            case Color::Green  { code = 1; }
+            case Color::Blue   { code = 2; }
+        }
+        assertEqual(code, 0);
+    }
+
+    {
+        Color c = Color::Blue;
+        int32 code = -1;
+        switch c {
+            case Color::Red    { code = 0; }
+            case Color::Green  { code = 1; }
+            case Color::Blue   { code = 2; }
+        }
+        assertEqual(code, 2);
+    }
+
+    assertEqual(Status::Ok is Status::Ok, true);
+    assertEqual(Status::NotFound is Status::NotFound, true);
+    assertEqual(Status::Error is Status::Error, true);
+
+    {
+        Status s = Status::NotFound;
+        int32 code = -1;
+        switch s {
+            case Status::Ok       { code = 200; }
+            case Status::NotFound { code = 404; }
+            case Status::Error    { code = 500; }
+        }
+        assertEqual(code, 404);
+    }
+
+    assertEqual(Mixed::First is Mixed::First, true);
+    assertEqual(Mixed::Second is Mixed::Second, true);
+    assertEqual(Mixed::Third is Mixed::Third, true);
+    assertEqual(Mixed::Fourth is Mixed::Fourth, true);
+    assertEqual(Mixed::Fifth is Mixed::Fifth, true);
+
+    {
+        Mixed m = Mixed::Third;
+        int32 code = -1;
+        switch m {
+            case Mixed::First  { code = 0; }
+            case Mixed::Second { code = 10; }
+            case Mixed::Third  { code = 11; }
+            case Mixed::Fourth { code = 7; }
+            case Mixed::Fifth  { code = 8; }
+        }
+        assertEqual(code, 11);
+    }
+
+    {
+        Mixed m = Mixed::Fifth;
+        int32 code = -1;
+        switch m {
+            case Mixed::First  { code = 0; }
+            case Mixed::Second { code = 10; }
+            case Mixed::Third  { code = 11; }
+            case Mixed::Fourth { code = 7; }
+            case Mixed::Fifth  { code = 8; }
+        }
+        assertEqual(code, 8);
+    }
+
+    println("✔ enum explicit discriminant tests passed");
+    ret 0;
+}

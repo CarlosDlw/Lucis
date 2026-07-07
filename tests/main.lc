@@ -12,6 +12,7 @@ use tests::control_flow_conditionals_loops::testControlFlowConditionalsAndLoops;
 use tests::control_flow_error_handling::testControlFlowErrorHandling;
 use tests::control_flow_switch::testControlFlowSwitch;
 use tests::cstring_types::testCStringTypes;
+use tests::enum_discriminant::testEnumExplicitDiscriminants;
 use tests::enum_generic_structs::testEnumGenericAndStructField;
 use tests::enum_payload_is::testEnumPayloadAndIs;
 use tests::enum_unit_switch::testEnumUnitAndSwitch;
@@ -97,6 +98,7 @@ fn main() int32 {
     testControlFlowSwitch();
     testControlFlowErrorHandling();
     testEnumUnitAndSwitch();
+    testEnumExplicitDiscriminants();
     testEnumPayloadAndIs();
     testEnumGenericAndStructField();
     testExpressionsFull();
