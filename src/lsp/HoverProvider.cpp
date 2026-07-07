@@ -578,9 +578,12 @@ std::optional<HoverResult> HoverProvider::hoverIdent(
             else if (it->second.typeName.find("fn(") == 0 || it->second.typeName.find("closure(") == 0)
                 kind = "lambda";
             std::string md = formatTypedHover(kind,
-                                              dims + it->second.typeName,
-                                              name,
-                                              bindings);
+                                               dims + it->second.typeName,
+                                               name,
+                                               bindings);
+            auto* dropTI = typeRegistry_.lookup(it->second.typeName);
+            if (dropTI && dropTI->dropTracked)
+                md += "\n\n*auto-dropped on scope exit*";
             return makeResult(token, md);
         }
     }
@@ -689,6 +692,10 @@ std::optional<HoverResult> HoverProvider::hoverIdent(
                             typeSpecToString(p->typeSpec()),
                             name,
                             bindings);
+                        auto paramTypeName = typeSpecToString(p->typeSpec());
+                        auto* dropTI = typeRegistry_.lookup(paramTypeName);
+                        if (dropTI && dropTI->dropTracked)
+                            md += "\n\n*auto-dropped on scope exit*";
                         return makeResult(token, md);
                     }
                 }
@@ -701,9 +708,12 @@ std::optional<HoverResult> HoverProvider::hoverIdent(
                     for (unsigned i = 0; i < it->second.arrayDims; i++)
                         dims += "[]";
                     std::string md = formatTypedHover("variable",
-                                                      dims + it->second.typeName,
-                                                      name,
-                                                      bindings);
+                                                       dims + it->second.typeName,
+                                                       name,
+                                                       bindings);
+                    auto* dropTI = typeRegistry_.lookup(it->second.typeName);
+                    if (dropTI && dropTI->dropTracked)
+                        md += "\n\n*auto-dropped on scope exit*";
                     return makeResult(token, md);
                 }
             }
@@ -6341,8 +6351,10 @@ std::string HoverProvider::formatStructDecl(LucisParser::StructDeclContext* decl
     }
     ss << "}\n```";
 
-    // Show extend methods if available
-    // (We don't have access to tree here, but the caller can append if needed)
+    auto* dropTI = typeRegistry_.lookup(safeText(decl->IDENTIFIER()));
+    if (dropTI && dropTI->dropTracked)
+        ss << "\n*auto-dropped on scope exit*";
+
     return ss.str();
 }
 
