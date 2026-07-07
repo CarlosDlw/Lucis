@@ -8773,6 +8773,33 @@ std::any IRGen::visitIndexExpr(LucisParser::IndexExprContext* ctx) {
                     return static_cast<llvm::Value*>(result);
                 }
             }
+            // Vec<T> index: baseExpr[idx] -> lucis_vec_at_<suffix>
+            if (baseTI && baseTI->kind == TypeKind::Extended && baseTI->extendedKind == "Vec") {
+                auto* ptrTy = llvm::PointerType::getUnqual(*context_);
+                auto* usizeTy = module_->getDataLayout().getIntPtrType(*context_);
+                llvm::Value* vecPtr = baseVal;
+                if (!vecPtr->getType()->isPointerTy()) {
+                    auto* alloca = builder_->CreateAlloca(vecPtr->getType());
+                    builder_->CreateStore(vecPtr, alloca);
+                    vecPtr = alloca;
+                }
+                auto* elemLLTy = baseTI->elementType->toLLVMType(*context_, module_->getDataLayout());
+                auto suffix = getVecSuffix(baseTI->elementType);
+                auto* idx = idxVal;
+                if (idx->getType() != usizeTy)
+                    idx = builder_->CreateIntCast(idx, usizeTy, false);
+                if (suffix == "raw") {
+                    auto& dl = module_->getDataLayout();
+                    auto elemSz = dl.getTypeAllocSize(elemLLTy);
+                    auto* elemSzVal = llvm::ConstantInt::get(usizeTy, elemSz);
+                    auto ptrFn = declareBuiltin("lucis_vec_ptr_raw", ptrTy, {ptrTy, usizeTy, usizeTy});
+                    auto* elemPtr = builder_->CreateCall(ptrFn, {vecPtr, idx, elemSzVal}, "vec_elem_ptr");
+                    return static_cast<llvm::Value*>(builder_->CreateLoad(elemLLTy, elemPtr, "vec_at"));
+                }
+                auto callee = declareBuiltin("lucis_vec_at_" + suffix, elemLLTy, {ptrTy, usizeTy});
+                auto* result = builder_->CreateCall(callee, {vecPtr, idx}, "vec_at");
+                return static_cast<llvm::Value*>(result);
+            }
 
             // string[index] -> char
             if (baseTI && baseTI->kind == TypeKind::String && baseVal->getType()->isStructTy()) {

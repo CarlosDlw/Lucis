@@ -136,7 +136,7 @@ extend CliCommand {
                 string buf = "";
                 if opt.shortName != 0 as char {
                     buf = buf.concat("-");
-                    buf = buf.concat(sprintf("{}", opt.shortName));
+                    buf = buf.concat(sprintf("{}", opt.shortName.toString()));
                     buf = buf.concat(", ");
                 }
                 buf = buf.concat("--");
@@ -340,7 +340,7 @@ extend CliApp {
                                     ctx.optionValues[o.longName] = CliValue::new(sysargs[i]);
                                     j = arg.len(); // skip rest
                                 } else {
-                                    ctx.error = sprintf("option -{} requires a value", c);
+                                    ctx.error = sprintf("option -{} requires a value", c.toString());
                                     ret ctx;
                                 }
                             } else {
@@ -351,7 +351,7 @@ extend CliApp {
                     }
 
                     if !foundOpt {
-                        ctx.error = sprintf("unknown option: -{}", c);
+                        ctx.error = sprintf("unknown option: -{}", c.toString());
                         ret ctx;
                     }
                 }
@@ -466,7 +466,7 @@ extend CliApp {
                 string buf = "";
                 if opt.shortName != 0 as char {
                     buf = buf.concat("-");
-                    buf = buf.concat(sprintf("{}", opt.shortName));
+                    buf = buf.concat(sprintf("{}", opt.shortName.toString()));
                     buf = buf.concat(", ");
                 }
                 buf = buf.concat("--");
