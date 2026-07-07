@@ -1,0 +1,107 @@
+
+use std::log::println;
+use std::test::{ assertEqual };
+
+fn testVecFeatures() int32 {
+    println("[Testing vec features...]");
+
+    // ── vec<int32> básico ──────────────────────────────────────────────
+    vec<int32> vi;
+    vi.push(10);
+    vi.push(20);
+    vi.push(30);
+    assertEqual(vi.len(), 3);
+    assertEqual(vi[0 as uint32], 10);
+    assertEqual(vi[1 as uint32], 20);
+    assertEqual(vi[2 as uint32], 30);
+
+    vi[1 as uint32] = 99;
+    assertEqual(vi[1 as uint32], 99);
+
+    assertEqual(vi.pop(), 30);
+    assertEqual(vi.len(), 2);
+
+    vi.insert(0 as uint32, 5);
+    assertEqual(vi[0 as uint32], 5);
+    assertEqual(vi.len(), 3);
+
+    int32 removedInt = vi.removeAt(1 as uint32);
+    assertEqual(removedInt, 10);
+    assertEqual(vi.len(), 2);
+
+    vi.clear();
+    assertEqual(vi.len(), 0);
+    assertEqual(vi.isEmpty(), true);
+
+    // ── vec<string> ────────────────────────────────────────────────────
+    vec<string> vs;
+    vs.push("alpha");
+    vs.push("beta");
+    vs.push("gamma");
+    assertEqual(vs.len(), 3);
+    assertEqual(vs[0 as uint32], "alpha");
+    assertEqual(vs[1 as uint32], "beta");
+    assertEqual(vs[2 as uint32], "gamma");
+
+    // set
+    vs[1 as uint32] = "BETA";
+    assertEqual(vs[1 as uint32], "BETA");
+
+    // first / last
+    assertEqual(vs.first(), "alpha");
+    assertEqual(vs.last(), "gamma");
+
+    // contains / indexOf
+    assertEqual(vs.contains("alpha"), true);
+    assertEqual(vs.contains("omega"), false);
+    assertEqual(vs.indexOf("beta"), -1);  // was replaced by BETA
+    assertEqual(vs.indexOf("BETA"), 1);
+
+    // insert
+    vs.insert(1 as uint32, "zeta");
+    assertEqual(vs[1 as uint32], "zeta");
+    assertEqual(vs.len(), 4);
+
+    // removeAt
+    string removed = vs.removeAt(2 as uint32);
+    assertEqual(removed, "BETA");
+    assertEqual(vs.len(), 3);
+
+    // removeSwap
+    string swapped = vs.removeSwap(0 as uint32);
+    assertEqual(vs.len(), 2);
+    bool validSwap = swapped == "alpha" || swapped == "zeta" || swapped == "gamma";
+    assertEqual(validSwap, true);
+
+    // pop
+    string popped = vs.pop();
+    assertEqual(vs.len(), 1);
+
+    // clear
+    vs.clear();
+    assertEqual(vs.len(), 0);
+
+    // ── vec<string> clone ──────────────────────────────────────────────
+    vec<string> orig;
+    orig.push("x");
+    orig.push("y");
+    orig.push("z");
+
+    vec<string> cloned = orig.clone();
+    assertEqual(cloned.len(), 3);
+    assertEqual(cloned[0 as uint32], "x");
+    assertEqual(cloned[1 as uint32], "y");
+    assertEqual(cloned[2 as uint32], "z");
+
+    // Modify original — clone should be independent (deep copy)
+    orig[0 as uint32] = "X";
+    assertEqual(orig[0 as uint32], "X");
+    assertEqual(cloned[0 as uint32], "x");
+
+    orig.clear();
+    assertEqual(orig.len(), 0);
+    assertEqual(cloned.len(), 3);  // clone unaffected
+
+    println("✔ vec features tests passed");
+    ret 0;
+}

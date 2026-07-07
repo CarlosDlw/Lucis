@@ -705,7 +705,10 @@ void lucis_vec_clone_str(const lucis_vec_header* src, lucis_vec_header* dst) {
     dst->cap = src->len;
     if (src->len > 0) {
         dst->ptr = malloc(src->len * sizeof(lucis_string));
-        memcpy(dst->ptr, src->ptr, src->len * sizeof(lucis_string));
+        for (size_t i = 0; i < src->len; i++) {
+            lucis_string* s = &((lucis_string*)src->ptr)[i];
+            ((lucis_string*)dst->ptr)[i] = clone_string_value(*s);
+        }
     } else {
         dst->ptr = NULL;
         dst->cap = 0;
@@ -719,9 +722,13 @@ void lucis_vec_clone_str(const lucis_vec_header* src, lucis_vec_header* dst) {
 void lucis_args_init(lucis_vec_header* out, int argc, const char** argv) {
     lucis_vec_init_cap_str(out, (size_t)argc);
     for (int i = 0; i < argc; i++) {
-        lucis_string s;
-        s.ptr = argv[i];
-        s.len = strlen(argv[i]);
+        size_t len = strlen(argv[i]);
+        char* buf = (char*)lucis_allocString(len + 1);
+        if (buf) {
+            memcpy(buf, argv[i], len);
+            buf[len] = '\0';
+        }
+        lucis_string s = { buf ? buf : "", len };
         lucis_vec_push_str(out, s);
     }
 }

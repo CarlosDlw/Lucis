@@ -61,6 +61,7 @@ use tests::uint_types::testUintTypes;
 use tests::unions_full::testUnionsFull;
 use tests::const_features::testConstFeatures;
 use tests::vec_pointers::testVecPointers;
+use tests::vec_features::testVecFeatures;
 use tests::map_features::testMapFeatures;
 use tests::set_features::testSetFeatures;
 use tests::void_types::testVoidTypes;
@@ -115,6 +116,7 @@ fn main() int32 {
     testPropagateOperator();
     testConstFeatures();
     testVecPointers();
+    testVecFeatures();
     testMapFeatures();
     testSetFeatures();
     testSysMemory();
