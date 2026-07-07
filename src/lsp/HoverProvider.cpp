@@ -66,6 +66,21 @@ static std::string safeText(antlr4::ParserRuleContext *ctx) {
     return ctx ? ctx->getText() : "";
 }
 
+// Check if a type name (possibly generic like "ArrayList<int32>") has auto-drop.
+static bool typeHasAutoDrop(const std::string& typeName,
+                            const std::unordered_set<std::string>& dropSet) {
+    if (dropSet.empty()) return false;
+    if (dropSet.count(typeName)) return true;
+    // Strip generic params: "ArrayList<int32>" → "ArrayList"
+    auto pos = typeName.find('<');
+    if (pos != std::string::npos) {
+        auto base = typeName.substr(0, pos);
+        while (!base.empty() && base.back() == ' ') base.pop_back();
+        if (dropSet.count(base)) return true;
+    }
+    return false;
+}
+
 static std::string extractBaseTypeName(LucisParser::TypeSpecContext* typeSpec) {
     auto text = typeSpec->getText();
     auto pos = text.find('<');
@@ -242,6 +257,41 @@ std::optional<HoverResult> HoverProvider::hover(const std::string& source,
             }
         }
         cBindingsPtr = &localBindings;
+    }
+
+    // Scan for types with auto-drop (extend blocks with fn drop(&self) void)
+    typesWithDrop_.clear();
+    // 1) Current file
+    for (auto* tld : parsed.tree->topLevelDecl()) {
+        if (auto* ext = tld->extendDecl()) {
+            if (!ext->IDENTIFIER()) continue;
+            for (auto* method : ext->extendMethod()) {
+                if (method->IDENTIFIER().empty()) continue;
+                if (method->IDENTIFIER(0)->getText() == "drop" &&
+                    method->AMPERSAND() != nullptr) {
+                    typesWithDrop_.insert(safeText(ext->IDENTIFIER()));
+                    break;
+                }
+            }
+        }
+    }
+    // 2) Cross-file extend blocks from project registry
+    if (project && project->isValid()) {
+        for (auto& ns : project->registry().allModules()) {
+            for (auto* sym : project->registry().getModuleSymbols(ns)) {
+                if (sym->kind != ExportedSymbol::ExtendBlock) continue;
+                auto* extDecl = dynamic_cast<LucisParser::ExtendDeclContext*>(sym->decl);
+                if (!extDecl || !extDecl->IDENTIFIER()) continue;
+                for (auto* method : extDecl->extendMethod()) {
+                    if (method->IDENTIFIER().empty()) continue;
+                    if (method->IDENTIFIER(0)->getText() == "drop" &&
+                        method->AMPERSAND() != nullptr) {
+                        typesWithDrop_.insert(safeText(extDecl->IDENTIFIER()));
+                        break;
+                    }
+                }
+            }
+        }
     }
 
     // Find the token at the cursor (LSP 0-based → ANTLR 1-based line).
@@ -581,8 +631,7 @@ std::optional<HoverResult> HoverProvider::hoverIdent(
                                                dims + it->second.typeName,
                                                name,
                                                bindings);
-            auto* dropTI = typeRegistry_.lookup(it->second.typeName);
-            if (dropTI && dropTI->dropTracked)
+            if (typeHasAutoDrop(it->second.typeName, typesWithDrop_))
                 md += "\n\n*auto-dropped on scope exit*";
             return makeResult(token, md);
         }
@@ -692,9 +741,7 @@ std::optional<HoverResult> HoverProvider::hoverIdent(
                             typeSpecToString(p->typeSpec()),
                             name,
                             bindings);
-                        auto paramTypeName = typeSpecToString(p->typeSpec());
-                        auto* dropTI = typeRegistry_.lookup(paramTypeName);
-                        if (dropTI && dropTI->dropTracked)
+                        if (typeHasAutoDrop(typeSpecToString(p->typeSpec()), typesWithDrop_))
                             md += "\n\n*auto-dropped on scope exit*";
                         return makeResult(token, md);
                     }
@@ -711,8 +758,7 @@ std::optional<HoverResult> HoverProvider::hoverIdent(
                                                        dims + it->second.typeName,
                                                        name,
                                                        bindings);
-                    auto* dropTI = typeRegistry_.lookup(it->second.typeName);
-                    if (dropTI && dropTI->dropTracked)
+                    if (typeHasAutoDrop(it->second.typeName, typesWithDrop_))
                         md += "\n\n*auto-dropped on scope exit*";
                     return makeResult(token, md);
                 }
@@ -6351,8 +6397,7 @@ std::string HoverProvider::formatStructDecl(LucisParser::StructDeclContext* decl
     }
     ss << "}\n```";
 
-    auto* dropTI = typeRegistry_.lookup(safeText(decl->IDENTIFIER()));
-    if (dropTI && dropTI->dropTracked)
+    if (typeHasAutoDrop(safeText(decl->IDENTIFIER()), typesWithDrop_))
         ss << "\n*auto-dropped on scope exit*";
 
     return ss.str();

@@ -204,4 +204,7 @@ private:
 
     // Build HoverResult from a token + content.
     HoverResult makeResult(antlr4::Token* token, const std::string& contents);
+
+    // Types that have a user-defined drop() method (populated during hover()).
+    std::unordered_set<std::string> typesWithDrop_;
 };

@@ -250,6 +250,96 @@ defer v.free();
 
 ---
 
+## User-Defined Destructors (`drop()`)
+
+Any struct type can opt into automatic cleanup by defining a `drop(&self) void` method in an `extend` block. The compiler calls it automatically when a local variable of that type goes out of scope.
+
+### Basic Usage
+
+```lucis
+use std::mem::{ free };
+
+struct Buffer {
+    *void data;
+    usize size;
+}
+
+extend Buffer {
+    fn new(usize size) Buffer {
+        return Buffer { alloc(size), size };
+    }
+
+    fn drop(&self) void {
+        if self.data != null {
+            free(self.data);
+        }
+    }
+}
+
+fn example() void {
+    Buffer buf = Buffer::new(1024);
+    // buf.drop() is called automatically at scope exit
+}
+```
+
+### With Generic Types
+
+```lucis
+use std::mem::{ free };
+
+struct ArrayList<T> {
+    *T data;
+    usize len;
+    usize cap;
+}
+
+extend ArrayList<T> {
+    fn drop(&self) void {
+        if self.data != null {
+            free(self.data);
+        }
+    }
+}
+
+fn example() void {
+    ArrayList<int32> list = ArrayList<int32>::new();
+    // list.drop() runs on every scope exit, including early returns
+}
+```
+
+### Interaction with Move Semantics
+
+When a value with a user-defined `drop()` is moved (via assignment or return), the origin is marked as consumed and `drop()` is **not** called on the origin — only the destination cleans up.
+
+```lucis
+fn example() void {
+    Buffer a = Buffer::new(64);
+    Buffer b = a;           // a is moved → consumed
+    // b.drop() runs here, a.drop() does not (double-free prevented)
+}
+```
+
+### Execution Order
+
+User-defined `drop()` runs after explicit `defer` statements but before built-in auto-cleanup (strings, vec, map, set):
+
+```
+fn example() void {
+    defer println("defer");
+    Buffer buf = Buffer::new(64);
+    // 1. defer "defer"
+    // 2. buf.drop() (user-defined)
+}
+```
+
+### Requirements
+
+- The method must be spelled `drop`, take `&self` (mutable reference), and return `void`.
+- Generic `extend` blocks (e.g. `extend ArrayList<T>`) are supported — the destructor is instantiated per concrete type.
+- Only local variables are auto-dropped; heap-allocated or global instances are not automatically cleaned up.
+
+---
+
 ## `std::mem` — Low-Level Memory Operations
 
 For direct heap allocation and manipulation, import from `std::mem`:
@@ -330,6 +420,7 @@ extern void free(*void ptr);
 | Mechanism | Use Case |
 |-----------|----------|
 | Auto-cleanup | Local `string`, `Vec`, `Map`, `Set` — no action needed |
+| User `drop()` | Local variables of structs with `drop(&self) void` — automatic scope cleanup |
 | `defer` | Explicit cleanup of raw pointers, file handles, etc. |
 | `{}` naked block | Isolate variable scope within a function |
 | `#inline {}` | Inject code into parent scope (no scope boundary) |
@@ -345,6 +436,7 @@ extern void free(*void ptr);
 - [Pointers](pointers.md) — Pointer types, address-of, dereference
 - [Generics](generics.md) — `vec<T>`, `map<K,V>`, `set<T>` methods
 - [Modules](modules.md) — Importing `std::mem`
+- [Structs](structs.md) — Defining struct types and `extend` blocks
 
 ---
 
