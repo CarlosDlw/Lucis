@@ -4440,6 +4440,10 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
                                              sf.typeInfo->name + "', got '" +
                                              valType->name + "'");
                         }
+                        // Track ownership: if field expects an owned type,
+                        // mark the source expression as moved
+                        if (sf.typeInfo && isDropTrackedType(sf.typeInfo, 0))
+                            markExprAsMoved(fieldExprs[i], expr);
                     }
                     break;
                 }
@@ -4498,6 +4502,10 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
                              sf.typeInfo->name + "', got '" +
                              valType->name + "'");
             }
+            // Track ownership: if field expects an owned type,
+            // mark the source expression as moved
+            if (sf.typeInfo && isDropTrackedType(sf.typeInfo, 0))
+                markExprAsMoved(fieldExprs[i], expr);
         }
         return typeInfo;
     }
@@ -7314,6 +7322,33 @@ void Checker::checkForInStmt(LucisParser::ForInStmtContext* stmt,
     auto iterName = stmt->IDENTIFIER()->getText();
 
     auto* iterableType = resolveExprType(stmt->expression());
+
+    // Range expressions (start..end, start..=end) are always valid for iteration
+    bool isRange = dynamic_cast<LucisParser::RangeExprContext*>(stmt->expression()) ||
+                   dynamic_cast<LucisParser::RangeInclExprContext*>(stmt->expression());
+
+    // Validate the iterable expression type
+    if (!isRange && iterableType) {
+        bool isValid = false;
+
+        if (iterableType->kind == TypeKind::Extended) {
+            // Collection iteration: Vec<T>, Map<K,V>, Set<T>
+            isValid = true;
+        } else if (iterableType->kind == TypeKind::Integer) {
+            // Integer range iteration: for TYPE i in N
+            if (iterType && iterType->kind != TypeKind::Integer) {
+                error(stmt, "cannot iterate over integer '" + iterableType->name +
+                      "' with loop variable of type '" + iterType->name +
+                      "', expected an integer type");
+            }
+            isValid = true;
+        }
+
+        if (!isValid) {
+            error(stmt, "cannot iterate over type '" + iterableType->name +
+                  "', expected a Vec, Map, Set, or integer range");
+        }
+    }
 
     // Register the loop variable
     if (iterType)
