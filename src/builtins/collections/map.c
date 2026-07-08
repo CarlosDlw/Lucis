@@ -697,18 +697,29 @@ size_t lucis_map_len_str_raw(const lucis_map_header* m) {
 
 void lucis_map_set_str_raw(lucis_map_header* m, lucis_map_string key,
                           const void* val) {
-    uint64_t h = hash_key_str(&key);
+    // Deep-copy the key string so the map owns its data independently
+    char* owned_data = key.len > 0
+        ? (char*)lucis_allocString(key.len)
+        : (char*)lucis_allocString(1);
+    if (key.len > 0)
+        memcpy(owned_data, key.ptr, key.len);
+    else
+        owned_data[0] = '\0';
+
+    lucis_map_string owned_key = { owned_data, key.len };
+
+    uint64_t h = hash_key_str(&owned_key);
     int found;
-    size_t slot = map_core_find(m, &key, h, eq_key_str, &found);
+    size_t slot = map_core_find(m, &owned_key, h, eq_key_str, &found);
     if (found) {
         lucis_map_string* stored_key = key_at(m, slot);
-        if (stored_key->ptr != key.ptr)
+        if (stored_key->ptr != owned_key.ptr)
             lucis_freeStr(stored_key->ptr, stored_key->len);
-        memcpy(stored_key, &key, m->key_size);
+        memcpy(stored_key, &owned_key, m->key_size);
         memcpy(val_at(m, slot), val, m->val_size);
         return;
     }
-    map_core_set(m, &key, val, hash_key_str, eq_key_str);
+    map_core_set(m, &owned_key, val, hash_key_str, eq_key_str);
 }
 
 void lucis_map_get_str_raw(lucis_map_header* m, lucis_map_string key,

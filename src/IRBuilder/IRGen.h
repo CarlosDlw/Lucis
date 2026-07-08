@@ -216,6 +216,7 @@ private:
         bool              isParam   = false; // true = borrowed from caller, skip auto-free
         bool              isBorrowed = false; // true = borrowed string view, skip auto-free
         bool              consumed  = false; // true = ownership transferred, skip auto-free
+        bool              ownsContainers = true; // false = Vec/Map/Set fields are shallow copies, skip free
         std::vector<unsigned> fixedArraySizes; // declared [N] sizes (incl. pointer-to-array)
     };
     std::unordered_map<std::string, VarInfo> locals_;
@@ -555,6 +556,7 @@ private:
     bool                isBorrowedStringValueExpr(LucisParser::ExpressionContext* expr) const;
     void                consumeLocalByName(const std::string& name);
     void                consumeExprIfOwnedLocal(LucisParser::ExpressionContext* expr);
+    llvm::Value*        deepCopyOwnedFields(llvm::Value* val, llvm::Type* ty);
     void                emitScopeCallback(LucisParser::ScopeCallbackContext* ctx);
     void                emitDivByZeroGuard(llvm::Value* divisor,
                                            antlr4::Token* opToken);

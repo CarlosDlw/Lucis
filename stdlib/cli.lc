@@ -94,11 +94,12 @@ struct CliCommand {
     vec<CliArg> args;
     vec<CliOption> options;
     vec<CliCommand> subcommands;
+    fn(*CliContext) -> int32 action;
 }
 
 extend CliCommand {
     fn new(string name, string description) CliCommand {
-        ret CliCommand { name, description, [], [], [] };
+        ret CliCommand { name, description, [], [], [], null };
     }
 
     fn addArg(&self, CliArg arg) void {
@@ -111,6 +112,10 @@ extend CliCommand {
 
     fn addSubcommand(&self, CliCommand cmd) void {
         self->subcommands.push(cmd);
+    }
+
+    fn onRun(&self, fn(*CliContext) -> int32 handler) void {
+        self->action = handler;
     }
 
     fn printHelp(&self) void {
@@ -170,7 +175,6 @@ struct CliContext {
     vec<CliValue> argValues;
     map<string, CliValue> optionValues;
     CliCommand subcommand;
-    vec<string> rawArgs;
     string error;
 }
 
@@ -184,7 +188,7 @@ extend CliContext {
 
     fn getOption(&self, string name) CliValue {
         if self->optionValues.has(name) {
-            ret self->optionValues[name];
+            ret self->optionValues.get(name);
         }
         ret CliValue::missing();
     }
@@ -205,9 +209,7 @@ extend CliContext {
         ret self->error;
     }
 
-    fn getRawArgs(&self) vec<string> {
-        ret self->rawArgs;
-    }
+    // rawArgs removed — use the original args passed to run() instead
 
     fn drop(&self) void {
     }
@@ -227,7 +229,7 @@ extend CliApp {
     fn new(string name, string description, string version) CliApp {
         CliApp app = CliApp { name, description, version, [], [], [], true };
         CliOption helpOpt = CliOption::newFlag('h', "help", "Print help information");
-        CliOption verOpt = CliOption::newValue(0 as char, "version", "Print version", "");
+        CliOption verOpt = CliOption::newFlag(0 as char, "version", "Print version information");
         app.options.push(helpOpt);
         app.options.push(verOpt);
         ret app;
@@ -249,33 +251,37 @@ extend CliApp {
         self->helpOnEmpty = val;
     }
 
-    fn parse(&self, vec<string> sysargs) CliContext {
-        CliContext ctx = CliContext {
-            command: CliCommand::new("", ""),
-            argValues: [],
-            optionValues: [],
-            subcommand: CliCommand::new("", ""),
-            rawArgs: sysargs,
-            error: ""
-        };
+    fn matchSubcommand(&self, string name, *CliContext ctx) bool {
+        for uint32 i in 0..self->commands.len() {
+            if self->commands[i].name == name {
+                ctx->subcommand = self->commands[i];
+                ret true;
+            }
+        }
+        ret false;
+    }
 
+    fn optionTakesValue(&self, string name) int32 {
+        // Returns: 1 if takes value, 0 if flag, -1 if not found
+        for uint32 i in 0..self->options.len() {
+            if self->options[i].longName == name {
+                ret self->options[i].takesValue as int32;
+            }
+        }
+        ret -1;
+    }
+
+    fn parse(&self, vec<string> sysargs, *CliContext ctx) void {
         if sysargs.len() < 1 {
             if self->helpOnEmpty {
                 self->printHelp();
             }
-            ret ctx;
-        }
-
-        // Merge app options into lookup map
-        map<string, CliOption> optMap;
-        for int32 i in 0..self->options.len() {
-            CliOption o = self->options[i as uint32];
-            if o.longName.len() > 0 { optMap[o.longName] = o; }
+            ret;
         }
 
         bool endOfOptions = false;
-        vec<string> positional;
         uint32 argCount = sysargs.len();
+        vec<string> positional;
 
         for uint32 i in 1..argCount {
             string arg = sysargs[i];
@@ -298,24 +304,24 @@ extend CliApp {
                     optVal = "";
                 }
 
-                if optMap.has(optName) {
-                    CliOption _def = optMap[optName];
-                    if _def.takesValue {
+                int32 takesVal = self->optionTakesValue(optName);
+                if takesVal >= 0 {
+                    if takesVal != 0 {
                         if optVal.len() > 0 {
-                            ctx.optionValues[optName] = CliValue::new(optVal);
+                            ctx->optionValues.insert(optName, CliValue::new(optVal));
                         } else if i + 1 < argCount {
                             i++;
-                            ctx.optionValues[optName] = CliValue::new(sysargs[i]);
+                            ctx->optionValues.insert(optName, CliValue::new(sysargs[i]));
                         } else {
-                            ctx.error = sprintf("option --{} requires a value", optName);
-                            ret ctx;
+                            ctx->error = sprintf("option --{} requires a value", optName);
+                            ret;
                         }
                     } else {
-                        ctx.optionValues[optName] = CliValue::new("true");
+                        ctx->optionValues.insert(optName, CliValue::new("true"));
                     }
                 } else {
-                    ctx.error = sprintf("unknown option: --{}", optName);
-                    ret ctx;
+                    ctx->error = sprintf("unknown option: --{}", optName);
+                    ret;
                 }
             } else if !endOfOptions && arg.startsWith("-") && arg != "-" {
                 // Short option(s)
@@ -333,26 +339,26 @@ extend CliApp {
                                     restOfArg = arg.substring(j as usize + 1 as usize, arg.len() - j as usize - 1 as usize);
                                 }
                                 if restOfArg.len() > 0 {
-                                    ctx.optionValues[o.longName] = CliValue::new(restOfArg);
+                                    ctx->optionValues.insert(o.longName, CliValue::new(restOfArg));
                                     j = arg.len(); // skip rest
                                 } else if i + 1 < argCount {
                                     i++;
-                                    ctx.optionValues[o.longName] = CliValue::new(sysargs[i]);
+                                    ctx->optionValues.insert(o.longName, CliValue::new(sysargs[i]));
                                     j = arg.len(); // skip rest
                                 } else {
-                                    ctx.error = sprintf("option -{} requires a value", c.toString());
-                                    ret ctx;
+                                    ctx->error = sprintf("option -{} requires a value", c.toString());
+                                    ret;
                                 }
                             } else {
-                                ctx.optionValues[o.longName] = CliValue::new("true");
+                                ctx->optionValues.insert(o.longName, CliValue::new("true"));
                             }
                             break;
                         }
                     }
 
                     if !foundOpt {
-                        ctx.error = sprintf("unknown option: -{}", c.toString());
-                        ret ctx;
+                        ctx->error = sprintf("unknown option: -{}", c.toString());
+                        ret;
                     }
                 }
             } else {
@@ -363,52 +369,39 @@ extend CliApp {
         // Check for subcommand match
         if positional.len() > 0 {
             string first = positional[0 as uint32];
-            for uint32 i in 0..self->commands.len() {
-                CliCommand cmd = self->commands[i];
-                if cmd.name == first {
-                    ctx.subcommand = cmd;
-                    // Remove subcommand name from positional
-                    vec<string> remaining;
-                    for uint32 j in 1..positional.len() {
-                        remaining.push(positional[j]);
-                    }
-                    positional = remaining;
-
-                    // Merge subcommand options
-                    for uint32 j in 0..cmd.options.len() {
-                        CliOption o = cmd.options[j];
-                        if o.longName.len() > 0 { optMap[o.longName] = o; }
-                    }
-
-                    // Parse positional as subcommand args
-                    for uint32 j in 0..cmd.args.len() {
-                        CliArg argDef = cmd.args[j];
-                        if j < positional.len() {
-                            ctx.argValues.push(CliValue::new(positional[j]));
-                        } else if !argDef.required {
-                            ctx.argValues.push(CliValue::new(argDef.defaultValue));
-                        } else {
-                            ctx.error = sprintf("missing required argument: {}", argDef.name);
-                            ret ctx;
-                        }
-                    }
-                    break;
+            if self->matchSubcommand(first, ctx) {
+                // Remove subcommand name from positional
+                vec<string> remaining;
+                for uint32 j in 1..positional.len() {
+                    remaining.push(positional[j]);
                 }
-            }
+                positional = remaining;
 
-            // If subcommand matched, validate and return
-            if ctx.subcommand.name.len() > 0 {
-                for uint32 j in 0..ctx.subcommand.options.len() {
-                    CliOption o = ctx.subcommand.options[j];
-                    if o.required && !ctx.optionValues.has(o.longName) {
-                        ctx.error = sprintf("missing required option: --{}", o.longName);
-                        ret ctx;
-                    }
-                    if o.defaultValue.len() > 0 && !ctx.optionValues.has(o.longName) {
-                        ctx.optionValues[o.longName] = CliValue::new(o.defaultValue);
+                // Parse positional as subcommand args
+                for uint32 j in 0..ctx->subcommand.args.len() {
+                    CliArg argDef = ctx->subcommand.args[j];
+                    if j < positional.len() {
+                        ctx->argValues.push(CliValue::new(positional[j]));
+                    } else if !argDef.required {
+                        ctx->argValues.push(CliValue::new(argDef.defaultValue));
+                    } else {
+                        ctx->error = sprintf("missing required argument: {}", argDef.name);
+                        ret;
                     }
                 }
-                ret ctx;
+
+                // Apply defaults for unmatched options on subcommand
+                for uint32 j in 0..ctx->subcommand.options.len() {
+                    CliOption o = ctx->subcommand.options[j];
+                    if o.required && !ctx->optionValues.has(o.longName) {
+                        ctx->error = sprintf("missing required option: --{}", o.longName);
+                        ret;
+                    }
+                    if o.defaultValue.len() > 0 && !ctx->optionValues.has(o.longName) {
+                        ctx->optionValues.insert(o.longName, CliValue::new(o.defaultValue));
+                    }
+                }
+                ret;
             }
         }
 
@@ -416,28 +409,26 @@ extend CliApp {
         for uint32 i in 0..self->args.len() {
             CliArg argDef = self->args[i];
             if i < positional.len() {
-                ctx.argValues.push(CliValue::new(positional[i]));
+                ctx->argValues.push(CliValue::new(positional[i]));
             } else if !argDef.required {
-                ctx.argValues.push(CliValue::new(argDef.defaultValue));
+                ctx->argValues.push(CliValue::new(argDef.defaultValue));
             } else {
-                ctx.error = sprintf("missing required argument: {}", argDef.name);
-                ret ctx;
+                ctx->error = sprintf("missing required argument: {}", argDef.name);
+                ret;
             }
         }
 
         // Apply defaults for unmatched options
         for uint32 i in 0..self->options.len() {
             CliOption o = self->options[i];
-            if o.required && !ctx.optionValues.has(o.longName) {
-                ctx.error = sprintf("missing required option: --{}", o.longName);
-                ret ctx;
+            if o.required && !ctx->optionValues.has(o.longName) {
+                ctx->error = sprintf("missing required option: --{}", o.longName);
+                ret;
             }
-            if o.defaultValue.len() > 0 && !ctx.optionValues.has(o.longName) {
-                ctx.optionValues[o.longName] = CliValue::new(o.defaultValue);
+            if o.defaultValue.len() > 0 && !ctx->optionValues.has(o.longName) {
+                ctx->optionValues.insert(o.longName, CliValue::new(o.defaultValue));
             }
         }
-
-        ret ctx;
     }
 
     fn printHelp(&self) void {
@@ -492,7 +483,14 @@ extend CliApp {
     }
 
     fn run(&self, vec<string> args) int32 {
-        CliContext ctx = self->parse(args);
+        CliContext ctx = CliContext {
+            command: CliCommand::new("", ""),
+            argValues: [],
+            optionValues: [],
+            subcommand: CliCommand::new("", ""),
+            error: ""
+        };
+        self->parse(args, &ctx);
 
         if ctx.hasError() {
             printf("error: {s}\n", ctx.errorMessage());
@@ -514,9 +512,14 @@ extend CliApp {
             ret 0;
         }
 
-        if self->helpOnEmpty && ctx.rawArgs.len() <= 1 && self->commands.len() > 0 && ctx.subcommandName().len() == 0 {
+        if self->helpOnEmpty && args.len() <= 1 && self->commands.len() > 0 && ctx.subcommandName().len() == 0 {
             self->printHelp();
             ret 0;
+        }
+
+        // Dispatch to subcommand handler if available
+        if ctx.subcommand.name.len() > 0 && ctx.subcommand.action != null {
+            ret ctx.subcommand.action(&ctx);
         }
 
         ret 0;

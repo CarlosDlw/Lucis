@@ -4589,6 +4589,10 @@ IRGen::ArrowLValue IRGen::resolveArrowLValue(
         destPtr = builder_->CreateStructGEP(curTy, basePtr, fieldIdx, fieldName + "_ptr");
     }
 
+    // Extended types (Map/Vec/Set) are handled by the caller — skip
+    if (fieldTI && fieldTI->kind == TypeKind::Extended)
+        return {};
+
     for (size_t ai = 0; ai < numBrackets; ai++) {
         auto* idxVal = castValue(visit(indexExprs[ai]));
         if (idxVal->getType() != i64Ty)
@@ -4749,6 +4753,10 @@ IRGen::ArrowLValue IRGen::resolveArrowAnyLValue(
         auto* curTy = currentTI->toLLVMType(*context_, module_->getDataLayout());
         destPtr = builder_->CreateStructGEP(curTy, basePtr, fieldIdx, fieldName + "_ptr");
     }
+
+    // Extended types (Map/Vec/Set) are handled by the caller — skip
+    if (fieldTI && fieldTI->kind == TypeKind::Extended)
+        return {};
 
     // Array indices
     for (size_t ai = 0; ai < indexExprs.size(); ai++) {
@@ -9741,11 +9749,39 @@ std::any IRGen::visitFieldAccessExpr(LucisParser::FieldAccessExprContext* ctx) {
         }
         auto* rootIdent = dynamic_cast<LucisParser::IdentExprContext*>(current);
         if (!rootIdent) {
+            // Dynamic base (e.g. ptr->field[idx].subfield or fn()[idx].field):
+            // evaluate the whole indexed expression, store in a temp alloca,
+            // then GEP to the field.
+            auto* indexedVal = castValue(visit(baseExpr));
+            if (indexedVal && indexedVal->getType()->isStructTy()) {
+                auto* baseTI = resolveExprTypeInfo(baseExpr);
+                if (baseTI && (baseTI->kind == TypeKind::Struct || baseTI->kind == TypeKind::Union)) {
+                    const TypeInfo* fieldTI = nullptr;
+                    int fieldIdx = -1;
+                    for (size_t f = 0; f < baseTI->fields.size(); f++) {
+                        if (baseTI->fields[f].name == fieldName) {
+                            fieldIdx = static_cast<int>(f);
+                            fieldTI = baseTI->fields[f].typeInfo;
+                            break;
+                        }
+                    }
+                    if (fieldIdx >= 0) {
+                        auto* fieldLLTy = buildFieldLLVMType(fieldTI,
+                            baseTI->fields[fieldIdx].arrayDims,
+                            baseTI->fields[fieldIdx].arraySizes);
+                        auto* tmp = builder_->CreateAlloca(indexedVal->getType(), nullptr, "tmp_idx_field");
+                        builder_->CreateStore(indexedVal, tmp);
+                        auto* gep = builder_->CreateStructGEP(indexedVal->getType(), tmp, fieldIdx, fieldName + "_ptr");
+                        return static_cast<llvm::Value*>(builder_->CreateLoad(fieldLLTy, gep, fieldName));
+                    }
+                }
+            }
             std::cerr << "lucis: invalid base for indexed field access\n";
             return static_cast<llvm::Value*>(
                 llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
         }
         std::reverse(indexExprs.begin(), indexExprs.end());
+
         auto varName = rootIdent->IDENTIFIER()->getText();
 
         auto it = locals_.find(varName);
@@ -19258,8 +19294,20 @@ IRGen::visitMethodCallExpr(LucisParser::MethodCallExprContext* ctx) {
                 // First arg: pointer to the struct instance (&self)
                 auto* recvPtr = resolveMethodReceiverAddress(baseExpr);
                 if (!recvPtr) {
+                    // Temporary receiver (e.g. getArg(0).asString()): the
+                    // expression returns a value, but &self expects a pointer.
+                    // Store the value in a temporary alloca and pass its ptr.
                     auto* receiverVal = castValue(visit(baseExpr));
-                    callArgs.push_back(receiverVal);
+                    auto* selfParamTy = fn->getFunctionType()->getParamType(0);
+                    if (receiverVal->getType() == selfParamTy) {
+                        // Already a pointer — pass as-is.
+                        callArgs.push_back(receiverVal);
+                    } else {
+                        auto* tmpSelf = builder_->CreateAlloca(
+                            receiverVal->getType(), nullptr, "tmp_self");
+                        builder_->CreateStore(receiverVal, tmpSelf);
+                        callArgs.push_back(tmpSelf);
+                    }
                 } else {
                     callArgs.push_back(recvPtr);
                 }

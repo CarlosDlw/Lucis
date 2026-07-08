@@ -494,7 +494,7 @@ void lucis_vec_set_str(lucis_vec_header* v, size_t idx, lucis_string val) {
 // ── Mutation ────────────────────────────────────────────────────────────────
 void lucis_vec_push_str(lucis_vec_header* v, lucis_string val) {
     vec_grow_str(v, v->len + 1);
-    vec_data_str(v)[v->len++] = val;
+    vec_data_str(v)[v->len++] = clone_string_value(val);
 }
 lucis_string lucis_vec_pop_str(lucis_vec_header* v) {
     if (v->len == 0) { fprintf(stderr, "lucis: vec.pop() on empty vec\n"); exit(1); }
@@ -723,12 +723,7 @@ void lucis_args_init(lucis_vec_header* out, int argc, const char** argv) {
     lucis_vec_init_cap_str(out, (size_t)argc);
     for (int i = 0; i < argc; i++) {
         size_t len = strlen(argv[i]);
-        char* buf = (char*)lucis_allocString(len + 1);
-        if (buf) {
-            memcpy(buf, argv[i], len);
-            buf[len] = '\0';
-        }
-        lucis_string s = { buf ? buf : "", len };
+        lucis_string s = { (char*)argv[i], len };
         lucis_vec_push_str(out, s);
     }
 }
