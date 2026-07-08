@@ -2582,11 +2582,22 @@ std::any IRGen::visitVarDeclStmt(LucisParser::VarDeclStmtContext* ctx) {
                 locals_[name] = std::move(vi);
                 continue;
             }
-            auto  initVal  = visit(d->expression());
-            auto* val      = castValue(initVal);
-            auto  exprDims = resolveExprArrayDims(d->expression());
+            llvm::Value* val = nullptr;
+            unsigned exprDims = 0;
+            const TypeInfo* ti2 = nullptr;
 
-            auto* ti2 = resolveExprTypeInfo(d->expression());
+            if (d == lastInitDecl && lastInitVal) {
+                // Use pre-computed value from lastInitDecl to avoid double-visiting
+                // the expression (which would consume resources like vec args twice).
+                val = lastInitVal;
+                ti2 = resolveExprTypeInfo(d->expression());
+                exprDims = resolveExprArrayDims(d->expression());
+            } else {
+                auto raw = visit(d->expression());
+                val = castValue(raw);
+                exprDims = resolveExprArrayDims(d->expression());
+                ti2 = resolveExprTypeInfo(d->expression());
+            }
             if (!ti2)
                 ti2 = typeRegistry_.lookup("int32");
 
