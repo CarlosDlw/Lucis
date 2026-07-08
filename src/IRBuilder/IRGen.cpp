@@ -1584,10 +1584,8 @@ std::any IRGen::visitFunctionDecl(LucisParser::FunctionDeclContext* ctx) {
             auto* vecVal = builder_->CreateLoad(vecTy, vecAlloca, "args_vec");
             auto* retVal = builder_->CreateCall(func, {vecVal}, "ret");
 
-            // Free the vec
-            auto vecFree = declareBuiltin("lucis_vec_free_str", voidTy, {ptrTy});
-            builder_->CreateCall(vecFree, {vecAlloca});
-
+            // Vec is passed by value to lucis_user_main — ownership transferred.
+            // Do NOT free here; cleanup happens inside lucis_user_main via auto-drop.
             builder_->CreateRet(retVal);
         }
     }
@@ -7211,6 +7209,36 @@ std::any IRGen::visitForInStmt(LucisParser::ForInStmtContext* ctx) {
                 iterableTI = it->second.typeInfo;
                 vecAlloca  = it->second.alloca;
                 iterableDims = it->second.arrayDims;
+            }
+        }
+
+        // Field access on a struct variable (foo.bar): use GEP into the struct directly
+        // so we don't create a shallow-copy temp that gets freed after the loop,
+        // which would cause a double-free when the struct is also dropped.
+        if (!vecAlloca) {
+            if (auto* fieldAccess = dynamic_cast<LucisParser::FieldAccessExprContext*>(iterExpr)) {
+                if (auto* baseIdent = dynamic_cast<LucisParser::IdentExprContext*>(
+                        fieldAccess->expression())) {
+                    auto baseName = baseIdent->IDENTIFIER()->getText();
+                    auto it = locals_.find(baseName);
+                    if (it != locals_.end() && it->second.typeInfo &&
+                        it->second.typeInfo->kind == TypeKind::Struct) {
+                        auto* structTI = it->second.typeInfo;
+                        auto fieldName = fieldAccess->IDENTIFIER()->getText();
+                        for (size_t i = 0; i < structTI->fields.size(); i++) {
+                            if (structTI->fields[i].name == fieldName) {
+                                auto* structLLTy = llvm::cast<llvm::StructType>(
+                                    structTI->toLLVMType(*context_, module_->getDataLayout()));
+                                auto* gep = builder_->CreateStructGEP(
+                                    structLLTy, it->second.alloca,
+                                    static_cast<unsigned>(i), fieldName + "_iter");
+                                vecAlloca = reinterpret_cast<llvm::AllocaInst*>(gep);
+                                iterableTI = structTI->fields[i].typeInfo;
+                                break;
+                            }
+                        }
+                    }
+                }
             }
         }
 
@@ -18723,7 +18751,6 @@ void IRGen::emitAutoCleanups(const std::string& skipVar) {
 }
 
 void IRGen::emitCleanupForLocal(const std::string& name, const VarInfo& info) {
-    if (info.isParam) return;
     if (info.consumed) return;
     if (!info.typeInfo) return;
     if (info.arrayDims > 0) return;
