@@ -4357,6 +4357,12 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
             error(expr, "index must be integer, got '" +
                              indexType->name + "'");
 
+        // Array/Slice index: []T[i] returns T - check BEFORE pointer dereference.
+        // Without this, []cstring (which resolves to *char) is confused with
+        // a pointer dereference, incorrectly stripping the pointer type.
+        unsigned baseDims = resolveExprArrayDims(exprs[0]);
+        if (baseDims > 0)
+            return baseType;
         // Dereference pointer if necessary
         auto* derefType = baseType;
         if (derefType && derefType->kind == TypeKind::Pointer && derefType->pointeeType)

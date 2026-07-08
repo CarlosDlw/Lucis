@@ -1498,40 +1498,98 @@ std::any IRGen::visitFunctionDecl(LucisParser::FunctionDeclContext* ctx) {
     if (isMainWithArgs) {
         auto* i32Ty   = llvm::Type::getInt32Ty(*context_);
         auto* ptrTy   = llvm::PointerType::getUnqual(*context_);
-        auto* voidTy  = llvm::Type::getVoidTy(*context_);
-        auto* vecTy   = getOrCreateVecStructType();
 
-        // main(i32 %argc, ptr %argv) → i32
-        auto* wrapperType = llvm::FunctionType::get(i32Ty, {i32Ty, ptrTy}, false);
-        auto* wrapperFn   = llvm::Function::Create(
-            wrapperType, llvm::Function::ExternalLinkage, "main", module_);
+        // Determine which kind of main wrapper based on parameter type:
+        //   main(Vec<string> x)  → existing wrapper with lucis_args_init (copies strings)
+        //   main([]cstring x)    → new zero-copy wrapper (wraps argv as slice)
+        bool isCSliceMain = false;
+        if (auto* params = ctx->paramList()) {
+            auto paramList = params->param();
+            if (paramList.size() == 1) {
+                auto* param = paramList[0];
+                auto* pInfo = resolveTypeInfo(param->typeSpec());
+                unsigned pDims = countArrayDims(param->typeSpec());
+                // []cstring: pDims == 1 && element type is *char
+                if (pDims == 1 && pInfo && pInfo->kind == TypeKind::Pointer &&
+                    pInfo->pointeeType && pInfo->pointeeType->name == "char") {
+                    isCSliceMain = true;
+                }
+            }
+        }
 
-        auto* wrapperEntry = llvm::BasicBlock::Create(*context_, "entry", wrapperFn);
-        builder_->SetInsertPoint(wrapperEntry);
+        if (isCSliceMain) {
+            // ── Zero-copy wrapper for main([]cstring argv) ─────────────
+            // The user's code (lucis_user_main) takes a slice {ptr, i64}.
+            // The C entry point main(i32 argc, ptr argv) wraps argv into
+            // that slice without copying any strings.
+            auto* usizeTy = module_->getDataLayout().getIntPtrType(*context_);
+            auto* sliceTy = llvm::StructType::get(*context_, {ptrTy, usizeTy});
 
-        auto* argc = wrapperFn->getArg(0);
-        auto* argv = wrapperFn->getArg(1);
-        argc->setName("argc");
-        argv->setName("argv");
+            // main(i32 %argc, ptr %argv) → i32
+            auto* wrapperType = llvm::FunctionType::get(i32Ty, {i32Ty, ptrTy}, false);
+            auto* wrapperFn = llvm::Function::Create(
+                wrapperType, llvm::Function::ExternalLinkage, "main", module_);
 
-        // Alloca a Vec<string> on the stack
-        auto* vecAlloca = builder_->CreateAlloca(vecTy, nullptr, "args");
+            auto* wrapperEntry = llvm::BasicBlock::Create(*context_, "entry", wrapperFn);
+            builder_->SetInsertPoint(wrapperEntry);
 
-        // Call lucis_args_init(&args, argc, argv)
-        auto argsInit = declareBuiltin("lucis_args_init", voidTy,
-                                       {ptrTy, i32Ty, ptrTy});
-        builder_->CreateCall(argsInit, {vecAlloca, argc, argv});
+            auto* argc = wrapperFn->getArg(0);
+            auto* argv = wrapperFn->getArg(1);
+            argc->setName("argc");
+            argv->setName("argv");
 
-        // Call lucis_user_main(args_vec_struct)
-        // The user function takes the vec struct by value (loaded from alloca)
-        auto* vecVal = builder_->CreateLoad(vecTy, vecAlloca, "args_vec");
-        auto* retVal = builder_->CreateCall(func, {vecVal}, "ret");
+            // Build slice { char** data, usize len } from { argv, argc }
+            auto* sliceAlloca = builder_->CreateAlloca(sliceTy, nullptr, "argv_slice");
 
-        // Free the vec
-        auto vecFree = declareBuiltin("lucis_vec_free_str", voidTy, {ptrTy});
-        builder_->CreateCall(vecFree, {vecAlloca});
+            auto* dataGEP = builder_->CreateStructGEP(sliceTy, sliceAlloca, 0);
+            builder_->CreateStore(argv, dataGEP);
 
-        builder_->CreateRet(retVal);
+            auto* argcExt = builder_->CreateIntCast(argc, usizeTy, false, "argc_usize");
+            auto* lenGEP = builder_->CreateStructGEP(sliceTy, sliceAlloca, 1);
+            builder_->CreateStore(argcExt, lenGEP);
+
+            // Load slice value and call lucis_user_main({ptr, i64})
+            auto* sliceVal = builder_->CreateLoad(sliceTy, sliceAlloca, "argv_slice");
+            auto* retVal = builder_->CreateCall(func, {sliceVal}, "ret");
+
+            builder_->CreateRet(retVal);
+        } else {
+            // ── Vec<string> wrapper (existing code) ───────────────────
+            auto* voidTy  = llvm::Type::getVoidTy(*context_);
+            auto* vecTy   = getOrCreateVecStructType();
+
+            // main(i32 %argc, ptr %argv) → i32
+            auto* wrapperType = llvm::FunctionType::get(i32Ty, {i32Ty, ptrTy}, false);
+            auto* wrapperFn   = llvm::Function::Create(
+                wrapperType, llvm::Function::ExternalLinkage, "main", module_);
+
+            auto* wrapperEntry = llvm::BasicBlock::Create(*context_, "entry", wrapperFn);
+            builder_->SetInsertPoint(wrapperEntry);
+
+            auto* argc = wrapperFn->getArg(0);
+            auto* argv = wrapperFn->getArg(1);
+            argc->setName("argc");
+            argv->setName("argv");
+
+            // Alloca a Vec<string> on the stack
+            auto* vecAlloca = builder_->CreateAlloca(vecTy, nullptr, "args");
+
+            // Call lucis_args_init(&args, argc, argv)
+            auto argsInit = declareBuiltin("lucis_args_init", voidTy,
+                                           {ptrTy, i32Ty, ptrTy});
+            builder_->CreateCall(argsInit, {vecAlloca, argc, argv});
+
+            // Call lucis_user_main(args_vec_struct)
+            // The user function takes the vec struct by value (loaded from alloca)
+            auto* vecVal = builder_->CreateLoad(vecTy, vecAlloca, "args_vec");
+            auto* retVal = builder_->CreateCall(func, {vecVal}, "ret");
+
+            // Free the vec
+            auto vecFree = declareBuiltin("lucis_vec_free_str", voidTy, {ptrTy});
+            builder_->CreateCall(vecFree, {vecAlloca});
+
+            builder_->CreateRet(retVal);
+        }
     }
 
     return {};
@@ -8824,7 +8882,10 @@ std::any IRGen::visitIndexExpr(LucisParser::IndexExprContext* ctx) {
 
             // pointer[index] -> *load of pointee
             if (baseTI && baseTI->kind == TypeKind::Pointer && baseTI->pointeeType) {
-                auto* elemTy = baseTI->pointeeType->toLLVMType(*context_, module_->getDataLayout());
+                bool isArrayVar = (resolveExprArrayDims(current) > 0);
+                auto* elemTy = isArrayVar
+                    ? baseTI->toLLVMType(*context_, module_->getDataLayout())
+                    : baseTI->pointeeType->toLLVMType(*context_, module_->getDataLayout());
                 auto* ptrBase = baseVal;
                 if (!ptrBase->getType()->isPointerTy()) {
                     std::cerr << "lucis: invalid pointer index base expression\n";
@@ -9249,26 +9310,9 @@ std::any IRGen::visitIndexExpr(LucisParser::IndexExprContext* ctx) {
         return static_cast<llvm::Value*>(result);
     }
 
-    // ── Pointer index access (ptr[i]) ─────────────────────────────
     auto* alloca    = it->second.alloca;
     auto* allocType = alloca->getAllocatedType();
     auto* ti = it->second.typeInfo;
-    if (ti && ti->kind == TypeKind::Pointer && ti->pointeeType) {
-        auto* ptrTy  = llvm::PointerType::getUnqual(*context_);
-        auto* elemTy = ti->pointeeType->toLLVMType(*context_, module_->getDataLayout());
-        auto* i64Ty  = llvm::Type::getInt64Ty(*context_);
-
-        // Load the pointer value from the alloca
-        auto* ptrVal = builder_->CreateLoad(ptrTy, alloca, varName + "_ptr");
-
-        // GEP with the first index
-        auto* idx = castValue(visit(indexExprs[0]));
-        if (idx->getType() != i64Ty)
-            idx = builder_->CreateIntCast(idx, i64Ty, true);
-
-        auto* gep = builder_->CreateGEP(elemTy, ptrVal, idx, varName + "_elem");
-        return static_cast<llvm::Value*>(builder_->CreateLoad(elemTy, gep));
-    }
 
     // ── Slice-like array index access ([]T lowered as {ptr,len}) ────
     if (it->second.arrayDims > 0 && allocType->isStructTy()) {
@@ -9295,6 +9339,24 @@ std::any IRGen::visitIndexExpr(LucisParser::IndexExprContext* ctx) {
             return static_cast<llvm::Value*>(
                 builder_->CreateLoad(elemTy, elemPtr, varName + "_slice_elem"));
         }
+    }
+
+    // ── Pointer index access (ptr[i]) ─────────────────────────────
+    if (ti && ti->kind == TypeKind::Pointer && ti->pointeeType) {
+        auto* ptrTy  = llvm::PointerType::getUnqual(*context_);
+        auto* elemTy = ti->pointeeType->toLLVMType(*context_, module_->getDataLayout());
+        auto* i64Ty  = llvm::Type::getInt64Ty(*context_);
+
+        // Load the pointer value from the alloca
+        auto* ptrVal = builder_->CreateLoad(ptrTy, alloca, varName + "_ptr");
+
+        // GEP with the first index
+        auto* idx = castValue(visit(indexExprs[0]));
+        if (idx->getType() != i64Ty)
+            idx = builder_->CreateIntCast(idx, i64Ty, true);
+
+        auto* gep = builder_->CreateGEP(elemTy, ptrVal, idx, varName + "_elem");
+        return static_cast<llvm::Value*>(builder_->CreateLoad(elemTy, gep));
     }
 
     // ── String index access (str[i] → char) ─────────────────────────
