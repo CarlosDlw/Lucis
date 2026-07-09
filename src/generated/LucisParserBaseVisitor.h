@@ -547,6 +547,10 @@ public:
     return visitChildren(ctx);
   }
 
+  virtual std::any visitOffsetofExpr(LucisParser::OffsetofExprContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
   virtual std::any visitGenericFnCallExpr(LucisParser::GenericFnCallExprContext *ctx) override {
     return visitChildren(ctx);
   }
@@ -576,6 +580,10 @@ public:
   }
 
   virtual std::any visitMethodCallExpr(LucisParser::MethodCallExprContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual std::any visitAlignofExpr(LucisParser::AlignofExprContext *ctx) override {
     return visitChildren(ctx);
   }
 

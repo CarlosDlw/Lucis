@@ -534,6 +534,8 @@ expression
     | DECR expression                                          # preDecrExpr
     | SIZEOF LPAREN typeSpec RPAREN                            # sizeofExpr
     | TYPEOF LPAREN expression RPAREN                           # typeofExpr
+    | ALIGNOF LPAREN typeSpec RPAREN                            # alignofExpr
+    | OFFSETOF LPAREN typeSpec COMMA IDENTIFIER RPAREN          # offsetofExpr
     // Multiplicative
     | expression op=(STAR | SLASH | PERCENT) expression        # mulExpr
     // Additive

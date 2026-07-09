@@ -846,6 +846,41 @@ SignatureHelpProvider::signatureHelp(
         }
     }
 
+    // 5.6) Keyword operators: sizeof, typeof, alignof, offsetof
+    if (result.signatures.empty()) {
+        auto buildKeywordSig = [&](const std::string& retType,
+                                   const std::vector<std::pair<std::string, std::string>>& params,
+                                   const std::string& doc) {
+            SignatureInfo sig;
+            std::ostringstream label;
+            label << "(keyword) " << retType << " " << name << "(";
+            for (size_t i = 0; i < params.size(); i++) {
+                if (i > 0) label << ", ";
+                label << params[i].first << " " << params[i].second;
+                sig.parameters.push_back({params[i].first + " " + params[i].second});
+            }
+            label << ")";
+            sig.label = label.str();
+            sig.activeParameter = site->activeParam;
+            sig.documentation = doc;
+            result.signatures.push_back(std::move(sig));
+        };
+
+        if (name == "sizeof") {
+            buildKeywordSig("int64", {{"type", "Type"}},
+                "Returns the size in bytes of the given type.");
+        } else if (name == "typeof") {
+            buildKeywordSig("string", {{"expression", "Expression"}},
+                "Returns the type name of the given expression as a string.");
+        } else if (name == "alignof") {
+            buildKeywordSig("int64", {{"type", "Type"}},
+                "Returns the alignment in bytes of the given type.");
+        } else if (name == "offsetof") {
+            buildKeywordSig("int64", {{"type", "Type"}, {"field", "string"}},
+                "Returns the byte offset of a field within a struct or union.");
+        }
+    }
+
     // 6) Fallback: check if name is a local variable initialized with a lambda
     if (result.signatures.empty()) {
         auto* func = findEnclosingFunction(parsed.tree, line);

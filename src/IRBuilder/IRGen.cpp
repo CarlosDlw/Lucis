@@ -15927,6 +15927,7 @@ std::any IRGen::visitTypeofExpr(LucisParser::TypeofExprContext* ctx) {
         }
     }
 
+// ── visitAlignofExpr ──────────────────────────────────────────────────────
     // AST-based fallback for expression kinds not covered by Load/GEP heuristics
     if (typeName == "unknown") {
         if (auto* exprTI = resolveExprTypeInfo(ctx->expression())) {
@@ -16020,6 +16021,59 @@ std::any IRGen::visitTypeofExpr(LucisParser::TypeofExprContext* ctx) {
     strStruct = builder_->CreateInsertValue(strStruct, len,       1, "str_len");
     return static_cast<llvm::Value*>(strStruct);
 }
+std::any IRGen::visitAlignofExpr(LucisParser::AlignofExprContext* ctx) {
+    auto* spec = ctx->typeSpec();
+    auto* ti = resolveTypeInfo(spec);
+    if (!ti) return {};
+    auto* llvmTy = ti->toLLVMType(*context_, module_->getDataLayout());
+    auto& dl = module_->getDataLayout();
+    uint64_t alignBytes = dl.getABITypeAlign(llvmTy).value();
+    auto* usizeTy = dl.getIntPtrType(*context_);
+    return static_cast<llvm::Value*>(
+        llvm::ConstantInt::get(usizeTy, alignBytes));
+}
+
+// ── visitOffsetofExpr ────────────────────────────────────────────────────
+std::any IRGen::visitOffsetofExpr(LucisParser::OffsetofExprContext* ctx) {
+    auto* spec = ctx->typeSpec();
+    auto* ti = resolveTypeInfo(spec);
+    if (!ti) return {};
+
+    auto& dl = module_->getDataLayout();
+    auto* structTy = llvm::dyn_cast<llvm::StructType>(
+        ti->toLLVMType(*context_, dl));
+    if (!structTy) {
+                std::cerr << "lucis: offsetof requires a struct/union type\n";
+
+        auto* usizeTy = dl.getIntPtrType(*context_);
+        return static_cast<llvm::Value*>(
+            llvm::ConstantInt::get(usizeTy, 0));
+    }
+
+    std::string fieldName = ctx->IDENTIFIER()->getText();
+    int fieldIdx = -1;
+    for (size_t i = 0; i < ti->fields.size(); i++) {
+        if (ti->fields[i].name == fieldName) {
+            fieldIdx = static_cast<int>(i);
+            break;
+        }
+    }
+    if (fieldIdx < 0) {
+                std::cerr << "lucis: offsetof: field '" << fieldName << "' not found in type\n";
+
+        auto* usizeTy = dl.getIntPtrType(*context_);
+        return static_cast<llvm::Value*>(
+            llvm::ConstantInt::get(usizeTy, 0));
+    }
+
+    // Get struct layout via the DataLayout
+    auto* layout = dl.getStructLayout(structTy);
+    uint64_t offset = layout->getElementOffset(static_cast<unsigned>(fieldIdx));
+    auto* usizeTy = dl.getIntPtrType(*context_);
+    return static_cast<llvm::Value*>(
+        llvm::ConstantInt::get(usizeTy, offset));
+}
+
 
 std::any IRGen::visitTernaryExpr(LucisParser::TernaryExprContext* ctx) {
     auto* cond = castValue(visit(ctx->expression(0)));
@@ -18137,6 +18191,15 @@ const TypeInfo* IRGen::resolveExprTypeInfo(LucisParser::ExpressionContext* ctx) 
     // ── Typeof → string ─────────────────────────────────────────────
     if (dynamic_cast<LucisParser::TypeofExprContext*>(ctx))
         return typeRegistry_.lookup("string");
+
+
+    // ── Alignof → int64 ─────────────────────────────────────────────
+    if (dynamic_cast<LucisParser::AlignofExprContext*>(ctx))
+        return typeRegistry_.lookup("int64");
+
+    // ── Offsetof → int64 ────────────────────────────────────────────
+    if (dynamic_cast<LucisParser::OffsetofExprContext*>(ctx))
+        return typeRegistry_.lookup("int64");
 
     // ── Function call: lookup return type ───────────────────────────
     if (auto* call = dynamic_cast<LucisParser::FnCallExprContext*>(ctx)) {

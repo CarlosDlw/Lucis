@@ -165,6 +165,9 @@ public:
     std::any visitCastExpr(LucisParser::CastExprContext* ctx)           override;
     std::any visitSizeofExpr(LucisParser::SizeofExprContext* ctx)       override;
     std::any visitTypeofExpr(LucisParser::TypeofExprContext* ctx)      override;
+
+    std::any visitAlignofExpr(LucisParser::AlignofExprContext* ctx)      override;
+    std::any visitOffsetofExpr(LucisParser::OffsetofExprContext* ctx)    override;
     std::any visitTernaryExpr(LucisParser::TernaryExprContext* ctx)     override;
     std::any visitIsExpr(LucisParser::IsExprContext* ctx)               override;
     std::any visitNullCoalExpr(LucisParser::NullCoalExprContext* ctx)   override;

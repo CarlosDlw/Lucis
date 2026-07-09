@@ -15,6 +15,8 @@ AS        : 'as';
 IS        : 'is';
 SIZEOF    : 'sizeof';
 TYPEOF    : 'typeof';
+ALIGNOF   : 'alignof';
+OFFSETOF  : 'offsetof';
 IF        : 'if';
 ELSE      : 'else';
 FOR       : 'for';

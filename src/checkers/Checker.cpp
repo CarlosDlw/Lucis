@@ -3763,6 +3763,42 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
         return typeRegistry_.lookup("string");
     }
 
+    // ── Alignof: alignof(type) ────────────────────────────────────────
+    if (auto* al = dynamic_cast<LucisParser::AlignofExprContext*>(expr)) {
+        unsigned dims = 0;
+        auto* ti = resolveTypeSpec(al->typeSpec(), dims);
+        if (!ti) {
+            error(al, "alignof: unknown type");
+        }
+        return typeRegistry_.lookup("int64");
+    }
+
+    // ── Offsetof: offsetof(type, field) ───────────────────────────────
+    if (auto* of = dynamic_cast<LucisParser::OffsetofExprContext*>(expr)) {
+        unsigned dims = 0;
+        auto* ti = resolveTypeSpec(of->typeSpec(), dims);
+        if (!ti) {
+            error(of, "offsetof: unknown type");
+            return typeRegistry_.lookup("int64");
+        }
+        if (ti->kind != TypeKind::Struct && ti->kind != TypeKind::Union) {
+            error(of, "offsetof: expected a struct or union type, got  + ti->name + ");
+            return typeRegistry_.lookup("int64");
+        }
+        std::string fieldName = of->IDENTIFIER()->getText();
+        bool found = false;
+        for (const auto& field : ti->fields) {
+            if (field.name == fieldName) {
+                found = true;
+                break;
+            }
+        }
+        if (!found) {
+            error(of, "offsetof: type  + ti->name +  has no field named  + fieldName + ");
+        }
+        return typeRegistry_.lookup("int64");
+    }
+
     // ── Method call: expr.method(args) ─────────────────────────────
     if (auto* mc = dynamic_cast<LucisParser::MethodCallExprContext*>(expr)) {
         auto* receiverType = resolveExprType(mc->expression());

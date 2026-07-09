@@ -2173,6 +2173,34 @@ std::optional<HoverResult> HoverProvider::walkExprForHover(
                                  tree, bindings, cursorLine, project);
     }
 
+    // ── Alignof: alignof(Type) ───────────────────────────────────────
+    if (auto* al = dynamic_cast<LucisParser::AlignofExprContext*>(expr)) {
+        if (al->ALIGNOF() && al->ALIGNOF()->getSymbol() == hoveredToken) {
+            return makeResult(hoveredToken,
+                "```lucis\n(keyword) int64 alignof(type)\n```\n"
+                "Returns the alignment in bytes of the given type.");
+        }
+        if (auto* ts = al->typeSpec()) {
+            auto r = hoverTypeSpec(ts, hoveredToken, tree, bindings, project);
+            if (r) return r;
+        }
+        return std::nullopt;
+    }
+
+    // ── Offsetof: offsetof(type, field) ──────────────────────────────
+    if (auto* of = dynamic_cast<LucisParser::OffsetofExprContext*>(expr)) {
+        if (of->OFFSETOF() && of->OFFSETOF()->getSymbol() == hoveredToken) {
+            return makeResult(hoveredToken,
+                "```lucis\n(keyword) int64 offsetof(type, field)\n```\n"
+                "Returns the byte offset of a field within a struct or union.");
+        }
+        if (auto* ts = of->typeSpec()) {
+            auto r = hoverTypeSpec(ts, hoveredToken, tree, bindings, project);
+            if (r) return r;
+        }
+        return std::nullopt;
+    }
+
     // ── List comprehension: [expr | for Type x in range if cond] ────
     if (auto* lc = dynamic_cast<LucisParser::ListCompExprContext*>(expr)) {
         // Hover on iterator type spec
@@ -4602,6 +4630,8 @@ static std::string lookupFuncReturnType(
         {"fromCStrLen", "string"},
         {"sprintf", "string"},
         {"sizeof", "int64"},
+        {"alignof", "int64"},
+        {"offsetof", "int64"},
         {"toInt", "int64"},
         {"toFloat", "float64"},
         {"toBool", "bool"}
@@ -5525,6 +5555,12 @@ static std::string inferExprTypeName(
 
     // Typeof → string
     if (dynamic_cast<LucisParser::TypeofExprContext*>(expr)) return "string";
+
+    // Alignof → int64
+    if (dynamic_cast<LucisParser::AlignofExprContext*>(expr)) return "int64";
+
+    // Offsetof → int64
+    if (dynamic_cast<LucisParser::OffsetofExprContext*>(expr)) return "int64";
 
     // Tuple literal: (10, 20) → "tuple<int32, int32>"
     if (auto* tup = dynamic_cast<LucisParser::TupleLitExprContext*>(expr)) {

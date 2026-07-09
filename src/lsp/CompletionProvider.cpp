@@ -629,7 +629,8 @@ static std::string lookupFuncReturnType(const std::string &funcName,
           {"typeof", "string"},      {"toString", "string"},
           {"fromCStr", "string"},    {"fromCStrCopy", "string"},
           {"fromCStrLen", "string"}, {"sprintf", "string"},
-          {"sizeof", "int64"},       {"toInt", "int64"},
+          {"sizeof", "int64"},       {"alignof", "int64"},
+          {"offsetof", "int64"},     {"toInt", "int64"},
           {"toFloat", "float64"},    {"toBool", "bool"}};
   if (auto it = globalBuiltinReturns.find(funcName);
       it != globalBuiltinReturns.end())
@@ -1357,6 +1358,10 @@ static std::string inferExprTypeName(
     return "int64";
   if (dynamic_cast<LucisParser::TypeofExprContext *>(expr))
     return "string";
+  if (dynamic_cast<LucisParser::AlignofExprContext *>(expr))
+    return "int64";
+  if (dynamic_cast<LucisParser::OffsetofExprContext *>(expr))
+    return "int64";
 
   // Index: expr[i] → element type
   if (auto *idx = dynamic_cast<LucisParser::IndexExprContext *>(expr)) {
@@ -5425,7 +5430,7 @@ void CompletionProvider::addKeywords(std::vector<CompletionItem> &items,
       "fn",     "struct", "enum",      "union",  "extend",   "type",
       "extern", "use",    "namespace", "try",    "catch",    "finally",
        "throw",  "spawn",  "await",     "lock",   "defer",    "as",
-       "match",  "or",     "is",     "in",     "sizeof",    "typeof", "true",     "false",
+       "match",  "or",     "is",     "in",     "sizeof",    "typeof", "alignof",  "offsetof", "true",     "false",
        "null",   "return", "asm",       "volatile",
        "goto",   "intel", "comptime", "const"};
 

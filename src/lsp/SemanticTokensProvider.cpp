@@ -52,6 +52,7 @@ static bool isKeyword(size_t tokenType) {
         case LucisLexer::STRUCT: case LucisLexer::UNION: case LucisLexer::ENUM:
         case LucisLexer::FN: case LucisLexer::TYPE: case LucisLexer::AS:
         case LucisLexer::IS: case LucisLexer::SIZEOF: case LucisLexer::TYPEOF:
+        case LucisLexer::ALIGNOF: case LucisLexer::OFFSETOF:
         case LucisLexer::IF: case LucisLexer::ELSE: case LucisLexer::FOR:
         case LucisLexer::IN: case LucisLexer::LOOP: case LucisLexer::WHILE:
         case LucisLexer::DO: case LucisLexer::BREAK: case LucisLexer::CONTINUE:

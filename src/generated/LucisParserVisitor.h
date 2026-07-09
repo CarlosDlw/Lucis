@@ -285,6 +285,8 @@ public:
 
     virtual std::any visitCastExpr(LucisParser::CastExprContext *context) = 0;
 
+    virtual std::any visitOffsetofExpr(LucisParser::OffsetofExprContext *context) = 0;
+
     virtual std::any visitGenericFnCallExpr(LucisParser::GenericFnCallExprContext *context) = 0;
 
     virtual std::any visitGenericEnumAccessExpr(LucisParser::GenericEnumAccessExprContext *context) = 0;
@@ -300,6 +302,8 @@ public:
     virtual std::any visitArrayLitExpr(LucisParser::ArrayLitExprContext *context) = 0;
 
     virtual std::any visitMethodCallExpr(LucisParser::MethodCallExprContext *context) = 0;
+
+    virtual std::any visitAlignofExpr(LucisParser::AlignofExprContext *context) = 0;
 
     virtual std::any visitLeadingDotFloatLitExpr(LucisParser::LeadingDotFloatLitExprContext *context) = 0;
 
