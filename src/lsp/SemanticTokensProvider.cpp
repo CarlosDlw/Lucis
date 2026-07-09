@@ -8,6 +8,7 @@
 #include <sstream>
 
 #include <unordered_set>
+#include <mutex>
 #include "imports/ImportResolver.h"
 #include "types/BuiltinRegistry.h"
 
@@ -1031,6 +1032,642 @@ static void emitCMacroSubTokens(std::vector<RawSemanticToken>& out,
     }
 }
 
+// asm_b block — emit full sub-token highlighting for assembly content
+// (multi-assembler: NASM, GAS/AT&T, MASM, WASM, etc.)
+
+static std::unordered_set<std::string> asmInstructions;
+static std::unordered_set<std::string> asmRegisters;
+static std::unordered_set<std::string> asmDirectives;
+static std::once_flag asmInitFlag;
+
+static void initAsmSets() {
+    std::call_once(asmInitFlag, []() {
+
+    // ── General-purpose x86-64 instructions ──────────────────────────
+    const char* instrs[] = {
+        "mov", "push", "pop", "xchg", "cmove", "cmovne", "cmovb", "cmovae",
+        "cmovbe", "cmova", "cmovl", "cmovge", "cmovle", "cmovg",
+        "movsx", "movzx", "movsxd", "movd", "movq",
+        "add", "sub", "mul", "imul", "div", "idiv",
+        "inc", "dec", "neg", "not",
+        "and", "or", "xor", "test",
+        "shl", "shr", "sal", "sar", "rol", "ror", "rcl", "rcr",
+        "shld", "shrd",
+        "cmp", "cmpsb", "cmpsw", "cmpsd", "cmpsq",
+        "jmp", "call", "ret", "retf", "retn",
+        "ja", "jae", "jb", "jbe", "jc", "jcxz", "jecxz", "jrcxz",
+        "je", "jg", "jge", "jl", "jle", "jna", "jnae", "jnb",
+        "jnbe", "jnc", "jne", "jng", "jnge", "jnl", "jnle", "jno",
+        "jnp", "jns", "jnz", "jo", "jp", "jpe", "jpo", "js", "jz",
+        "loop", "loope", "loopne", "loopnz", "loopz",
+        "nop", "pause", "lea", "lodsb", "lodsw", "lodsd", "lodsq",
+        "stosb", "stosw", "stosd", "stosq",
+        "movsb", "movsw", "movsd", "movsq",
+        "scasb", "scasw", "scasd", "scasq",
+        "rep", "repe", "repne", "repnz", "repz",
+        "iret", "iretd", "iretq",
+        "syscall", "sysret", "sysenter", "sysexit",
+        "int", "int3", "into", "bound",
+        "cli", "sti", "cld", "std",
+        "lahf", "sahf", "pushf", "popf", "pushfd", "popfd", "pushfq", "popfq",
+        "cbw", "cwde", "cdqe", "cwd", "cdq", "cqo",
+        "daa", "das", "aaa", "aas", "aam", "aad",
+        "xlat", "xlatb",
+        "bsf", "bsr", "bt", "bts", "btr", "btc",
+        "bswap",
+        "sete", "setne", "setb", "setae", "setbe", "seta",
+        "setl", "setge", "setle", "setg", "sets", "setns",
+        "seto", "setno", "setp", "setnp",
+        "cpuid", "rdtsc", "rdtscp", "rdmsr", "wrmsr",
+        "rdrand", "rdseed",
+        "xtest", "xbegin", "xend", "xabort",
+        "xadd", "cmpxchg", "cmpxchg8b", "cmpxchg16b",
+        "xacquire", "xrelease",
+        "lfence", "mfence", "sfence",
+        "tpause", "umwait", "umonitor",
+        "clflush", "clflushopt", "clwb",
+        "prefetchnta", "prefetcht0", "prefetcht1", "prefetcht2",
+        "cldemote", "movdiri", "movdir64b",
+        "encls", "enclu", "enclv",
+        "invept", "invvpid", "invpcid",
+        "vmcall", "vmfunc", "vmlaunch", "vmresume", "vmxoff",
+        "vmread", "vmwrite",
+        "vmclear", "vmptrld", "vmptrst",
+        "getsec",
+        "monitor", "mwait", "mwaitx",
+        "clac", "stac",
+        "wrfsbase", "wrgsbase", "rdfsbase", "rdgsbase",
+        "adc", "sbb",
+        // ── x87 FPU ──────────────────────────────────────────────────
+        "fld", "fst", "fstp", "fild", "fist", "fistp", "fisttp",
+        "fadd", "fsub", "fmul", "fdiv", "faddp", "fsubp", "fmulp", "fdivp",
+        "fiadd", "fisub", "fimul", "fidiv",
+        "fchs", "fabs", "fsqrt", "frndint",
+        "fcom", "fcomp", "fcompp", "fucom", "fucomp", "fucompp",
+        "ficom", "ficomp",
+        "ftst", "fxam", "fldz", "fld1", "fldpi", "fldl2e", "fldl2t", "fldlg2", "fldln2",
+        "fprem", "fprem1", "fscale", "fxch",
+        "fincstp", "fdecstp",
+        "fstenv", "fldenv", "fsave", "frstor", "fxsave", "fxrstor",
+        "fxsave64", "fxrstor64",
+        "fwait", "fnop", "fclex", "ffree", "finit", "fninit",
+        "fcmovb", "fcmove", "fcmovbe", "fcmovu", "fcmovnb", "fcmovne", "fcmovnbe", "fcmovnu",
+        "fnsave", "fnstcw", "fnstsw", "fnstenv",
+        // ── MMX ───────────────────────────────────────────────────────
+        "packsswb", "packssdw", "packuswb",
+        "paddb", "paddw", "paddd", "paddq",
+        "paddsb", "paddsw", "paddusb", "paddusw",
+        "psubb", "psubw", "psubd", "psubq",
+        "psubsb", "psubsw", "psubusb", "psubusw",
+        "pmullw", "pmulhw", "pmulhuw", "pmaddwd",
+        "pand", "por", "pxor", "pandn",
+        "psllw", "pslld", "psllq", "psrlw", "psrld", "psrlq", "psraw", "psrad",
+        "pcmpeqb", "pcmpeqw", "pcmpeqd", "pcmpgtb", "pcmpgtw", "pcmpgtd",
+        "punpckhbw", "punpckhwd", "punpckhdq",
+        "punpcklbw", "punpcklwd", "punpckldq",
+        "emms",
+        // ── SSE ───────────────────────────────────────────────────────
+        "movaps", "movups", "movss", "movlps", "movhps", "movlhps", "movhlps",
+        "movmskps", "movntps",
+        "addps", "addss", "subps", "subss", "mulps", "mulss", "divps", "divss",
+        "rcpps", "rcpss", "sqrtps", "sqrtss", "rsqrtps", "rsqrtss",
+        "minps", "minss", "maxps", "maxss",
+        "andps", "andnps", "orps", "xorps",
+        "cmpps", "cmpss",
+        "comiss", "ucomiss",
+        "shufps", "unpcklps", "unpckhps",
+        "cvtpi2ps", "cvtps2pi", "cvtsi2ss", "cvtss2si",
+        "cvttps2pi", "cvttss2si",
+        "pextrw", "pinsrw", "pmaxsw", "pmaxub", "pminsw", "pminub",
+        "pmovmskb", "pmulhuw",
+        "pshufw", "maskmovq",
+        "ldmxcsr", "stmxcsr",
+        // ── SSE2 ──────────────────────────────────────────────────────
+        "movapd", "movupd", "movsd", "movlpd", "movhpd", "movmskpd",
+        "addpd", "addsd", "subpd", "subsd", "mulpd", "mulsd",
+        "divpd", "divsd", "sqrtpd", "sqrtsd",
+        "minpd", "minsd", "maxpd", "maxsd",
+        "andpd", "andnpd", "orpd", "xorpd",
+        "cmppd", "cmpsd",
+        "comisd", "ucomisd",
+        "shufpd", "unpcklpd", "unpckhpd",
+        "cvtpd2pi", "cvtpi2pd", "cvtsi2sd", "cvtsd2si",
+        "cvttpd2pi", "cvttsd2si",
+        "cvtpd2dq", "cvtdq2pd", "cvtps2dq", "cvtdq2ps",
+        "cvttpd2dq", "cvttps2dq",
+        "cvtss2sd", "cvtsd2ss",
+        "movdqa", "movdqu", "movntdq", "movnti", "movntpd",
+        "pmuludq",
+        "pshuflw", "pshufhw", "pshufd",
+        "pclmulqdq",
+        "punpcklqdq", "punpckhqdq",
+        "maskmovdqu",
+        // ── SSE3 ──────────────────────────────────────────────────────
+        "addsubps", "addsubpd", "movsldup", "movshdup", "movddup",
+        "haddps", "haddpd", "hsubps", "hsubpd",
+        "lddqu",
+        // ── SSSE3 ─────────────────────────────────────────────────────
+        "pshufb", "phaddw", "phaddd", "phaddsw",
+        "phsubw", "phsubd", "phsubsw",
+        "psignb", "psignw", "psignd",
+        "pmulhrsw", "pabsb", "pabsw", "pabsd",
+        "palignr",
+        // ── SSE4.1 ────────────────────────────────────────────────────
+        "pmulld", "phminposuw", "pminsb", "pminsd", "pminuw", "pminud",
+        "pmaxsb", "pmaxsd", "pmaxuw", "pmaxud",
+        "pmovsxbw", "pmovsxbd", "pmovsxbq",
+        "pmovsxwd", "pmovsxwq", "pmovsxdq",
+        "pmovzxbw", "pmovzxbd", "pmovzxbq",
+        "pmovzxwd", "pmovzxwq", "pmovzxdq",
+        "pcmpeqq", "packusdw",
+        "pmuldq",
+        "insertps", "extractps",
+        "pextrb", "pextrd", "pextrq",
+        "pinsrb", "pinsrd", "pinsrq",
+        "roundps", "roundpd", "roundss", "roundsd",
+        "dpps", "dppd",
+        "mpsadbw", "blendps", "blendpd", "blendvps", "blendvpd",
+        "ptest", "pcmpgtq",
+        // ── SSE4.2 ────────────────────────────────────────────────────
+        "pcmpestri", "pcmpestrm", "pcmpistri", "pcmpistrm",
+        "crc32", "popcnt",
+        // ── AES + SHA ─────────────────────────────────────────────────
+        "aesenc", "aesenclast", "aesdec", "aesdeclast",
+        "aesimc", "aeskeygenassist",
+        "sha1rnds4", "sha1nexte", "sha1msg1", "sha1msg2",
+        "sha256rnds2", "sha256msg1", "sha256msg2",
+        // ── AVX ───────────────────────────────────────────────────────
+        "vaddps", "vaddpd", "vaddss", "vaddsd",
+        "vsubps", "vsubpd", "vsubss", "vsubsd",
+        "vmulps", "vmulpd", "vmulss", "vmulsd",
+        "vdivps", "vdivpd", "vdivss", "vdivsd",
+        "vsqrtps", "vsqrtpd", "vsqrtss", "vsqrtsd",
+        "vrsqrtps", "vrsqrtss", "vrcpps", "vrcpss",
+        "vminps", "vminpd", "vminss", "vminsd",
+        "vmaxps", "vmaxpd", "vmaxss", "vmaxsd",
+        "vandps", "vandpd", "vandnps", "vandnpd",
+        "vorps", "vorpd", "vxorps", "vxorpd",
+        "vhaddps", "vhaddpd", "vhsubps", "vhsubpd",
+        "vaddsubps", "vaddsubpd",
+        "vmovaps", "vmovapd", "vmovups", "vmovupd",
+        "vmovss", "vmovsd",
+        "vmovdqa", "vmovdqu", "vmovntps", "vmovntpd", "vmovntdq",
+        "vpermilps", "vpermilpd", "vperm2f128",
+        "vinsertps", "vextractps",
+        "vinsertf128", "vextractf128", "vinserti128", "vextracti128",
+        "vblendps", "vblendpd", "vblendvps", "vblendvpd",
+        "vdpps", "vdppd",
+        "vroundps", "vroundpd", "vroundss", "vroundsd",
+        "vtestps", "vtestpd",
+        "vzeroupper", "vzeroall",
+        "vbroadcastss", "vbroadcastsd", "vbroadcastf128",
+        "vmaskmovps", "vmaskmovpd",
+        "vldmxcsr", "vstmxcsr",
+        // ── AVX2 ──────────────────────────────────────────────────────
+        "vpermq", "vpermd", "vpermps", "vpermpd",
+        "vperm2i128",
+        "vbroadcastsi128",
+        "vpblendd", "vpblendvb",
+        "vgatherdd", "vgatherdq", "vgatherqd", "vgatherqq",
+        "vpgatherdd", "vpgatherdq", "vpgatherqd", "vpgatherqq",
+        "vpmaskmovd", "vpmaskmovq",
+        "vpsllvd", "vpsllvq", "vpsrlvd", "vpsrlvq", "vpsravd",
+        "vpaddb", "vpaddw", "vpaddd", "vpaddq",
+        "vpsubb", "vpsubw", "vpsubd", "vpsubq",
+        "vpmullw", "vpmulld", "vpmuludq", "vpmuldq",
+        "vpand", "vpor", "vpxor", "vpandn",
+        "vpsllw", "vpslld", "vpsllq", "vpsrlw", "vpsrld", "vpsrlq", "vpsraw", "vpsrad",
+        "vpcmpeqb", "vpcmpeqw", "vpcmpeqd", "vpcmpeqq",
+        "vpcmpgtb", "vpcmpgtw", "vpcmpgtd", "vpcmpgtq",
+        // ── AVX-512 ───────────────────────────────────────────────────
+        "vpternlogd", "vpternlogq",
+        "vblendmps", "vblendmpd", "vpblendmd", "vpblendmq",
+        "vcompressps", "vcompresspd", "vpcompressd", "vpcompressq",
+        "vexpandps", "vexpandpd", "vpexpandd", "vpexpandq",
+        "vconflictps", "vconflictd", "vconflictq",
+        "vplzcntd", "vplzcntq",
+        "vpopcntd", "vpopcntq",
+        "vpermw", "vpermt2b", "vpermt2w", "vpermt2d", "vpermt2q",
+        "vpermb",
+        "vpmovdb", "vpmovdw", "vpmovqb", "vpmovqw", "vpmovqd",
+        "vpmovsdb", "vpmovsdw", "vpmovsqb", "vpmovsqw", "vpmovsqd",
+        "vpmovusdb", "vpmovusdw", "vpmovusqb", "vpmovusqw", "vpmovusqd",
+        "vprold", "vprolq", "vprolvd", "vprolvq",
+        "vprord", "vprorq", "vprorvd", "vprorvq",
+        "vpsravw", "vpsllvw", "vpsrlvw",
+        "vscalefps", "vscalefpd", "vscalefss", "vscalefsd",
+        "vmovdqa32", "vmovdqa64", "vmovdqu32", "vmovdqu64",
+        "vgetexpps", "vgetexppd", "vgetexpss", "vgetexpsd",
+        "vgetmantps", "vgetmantpd", "vgetmantss", "vgetmantsd",
+        "vfixupimmps", "vfixupimmpd", "vfixupimmss", "vfixupimmsd",
+        "vreduceps", "vreducepd", "vreducess", "vreducesd",
+        "vrangeps", "vrangepd", "vrangess", "vrangesd",
+        "valignd", "valignq",
+        "vdbpsadbw",
+        // ── BMI / ADX ────────────────────────────────────────────────
+        "andn", "bextr", "blsi", "blsmsk", "blsr",
+        "tzcnt", "lzcnt",
+        "mulx", "rorx", "sarx", "shlx", "shrx",
+        "pdep", "pext",
+        "adox", "adcx",
+    };
+    for (auto* s : instrs) asmInstructions.insert(s);
+
+    // ── Registers (x86-64 architecture - same for all assemblers) ─────
+    const char* regs[] = {
+        "rax", "rbx", "rcx", "rdx", "rdi", "rsi", "rbp", "rsp",
+        "r8", "r9", "r10", "r11", "r12", "r13", "r14", "r15",
+        "eax", "ebx", "ecx", "edx", "edi", "esi", "ebp", "esp",
+        "r8d", "r9d", "r10d", "r11d", "r12d", "r13d", "r14d", "r15d",
+        "ax", "bx", "cx", "dx", "si", "di", "bp", "sp",
+        "r8w", "r9w", "r10w", "r11w", "r12w", "r13w", "r14w", "r15w",
+        "al", "bl", "cl", "dl", "sil", "dil", "bpl", "spl",
+        "r8b", "r9b", "r10b", "r11b", "r12b", "r13b", "r14b", "r15b",
+        "ah", "bh", "ch", "dh",
+        "rip", "eip",
+        "cs", "ds", "es", "fs", "gs", "ss",
+        "st0", "st1", "st2", "st3", "st4", "st5", "st6", "st7",
+        "mm0", "mm1", "mm2", "mm3", "mm4", "mm5", "mm6", "mm7",
+        "xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5", "xmm6", "xmm7",
+        "xmm8", "xmm9", "xmm10", "xmm11", "xmm12", "xmm13", "xmm14", "xmm15",
+        "xmm16", "xmm17", "xmm18", "xmm19", "xmm20", "xmm21", "xmm22", "xmm23",
+        "xmm24", "xmm25", "xmm26", "xmm27", "xmm28", "xmm29", "xmm30", "xmm31",
+        "ymm0", "ymm1", "ymm2", "ymm3", "ymm4", "ymm5", "ymm6", "ymm7",
+        "ymm8", "ymm9", "ymm10", "ymm11", "ymm12", "ymm13", "ymm14", "ymm15",
+        "ymm16", "ymm17", "ymm18", "ymm19", "ymm20", "ymm21", "ymm22", "ymm23",
+        "ymm24", "ymm25", "ymm26", "ymm27", "ymm28", "ymm29", "ymm30", "ymm31",
+        "zmm0", "zmm1", "zmm2", "zmm3", "zmm4", "zmm5", "zmm6", "zmm7",
+        "zmm8", "zmm9", "zmm10", "zmm11", "zmm12", "zmm13", "zmm14", "zmm15",
+        "zmm16", "zmm17", "zmm18", "zmm19", "zmm20", "zmm21", "zmm22", "zmm23",
+        "zmm24", "zmm25", "zmm26", "zmm27", "zmm28", "zmm29", "zmm30", "zmm31",
+        "k0", "k1", "k2", "k3", "k4", "k5", "k6", "k7",
+        "cr0", "cr1", "cr2", "cr3", "cr4", "cr5", "cr6", "cr7", "cr8",
+        "dr0", "dr1", "dr2", "dr3", "dr4", "dr5", "dr6", "dr7",
+        "tr0", "tr1", "tr2", "tr3", "tr4", "tr5", "tr6", "tr7",
+        "bnd0", "bnd1", "bnd2", "bnd3",
+        "tmm0", "tmm1", "tmm2", "tmm3", "tmm4", "tmm5", "tmm6", "tmm7",
+        "tile0", "tile1", "tile2", "tile3", "tile4", "tile5", "tile6", "tile7",
+        "pkru",
+        "mxcsr",
+    };
+    for (auto* s : regs) asmRegisters.insert(s);
+
+    // ── Assembler directives (NASM, GAS, MASM, WASM) ─────────────────
+    const char* dirs[] = {
+        "section", "segment", "global", "extern", "common",
+        "align", "bits", "default", "cpu",
+        "absolute", "virtual", "group",
+        "struc", "endstruc", "istruc", "at",
+        "macro", "endm", "endmacro",
+        "org", "origin",
+        "include", "incbin",
+        "%define", "%undef", "%assign", "%strlen", "%substr",
+        "%if", "%elif", "%else", "%endif", "%ifdef", "%ifndef",
+        "%ifmacro", "%ifnmacro", "%ifctoken", "%ifnctoken",
+        "%macro", "%imacro", "%endmacro",
+        "%rotate", "%rep", "%endrep", "%exitrep",
+        "%push", "%pop", "%repl",
+        "%stacksize", "%local",
+        "%xdefine", "%ixdefine",
+        "%pathsearch", "%fatal", "%error", "%warning",
+        ".section", ".text", ".data", ".bss", ".globl", ".global",
+        ".extern", ".type", ".size", ".align", ".p2align", ".balign",
+        ".byte", ".word", ".short", ".int", ".long", ".quad", ".octa",
+        ".float", ".single", ".double", ".tfloat",
+        ".ascii", ".asciz", ".string", ".zero", ".skip", ".space",
+        ".fill", ".org", ".lcomm", ".comm",
+        ".struct", ".union",
+        ".macro", ".endm", ".exitm",
+        ".irp", ".irpc", ".rept", ".endr",
+        ".if", ".else", ".endif", ".ifdef", ".ifndef", ".ifb", ".ifnb",
+        ".ifc", ".ifnc", ".ifeqs", ".ifnes",
+        ".include", ".incbin",
+        ".set", ".equ", ".equiv", ".eqv",
+        ".file", ".loc", ".cfi_startproc", ".cfi_endproc",
+        ".cfi_def_cfa", ".cfi_offset", ".cfi_rel_offset",
+        ".cfi_register", ".cfi_restore", ".cfi_remember_state",
+        ".cfi_restore_state", ".cfi_same_value",
+        ".cfi_signal_frame", ".cfi_window_save",
+        ".cfi_b_key_frame",
+        ".ident", ".note", ".pushsection", ".popsection", ".previous",
+        ".altmacro", ".noaltmacro",
+        ".att_syntax", ".intel_syntax",
+        ".code16", ".code16gcc", ".code32", ".code64",
+        ".arch", ".cpu",
+        ".hidden", ".protected", ".internal", ".weak", ".local",
+        ".thumb", ".thumb_func", ".syntax",
+        ".code", ".data", ".stack", ".const",
+        "assume", "public", "proc", "endp", "proto",
+        "model", "flat", "tiny", "small", "medium", "compact", "large", "huge",
+        ".386", ".486", ".586", ".686", ".xmm",
+        ".mmx", ".k3d",
+        "offset", "ptr",
+        "db", "dw", "dd", "dq", "dt", "do", "dy", "dz",
+        "resb", "resw", "resd", "resq", "rest", "reso", "resy", "resz",
+        "equ", "times", "dup",
+        "byte", "word", "dword", "qword", "tbyte", "oword", "yword", "zword",
+        "use16", "use32", "use64",
+    };
+    for (auto* s : dirs) asmDirectives.insert(s);
+    }); }
+
+// Emit sub-tokens for a line of assembly content.
+// Handles NASM, GAS (AT&T/Intel), MASM, WASM syntaxes.
+static void emitAsmLineTokens(std::vector<RawSemanticToken>& out,
+                               uint32_t line, uint32_t baseCol,
+                               const std::string& text,
+                               uint32_t firstNonSpace) {
+    std::string t = text.substr(firstNonSpace);
+    uint32_t col0 = baseCol + firstNonSpace;
+
+    size_t i = 0;
+    while (i < t.size()) {
+        if (std::isspace(static_cast<unsigned char>(t[i]))) { i++; continue; }
+
+        // Comment styles: ; (NASM/MASM/GAS), # (GAS), // (GAS C-style), /* */ (GAS)
+        if (t[i] == ';') {
+            emit(out, line, col0 + i, static_cast<uint32_t>(t.size() - i),
+                 SemanticTokenType::Comment);
+            return;
+        }
+        if (t[i] == '#') {
+            emit(out, line, col0 + i, static_cast<uint32_t>(t.size() - i),
+                 SemanticTokenType::Comment);
+            return;
+        }
+        if (i + 1 < t.size() && t[i] == '/' && t[i + 1] == '/') {
+            emit(out, line, col0 + i, static_cast<uint32_t>(t.size() - i),
+                 SemanticTokenType::Comment);
+            return;
+        }
+        if (i + 1 < t.size() && t[i] == '/' && t[i + 1] == '*') {
+            size_t close = t.find("*/", i + 2);
+            if (close != std::string::npos)
+                emit(out, line, col0 + i, static_cast<uint32_t>(close - i + 2),
+                     SemanticTokenType::Comment);
+            else
+                emit(out, line, col0 + i, static_cast<uint32_t>(t.size() - i),
+                     SemanticTokenType::Comment);
+            return;
+        }
+
+        // Strings: "..." or '...'
+        if (t[i] == '"' || t[i] == '\'') {
+            char q = t[i];
+            size_t start = i;
+            i++;
+            while (i < t.size() && t[i] != q) {
+                if (t[i] == '\\' && i + 1 < t.size()) i += 2;
+                else i++;
+            }
+            if (i < t.size()) i++;
+            emit(out, line, col0 + start, static_cast<uint32_t>(i - start),
+                 SemanticTokenType::String);
+            continue;
+        }
+
+        // Numbers: decimal, hex (0x, $, h suffix), octal (0o, q suffix), binary (0b, b suffix)
+        if (std::isdigit(static_cast<unsigned char>(t[i])) ||
+            t[i] == '$' ||
+            (t[i] == '.' && i + 1 < t.size() && std::isdigit(static_cast<unsigned char>(t[i+1])))) {
+            size_t start = i;
+            if (t[i] == '$') {
+                i++;
+                while (i < t.size() && std::isxdigit(static_cast<unsigned char>(t[i]))) i++;
+            } else if (i + 2 < t.size() && t[i] == '0') {
+                char nxt = t[i+1];
+                if (nxt == 'x' || nxt == 'X') {
+                    i += 2;
+                    while (i < t.size() && std::isxdigit(static_cast<unsigned char>(t[i]))) i++;
+                } else if (nxt == 'b' || nxt == 'B') {
+                    i += 2;
+                    while (i < t.size() && (t[i] == '0' || t[i] == '1')) i++;
+                } else if (nxt == 'o' || nxt == 'O') {
+                    i += 2;
+                    while (i < t.size() && t[i] >= '0' && t[i] <= '7') i++;
+                } else {
+                    while (i < t.size() && (std::isxdigit(static_cast<unsigned char>(t[i])) || t[i] == '.')) i++;
+                }
+            } else {
+                while (i < t.size() && (std::isxdigit(static_cast<unsigned char>(t[i])) || t[i] == '.')) i++;
+                // Check for suffix radix: h (hex), o/q (octal), b (binary), d (decimal)
+                if (i < t.size() && (t[i] == 'h' || t[i] == 'H' ||
+                    t[i] == 'o' || t[i] == 'O' || t[i] == 'q' || t[i] == 'Q' ||
+                    t[i] == 'b' || t[i] == 'B' || t[i] == 'd' || t[i] == 'D'))
+                    i++;
+            }
+            emit(out, line, col0 + start, static_cast<uint32_t>(i - start),
+                 SemanticTokenType::Number);
+            continue;
+        }
+
+        // Identifiers, labels, keywords
+        if (std::isalpha(static_cast<unsigned char>(t[i])) || t[i] == '_' ||
+            t[i] == '.' || t[i] == '@' || t[i] == '?' ||
+            (t[i] == '%' && i + 1 < t.size() && 
+             (std::isalnum(static_cast<unsigned char>(t[i+1])) || t[i+1] == '_' || t[i+1] == '%'))) {
+            size_t idStart = i;
+            i++;
+            while (i < t.size() && (std::isalnum(static_cast<unsigned char>(t[i])) ||
+                   t[i] == '_' || t[i] == '.' || t[i] == '@' || t[i] == '?' || t[i] == '$'))
+                i++;
+
+            std::string word = t.substr(idStart, i - idStart);
+
+            // Check if followed by ':' (label)
+            size_t after = i;
+            while (after < t.size() && std::isspace(static_cast<unsigned char>(t[after])))
+                after++;
+            if (after < t.size() && t[after] == ':') {
+                emit(out, line, col0 + idStart, static_cast<uint32_t>(i - idStart),
+                     SemanticTokenType::Function,
+                     static_cast<uint32_t>(SemanticTokenMod::Declaration));
+                emit(out, line, col0 + after, 1, SemanticTokenType::Operator);
+                i = after + 1;
+                continue;
+            }
+
+            // Classify: check directives FIRST with % preserved (for NASM %define etc.)
+            if (asmDirectives.count(word) > 0) {
+                emit(out, line, col0 + idStart, static_cast<uint32_t>(i - idStart),
+                     SemanticTokenType::Macro);
+            } else {
+                // Strip GAS %reg prefix for register/instruction lookup
+                std::string lookupWord = word;
+                size_t pctCount = 0;
+                while (pctCount < lookupWord.size() && lookupWord[pctCount] == '%')
+                    pctCount++;
+                if (pctCount > 0)
+                    lookupWord = lookupWord.substr(pctCount);
+
+                if ((!lookupWord.empty() && lookupWord[0] == '.') ||
+                    asmDirectives.count(lookupWord) > 0) {
+                    emit(out, line, col0 + idStart, static_cast<uint32_t>(i - idStart),
+                         SemanticTokenType::Macro);
+                } else if (asmInstructions.count(lookupWord) > 0) {
+                    emit(out, line, col0 + idStart, static_cast<uint32_t>(i - idStart),
+                         SemanticTokenType::Keyword);
+                } else if (asmRegisters.count(lookupWord) > 0) {
+                    emit(out, line, col0 + idStart, static_cast<uint32_t>(i - idStart),
+                         SemanticTokenType::Variable);
+                } else {
+                    emit(out, line, col0 + idStart, static_cast<uint32_t>(i - idStart),
+                         SemanticTokenType::Variable);
+                }
+            }
+            continue;
+        }
+
+        // Operators and punctuation
+        if (t[i] == ':' || t[i] == ',' || t[i] == '[' || t[i] == ']' ||
+            t[i] == '+' || t[i] == '-' || t[i] == '*' || t[i] == '/' ||
+            t[i] == '%' || t[i] == '~' || t[i] == '&' || t[i] == '|' ||
+            t[i] == '^' || t[i] == '(' || t[i] == ')' || t[i] == '!' ||
+            t[i] == '=' || t[i] == '$' || t[i] == '@' || t[i] == '?' ||
+            t[i] == '{' || t[i] == '}') {
+            size_t opLen = 1;
+            if (i + 1 < t.size()) {
+                char c1 = t[i], c2 = t[i+1];
+                if ((c1 == '<' && c2 == '<') || (c1 == '>' && c2 == '>') ||
+                    (c1 == '-' && c2 == '>') || (c1 == '<' && c2 == '>') ||
+                    (c1 == '=' && c2 == '=') || (c1 == '!' && c2 == '=') ||
+                    (c1 == '&' && c2 == '&') || (c1 == '|' && c2 == '|') ||
+                    (c1 == '+' && c2 == '+') || (c1 == '-' && c2 == '-'))
+                    opLen = 2;
+            }
+            emit(out, line, col0 + i, opLen, SemanticTokenType::Operator);
+            i += opLen;
+            continue;
+        }
+
+        i++;
+    }
+}
+
+static void emitAsmBSubTokens(std::vector<RawSemanticToken>& out,
+                               uint32_t line, uint32_t col,
+                               const std::string& text) {
+    initAsmSets();
+
+    // Emit "asm_b" keyword
+    emit(out, line, col, 5, SemanticTokenType::Keyword,
+         static_cast<uint32_t>(SemanticTokenMod::Readonly));
+
+    // Find filename between quotes: asm_b "filename" { ... }
+    size_t firstQuote = text.find('"', 6);
+    if (firstQuote == std::string::npos) return;
+    size_t secondQuote = text.find('"', firstQuote + 1);
+    if (secondQuote == std::string::npos) return;
+
+    // Track position past "asm_b" keyword
+    uint32_t curLine = line;
+    uint32_t curCol = col;  // We already emitted asm_b, but we need col for position tracking
+
+    // Advance past "asm_b"
+    for (size_t p = 0; p < 5; p++) {
+        if (text[p] == '\n') { curLine++; curCol = 0; }
+        else if (text[p] != '\r') curCol++;
+    }
+
+    // Find opening brace
+    size_t brace = text.find('{', secondQuote);
+    if (brace == std::string::npos) return;
+
+    // Advance past filename and whitespace to reach '{'
+    for (size_t p = 5; p < brace; p++) {
+        if (text[p] == '\n') { curLine++; curCol = 0; }
+        else if (text[p] != '\r') curCol++;
+    }
+
+    // Emit "{" as operator
+    emit(out, curLine, curCol, 1, SemanticTokenType::Operator);
+    uint32_t bracketLine = curLine;
+    uint32_t bracketCol = curCol;
+
+    // Find matching closing brace
+    int depth = 0;
+    size_t closeBrace = std::string::npos;
+    for (size_t i = brace; i < text.size(); i++) {
+        if (text[i] == '{') depth++;
+        else if (text[i] == '}') {
+            depth--;
+            if (depth == 0) { closeBrace = i; break; }
+        }
+    }
+    if (closeBrace == std::string::npos) return;
+
+    // Extract inner content between braces
+    std::string innerText = text.substr(brace + 1, closeBrace - brace - 1);
+
+    curLine = bracketLine;
+    curCol = bracketCol + 1;
+
+    // Process each line
+    std::istringstream stream(innerText);
+    std::string innerLine;
+    while (std::getline(stream, innerLine)) {
+        // Find comment start: need to scan around strings
+        size_t semi = std::string::npos;
+        size_t hash = std::string::npos;
+        size_t slsl = std::string::npos;
+
+        bool indq = false, insq = false;
+        for (size_t si = 0; si < innerLine.size(); si++) {
+            if (indq) {
+                if (innerLine[si] == '"' && (si == 0 || innerLine[si-1] != '\\'))
+                    indq = false;
+                continue;
+            }
+            if (insq) {
+                if (innerLine[si] == '\'' && (si == 0 || innerLine[si-1] != '\\'))
+                    insq = false;
+                continue;
+            }
+            if (innerLine[si] == '"') { indq = true; continue; }
+            if (innerLine[si] == '\'') { insq = true; continue; }
+            if (semi == std::string::npos && innerLine[si] == ';') semi = si;
+            if (hash == std::string::npos && innerLine[si] == '#') hash = si;
+            if (slsl == std::string::npos && si + 1 < innerLine.size() &&
+                innerLine[si] == '/' && innerLine[si+1] == '/')
+                slsl = si;
+        }
+
+        size_t commentStart = std::string::npos;
+        if (semi != std::string::npos) commentStart = semi;
+        if (hash != std::string::npos && hash < commentStart) commentStart = hash;
+        if (slsl != std::string::npos && slsl < commentStart) commentStart = slsl;
+
+        size_t processEnd = (commentStart != std::string::npos) ? commentStart : innerLine.size();
+        std::string codePart = innerLine.substr(0, processEnd);
+
+        auto first = codePart.find_first_not_of(" \t");
+        if (first != std::string::npos)
+            emitAsmLineTokens(out, curLine, curCol, codePart, static_cast<uint32_t>(first));
+
+        if (commentStart != std::string::npos) {
+            emit(out, curLine, curCol + static_cast<uint32_t>(commentStart),
+                 static_cast<uint32_t>(innerLine.size() - commentStart),
+                 SemanticTokenType::Comment);
+        }
+
+        curLine++;
+        curCol = 0;
+    }
+
+    // Emit closing "}"
+    {
+        uint32_t sl = line, sc = col;
+        for (size_t ci = 0; ci <= closeBrace && ci < text.size(); ci++) {
+            if (ci == closeBrace) {
+                emit(out, sl, sc, 1, SemanticTokenType::Operator);
+                break;
+            }
+            if (text[ci] == '\n') { sl++; sc = 0; }
+            else if (text[ci] != '\r') sc++;
+        }
+    }
+}
+
 // ═══════════════════════════════════════════════════════════════════════
 //  Collect comments (skipped by ANTLR lexer, so we scan manually)
 // ═══════════════════════════════════════════════════════════════════════
@@ -1195,6 +1832,10 @@ std::vector<uint32_t> SemanticTokensProvider::tokenize(const std::string& source
         // c_macro block — emit semantic sub-tokens for content inside
         else if (type == LucisLexer::C_MACRO_BLOCK) {
             emitCMacroSubTokens(raw, line, col, tok->getText());
+        }
+        // asm_b block — emit full sub-token highlighting for assembly content
+        else if (type == LucisLexer::ASM_B_BLOCK) {
+            emitAsmBSubTokens(raw, line, col, tok->getText());
         }
         // Identifiers — look up in the context map
         else if (type == LucisLexer::IDENTIFIER) {

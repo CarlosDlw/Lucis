@@ -373,6 +373,8 @@ public:
 
     virtual std::any visitCMacroBlock(LucisParser::CMacroBlockContext *context) = 0;
 
+    virtual std::any visitAsmBBlock(LucisParser::AsmBBlockContext *context) = 0;
+
 
 };
 

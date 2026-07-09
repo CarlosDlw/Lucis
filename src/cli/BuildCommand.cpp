@@ -591,6 +591,7 @@ int BuildCommand::run(const ArgParser& parser) {
             IRGen irGen;
             irGen.setModuleContext(pipeline->registry.get(), unit.modulePath, unit.filePath, unit.isStdlib);
             irGen.setCBindings(pipeline->cBindings.get());
+            irGen.setProjectRoot(pipeline->projectRoot);
             irGen.setSemanticDB(pipeline->semanticDB.get());
             irGen.setTargetTriple(pipeOpts.targetTriple);
             irGen.setNoStd(pipeOpts.noStd);
@@ -602,6 +603,9 @@ int BuildCommand::run(const ArgParser& parser) {
                 anyIRError = true;
                 continue;
             }
+            // Collect inline assembly files from this module
+            for (auto& asmFile : irGen.inlineAssemblyFiles())
+                assemblySources.push_back(asmFile.filePath);
             if (optLevel != OptimizationLevel::O0)
                 Optimizer::optimize(*irMod, optLevel);
             unitIRs.push_back({unit.filePath, std::move(irMod)});

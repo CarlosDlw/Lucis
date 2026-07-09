@@ -65,6 +65,11 @@ C_MACRO_BLOCK : 'c_macro' [ \t\r\n]* '{' CMACRO_CONTENT '}';
 fragment CMACRO_CONTENT : (CMACRO_ATOM | '{' CMACRO_CONTENT '}')*;
 fragment CMACRO_ATOM : ~[{}];
 
+// Assembly block: asm_b "filename" { ... } with balanced braces (opaque to Lucis lexer)
+ASM_B_BLOCK : 'asm_b' [ \t\r\n]* STR_LIT [ \t\r\n]* '{' ASM_B_CONTENT '}';
+fragment ASM_B_CONTENT : (ASM_B_ATOM | '{' ASM_B_CONTENT '}')*;
+fragment ASM_B_ATOM : ~[{}];
+
 NULLCOAL_ASSIGN: '??=';
 NULLCOAL  : '??';
 SPREAD    : '...';

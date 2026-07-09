@@ -49,6 +49,9 @@ public:
     // Phase 2: set SemanticDB for authoritative type data (avoids re-walking AST)
     void setSemanticDB(const semantic::SemanticDB* db) { semanticDB_ = db; }
 
+    // Set project root for output paths (inline assembly, etc.)
+    void setProjectRoot(const std::string& root) { projectRoot_ = root; }
+
     // Set custom target triple (freestanding/cross-compilation). Empty = use host default.
     void setTargetTriple(const std::string& triple) { targetTriple_ = triple; }
 
@@ -201,6 +204,7 @@ public:
     std::any visitInlineBlockStmt(LucisParser::InlineBlockStmtContext* ctx) override;
     std::any visitScopeBlockStmt(LucisParser::ScopeBlockStmtContext* ctx) override;
     std::any visitCMacroBlock(LucisParser::CMacroBlockContext* ctx) override;
+    std::any visitAsmBBlock(LucisParser::AsmBBlockContext* ctx) override;
     // Generic expression visitors
     std::any visitGenericFnCallExpr(LucisParser::GenericFnCallExprContext* ctx) override;
     std::any visitGenericStaticMethodCallExpr(LucisParser::GenericStaticMethodCallExprContext* ctx) override;
@@ -362,6 +366,9 @@ private:
 
     // Comptime engine for compile-time function evaluation
     ComptimeEngine* comptimeEngine_ = nullptr;
+
+    // Project root for inline assembly output paths
+    std::string projectRoot_;
 
     // Custom target triple (empty = use host default)
     std::string targetTriple_;
@@ -597,4 +604,14 @@ private:
                         const TypeInfo* ti, unsigned line, unsigned argNo = 0);
     // Cache of created DITypes to avoid infinite recursion (e.g. *Node → Node → field *Node → ...)
     std::unordered_map<std::string, llvm::DIType*> createdDITypes_;
+
+    // ── Inline assembly blocks ──────────────────────────────────────────────
+public:
+    struct InlineAsmFile {
+        std::string filePath;
+    };
+    const std::vector<InlineAsmFile>& inlineAssemblyFiles() const { return inlineAssemblyFiles_; }
+
+private:
+    std::vector<InlineAsmFile> inlineAssemblyFiles_;
 };

@@ -49,6 +49,7 @@ topLevelDecl
     | functionDecl
     | constDeclStmt
     | cMacroBlock
+    | asmBBlock
     ;
 
 // type BinOp = fn(int32, int32) -> int32;
@@ -663,4 +664,9 @@ primitiveType
 // c_macro { ... } — inline C macro definitions evaluated via C compiler
 cMacroBlock
     : C_MACRO_BLOCK
+    ;
+
+// asm_b "filename" { ... } — inline assembly block, saved to .lucis/asm_b/ and compiled via NASM
+asmBBlock
+    : ASM_B_BLOCK
     ;

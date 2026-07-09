@@ -1438,6 +1438,9 @@ bool Checker::check(LucisParser::ProgramContext* tree) {
         if (auto* cm = decl->cMacroBlock()) {
             checkCMacroBlock(cm);
         }
+        if (decl->asmBBlock()) {
+            // asm_b blocks are opaque — no semantic checking needed
+        }
     }
     // Also process c_macro blocks at statement level (inside functions)
     // This is handled in checkStmt via the statement visitor.

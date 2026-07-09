@@ -11,6 +11,8 @@
 
 #include <vector>
 #include <unordered_map>
+#include <filesystem>
+#include <fstream>
 
 // getDefaultTargetTriple moved in LLVM 15
 #ifdef LLVM_VERSION_15_OR_NEWER
@@ -988,6 +990,11 @@ std::any IRGen::visitProgram(LucisParser::ProgramContext* ctx) {
     for (auto* decl : ctx->topLevelDecl()) {
         if (auto* cm = decl->cMacroBlock())
             visitCMacroBlock(cm);
+    }
+    // Process inline assembly blocks
+    for (auto* decl : ctx->topLevelDecl()) {
+        if (auto* ab = decl->asmBBlock())
+            visitAsmBBlock(ab);
     }
 
     // Forward-declare all user functions (signatures only)
@@ -19313,6 +19320,39 @@ std::any IRGen::visitCMacroBlock(LucisParser::CMacroBlockContext* ctx) {
         if (cMacroBindings_.findFunctionLikeMacro(name)) continue;
         cMacroBindings_.addFunctionLikeMacro(flm);
     }
+    return {};
+}
+
+std::any IRGen::visitAsmBBlock(LucisParser::AsmBBlockContext* ctx) {
+    auto tok = ctx->ASM_B_BLOCK();
+    if (!tok) return {};
+    std::string fullText = tok->getText();
+    // fullText = 'asm_b "filename" { raw assembly }'
+    auto firstQuote = fullText.find('"');
+    if (firstQuote == std::string::npos) return {};
+    auto secondQuote = fullText.find('"', firstQuote + 1);
+    if (secondQuote == std::string::npos) return {};
+    std::string filename = fullText.substr(firstQuote + 1, secondQuote - firstQuote - 1);
+    if (filename.empty()) return {};
+    auto braceOpen = fullText.find('{', secondQuote);
+    if (braceOpen == std::string::npos) return {};
+    std::string rawAsm = fullText.substr(braceOpen + 1, fullText.size() - braceOpen - 2);
+    std::string asmDir;
+    if (!projectRoot_.empty())
+        asmDir = (std::filesystem::path(projectRoot_) / ".lucis" / "asm_b").string();
+    else
+        asmDir = "/tmp/lucis_asm_b";
+    std::filesystem::create_directories(asmDir);
+    // Sanitize filename: strip directory components to prevent path traversal
+    std::string safeFilename = std::filesystem::path(filename).filename().string();
+    if (safeFilename.empty()) return {};
+    std::string asmPath = (std::filesystem::path(asmDir) / safeFilename).string();
+    {
+        std::ofstream f(asmPath);
+        if (f.is_open()) { f << rawAsm; f.close(); }
+        else { std::cerr << "lucis: warning: could not write inline assembly to " << asmPath << "\n"; return {}; }
+    }
+    inlineAssemblyFiles_.push_back({asmPath});
     return {};
 }
 

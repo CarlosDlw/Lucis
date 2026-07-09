@@ -723,6 +723,10 @@ public:
     return visitChildren(ctx);
   }
 
+  virtual std::any visitAsmBBlock(LucisParser::AsmBBlockContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
 
 };
 
