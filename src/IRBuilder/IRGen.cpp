@@ -555,8 +555,222 @@ llvm::DIType* IRGen::getOrCreateDIType(const TypeInfo* ti) {
             llvm::DINode::FlagZero, nullptr, memberArray);
         return createdDITypes_[ti->name];
     }
+    case TypeKind::String: {
+        // string = { ptr (data), usize (len) }
+        auto& dl = module_->getDataLayout();
+        auto* strLLTy = ti->toLLVMType(*context_, dl);
+        auto* strStructTy = llvm::dyn_cast<llvm::StructType>(strLLTy);
+        if (!strStructTy || strStructTy->getNumElements() < 2) return nullptr;
+        uint64_t sizeBits = dl.getTypeSizeInBits(strStructTy);
+        uint32_t alignBits = dl.getABITypeAlign(strStructTy).value() * 8;
+
+        llvm::SmallVector<llvm::Metadata*, 8> members;
+        if (auto* layout = dl.getStructLayout(strStructTy)) {
+            // data: ptr
+            auto* ptrDITy = dbgBuilder_->createPointerType(
+                dbgBuilder_->createBasicType("char", 8, llvm::dwarf::DW_ATE_signed_char),
+                dl.getPointerSizeInBits());
+            auto* dataMember = dbgBuilder_->createMemberType(
+                dbgFile_, "data", dbgFile_, 0,
+                dl.getTypeSizeInBits(strStructTy->getElementType(0)),
+                dl.getABITypeAlign(strStructTy->getElementType(0)).value() * 8,
+                layout->getElementOffsetInBits(0),
+                llvm::DINode::FlagZero, ptrDITy);
+            members.push_back(dataMember);
+
+            // len: usize
+            auto* lenDITy = dbgBuilder_->createBasicType(
+                "usize", dl.getPointerSizeInBits(), llvm::dwarf::DW_ATE_unsigned);
+            auto* lenMember = dbgBuilder_->createMemberType(
+                dbgFile_, "len", dbgFile_, 0,
+                dl.getTypeSizeInBits(strStructTy->getElementType(1)),
+                dl.getABITypeAlign(strStructTy->getElementType(1)).value() * 8,
+                layout->getElementOffsetInBits(1),
+                llvm::DINode::FlagZero, lenDITy);
+            members.push_back(lenMember);
+        }
+
+        auto memberArray = dbgBuilder_->getOrCreateArray(members);
+        return dbgBuilder_->createStructType(
+            dbgFile_, ti->name, dbgFile_, 0, sizeBits, alignBits,
+            llvm::DINode::FlagZero, nullptr, memberArray);
+    }
     case TypeKind::Void:
         return nullptr;
+    case TypeKind::Extended: {
+        if (ti->extendedKind == "Set") {
+            // Set<T> = { ptr (states), ptr (keys), ptr (hashes), usize (len), usize (cap), usize (key_size) }
+            auto& dl = module_->getDataLayout();
+            auto* setLLTy = ti->toLLVMType(*context_, dl);
+            auto* setStructTy = llvm::dyn_cast<llvm::StructType>(setLLTy);
+            if (!setStructTy || setStructTy->getNumElements() < 6) return nullptr;
+            uint64_t sizeBits = dl.getTypeSizeInBits(setStructTy);
+            uint32_t alignBits = dl.getABITypeAlign(setStructTy).value() * 8;
+
+            // Element type pointer for values
+            llvm::DIType* elemDITy = ti->elementType
+                ? getOrCreateDIType(ti->elementType) : nullptr;
+            if (!elemDITy)
+                elemDITy = dbgBuilder_->createBasicType(
+                    "void", 8, llvm::dwarf::DW_ATE_unsigned);
+            auto* elemPtrDITy = dbgBuilder_->createPointerType(
+                elemDITy, dl.getPointerSizeInBits());
+            auto* usizeDITy = dbgBuilder_->createBasicType(
+                "usize", dl.getPointerSizeInBits(), llvm::dwarf::DW_ATE_unsigned);
+
+            llvm::SmallVector<llvm::Metadata*, 8> members;
+            if (auto* layout = dl.getStructLayout(setStructTy)) {
+                // Create typed pointers matching the C runtime struct
+                auto* uint8PtrDITy = dbgBuilder_->createPointerType(
+                    dbgBuilder_->createBasicType("uint8", 8, llvm::dwarf::DW_ATE_unsigned),
+                    dl.getPointerSizeInBits());
+                auto* uint64PtrDITy = dbgBuilder_->createPointerType(
+                    dbgBuilder_->createBasicType("uint64", 64, llvm::dwarf::DW_ATE_unsigned),
+                    dl.getPointerSizeInBits());
+                const char* fieldNames[6] = {
+                    "states", "keys", "hashes",
+                    "len", "cap", "key_size"
+                };
+                llvm::DIType* fieldTypes[6] = {
+                    uint8PtrDITy, elemPtrDITy, uint64PtrDITy,
+                    usizeDITy, usizeDITy, usizeDITy
+                };
+                for (unsigned i = 0; i < 6; i++) {
+                    auto* member = dbgBuilder_->createMemberType(
+                        dbgFile_, fieldNames[i], dbgFile_, 0,
+                        dl.getTypeSizeInBits(setStructTy->getElementType(i)),
+                        dl.getABITypeAlign(setStructTy->getElementType(i)).value() * 8,
+                        layout->getElementOffsetInBits(i),
+                        llvm::DINode::FlagZero, fieldTypes[i]);
+                    members.push_back(member);
+                }
+            }
+            auto memberArray = dbgBuilder_->getOrCreateArray(members);
+            return dbgBuilder_->createStructType(
+                dbgFile_, ti->name, dbgFile_, 0, sizeBits, alignBits,
+                llvm::DINode::FlagZero, nullptr, memberArray);
+        }
+        if (ti->extendedKind == "Vec") {
+            // Vec<T> = { ptr (data), usize (len), usize (capacity) }
+            auto& dl = module_->getDataLayout();
+            auto* vecLLTy = ti->toLLVMType(*context_, dl);
+            auto* vecStructTy = llvm::dyn_cast<llvm::StructType>(vecLLTy);
+            if (!vecStructTy || vecStructTy->getNumElements() < 3) return nullptr;
+            uint64_t sizeBits = dl.getTypeSizeInBits(vecStructTy);
+            uint32_t alignBits = dl.getABITypeAlign(vecStructTy).value() * 8;
+
+            llvm::SmallVector<llvm::Metadata*, 8> members;
+            if (auto* layout = dl.getStructLayout(vecStructTy)) {
+                // data: ptr to element type (or void* if unknown)
+                llvm::DIType* elemDITy = ti->elementType
+                    ? getOrCreateDIType(ti->elementType) : nullptr;
+                if (!elemDITy)
+                    elemDITy = dbgBuilder_->createBasicType(
+                        "void", 8, llvm::dwarf::DW_ATE_unsigned);
+                auto* dataDITy = dbgBuilder_->createPointerType(
+                    elemDITy, dl.getPointerSizeInBits());
+                auto* dataMember = dbgBuilder_->createMemberType(
+                    dbgFile_, "data", dbgFile_, 0,
+                    dl.getTypeSizeInBits(vecStructTy->getElementType(0)),
+                    dl.getABITypeAlign(vecStructTy->getElementType(0)).value() * 8,
+                    layout->getElementOffsetInBits(0),
+                    llvm::DINode::FlagZero, dataDITy);
+                members.push_back(dataMember);
+
+                // len: usize
+                auto* lenDITy = dbgBuilder_->createBasicType(
+                    "usize", dl.getPointerSizeInBits(), llvm::dwarf::DW_ATE_unsigned);
+                auto* lenMember = dbgBuilder_->createMemberType(
+                    dbgFile_, "len", dbgFile_, 0,
+                    dl.getTypeSizeInBits(vecStructTy->getElementType(1)),
+                    dl.getABITypeAlign(vecStructTy->getElementType(1)).value() * 8,
+                    layout->getElementOffsetInBits(1),
+                    llvm::DINode::FlagZero, lenDITy);
+                members.push_back(lenMember);
+
+                // capacity: usize
+                auto* capDITy = dbgBuilder_->createBasicType(
+                    "usize", dl.getPointerSizeInBits(), llvm::dwarf::DW_ATE_unsigned);
+                auto* capMember = dbgBuilder_->createMemberType(
+                    dbgFile_, "capacity", dbgFile_, 0,
+                    dl.getTypeSizeInBits(vecStructTy->getElementType(2)),
+                    dl.getABITypeAlign(vecStructTy->getElementType(2)).value() * 8,
+                    layout->getElementOffsetInBits(2),
+                    llvm::DINode::FlagZero, capDITy);
+                members.push_back(capMember);
+            }
+
+            auto memberArray = dbgBuilder_->getOrCreateArray(members);
+            return dbgBuilder_->createStructType(
+                dbgFile_, ti->name, dbgFile_, 0, sizeBits, alignBits,
+                llvm::DINode::FlagZero, nullptr, memberArray);
+        }
+        if (ti->extendedKind == "Map") {
+            // Map<K,V> = { ptr (states), ptr (keys), ptr (values), ptr (hashes),
+            //              usize (len), usize (cap), usize (key_size), usize (val_size) }
+            auto& dl = module_->getDataLayout();
+            auto* mapLLTy = ti->toLLVMType(*context_, dl);
+            auto* mapStructTy = llvm::dyn_cast<llvm::StructType>(mapLLTy);
+            if (!mapStructTy || mapStructTy->getNumElements() < 8) return nullptr;
+            uint64_t sizeBits = dl.getTypeSizeInBits(mapStructTy);
+            uint32_t alignBits = dl.getABITypeAlign(mapStructTy).value() * 8;
+
+            // Build reusable DITypes
+            auto* uint8PtrDITy = dbgBuilder_->createPointerType(
+                dbgBuilder_->createBasicType("uint8", 8, llvm::dwarf::DW_ATE_unsigned),
+                dl.getPointerSizeInBits());
+            auto* uint64PtrDITy = dbgBuilder_->createPointerType(
+                dbgBuilder_->createBasicType("uint64", 64, llvm::dwarf::DW_ATE_unsigned),
+                dl.getPointerSizeInBits());
+            auto* usizeDITy = dbgBuilder_->createBasicType(
+                "usize", dl.getPointerSizeInBits(), llvm::dwarf::DW_ATE_unsigned);
+
+            // Key type pointer
+            llvm::DIType* keyDITy = ti->keyType
+                ? getOrCreateDIType(ti->keyType) : nullptr;
+            if (!keyDITy)
+                keyDITy = dbgBuilder_->createBasicType(
+                    "void", 8, llvm::dwarf::DW_ATE_unsigned);
+            auto* keyPtrDITy = dbgBuilder_->createPointerType(
+                keyDITy, dl.getPointerSizeInBits());
+
+            // Value type pointer
+            llvm::DIType* valDITy = ti->valueType
+                ? getOrCreateDIType(ti->valueType) : nullptr;
+            if (!valDITy)
+                valDITy = dbgBuilder_->createBasicType(
+                    "void", 8, llvm::dwarf::DW_ATE_unsigned);
+            auto* valPtrDITy = dbgBuilder_->createPointerType(
+                valDITy, dl.getPointerSizeInBits());
+
+            llvm::SmallVector<llvm::Metadata*, 8> members;
+            if (auto* layout = dl.getStructLayout(mapStructTy)) {
+                const char* fieldNames[8] = {
+                    "states", "keys", "values", "hashes",
+                    "len", "cap", "key_size", "val_size"
+                };
+                llvm::DIType* fieldTypes[8] = {
+                    uint8PtrDITy, keyPtrDITy, valPtrDITy, uint64PtrDITy,
+                    usizeDITy, usizeDITy, usizeDITy, usizeDITy
+                };
+                for (unsigned i = 0; i < 8; i++) {
+                    auto* member = dbgBuilder_->createMemberType(
+                        dbgFile_, fieldNames[i], dbgFile_, 0,
+                        dl.getTypeSizeInBits(mapStructTy->getElementType(i)),
+                        dl.getABITypeAlign(mapStructTy->getElementType(i)).value() * 8,
+                        layout->getElementOffsetInBits(i),
+                        llvm::DINode::FlagZero, fieldTypes[i]);
+                    members.push_back(member);
+                }
+            }
+            auto memberArray = dbgBuilder_->getOrCreateArray(members);
+            return dbgBuilder_->createStructType(
+                dbgFile_, ti->name, dbgFile_, 0, sizeBits, alignBits,
+                llvm::DINode::FlagZero, nullptr, memberArray);
+        }
+        // Other extended types (Task, Mutex) fall back to opaque
+        return dbgBuilder_->createBasicType(ti->name, 64, llvm::dwarf::DW_ATE_unsigned);
+    }
     default:
         return dbgBuilder_->createBasicType(ti->name, 64, llvm::dwarf::DW_ATE_unsigned);
     }
