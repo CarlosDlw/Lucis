@@ -3,8 +3,6 @@
 A compiled systems programming language that targets LLVM IR. Lucis combines the performance and control of C with modern syntax, user-defined generics, a rich standard library, and native C interoperability — with zero runtime overhead.
 
 ```lucis
-namespace Main;
-
 use std::log::println;
 
 fn main() int32 {
@@ -197,8 +195,6 @@ lucis test -q
 ## Quick Example
 
 ```lucis
-namespace Main;
-
 use std::log::println;
 
 struct Node<T> {
