@@ -48,6 +48,7 @@ public:
         std::string targetTriple;
         std::string codeModel;
         std::string entryPoint;
+        bool emitDebugInfo = false;
     };
 
     static std::unique_ptr<PipelineResult> run(const Options& opts);

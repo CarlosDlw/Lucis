@@ -110,6 +110,7 @@ std::optional<LucisConfig> LucisConfig::load(const std::string& yamlPath) {
             cfg.build.target      = optOrDefault(b, "target", "");
             cfg.build.optLevel    = optOrDefault(b, "opt_level", "O0");
             cfg.build.noStd       = boolOrDefault(b, "no_std", false);
+            cfg.build.debug       = boolOrDefault(b, "debug", false);
             cfg.build.lto         = boolOrDefault(b, "lto", false);
             cfg.build.staticLink  = boolOrDefault(b, "static", false);
             cfg.build.shared      = boolOrDefault(b, "shared", false);

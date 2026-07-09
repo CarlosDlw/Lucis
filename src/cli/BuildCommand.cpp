@@ -36,6 +36,7 @@ void BuildCommand::buildArgs(ArgParser& parser) const {
     parser.addSection("Compilation");
     parser.addOption("target", '\0', "TRIPLE", "Target triple (default: host)");
     parser.addFlag("no-std", '\0', "Build without standard library (freestanding/kernel)");
+    parser.addFlag("debug", 'g', "Emit debug info (DWARF)");
     parser.addOption("opt", 'O', "LEVEL", "Optimization level: 0, 1, 2, 3, s, z, fast (default: 0)");
     parser.addFlag("lto", '\0', "Enable Link Time Optimization");
     parser.addFlag("fPIC",   '\0', "Generate position-independent code");
@@ -115,6 +116,7 @@ int BuildCommand::run(const ArgParser& parser) {
 
     // ── Target / no-std / entry ─────────────────────────────────────
     pipeOpts.noStd = parser.has("no-std") ? true : (useConfig ? cfg->build.noStd : false);
+    pipeOpts.emitDebugInfo = parser.has("debug") ? true : (useConfig ? cfg->build.debug : false);
     pipeOpts.targetTriple = parser.get("target");
     if (pipeOpts.targetTriple.empty() && useConfig)
         pipeOpts.targetTriple = cfg->build.target;
@@ -592,6 +594,7 @@ int BuildCommand::run(const ArgParser& parser) {
             irGen.setSemanticDB(pipeline->semanticDB.get());
             irGen.setTargetTriple(pipeOpts.targetTriple);
             irGen.setNoStd(pipeOpts.noStd);
+            irGen.setEmitDebugInfo(pipeOpts.emitDebugInfo);
             irGen.setComptimeEngine(&comptimeEngine);
             auto irMod = irGen.generate(unit.parseResult->tree, unit.filePath);
             if (!irMod) {

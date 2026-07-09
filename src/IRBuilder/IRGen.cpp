@@ -7,6 +7,7 @@
 #include <llvm/IR/Verifier.h>
 #include <llvm/IR/InlineAsm.h>
 #include <llvm/Transforms/Utils/ModuleUtils.h>
+#include <llvm/IR/DebugInfo.h>
 
 #include <vector>
 #include <unordered_map>
@@ -26,6 +27,18 @@
 #include <cctype>
 #include <iostream>
 #include <optional>
+
+// ── Debug info helper macro ──────────────────────────────────────────────────
+#define SET_DBG_LOC(ctx)                                                          \
+    do {                                                                           \
+        if (dbgBuilder_ && (ctx)) {                                                \
+            auto* _tok = (ctx)->getStart();                                        \
+            if (_tok && currentDbgScope_)                                          \
+                builder_->SetCurrentDebugLocation(                                  \
+                    llvm::DILocation::get(*context_, _tok->getLine(),               \
+                        _tok->getCharPositionInLine() + 1, currentDbgScope_));     \
+        }                                                                          \
+    } while(0)
 
 // Evaluate enum discriminant expression (already validated by Checker).
 static uint64_t evalEnumDiscExpr(LucisParser::ExpressionContext* expr) {
@@ -329,8 +342,16 @@ std::unique_ptr<IRModule> IRGen::generate(LucisParser::ProgramContext* tree,
     globalBuiltins_ = {"exit", "panic", "assert", "assertMsg",
                         "unreachable", "toInt", "toFloat", "toBool", "toString",
                         "cstr", "fromCStr", "fromCStrCopy", "fromCStrLen", "freeStr"};
+    createdDITypes_.clear();
 
     visitProgram(tree);
+
+    // Finalize debug info
+    if (dbgBuilder_) {
+        dbgBuilder_->finalize();
+        delete dbgBuilder_;
+        dbgBuilder_ = nullptr;
+    }
 
     // Validate the generated IR before handing it off
     std::string verifyErr;
@@ -339,6 +360,7 @@ std::unique_ptr<IRModule> IRGen::generate(LucisParser::ProgramContext* tree,
         std::cerr << "lucis: IR verification failed:\n" << errStream.str() << "\n";
         // Dump IR for debugging
         llvm::errs() << *module_;
+        if (dbgBuilder_) { dbgBuilder_->finalize(); delete dbgBuilder_; dbgBuilder_ = nullptr; }
         context_ = nullptr;
         module_  = nullptr;
         builder_ = nullptr;
@@ -348,8 +370,217 @@ std::unique_ptr<IRModule> IRGen::generate(LucisParser::ProgramContext* tree,
     context_ = nullptr;
     module_  = nullptr;
     builder_ = nullptr;
+    dbgFile_ = nullptr;
+    dbgCU_ = nullptr;
+    currentDbgScope_ = nullptr;
 
     return std::make_unique<IRModule>(std::move(ctx), std::move(mod));
+}
+
+
+// ── Debug info helpers ──────────────────────────────────────────────────────
+
+llvm::DIType* IRGen::getOrCreateDIType(const TypeInfo* ti) {
+    if (!ti || !dbgBuilder_) return nullptr;
+    // Check cache first to avoid infinite recursion (e.g. *Node → Node → *Node)
+    {
+        auto it = createdDITypes_.find(ti->name);
+        if (it != createdDITypes_.end()) return it->second;
+    }
+    
+    switch (ti->kind) {
+    case TypeKind::Integer: {
+        unsigned bitWidth = ti->bitWidth > 0 ? ti->bitWidth : 64;
+        unsigned enc = ti->isSigned ? llvm::dwarf::DW_ATE_signed : llvm::dwarf::DW_ATE_unsigned;
+        return dbgBuilder_->createBasicType(ti->name, bitWidth, enc);
+    }
+    case TypeKind::Float: {
+        unsigned bitWidth = (ti->name == "float32" || ti->name == "f32") ? 32 : 64;
+        return dbgBuilder_->createBasicType(ti->name, bitWidth, llvm::dwarf::DW_ATE_float);
+    }
+    case TypeKind::Bool:
+        return dbgBuilder_->createBasicType("bool", 8, llvm::dwarf::DW_ATE_boolean);
+    case TypeKind::Char:
+        return dbgBuilder_->createBasicType("char", 8, llvm::dwarf::DW_ATE_signed_char);
+    case TypeKind::Pointer: {
+        auto* pointeeDITy = ti->pointeeType ? getOrCreateDIType(ti->pointeeType) : nullptr;
+        if (!pointeeDITy)
+            pointeeDITy = dbgBuilder_->createBasicType("void", 8, llvm::dwarf::DW_ATE_unsigned);
+        createdDITypes_[ti->name] = dbgBuilder_->createPointerType(pointeeDITy,
+            module_->getDataLayout().getPointerSizeInBits());
+        return createdDITypes_[ti->name];
+    }
+    case TypeKind::Struct: {
+        createdDITypes_[ti->name] = nullptr; // mark in-progress to break cycles
+        auto* llvmSt = ti->toLLVMType(*context_, module_->getDataLayout());
+        if (!llvmSt) return nullptr;
+        auto* structTy = llvm::dyn_cast<llvm::StructType>(llvmSt);
+        if (!structTy) return nullptr;
+        auto& dl = module_->getDataLayout();
+        uint64_t sizeBits = dl.getTypeSizeInBits(structTy);
+        uint32_t alignBits = dl.getABITypeAlign(structTy).value() * 8;
+        
+        llvm::SmallVector<llvm::Metadata*, 8> members;
+        if (auto* layout = dl.getStructLayout(structTy)) {
+            for (unsigned i = 0; i < ti->fields.size() && i < structTy->getNumElements(); i++) {
+                auto& field = ti->fields[i];
+                auto* fieldDIType = getOrCreateDIType(field.typeInfo);
+                if (!fieldDIType) continue;
+                uint64_t offsetBits = layout->getElementOffsetInBits(i);
+                uint32_t fieldAlign = dl.getABITypeAlign(structTy->getElementType(i)).value() * 8;
+                uint64_t fieldSizeBits = dl.getTypeSizeInBits(structTy->getElementType(i));
+            auto* member = dbgBuilder_->createMemberType(
+                dbgFile_, field.name, dbgFile_, 0,
+                fieldSizeBits, fieldAlign, offsetBits,
+                llvm::DINode::FlagZero, fieldDIType);
+                members.push_back(member);
+            }
+        }
+        auto memberArray = dbgBuilder_->getOrCreateArray(members);
+        createdDITypes_[ti->name] = dbgBuilder_->createStructType(
+            dbgFile_, ti->name, dbgFile_, 0, sizeBits, alignBits,
+            llvm::DINode::FlagZero, nullptr, memberArray);
+        return createdDITypes_[ti->name];
+    }
+    case TypeKind::Enum: {
+        // Check if enum has payload (tagged union)
+        bool hasPayload = false;
+        for (const auto& variant : ti->enumVariantInfos) {
+            if (!variant.payloadFields.empty()) { hasPayload = true; break; }
+        }
+        if (!hasPayload) {
+            return dbgBuilder_->createBasicType(ti->name, 32, llvm::dwarf::DW_ATE_unsigned);
+        }
+
+        // Tagged union enum — DICompositeType with discriminant + payload union
+        createdDITypes_[ti->name] = nullptr; // mark in-progress to break cycles
+        auto& dl = module_->getDataLayout();
+        auto* llvmEnumTy = ti->toLLVMType(*context_, dl);
+        if (!llvmEnumTy) return nullptr;
+        auto* enumStructTy = llvm::dyn_cast<llvm::StructType>(llvmEnumTy);
+        if (!enumStructTy) return nullptr;
+        uint64_t sizeBits = dl.getTypeSizeInBits(enumStructTy);
+        uint32_t alignBits = dl.getABITypeAlign(enumStructTy).value() * 8;
+
+        llvm::SmallVector<llvm::Metadata*, 8> members;
+
+        // 1. Discriminant field (i32, always at offset 0)
+        auto* discDIType = dbgBuilder_->createBasicType("i32", 32, llvm::dwarf::DW_ATE_unsigned);
+        auto* discMember = dbgBuilder_->createMemberType(
+            dbgFile_, "tag", dbgFile_, 0,
+            32, 32, 0, llvm::DINode::FlagZero, discDIType);
+        members.push_back(discMember);
+
+        // 2. Union of variant payloads
+        uint64_t storageOffset = 32;
+        uint32_t storageAlign = 32;
+        if (enumStructTy->getNumElements() > 1) {
+            storageAlign = dl.getABITypeAlign(enumStructTy->getStructElementType(1)).value() * 8;
+            if (auto* layout = dl.getStructLayout(enumStructTy))
+                storageOffset = layout->getElementOffsetInBits(1);
+        }
+        uint64_t unionSizeBits = sizeBits > storageOffset ? sizeBits - storageOffset : 0;
+
+        llvm::SmallVector<llvm::Metadata*, 8> variantMembers;
+        for (const auto& variant : ti->enumVariantInfos) {
+            if (variant.payloadFields.empty()) continue;
+
+            // Build DIType for this variant's payload
+            llvm::DIType* payloadDITy = nullptr;
+            uint64_t variantSizeBits = 0;
+
+            if (variant.payloadKind == EnumPayloadKind::Tuple && variant.payloadFields.size() == 1) {
+                // Single-field tuple: payload IS the field type
+                payloadDITy = getOrCreateDIType(variant.payloadFields[0].typeInfo);
+                if (payloadDITy) {
+                    auto* fLLTy = variant.payloadFields[0].typeInfo->toLLVMType(*context_, dl);
+                    if (fLLTy) variantSizeBits = dl.getTypeSizeInBits(fLLTy);
+                }
+            } else {
+                // Multi-field payload — create a struct type for the variant
+                std::vector<llvm::Type*> fLLTypes;
+                for (const auto& f : variant.payloadFields) {
+                    fLLTypes.push_back(f.typeInfo->toLLVMType(*context_, dl));
+                }
+                auto* variantStructTy = llvm::StructType::get(*context_, fLLTypes);
+                auto* variantLayout = dl.getStructLayout(variantStructTy);
+                variantSizeBits = dl.getTypeSizeInBits(variantStructTy);
+                uint32_t variantAlign = dl.getABITypeAlign(variantStructTy).value() * 8;
+
+                llvm::SmallVector<llvm::Metadata*, 8> fieldMembers;
+                for (unsigned fi = 0; fi < variant.payloadFields.size(); fi++) {
+                    auto& field = variant.payloadFields[fi];
+                    auto* fieldDITy = getOrCreateDIType(field.typeInfo);
+                    if (!fieldDITy) continue;
+                    uint64_t fOffset = variantLayout->getElementOffsetInBits(fi);
+                    uint64_t fSize = dl.getTypeSizeInBits(fLLTypes[fi]);
+                    uint32_t fAlign = dl.getABITypeAlign(fLLTypes[fi]).value() * 8;
+                    auto* member = dbgBuilder_->createMemberType(
+                        dbgFile_, field.name, dbgFile_, 0,
+                        fSize, fAlign, fOffset,
+                        llvm::DINode::FlagZero, fieldDITy);
+                    fieldMembers.push_back(member);
+                }
+                auto fieldArray = dbgBuilder_->getOrCreateArray(fieldMembers);
+                payloadDITy = dbgBuilder_->createStructType(
+                    dbgFile_, variant.name, dbgFile_, 0,
+                    variantSizeBits, variantAlign,
+                    llvm::DINode::FlagZero, nullptr, fieldArray);
+            }
+
+            if (!payloadDITy) continue;
+
+            auto* variantMember = dbgBuilder_->createMemberType(
+                dbgFile_, variant.name, dbgFile_, 0,
+                variantSizeBits, storageAlign, 0, // offset 0 within union
+                llvm::DINode::FlagZero, payloadDITy);
+            variantMembers.push_back(variantMember);
+        }
+
+        auto variantArray = dbgBuilder_->getOrCreateArray(variantMembers);
+        auto* unionDIType = dbgBuilder_->createUnionType(
+            dbgFile_, "payload", dbgFile_, 0,
+            unionSizeBits, storageAlign,
+            llvm::DINode::FlagZero, variantArray);
+
+        auto* unionMember = dbgBuilder_->createMemberType(
+            dbgFile_, "payload", dbgFile_, 0,
+            unionSizeBits, storageAlign, storageOffset,
+            llvm::DINode::FlagZero, unionDIType);
+        members.push_back(unionMember);
+
+        auto memberArray = dbgBuilder_->getOrCreateArray(members);
+        createdDITypes_[ti->name] = dbgBuilder_->createStructType(
+            dbgFile_, ti->name, dbgFile_, 0, sizeBits, alignBits,
+            llvm::DINode::FlagZero, nullptr, memberArray);
+        return createdDITypes_[ti->name];
+    }
+    case TypeKind::Void:
+        return nullptr;
+    default:
+        return dbgBuilder_->createBasicType(ti->name, 64, llvm::dwarf::DW_ATE_unsigned);
+    }
+}
+
+void IRGen::emitDbgDeclare(llvm::AllocaInst* alloca, const std::string& name,
+                           const TypeInfo* ti, unsigned line, unsigned argNo) {
+    if (!dbgBuilder_ || !currentDbgScope_ || !alloca) return;
+    auto* diType = getOrCreateDIType(ti);
+    if (!diType) return;
+    
+    llvm::DILocalVariable* var;
+    if (argNo > 0) {
+        var = dbgBuilder_->createParameterVariable(
+            currentDbgScope_, name, argNo, dbgFile_, line, diType, true);
+    } else {
+        var = dbgBuilder_->createAutoVariable(
+            currentDbgScope_, name, dbgFile_, line, diType, true);
+    }
+    
+    auto* loc = llvm::DILocation::get(*context_, line, 0, currentDbgScope_);
+    dbgBuilder_->insertDeclare(
+        alloca, var, dbgBuilder_->createExpression(), loc, builder_->GetInsertBlock());
+
 }
 
 // ── Visitors ────────────────────────────────────────────────────────────────
@@ -421,8 +652,21 @@ std::any IRGen::visitProgram(LucisParser::ProgramContext* ctx) {
             ti.isSigned = false;
             ti.fields = cstruct.fields;
             typeRegistry_.registerType(std::move(ti));
-        }
+        }  // end struct field body for-loop
 
+    }  // end if (cBindings_)
+
+    // ── Debug info: create compile unit ─────────────────────────────────
+    if (emitDebugInfo_) {
+        dbgBuilder_ = new llvm::DIBuilder(*module_);
+        dbgFile_ = dbgBuilder_->createFile(
+            currentFile_, ".");
+        dbgCU_ = dbgBuilder_->createCompileUnit(
+            llvm::dwarf::DW_LANG_C, dbgFile_, "lucis",
+            true, "", 0);
+    }
+
+    if (cBindings_) {
         // Register C enum constants as globals
         for (auto& [name, cenum] : cBindings_->enums()) {
             for (auto& [vname, val] : cenum.values) {
@@ -590,6 +834,7 @@ void IRGen::generateConstInitFunction() {
 }
 
 std::any IRGen::visitStructDecl(LucisParser::StructDeclContext* ctx) {
+        SET_DBG_LOC(ctx);
     // Generic struct template — register as template, do NOT emit LLVM struct yet
     if (auto* tpl = ctx->typeParamList()) {
         GenericStructTemplate tmpl;
@@ -695,6 +940,7 @@ std::any IRGen::visitStructDecl(LucisParser::StructDeclContext* ctx) {
 }
 
 std::any IRGen::visitUnionDecl(LucisParser::UnionDeclContext* ctx) {
+        SET_DBG_LOC(ctx);
     if (auto* tpl = ctx->typeParamList()) {
         GenericUnionTemplate tmpl;
         for (auto* tp : tpl->typeParam())
@@ -758,6 +1004,7 @@ std::any IRGen::visitUnionDecl(LucisParser::UnionDeclContext* ctx) {
 }
 
 std::any IRGen::visitEnumDecl(LucisParser::EnumDeclContext* ctx) {
+        SET_DBG_LOC(ctx);
     auto enumName = ctx->IDENTIFIER()->getText();
 
     if (auto* tpl = ctx->typeParamList()) {
@@ -834,6 +1081,7 @@ std::any IRGen::visitEnumDecl(LucisParser::EnumDeclContext* ctx) {
 // ═══════════════════════════════════════════════════════════════════════
 
 std::any IRGen::visitExtendDecl(LucisParser::ExtendDeclContext* ctx) {
+        SET_DBG_LOC(ctx);
     auto structName = ctx->IDENTIFIER()->getText();
 
     // Generic extend template — register but don't emit yet
@@ -1108,6 +1356,7 @@ llvm::Value* IRGen::resolveMethodReceiverAddress(LucisParser::ExpressionContext*
 // ── FFI: extern function declarations ─────────────────────────────────────────
 
 std::any IRGen::visitExternDecl(LucisParser::ExternDeclContext* ctx) {
+        SET_DBG_LOC(ctx);
     auto funcName = ctx->IDENTIFIER()->getText();
 
     // Don't re-declare if already present
@@ -1141,6 +1390,7 @@ std::any IRGen::visitExternDecl(LucisParser::ExternDeclContext* ctx) {
 }
 
 std::any IRGen::visitTypeAliasDecl(LucisParser::TypeAliasDeclContext* ctx) {
+        SET_DBG_LOC(ctx);
     auto name = ctx->IDENTIFIER()->getText();
 
     // Skip if already registered (e.g., from a previous pass)
@@ -1434,6 +1684,24 @@ std::any IRGen::visitFunctionDecl(LucisParser::FunctionDeclContext* ctx) {
     auto* entry = llvm::BasicBlock::Create(*context_, "entry", func);
     builder_->SetInsertPoint(entry);
 
+    // ── Debug info: create DISubprogram for this function ──
+    if (dbgBuilder_) {
+        auto* fnType = dbgBuilder_->createSubroutineType(
+            dbgBuilder_->getOrCreateTypeArray({}));
+        unsigned funcLine = ctx->getStart() ? ctx->getStart()->getLine() : 0;
+        currentDbgScope_ = dbgBuilder_->createFunction(
+            dbgFile_, funcName, emitName,
+            dbgFile_, funcLine,
+            fnType,
+            funcLine,
+            llvm::DINode::FlagZero,
+            llvm::DISubprogram::SPFlagDefinition);
+        func->setSubprogram(currentDbgScope_);
+        // Set debug location for entry block (param allocas etc.)
+        builder_->SetCurrentDebugLocation(
+            llvm::DILocation::get(*context_, funcLine, 0, currentDbgScope_));
+    }
+
     if (auto* params = ctx->paramList()) {
         auto paramList = params->param();
         size_t llvmIdx = 0;
@@ -1473,6 +1741,8 @@ std::any IRGen::visitFunctionDecl(LucisParser::FunctionDeclContext* ctx) {
                 auto* alloca = builder_->CreateAlloca(pType, nullptr, pName);
                 builder_->CreateStore(func->getArg(llvmIdx), alloca);
                 locals_[pName] = { alloca, pInfo, pDims, /*isParam=*/true };
+                { unsigned dbgLine = ctx->getStart() ? ctx->getStart()->getLine() : 0;
+                    emitDbgDeclare(alloca, pName, pInfo, dbgLine, llvmIdx + 1); }
                 llvmIdx++;
             }
         }
@@ -1491,6 +1761,9 @@ std::any IRGen::visitFunctionDecl(LucisParser::FunctionDeclContext* ctx) {
         else
             builder_->CreateRet(llvm::UndefValue::get(func->getReturnType()));
     }
+
+    // Reset debug scope for next function
+    currentDbgScope_ = nullptr;
 
     currentFunction_ = nullptr;
 
@@ -1594,6 +1867,7 @@ std::any IRGen::visitFunctionDecl(LucisParser::FunctionDeclContext* ctx) {
 }
 
 std::any IRGen::visitBlock(LucisParser::BlockContext* ctx) {
+        SET_DBG_LOC(ctx);
     auto* entry = llvm::BasicBlock::Create(*context_, "entry", currentFunction_);
     builder_->SetInsertPoint(entry);
 
@@ -1606,6 +1880,7 @@ std::any IRGen::visitBlock(LucisParser::BlockContext* ctx) {
 
 // use std::log::println;   →  register in ImportResolver
 std::any IRGen::visitUseRoot(LucisParser::UseRootContext* ctx) {
+        SET_DBG_LOC(ctx);
     auto rootName = ctx->IDENTIFIER()->getText();
     userImports_[rootName] = rootName;
     return {};
@@ -1613,6 +1888,7 @@ std::any IRGen::visitUseRoot(LucisParser::UseRootContext* ctx) {
 
 // use std::log::println;   →  register in ImportResolver
 std::any IRGen::visitUseItem(LucisParser::UseItemContext* ctx) {
+        SET_DBG_LOC(ctx);
     std::string path;
     for (auto* id : ctx->modulePath()->IDENTIFIER()) {
         if (!path.empty()) path += "::";
@@ -1635,6 +1911,7 @@ std::any IRGen::visitUseItem(LucisParser::UseItemContext* ctx) {
 
 // use std::log::{ println, print };
 std::any IRGen::visitUseGroup(LucisParser::UseGroupContext* ctx) {
+        SET_DBG_LOC(ctx);
     std::string path;
     for (auto* id : ctx->modulePath()->IDENTIFIER()) {
         if (!path.empty()) path += "::";
@@ -1656,6 +1933,7 @@ std::any IRGen::visitUseGroup(LucisParser::UseGroupContext* ctx) {
 
 // use Response<int32>::*;
 std::any IRGen::visitUseEnumWildcard(LucisParser::UseEnumWildcardContext* ctx) {
+        SET_DBG_LOC(ctx);
     auto* ti = resolveTypeInfo(ctx->typeSpec());
     if (!ti || ti->kind != TypeKind::Enum) return {};
     for (const auto& vi : ti->enumVariantInfos) {
@@ -2410,6 +2688,7 @@ llvm::Value* IRGen::ptrToIntIfNeeded(llvm::Value* val) {
 
 // const NAME = VALUE; or const NAME: TYPE = VALUE;
 std::any IRGen::visitConstDeclStmt(LucisParser::ConstDeclStmtContext* ctx) {
+        SET_DBG_LOC(ctx);
     auto decls = ctx->constDeclarator();
     if (decls.empty()) return nullptr;
 
@@ -2452,6 +2731,20 @@ std::any IRGen::visitConstDeclStmt(LucisParser::ConstDeclStmtContext* ctx) {
             topLevelConsts_[name] = tlc;
             pendingConstDecls_.push_back({d, global});
 
+            // Emit debug info for this global constant
+            if (dbgBuilder_) {
+                auto* diType = getOrCreateDIType(typeInfo);
+                if (diType) {
+                    unsigned constLine = d->IDENTIFIER()->getSymbol()
+                        ? d->IDENTIFIER()->getSymbol()->getLine() : 0;
+                    auto* gve = dbgBuilder_->createGlobalVariableExpression(
+                        dbgCU_, name, "const_" + name,
+                        dbgFile_, constLine,
+                        diType, false, true);
+                    global->addDebugInfo(gve);
+                }
+            }
+
             // Store compile-time integer literal value for use in array dimensions
             if (auto* intLit = dynamic_cast<LucisParser::IntLitExprContext*>(d->expression())) {
                 try {
@@ -2485,6 +2778,7 @@ std::any IRGen::visitConstDeclStmt(LucisParser::ConstDeclStmtContext* ctx) {
 
 // int32 x = 42;   or   []int32 arr = [1, 2, 3];   or   Vec<int32> v = [1, 2, 3];
 std::any IRGen::visitVarDeclStmt(LucisParser::VarDeclStmtContext* ctx) {
+        SET_DBG_LOC(ctx);
     // ── Tuple destructuring: auto (x, y) = expr; ────────────────────
     if (ctx->LPAREN()) {
         auto ids = ctx->IDENTIFIER();
@@ -2504,6 +2798,7 @@ std::any IRGen::visitVarDeclStmt(LucisParser::VarDeclStmtContext* ctx) {
                                       ? tupleTI->tupleElements[i]
                                       : typeRegistry_.lookup("int32");
             locals_[varName] = { alloca, elemTI, 0 };
+            emitDbgDeclare(alloca, varName, elemTI, ids[i]->getSymbol() ? ids[i]->getSymbol()->getLine() : 0);
         }
         return {};
     }
@@ -2580,6 +2875,9 @@ std::any IRGen::visitVarDeclStmt(LucisParser::VarDeclStmtContext* ctx) {
                     builder_->CreateStore(llvm::Constant::getNullValue(type), alloca);
                 VarInfo vi{ alloca, ti2, 0 };
                 locals_[name] = std::move(vi);
+                emitDbgDeclare(alloca, name, vi.typeInfo, d->IDENTIFIER()->getSymbol() ? d->IDENTIFIER()->getSymbol()->getLine() : 0);
+                if (auto* idTok = d->IDENTIFIER() ? d->IDENTIFIER()->getSymbol() : nullptr)
+                    emitDbgDeclare(alloca, name, ti2, idTok->getLine());
                 continue;
             }
             llvm::Value* val = nullptr;
@@ -2611,6 +2909,7 @@ std::any IRGen::visitVarDeclStmt(LucisParser::VarDeclStmtContext* ctx) {
                     auto* alloca   = builder_->CreateAlloca(targetTy, nullptr, name);
                     storeArrayElements(val, alloca, targetTy, elemTI, 1);
                     locals_[name] = { alloca, elemTI, 1 };
+                    emitDbgDeclare(alloca, name, elemTI, d->IDENTIFIER()->getSymbol() ? d->IDENTIFIER()->getSymbol()->getLine() : 0);
                     continue;
                 }
             }
@@ -2622,6 +2921,7 @@ std::any IRGen::visitVarDeclStmt(LucisParser::VarDeclStmtContext* ctx) {
                 auto* alloca   = builder_->CreateAlloca(targetTy, nullptr, name);
                 storeArrayElements(val, alloca, targetTy, elemTI, exprDims);
                 locals_[name] = { alloca, elemTI, exprDims };
+                emitDbgDeclare(alloca, name, elemTI, d->IDENTIFIER()->getSymbol() ? d->IDENTIFIER()->getSymbol()->getLine() : 0);
                 continue;
             }
 
@@ -2640,6 +2940,7 @@ std::any IRGen::visitVarDeclStmt(LucisParser::VarDeclStmtContext* ctx) {
             vi.isBorrowed = (ti2 && ti2->kind == TypeKind::String &&
                      isBorrowedStringValueExpr(d->expression()));
             locals_[name] = std::move(vi);
+            emitDbgDeclare(alloca, name, vi.typeInfo, d->IDENTIFIER()->getSymbol() ? d->IDENTIFIER()->getSymbol()->getLine() : 0);
             continue;
         }
 
@@ -2653,6 +2954,7 @@ std::any IRGen::visitVarDeclStmt(LucisParser::VarDeclStmtContext* ctx) {
             if (ti->extendedKind == "Task") {
                 auto* alloca = builder_->CreateAlloca(ptrTy, nullptr, name);
                 locals_[name] = { alloca, ti, 0 };
+                emitDbgDeclare(alloca, name, ti, d->IDENTIFIER()->getSymbol() ? d->IDENTIFIER()->getSymbol()->getLine() : 0);
                 if (d->expression()) {
                     auto  initVal2 = visit(d->expression());
                     auto* val2     = castValue(initVal2);
@@ -2667,6 +2969,7 @@ std::any IRGen::visitVarDeclStmt(LucisParser::VarDeclStmtContext* ctx) {
             if (ti->extendedKind == "Mutex") {
                 auto* alloca = builder_->CreateAlloca(ptrTy, nullptr, name);
                 locals_[name] = { alloca, ti, 0 };
+                emitDbgDeclare(alloca, name, ti, d->IDENTIFIER()->getSymbol() ? d->IDENTIFIER()->getSymbol()->getLine() : 0);
                 auto callee = declareBuiltin("lucis_mutexCreate", ptrTy, {});
                 auto* mtx = builder_->CreateCall(callee, {}, "mutex");
                 builder_->CreateStore(mtx, alloca);
@@ -2678,6 +2981,7 @@ std::any IRGen::visitVarDeclStmt(LucisParser::VarDeclStmtContext* ctx) {
                 auto  suffix = ti->builtinSuffix;
                 auto* alloca = builder_->CreateAlloca(mapTy, nullptr, name);
                 locals_[name] = { alloca, ti, 0 };
+                emitDbgDeclare(alloca, name, ti, d->IDENTIFIER()->getSymbol() ? d->IDENTIFIER()->getSymbol()->getLine() : 0);
 
                 if (suffix.size() > 4 && suffix.substr(suffix.size() - 3) == "raw") {
                     auto* valLLTy = ti->valueType->toLLVMType(*context_, module_->getDataLayout());
@@ -2702,6 +3006,7 @@ std::any IRGen::visitVarDeclStmt(LucisParser::VarDeclStmtContext* ctx) {
                 auto  suffix = getVecSuffix(ti->elementType);
                 auto* alloca = builder_->CreateAlloca(setTy, nullptr, name);
                 locals_[name] = { alloca, ti, 0 };
+                emitDbgDeclare(alloca, name, ti, d->IDENTIFIER()->getSymbol() ? d->IDENTIFIER()->getSymbol()->getLine() : 0);
 
                 auto* elemLLTy = ti->elementType->toLLVMType(*context_, module_->getDataLayout());
                 if (suffix == "raw") {
@@ -2756,6 +3061,7 @@ std::any IRGen::visitVarDeclStmt(LucisParser::VarDeclStmtContext* ctx) {
 
             auto* alloca = builder_->CreateAlloca(vecTy, nullptr, name);
             locals_[name] = { alloca, ti, 0 };
+            emitDbgDeclare(alloca, name, ti, d->IDENTIFIER()->getSymbol() ? d->IDENTIFIER()->getSymbol()->getLine() : 0);
 
             if (!d->expression()) {
                 auto initFn = declareBuiltin("lucis_vec_init_" + suffix,
@@ -2871,6 +3177,7 @@ std::any IRGen::visitVarDeclStmt(LucisParser::VarDeclStmtContext* ctx) {
                     }
                 }
                 locals_[name] = { alloca, ti, dims };
+                emitDbgDeclare(alloca, name, ti, d->IDENTIFIER()->getSymbol() ? d->IDENTIFIER()->getSymbol()->getLine() : 0);
                 continue;
             }
 
@@ -2919,6 +3226,7 @@ std::any IRGen::visitVarDeclStmt(LucisParser::VarDeclStmtContext* ctx) {
                     auto* alloca = builder_->CreateAlloca(sliceTy, nullptr, name);
                     builder_->CreateStore(slice, alloca);
                     locals_[name] = { alloca, ti, dims };
+                    emitDbgDeclare(alloca, name, ti, d->IDENTIFIER()->getSymbol() ? d->IDENTIFIER()->getSymbol()->getLine() : 0);
                     continue;
                 }
                 llvm::Type* arrTy = elemType;
@@ -2941,6 +3249,7 @@ std::any IRGen::visitVarDeclStmt(LucisParser::VarDeclStmtContext* ctx) {
                     builder_->CreateStore(llvm::Constant::getNullValue(arrTy), alloca);
                 }
                 locals_[name] = { alloca, ti, dims };
+                emitDbgDeclare(alloca, name, ti, d->IDENTIFIER()->getSymbol() ? d->IDENTIFIER()->getSymbol()->getLine() : 0);
                 continue;
             }
 
@@ -2948,6 +3257,7 @@ std::any IRGen::visitVarDeclStmt(LucisParser::VarDeclStmtContext* ctx) {
             auto* alloca   = builder_->CreateAlloca(targetTy, nullptr, name);
             storeArrayElements(val, alloca, targetTy, ti, dims);
             locals_[name] = { alloca, ti, dims };
+            emitDbgDeclare(alloca, name, ti, d->IDENTIFIER()->getSymbol() ? d->IDENTIFIER()->getSymbol()->getLine() : 0);
         } else {
             // Scalar variable
             auto* type   = ti->toLLVMType(*context_, module_->getDataLayout());
@@ -2969,6 +3279,7 @@ std::any IRGen::visitVarDeclStmt(LucisParser::VarDeclStmtContext* ctx) {
                      isBorrowedStringValueExpr(d->expression()));
             vi.fixedArraySizes = std::move(pointerArraySizes);
             locals_[name] = std::move(vi);
+            emitDbgDeclare(alloca, name, vi.typeInfo, d->IDENTIFIER()->getSymbol() ? d->IDENTIFIER()->getSymbol()->getLine() : 0);
 
             if (!d->expression()) {
                 if (lastInitVal) {
@@ -3011,6 +3322,7 @@ std::any IRGen::visitVarDeclStmt(LucisParser::VarDeclStmtContext* ctx) {
 
 // x = 42;  or  arr[i] = val;   arr[i][j] = val;
 std::any IRGen::visitAssignStmt(LucisParser::AssignStmtContext* ctx) {
+        SET_DBG_LOC(ctx);
     auto varName = ctx->IDENTIFIER()->getText();
     auto it = locals_.find(varName);
 
@@ -3262,6 +3574,7 @@ std::any IRGen::visitAssignStmt(LucisParser::AssignStmtContext* ctx) {
 }
 
 std::any IRGen::visitCompoundAssignStmt(LucisParser::CompoundAssignStmtContext* ctx) {
+        SET_DBG_LOC(ctx);
     auto varName = ctx->IDENTIFIER()->getText();
     auto it = locals_.find(varName);
     if (it == locals_.end()) {
@@ -3372,6 +3685,7 @@ std::any IRGen::visitCompoundAssignStmt(LucisParser::CompoundAssignStmtContext* 
 
 // p.x = 42;
 std::any IRGen::visitFieldAssignStmt(LucisParser::FieldAssignStmtContext* ctx) {
+        SET_DBG_LOC(ctx);
     auto identifiers = ctx->IDENTIFIER();
     auto varName = identifiers[0]->getText();
 
@@ -3525,6 +3839,7 @@ std::any IRGen::visitFieldAssignStmt(LucisParser::FieldAssignStmtContext* ctx) {
 // p.x += 5;  data.algo.pos.x -= 10;
 std::any IRGen::visitFieldCompoundAssignStmt(
     LucisParser::FieldCompoundAssignStmtContext* ctx) {
+        SET_DBG_LOC(ctx);
     auto identifiers = ctx->IDENTIFIER();
     auto varName = identifiers[0]->getText();
 
@@ -3813,6 +4128,7 @@ std::any IRGen::visitFieldCompoundAssignStmt(
 // arr[i].field = value;  or  arr[i][j].field.subfield = value;
 std::any IRGen::visitIndexFieldAssignStmt(
     LucisParser::IndexFieldAssignStmtContext* ctx) {
+        SET_DBG_LOC(ctx);
     auto identifiers = ctx->IDENTIFIER();
     auto varName = identifiers[0]->getText();
 
@@ -3968,6 +4284,7 @@ std::any IRGen::visitIndexFieldAssignStmt(
 
 // obj.field[i] = value;   ts.buf[3] = t;
 std::any IRGen::visitFieldIndexAssignStmt(LucisParser::FieldIndexAssignStmtContext* ctx) {
+        SET_DBG_LOC(ctx);
     auto identifiers = ctx->IDENTIFIER();
     auto varName = identifiers[0]->getText();
 
@@ -4225,6 +4542,7 @@ std::any IRGen::visitFieldIndexAssignStmt(LucisParser::FieldIndexAssignStmtConte
 
 // ptr->field = value;
 std::any IRGen::visitArrowAssignStmt(LucisParser::ArrowAssignStmtContext* ctx) {
+        SET_DBG_LOC(ctx);
     auto identifiers = ctx->IDENTIFIER();
     if (identifiers.size() < 2) {
         std::cerr << "lucis: malformed '->' assignment\n";
@@ -4338,6 +4656,7 @@ std::any IRGen::visitArrowAssignStmt(LucisParser::ArrowAssignStmtContext* ctx) {
 // ptr->field += value;
 std::any IRGen::visitArrowCompoundAssignStmt(
     LucisParser::ArrowCompoundAssignStmtContext* ctx) {
+        SET_DBG_LOC(ctx);
     auto identifiers = ctx->IDENTIFIER();
     if (identifiers.size() < 2) {
         std::cerr << "lucis: malformed '->' compound assignment\n";
@@ -4847,6 +5166,7 @@ IRGen::ArrowLValue IRGen::resolveArrowAnyLValue(
 
 // General arrow lvalue assignment (dot/arrow/index chains)
 std::any IRGen::visitArrowAnyAssignStmt(LucisParser::ArrowAnyAssignStmtContext* ctx) {
+        SET_DBG_LOC(ctx);
     auto identifiers = ctx->IDENTIFIER();
     auto dots = ctx->DOT();
     auto arrows = ctx->ARROW();
@@ -4881,6 +5201,7 @@ std::any IRGen::visitArrowAnyAssignStmt(LucisParser::ArrowAnyAssignStmtContext* 
 // General arrow lvalue compound assignment
 std::any IRGen::visitArrowAnyCompoundAssignStmt(
     LucisParser::ArrowAnyCompoundAssignStmtContext* ctx) {
+        SET_DBG_LOC(ctx);
     auto identifiers = ctx->IDENTIFIER();
     auto dots = ctx->DOT();
     auto arrows = ctx->ARROW();
@@ -4976,6 +5297,7 @@ std::any IRGen::visitArrowAnyCompoundAssignStmt(
 }
 
 std::any IRGen::visitExprStmt(LucisParser::ExprStmtContext* ctx) {
+        SET_DBG_LOC(ctx);
     auto exprAny = visit(ctx->expression());
     auto* expr = ctx->expression();
     auto* exprTI = resolveExprTypeInfo(expr);
@@ -5000,6 +5322,7 @@ std::any IRGen::visitExprStmt(LucisParser::ExprStmtContext* ctx) {
 
 // println(x);
 std::any IRGen::visitCallStmt(LucisParser::CallStmtContext* ctx) {
+        SET_DBG_LOC(ctx);
     auto funcName = ctx->IDENTIFIER()->getText();
 
     // ── Comptime function call as statement ───────────────────────
@@ -6513,6 +6836,7 @@ std::any IRGen::visitCallStmt(LucisParser::CallStmtContext* ctx) {
 }
 
 std::any IRGen::visitLabelDef(LucisParser::LabelDefContext* ctx) {
+        SET_DBG_LOC(ctx);
     auto name = ctx->IDENTIFIER()->getText();
     auto* bb = labels_[name];
     if (!bb) {
@@ -6527,6 +6851,7 @@ std::any IRGen::visitLabelDef(LucisParser::LabelDefContext* ctx) {
 }
 
 std::any IRGen::visitAsmStmt(LucisParser::AsmStmtContext* ctx) {
+        SET_DBG_LOC(ctx);
     auto isVolatile = ctx->VOLATILE() != nullptr;
 
     // Build asm string from one or more string literals (concatenated with newlines)
@@ -6682,6 +7007,7 @@ std::any IRGen::visitAsmStmt(LucisParser::AsmStmtContext* ctx) {
 }
 
 std::any IRGen::visitAsmExpr(LucisParser::AsmExprContext* ctx) {
+        SET_DBG_LOC(ctx);
     auto isVolatile = ctx->VOLATILE() != nullptr;
 
     // Build asm string from one or more string literals (concatenated with newlines)
@@ -6801,6 +7127,7 @@ std::any IRGen::visitAsmExpr(LucisParser::AsmExprContext* ctx) {
 }
 
 std::any IRGen::visitReturnStmt(LucisParser::ReturnStmtContext* ctx) {
+        SET_DBG_LOC(ctx);
     // Handle bare `ret;` in void functions
     if (!ctx->expression()) {
         emitAllCleanups();
@@ -6864,6 +7191,7 @@ std::any IRGen::visitReturnStmt(LucisParser::ReturnStmtContext* ctx) {
 }
 
 std::any IRGen::visitIfStmt(LucisParser::IfStmtContext* ctx) {
+        SET_DBG_LOC(ctx);
     auto elseIfs = ctx->elseIfClause();
     auto* elseClause = ctx->elseClause();
 
@@ -6985,6 +7313,7 @@ std::any IRGen::visitIfStmt(LucisParser::IfStmtContext* ctx) {
 }
 
 std::any IRGen::visitForClassicStmt(LucisParser::ForClassicStmtContext* ctx) {
+        SET_DBG_LOC(ctx);
     // for TYPE NAME = init; cond; update { body }
     auto* typeInfo = [&]() -> const TypeInfo* {
         if (!currentGenericSubst_.empty())
@@ -7047,6 +7376,7 @@ std::any IRGen::visitForClassicStmt(LucisParser::ForClassicStmtContext* ctx) {
 }
 
 std::any IRGen::visitForInStmt(LucisParser::ForInStmtContext* ctx) {
+        SET_DBG_LOC(ctx);
     auto* typeInfo = [&]() -> const TypeInfo* {
         if (!currentGenericSubst_.empty())
             return resolveTypeInfoWithSubst(ctx->typeSpec(), currentGenericSubst_);
@@ -7517,6 +7847,7 @@ std::any IRGen::visitContinueStmt(LucisParser::ContinueStmtContext* /*ctx*/) {
 }
 
 std::any IRGen::visitLoopStmt(LucisParser::LoopStmtContext* ctx) {
+        SET_DBG_LOC(ctx);
     auto* bodyBB = llvm::BasicBlock::Create(*context_, "loop.body", currentFunction_);
     auto* endBB  = llvm::BasicBlock::Create(*context_, "loop.end", currentFunction_);
 
@@ -7544,6 +7875,7 @@ std::any IRGen::visitLoopStmt(LucisParser::LoopStmtContext* ctx) {
 }
 
 std::any IRGen::visitSwitchStmt(LucisParser::SwitchStmtContext* ctx) {
+        SET_DBG_LOC(ctx);
     // Evaluate the switch expression
     auto* switchVal = castValue(visit(ctx->expression()));
 
@@ -7606,6 +7938,7 @@ std::any IRGen::visitSwitchStmt(LucisParser::SwitchStmtContext* ctx) {
 }
 
 std::any IRGen::visitWhileStmt(LucisParser::WhileStmtContext* ctx) {
+        SET_DBG_LOC(ctx);
     auto* condBB = llvm::BasicBlock::Create(*context_, "while.cond", currentFunction_);
     auto* bodyBB = llvm::BasicBlock::Create(*context_, "while.body", currentFunction_);
     auto* endBB  = llvm::BasicBlock::Create(*context_, "while.end", currentFunction_);
@@ -7641,6 +7974,7 @@ std::any IRGen::visitWhileStmt(LucisParser::WhileStmtContext* ctx) {
 }
 
 std::any IRGen::visitDoWhileStmt(LucisParser::DoWhileStmtContext* ctx) {
+        SET_DBG_LOC(ctx);
     auto* bodyBB = llvm::BasicBlock::Create(*context_, "do.body", currentFunction_);
     auto* condBB = llvm::BasicBlock::Create(*context_, "do.cond", currentFunction_);
     auto* endBB  = llvm::BasicBlock::Create(*context_, "do.end", currentFunction_);
@@ -7725,6 +8059,7 @@ static int suffixFloatWidth(const std::string& suf) {
 }
 
 std::any IRGen::visitSuffixedIntLitExpr(LucisParser::SuffixedIntLitExprContext* ctx) {
+        SET_DBG_LOC(ctx);
     std::string suffix;
     auto base = splitSuffix(ctx->SUFFIXED_INT()->getText(), suffix);
     llvm::APInt ap(256, base, 10);
@@ -7734,6 +8069,7 @@ std::any IRGen::visitSuffixedIntLitExpr(LucisParser::SuffixedIntLitExprContext* 
 }
 
 std::any IRGen::visitSuffixedHexLitExpr(LucisParser::SuffixedHexLitExprContext* ctx) {
+        SET_DBG_LOC(ctx);
     std::string suffix;
     auto base = splitSuffix(ctx->SUFFIXED_HEX()->getText(), suffix);
     auto hex = base.substr(2); // strip 0x/0X
@@ -7744,6 +8080,7 @@ std::any IRGen::visitSuffixedHexLitExpr(LucisParser::SuffixedHexLitExprContext* 
 }
 
 std::any IRGen::visitSuffixedOctLitExpr(LucisParser::SuffixedOctLitExprContext* ctx) {
+        SET_DBG_LOC(ctx);
     std::string suffix;
     auto base = splitSuffix(ctx->SUFFIXED_OCT()->getText(), suffix);
     auto oct = base.substr(2); // strip 0o/0O
@@ -7754,6 +8091,7 @@ std::any IRGen::visitSuffixedOctLitExpr(LucisParser::SuffixedOctLitExprContext* 
 }
 
 std::any IRGen::visitSuffixedBinLitExpr(LucisParser::SuffixedBinLitExprContext* ctx) {
+        SET_DBG_LOC(ctx);
     std::string suffix;
     auto base = splitSuffix(ctx->SUFFIXED_BIN()->getText(), suffix);
     auto bin = base.substr(2); // strip 0b/0B
@@ -7764,6 +8102,7 @@ std::any IRGen::visitSuffixedBinLitExpr(LucisParser::SuffixedBinLitExprContext* 
 }
 
 std::any IRGen::visitSuffixedFloatLitExpr(LucisParser::SuffixedFloatLitExprContext* ctx) {
+        SET_DBG_LOC(ctx);
     std::string suffix;
     auto base = splitSuffix(ctx->SUFFIXED_FLOAT()->getText(), suffix);
     double v = std::stod(base);
@@ -7786,6 +8125,7 @@ std::any IRGen::visitSuffixedFloatLitExpr(LucisParser::SuffixedFloatLitExprConte
 
 std::any IRGen::visitSuffixedLeadingDotFloatExpr(
         LucisParser::SuffixedLeadingDotFloatExprContext* ctx) {
+        SET_DBG_LOC(ctx);
     std::string suffix;
     auto base = splitSuffix(ctx->SUFFIXED_DOT_FLOAT()->getText(), suffix);
     double v = std::stod("0" + base); // base is like ".5" → "0.5"
@@ -7807,6 +8147,7 @@ std::any IRGen::visitSuffixedLeadingDotFloatExpr(
 }
 
 std::any IRGen::visitSuffixedIntFloatExpr(LucisParser::SuffixedIntFloatExprContext* ctx) {
+        SET_DBG_LOC(ctx);
     std::string suffix;
     auto base = splitSuffix(ctx->SUFFIXED_INT_FLOAT()->getText(), suffix);
     double v = std::stod(base);
@@ -7828,6 +8169,7 @@ std::any IRGen::visitSuffixedIntFloatExpr(LucisParser::SuffixedIntFloatExprConte
 }
 
 std::any IRGen::visitSuffixedFloatIntExpr(LucisParser::SuffixedFloatIntExprContext* ctx) {
+        SET_DBG_LOC(ctx);
     std::string suffix;
     auto base = splitSuffix(ctx->SUFFIXED_FLOAT_INT()->getText(), suffix);
     double v = std::stod(base);
@@ -7839,6 +8181,7 @@ std::any IRGen::visitSuffixedFloatIntExpr(LucisParser::SuffixedFloatIntExprConte
 // ── Unsuffixed literal visitors ─────────────────────────────────────────
 
 std::any IRGen::visitIntLitExpr(LucisParser::IntLitExprContext* ctx) {
+        SET_DBG_LOC(ctx);
     auto text = stripUnderscores(ctx->INT_LIT()->getText());
     llvm::APInt ap(256, text, 10);
     unsigned bits = 32;
@@ -7856,6 +8199,7 @@ std::any IRGen::visitIntLitExpr(LucisParser::IntLitExprContext* ctx) {
 }
 
 std::any IRGen::visitHexLitExpr(LucisParser::HexLitExprContext* ctx) {
+        SET_DBG_LOC(ctx);
     auto text = stripUnderscores(ctx->HEX_LIT()->getText().substr(2)); // strip "0x"/"0X"
     llvm::APInt ap(256, text, 16);
     auto* ty = llvm::Type::getIntNTy(*context_, 256);
@@ -7863,6 +8207,7 @@ std::any IRGen::visitHexLitExpr(LucisParser::HexLitExprContext* ctx) {
 }
 
 std::any IRGen::visitOctLitExpr(LucisParser::OctLitExprContext* ctx) {
+        SET_DBG_LOC(ctx);
     auto text = stripUnderscores(ctx->OCT_LIT()->getText().substr(2)); // strip "0o"/"0O"
     llvm::APInt ap(256, text, 8);
     auto* ty = llvm::Type::getIntNTy(*context_, 256);
@@ -7870,6 +8215,7 @@ std::any IRGen::visitOctLitExpr(LucisParser::OctLitExprContext* ctx) {
 }
 
 std::any IRGen::visitBinLitExpr(LucisParser::BinLitExprContext* ctx) {
+        SET_DBG_LOC(ctx);
     auto text = stripUnderscores(ctx->BIN_LIT()->getText().substr(2)); // strip "0b"/"0B"
     llvm::APInt ap(256, text, 2);
     auto* ty = llvm::Type::getIntNTy(*context_, 256);
@@ -7877,6 +8223,7 @@ std::any IRGen::visitBinLitExpr(LucisParser::BinLitExprContext* ctx) {
 }
 
 std::any IRGen::visitFloatLitExpr(LucisParser::FloatLitExprContext* ctx) {
+        SET_DBG_LOC(ctx);
     double v = std::stod(stripUnderscores(ctx->FLOAT_LIT()->getText()));
     return static_cast<llvm::Value*>(
         llvm::ConstantFP::get(llvm::Type::getDoubleTy(*context_), v));
@@ -7884,12 +8231,14 @@ std::any IRGen::visitFloatLitExpr(LucisParser::FloatLitExprContext* ctx) {
 
 std::any IRGen::visitLeadingDotFloatLitExpr(
         LucisParser::LeadingDotFloatLitExprContext* ctx) {
+        SET_DBG_LOC(ctx);
     double v = std::stod("0." + stripUnderscores(ctx->INT_LIT()->getText()));
     return static_cast<llvm::Value*>(
         llvm::ConstantFP::get(llvm::Type::getDoubleTy(*context_), v));
 }
 
 std::any IRGen::visitBoolLitExpr(LucisParser::BoolLitExprContext* ctx) {
+        SET_DBG_LOC(ctx);
     bool v = ctx->BOOL_LIT()->getText() == "true";
     return static_cast<llvm::Value*>(
         llvm::ConstantInt::get(llvm::Type::getInt1Ty(*context_), v ? 1 : 0));
@@ -7923,6 +8272,7 @@ static std::string utf8Encode(uint32_t cp) {
 }
 
 std::any IRGen::visitCharLitExpr(LucisParser::CharLitExprContext* ctx) {
+        SET_DBG_LOC(ctx);
     auto raw = ctx->CHAR_LIT()->getText();
     auto inner = raw.substr(1, raw.size() - 2);
     uint8_t ch;
@@ -7991,6 +8341,7 @@ std::any IRGen::visitCharLitExpr(LucisParser::CharLitExprContext* ctx) {
 }
 
 std::any IRGen::visitStrLitExpr(LucisParser::StrLitExprContext* ctx) {
+        SET_DBG_LOC(ctx);
     auto raw = ctx->STR_LIT()->getText();
     auto escaped = raw.substr(1, raw.size() - 2);
 
@@ -8087,6 +8438,7 @@ std::any IRGen::visitStrLitExpr(LucisParser::StrLitExprContext* ctx) {
 }
 
 std::any IRGen::visitCStrLitExpr(LucisParser::CStrLitExprContext* ctx) {
+        SET_DBG_LOC(ctx);
     auto raw = ctx->C_STR_LIT()->getText();
     // Strip the c"..." wrapper: skip 'c"' at start and '"' at end
     auto escaped = raw.substr(2, raw.size() - 3);
@@ -8175,6 +8527,7 @@ std::any IRGen::visitCStrLitExpr(LucisParser::CStrLitExprContext* ctx) {
 }
 
 std::any IRGen::visitLambdaExpr(LucisParser::LambdaExprContext* ctx) {
+        SET_DBG_LOC(ctx);
     // Check cache first (avoid double-generation during auto type inference)
     {
         auto it = lambdaCache_.find(ctx);
@@ -8214,11 +8567,14 @@ std::any IRGen::visitLambdaExpr(LucisParser::LambdaExprContext* ctx) {
     auto* entryBB = llvm::BasicBlock::Create(*context_, "entry", fn);
     auto* prevFn = currentFunction_;
     auto* prevBuilder = builder_;
+    auto* prevDbgScope = currentDbgScope_;
     currentFunction_ = fn;
     auto entryBuilder = std::make_unique<llvm::IRBuilder<>>(entryBB);
     builder_ = entryBuilder.get();
 
     // Save outer locals, create new scope
+    auto savedDbgScope = currentDbgScope_;
+    currentDbgScope_ = nullptr;
     auto savedLocals = std::move(locals_);
     locals_.clear();
 
@@ -8257,6 +8613,8 @@ std::any IRGen::visitLambdaExpr(LucisParser::LambdaExprContext* ctx) {
     locals_ = std::move(savedLocals);
     builder_ = prevBuilder;
     currentFunction_ = prevFn;
+    currentDbgScope_ = prevDbgScope;
+    currentDbgScope_ = savedDbgScope;
 
     // 5. Cache and return function pointer
     lambdaCache_[ctx] = fn;
@@ -8264,6 +8622,7 @@ std::any IRGen::visitLambdaExpr(LucisParser::LambdaExprContext* ctx) {
 }
 
 std::any IRGen::visitLambdaBlockExpr(LucisParser::LambdaBlockExprContext* ctx) {
+        SET_DBG_LOC(ctx);
     // Check cache first
     {
         auto it = lambdaCache_.find(ctx);
@@ -8366,6 +8725,7 @@ std::any IRGen::visitLambdaBlockExpr(LucisParser::LambdaBlockExprContext* ctx) {
 }
 
 std::any IRGen::visitIdentExpr(LucisParser::IdentExprContext* ctx) {
+        SET_DBG_LOC(ctx);
     auto name = ctx->IDENTIFIER()->getText();
     auto it   = locals_.find(name);
     if (it != locals_.end()) {
@@ -8551,6 +8911,7 @@ std::any IRGen::visitIdentExpr(LucisParser::IdentExprContext* ctx) {
 }
 
 std::any IRGen::visitArrayLitExpr(LucisParser::ArrayLitExprContext* ctx) {
+        SET_DBG_LOC(ctx);
     auto elems = ctx->expression();
     if (elems.empty()) {
         auto* vecTy = getOrCreateVecStructType();
@@ -8582,6 +8943,7 @@ std::any IRGen::visitArrayLitExpr(LucisParser::ArrayLitExprContext* ctx) {
 }
 
 std::any IRGen::visitListCompExpr(LucisParser::ListCompExprContext* ctx) {
+        SET_DBG_LOC(ctx);
     auto* typeInfo = resolveTypeInfo(ctx->typeSpec());
     if (!typeInfo) return {};
     auto* varType  = typeInfo->toLLVMType(*context_, module_->getDataLayout());
@@ -8818,6 +9180,7 @@ std::any IRGen::visitListCompExpr(LucisParser::ListCompExprContext* ctx) {
 }
 
 std::any IRGen::visitIndexExpr(LucisParser::IndexExprContext* ctx) {
+        SET_DBG_LOC(ctx);
     // Collect all chained indices: arr[i][j][k] → varName + [i, j, k]
     std::vector<LucisParser::ExpressionContext*> indexExprs;
     std::string varName;
@@ -9450,6 +9813,7 @@ std::any IRGen::visitIndexExpr(LucisParser::IndexExprContext* ctx) {
 }
 
 std::any IRGen::visitStructLitExpr(LucisParser::StructLitExprContext* ctx) {
+        SET_DBG_LOC(ctx);
     auto identifiers = ctx->IDENTIFIER();
     auto typeName = identifiers.size() > 0 ? identifiers[0]->getText() : "";
     auto* ti = typeRegistry_.lookup(typeName);
@@ -9581,6 +9945,7 @@ std::any IRGen::visitStructLitExpr(LucisParser::StructLitExprContext* ctx) {
 // ── Struct positional init: Name { expr, expr, ... } ─────────────────
 
 std::any IRGen::visitStructPosInitExpr(LucisParser::StructPosInitExprContext* ctx) {
+        SET_DBG_LOC(ctx);
     auto typeName = ctx->IDENTIFIER()->getText();
     auto* ti = typeRegistry_.lookup(typeName);
     if (!ti || (ti->kind != TypeKind::Struct && ti->kind != TypeKind::Union)) {
@@ -9664,6 +10029,7 @@ std::any IRGen::visitStructPosInitExpr(LucisParser::StructPosInitExprContext* ct
 }
 
 std::any IRGen::visitFieldAccessExpr(LucisParser::FieldAccessExprContext* ctx) {
+        SET_DBG_LOC(ctx);
     auto fieldName = ctx->IDENTIFIER()->getText();
 
     // The base expression should resolve to a variable with a struct type
@@ -10150,6 +10516,7 @@ std::any IRGen::visitFieldAccessExpr(LucisParser::FieldAccessExprContext* ctx) {
 }
 
 std::any IRGen::visitArrowAccessExpr(LucisParser::ArrowAccessExprContext* ctx) {
+        SET_DBG_LOC(ctx);
     auto fieldName = ctx->IDENTIFIER()->getText();
 
     // Evaluate base expression — should yield a pointer to struct
@@ -10355,6 +10722,7 @@ llvm::Value* IRGen::buildEnumVariantValue(const TypeInfo* enumType,
 }
 
 std::any IRGen::visitEnumAccessExpr(LucisParser::EnumAccessExprContext* ctx) {
+        SET_DBG_LOC(ctx);
     auto identifiers = ctx->IDENTIFIER();
     auto enumName = identifiers.size() > 0 ? identifiers[0]->getText() : "";
     auto variantName = identifiers.size() > 1 ? identifiers[1]->getText() : "";
@@ -10390,6 +10758,7 @@ std::any IRGen::visitEnumAccessExpr(LucisParser::EnumAccessExprContext* ctx) {
 }
 
 std::any IRGen::visitGenericEnumAccessExpr(LucisParser::GenericEnumAccessExprContext* ctx) {
+        SET_DBG_LOC(ctx);
     auto ids = ctx->IDENTIFIER();
     auto baseName = ids.size() > 0 ? ids[0]->getText() : "";
     auto variantName = ids.size() > 1 ? ids[1]->getText() : "";
@@ -10434,6 +10803,7 @@ std::any IRGen::visitGenericEnumAccessExpr(LucisParser::GenericEnumAccessExprCon
 // ── Qualified struct/union positional init: LIB::Point { x, y } or enum variant: Shape::Circle { 1, 2 } ─────
 
 std::any IRGen::visitQualifiedStructPosInitExpr(LucisParser::QualifiedStructPosInitExprContext* ctx) {
+        SET_DBG_LOC(ctx);
     auto first = ctx->IDENTIFIER().size() > 0 ? ctx->IDENTIFIER(0)->getText() : "";
     auto second = ctx->IDENTIFIER().size() > 1 ? ctx->IDENTIFIER(1)->getText() : "";
 
@@ -10563,6 +10933,7 @@ std::any IRGen::visitQualifiedStructPosInitExpr(LucisParser::QualifiedStructPosI
 // ── Qualified struct/union named init: LIB::Point { x: 10, y: 20 } or enum variant: Shape::Circle { r: 4.0 } ─
 
 std::any IRGen::visitQualifiedStructNamedInitExpr(LucisParser::QualifiedStructNamedInitExprContext* ctx) {
+        SET_DBG_LOC(ctx);
     auto first = ctx->IDENTIFIER().size() > 0 ? ctx->IDENTIFIER(0)->getText() : "";
     auto second = ctx->IDENTIFIER().size() > 1 ? ctx->IDENTIFIER(1)->getText() : "";
 
@@ -10659,6 +11030,7 @@ std::any IRGen::visitQualifiedStructNamedInitExpr(LucisParser::QualifiedStructNa
 }
 
 std::any IRGen::visitGenericEnumNamedVariantExpr(LucisParser::GenericEnumNamedVariantExprContext* ctx) {
+        SET_DBG_LOC(ctx);
     auto ids = ctx->IDENTIFIER();
     auto baseName = ids.size() > 0 ? ids[0]->getText() : "";
     auto variantName = ids.size() > 1 ? ids[1]->getText() : "";
@@ -10727,6 +11099,7 @@ std::any IRGen::visitGenericEnumNamedVariantExpr(LucisParser::GenericEnumNamedVa
 // ── Generic enum positional variant: Enum<T>::Variant { expr, ... } ──────
 
 std::any IRGen::visitGenericEnumPosVariantExpr(LucisParser::GenericEnumPosVariantExprContext* ctx) {
+        SET_DBG_LOC(ctx);
     auto ids = ctx->IDENTIFIER();
     auto baseName = ids[0]->getText();
     auto variantName = ids[1]->getText();
@@ -10789,6 +11162,7 @@ std::any IRGen::visitGenericEnumPosVariantExpr(LucisParser::GenericEnumPosVarian
 // ── Static method call: Struct::method(args) ────────────────────────────────
 std::any IRGen::visitStaticMethodCallExpr(
         LucisParser::StaticMethodCallExprContext* ctx) {
+        SET_DBG_LOC(ctx);
     auto ids = ctx->IDENTIFIER();
     if (ids.size() < 2) {
         std::cerr << "lucis: invalid static call expression\n";
@@ -11450,6 +11824,7 @@ std::any IRGen::visitStaticMethodCallExpr(
 }
 
 std::any IRGen::visitTypeSpec(LucisParser::TypeSpecContext* ctx) {
+        SET_DBG_LOC(ctx);
     auto* ti = resolveTypeInfo(ctx);
     if (!ti) return static_cast<llvm::Type*>(llvm::Type::getInt32Ty(*context_));
     return static_cast<llvm::Type*>(ti->toLLVMType(*context_, module_->getDataLayout()));
@@ -11461,6 +11836,7 @@ std::any IRGen::visitNullLitExpr(LucisParser::NullLitExprContext* /*ctx*/) {
 }
 
 std::any IRGen::visitAddrOfExpr(LucisParser::AddrOfExprContext* ctx) {
+        SET_DBG_LOC(ctx);
     auto* innerExpr = ctx->expression();
 
     // Case 1: &variable
@@ -11586,6 +11962,7 @@ std::any IRGen::visitAddrOfExpr(LucisParser::AddrOfExprContext* ctx) {
 }
 
 std::any IRGen::visitDerefExpr(LucisParser::DerefExprContext* ctx) {
+        SET_DBG_LOC(ctx);
     auto* ptrVal = castValue(visit(ctx->expression()));
 
     // Find pointee type: first try AST-level resolution, then fall back to IR
@@ -11620,6 +11997,7 @@ std::any IRGen::visitDerefExpr(LucisParser::DerefExprContext* ctx) {
 }
 
 std::any IRGen::visitDerefAssignStmt(LucisParser::DerefAssignStmtContext* ctx) {
+        SET_DBG_LOC(ctx);
     llvm::Value* ptrVal = nullptr;
     const TypeInfo* ptrTI = nullptr;
     LucisParser::ExpressionContext* rhsExpr = nullptr;
@@ -11680,6 +12058,7 @@ std::any IRGen::visitDerefAssignStmt(LucisParser::DerefAssignStmtContext* ctx) {
 }
 
 std::any IRGen::visitDerefCompoundAssignStmt(LucisParser::DerefCompoundAssignStmtContext* ctx) {
+        SET_DBG_LOC(ctx);
     llvm::Value* ptrVal = nullptr;
     const TypeInfo* ptrTI = nullptr;
     LucisParser::ExpressionContext* rhsExpr = nullptr;
@@ -11857,6 +12236,7 @@ static bool evalMacroShift(const std::vector<std::string>& toks, size_t& pos, in
 }
 
 std::any IRGen::visitFnCallExpr(LucisParser::FnCallExprContext* ctx) {
+        SET_DBG_LOC(ctx);
     auto* baseExpr = ctx->expression();
 
     auto cleanupTempArg = [&](LucisParser::ExpressionContext* argExpr,
@@ -15340,6 +15720,7 @@ generic_template_handled:
 }
 
 std::any IRGen::visitNegExpr(LucisParser::NegExprContext* ctx) {
+        SET_DBG_LOC(ctx);
     auto* val = castValue(visit(ctx->expression()));
     if (val->getType()->isFloatingPointTy())
         return static_cast<llvm::Value*>(builder_->CreateFNeg(val, "neg"));
@@ -15347,6 +15728,7 @@ std::any IRGen::visitNegExpr(LucisParser::NegExprContext* ctx) {
 }
 
 std::any IRGen::visitMulExpr(LucisParser::MulExprContext* ctx) {
+        SET_DBG_LOC(ctx);
     auto* lhs = castValue(visit(ctx->expression(0)));
     auto* rhs = castValue(visit(ctx->expression(1)));
     auto [l, r] = promoteArithmetic(lhs, rhs);
@@ -15380,6 +15762,7 @@ std::any IRGen::visitMulExpr(LucisParser::MulExprContext* ctx) {
 }
 
 std::any IRGen::visitAddSubExpr(LucisParser::AddSubExprContext* ctx) {
+        SET_DBG_LOC(ctx);
     auto* lhs = castValue(visit(ctx->expression(0)));
     auto* rhs = castValue(visit(ctx->expression(1)));
 
@@ -15450,12 +15833,14 @@ std::any IRGen::visitAddSubExpr(LucisParser::AddSubExprContext* ctx) {
 }
 
 std::any IRGen::visitLogicalNotExpr(LucisParser::LogicalNotExprContext* ctx) {
+        SET_DBG_LOC(ctx);
     auto* val = castValue(visit(ctx->expression()));
     val = toBool(val, resolveExprTypeInfo(ctx->expression()), "tobool");
     return static_cast<llvm::Value*>(builder_->CreateNot(val, "not"));
 }
 
 std::any IRGen::visitLogicalAndExpr(LucisParser::LogicalAndExprContext* ctx) {
+        SET_DBG_LOC(ctx);
     auto* fn = currentFunction_;
     auto* lhs = castValue(visit(ctx->expression(0)));
     lhs = toBool(lhs, resolveExprTypeInfo(ctx->expression(0)), "tobool");
@@ -15480,6 +15865,7 @@ std::any IRGen::visitLogicalAndExpr(LucisParser::LogicalAndExprContext* ctx) {
 }
 
 std::any IRGen::visitLogicalOrExpr(LucisParser::LogicalOrExprContext* ctx) {
+        SET_DBG_LOC(ctx);
     auto* fn = currentFunction_;
     auto* lhs = castValue(visit(ctx->expression(0)));
     lhs = toBool(lhs, resolveExprTypeInfo(ctx->expression(0)), "tobool");
@@ -15504,12 +15890,14 @@ std::any IRGen::visitLogicalOrExpr(LucisParser::LogicalOrExprContext* ctx) {
 }
 
 std::any IRGen::visitBitNotExpr(LucisParser::BitNotExprContext* ctx) {
+        SET_DBG_LOC(ctx);
     auto* val = castValue(visit(ctx->expression()));
     val = ptrToIntIfNeeded(val);
     return static_cast<llvm::Value*>(builder_->CreateNot(val, "bitnot"));
 }
 
 std::any IRGen::visitLshiftExpr(LucisParser::LshiftExprContext* ctx) {
+        SET_DBG_LOC(ctx);
     auto* lhs = castValue(visit(ctx->expression(0)));
     auto* rhs = castValue(visit(ctx->expression(1)));
     lhs = ptrToIntIfNeeded(lhs);
@@ -15519,6 +15907,7 @@ std::any IRGen::visitLshiftExpr(LucisParser::LshiftExprContext* ctx) {
 }
 
 std::any IRGen::visitRshiftExpr(LucisParser::RshiftExprContext* ctx) {
+        SET_DBG_LOC(ctx);
     auto* lhs = castValue(visit(ctx->expression(0)));
     auto* rhs = castValue(visit(ctx->expression(1)));
     lhs = ptrToIntIfNeeded(lhs);
@@ -15532,6 +15921,7 @@ std::any IRGen::visitRshiftExpr(LucisParser::RshiftExprContext* ctx) {
 }
 
 std::any IRGen::visitBitAndExpr(LucisParser::BitAndExprContext* ctx) {
+        SET_DBG_LOC(ctx);
     auto* lhs = castValue(visit(ctx->expression(0)));
     auto* rhs = castValue(visit(ctx->expression(1)));
     lhs = ptrToIntIfNeeded(lhs);
@@ -15541,6 +15931,7 @@ std::any IRGen::visitBitAndExpr(LucisParser::BitAndExprContext* ctx) {
 }
 
 std::any IRGen::visitBitXorExpr(LucisParser::BitXorExprContext* ctx) {
+        SET_DBG_LOC(ctx);
     auto* lhs = castValue(visit(ctx->expression(0)));
     auto* rhs = castValue(visit(ctx->expression(1)));
     lhs = ptrToIntIfNeeded(lhs);
@@ -15550,6 +15941,7 @@ std::any IRGen::visitBitXorExpr(LucisParser::BitXorExprContext* ctx) {
 }
 
 std::any IRGen::visitBitOrExpr(LucisParser::BitOrExprContext* ctx) {
+        SET_DBG_LOC(ctx);
     auto* lhs = castValue(visit(ctx->expression(0)));
     auto* rhs = castValue(visit(ctx->expression(1)));
     lhs = ptrToIntIfNeeded(lhs);
@@ -15672,6 +16064,7 @@ IRGen::resolveIncrDecrTarget(LucisParser::ExpressionContext* expr) {
 }
 
 std::any IRGen::visitPreIncrExpr(LucisParser::PreIncrExprContext* ctx) {
+        SET_DBG_LOC(ctx);
     auto [ptr, ty] = resolveIncrDecrTarget(ctx->expression());
     if (!ptr)
         return static_cast<llvm::Value*>(llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
@@ -15696,6 +16089,7 @@ std::any IRGen::visitPreIncrExpr(LucisParser::PreIncrExprContext* ctx) {
 }
 
 std::any IRGen::visitPreDecrExpr(LucisParser::PreDecrExprContext* ctx) {
+        SET_DBG_LOC(ctx);
     auto [ptr, ty] = resolveIncrDecrTarget(ctx->expression());
     if (!ptr)
         return static_cast<llvm::Value*>(llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
@@ -15720,6 +16114,7 @@ std::any IRGen::visitPreDecrExpr(LucisParser::PreDecrExprContext* ctx) {
 }
 
 std::any IRGen::visitPostIncrExpr(LucisParser::PostIncrExprContext* ctx) {
+        SET_DBG_LOC(ctx);
     auto [ptr, ty] = resolveIncrDecrTarget(ctx->expression());
     if (!ptr)
         return static_cast<llvm::Value*>(llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
@@ -15744,6 +16139,7 @@ std::any IRGen::visitPostIncrExpr(LucisParser::PostIncrExprContext* ctx) {
 }
 
 std::any IRGen::visitPostDecrExpr(LucisParser::PostDecrExprContext* ctx) {
+        SET_DBG_LOC(ctx);
     auto [ptr, ty] = resolveIncrDecrTarget(ctx->expression());
     if (!ptr)
         return static_cast<llvm::Value*>(llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
@@ -15768,6 +16164,7 @@ std::any IRGen::visitPostDecrExpr(LucisParser::PostDecrExprContext* ctx) {
 }
 
 std::any IRGen::visitCastExpr(LucisParser::CastExprContext* ctx) {
+        SET_DBG_LOC(ctx);
     auto* val = castValue(visit(ctx->expression()));
     auto* ti = resolveTypeInfo(ctx->typeSpec());
     if (!ti) return static_cast<llvm::Value*>(val);
@@ -15843,6 +16240,7 @@ std::any IRGen::visitCastExpr(LucisParser::CastExprContext* ctx) {
 }
 
 std::any IRGen::visitSizeofExpr(LucisParser::SizeofExprContext* ctx) {
+        SET_DBG_LOC(ctx);
     auto* spec = ctx->typeSpec();
     std::vector<uint64_t> arraySizes;
     while (spec && spec->LBRACKET()) {
@@ -15871,6 +16269,7 @@ std::any IRGen::visitSizeofExpr(LucisParser::SizeofExprContext* ctx) {
 }
 
 std::any IRGen::visitTypeofExpr(LucisParser::TypeofExprContext* ctx) {
+        SET_DBG_LOC(ctx);
     // Resolve expression type at compile-time
     auto* exprVal = castValue(visit(ctx->expression()));
 
@@ -16022,6 +16421,7 @@ std::any IRGen::visitTypeofExpr(LucisParser::TypeofExprContext* ctx) {
     return static_cast<llvm::Value*>(strStruct);
 }
 std::any IRGen::visitAlignofExpr(LucisParser::AlignofExprContext* ctx) {
+        SET_DBG_LOC(ctx);
     auto* spec = ctx->typeSpec();
     auto* ti = resolveTypeInfo(spec);
     if (!ti) return {};
@@ -16035,6 +16435,7 @@ std::any IRGen::visitAlignofExpr(LucisParser::AlignofExprContext* ctx) {
 
 // ── visitOffsetofExpr ────────────────────────────────────────────────────
 std::any IRGen::visitOffsetofExpr(LucisParser::OffsetofExprContext* ctx) {
+        SET_DBG_LOC(ctx);
     auto* spec = ctx->typeSpec();
     auto* ti = resolveTypeInfo(spec);
     if (!ti) return {};
@@ -16076,6 +16477,7 @@ std::any IRGen::visitOffsetofExpr(LucisParser::OffsetofExprContext* ctx) {
 
 
 std::any IRGen::visitTernaryExpr(LucisParser::TernaryExprContext* ctx) {
+        SET_DBG_LOC(ctx);
     auto* cond = castValue(visit(ctx->expression(0)));
     cond = toBool(cond, resolveExprTypeInfo(ctx->expression(0)), "tobool");
 
@@ -16113,6 +16515,7 @@ std::any IRGen::visitTernaryExpr(LucisParser::TernaryExprContext* ctx) {
 }
 
 std::any IRGen::visitIsExpr(LucisParser::IsExprContext* ctx) {
+        SET_DBG_LOC(ctx);
     auto* val = castValue(visit(ctx->expression()));
     auto* targetTI = resolveTypeInfo(ctx->typeSpec());
     if (!targetTI) {
@@ -16220,6 +16623,7 @@ std::any IRGen::visitIsExpr(LucisParser::IsExprContext* ctx) {
 }
 
 std::any IRGen::visitNullCoalExpr(LucisParser::NullCoalExprContext* ctx) {
+        SET_DBG_LOC(ctx);
     auto* ptrVal = castValue(visit(ctx->expression(0)));
 
     // Check if pointer is null
@@ -16257,6 +16661,7 @@ std::any IRGen::visitNullCoalExpr(LucisParser::NullCoalExprContext* ctx) {
 }
 
 std::any IRGen::visitRangeExpr(LucisParser::RangeExprContext* ctx) {
+        SET_DBG_LOC(ctx);
     // Range creates a {start, end} struct
     auto* startVal = castValue(visit(ctx->expression(0)));
     auto* endVal   = castValue(visit(ctx->expression(1)));
@@ -16271,6 +16676,7 @@ std::any IRGen::visitRangeExpr(LucisParser::RangeExprContext* ctx) {
 }
 
 std::any IRGen::visitRangeInclExpr(LucisParser::RangeInclExprContext* ctx) {
+        SET_DBG_LOC(ctx);
     // Inclusive range: same struct as range, semantics differ at use site (for loop)
     auto* startVal = castValue(visit(ctx->expression(0)));
     auto* endVal   = castValue(visit(ctx->expression(1)));
@@ -16285,11 +16691,13 @@ std::any IRGen::visitRangeInclExpr(LucisParser::RangeInclExprContext* ctx) {
 }
 
 std::any IRGen::visitSpreadExpr(LucisParser::SpreadExprContext* ctx) {
+        SET_DBG_LOC(ctx);
     // Spread just evaluates the inner expression — expansion handled at call/array site
     return visit(ctx->expression());
 }
 
 std::any IRGen::visitParenExpr(LucisParser::ParenExprContext* ctx) {
+        SET_DBG_LOC(ctx);
     return visit(ctx->expression());
 }
 
@@ -16298,6 +16706,7 @@ std::any IRGen::visitParenExpr(LucisParser::ParenExprContext* ctx) {
 // ═══════════════════════════════════════════════════════════════════════
 
 std::any IRGen::visitTupleLitExpr(LucisParser::TupleLitExprContext* ctx) {
+        SET_DBG_LOC(ctx);
     auto exprs = ctx->expression();
 
     // Evaluate each element and collect LLVM values + types
@@ -16319,6 +16728,7 @@ std::any IRGen::visitTupleLitExpr(LucisParser::TupleLitExprContext* ctx) {
 }
 
 std::any IRGen::visitTupleIndexExpr(LucisParser::TupleIndexExprContext* ctx) {
+        SET_DBG_LOC(ctx);
     unsigned idx = std::stoul(ctx->INT_LIT()->getText());
 
     // Optimized path: base is local variable — use GEP+Load
@@ -16349,6 +16759,7 @@ std::any IRGen::visitTupleIndexExpr(LucisParser::TupleIndexExprContext* ctx) {
 
 std::any IRGen::visitTupleArrowIndexExpr(
         LucisParser::TupleArrowIndexExprContext* ctx) {
+        SET_DBG_LOC(ctx);
     unsigned idx = std::stoul(ctx->INT_LIT()->getText());
 
     auto* ptrVal = castValue(visit(ctx->expression()));
@@ -16375,6 +16786,7 @@ std::any IRGen::visitTupleArrowIndexExpr(
 // Chained tuple dot access: e.g. nested.1.0  (FLOAT_LIT "1.0" → indices 1,0)
 std::any IRGen::visitChainedTupleIndexExpr(
         LucisParser::ChainedTupleIndexExprContext* ctx) {
+        SET_DBG_LOC(ctx);
     auto text = ctx->FLOAT_LIT()->getText();
     auto dotPos = text.find('.');
     unsigned idx1 = std::stoul(text.substr(0, dotPos));
@@ -16412,6 +16824,7 @@ std::any IRGen::visitChainedTupleIndexExpr(
 // Chained tuple arrow access: e.g. ptr->1.0  (FLOAT_LIT "1.0" → indices 1,0)
 std::any IRGen::visitChainedTupleArrowIndexExpr(
         LucisParser::ChainedTupleArrowIndexExprContext* ctx) {
+        SET_DBG_LOC(ctx);
     auto text = ctx->FLOAT_LIT()->getText();
     auto dotPos = text.find('.');
     unsigned idx1 = std::stoul(text.substr(0, dotPos));
@@ -16440,6 +16853,7 @@ std::any IRGen::visitChainedTupleArrowIndexExpr(
 }
 
 std::any IRGen::visitRelExpr(LucisParser::RelExprContext* ctx) {
+        SET_DBG_LOC(ctx);
     auto* lhs = castValue(visit(ctx->expression(0)));
     auto* rhs = castValue(visit(ctx->expression(1)));
     auto* lhsTI = resolveExprTypeInfo(ctx->expression(0));
@@ -16489,6 +16903,7 @@ std::any IRGen::visitRelExpr(LucisParser::RelExprContext* ctx) {
 }
 
 std::any IRGen::visitEqExpr(LucisParser::EqExprContext* ctx) {
+        SET_DBG_LOC(ctx);
     auto* lhs = castValue(visit(ctx->expression(0)));
     auto* rhs = castValue(visit(ctx->expression(1)));
     auto* lhsTI = resolveExprTypeInfo(ctx->expression(0));
@@ -18481,6 +18896,7 @@ llvm::Value* IRGen::castValue(std::any result) {
 // ── Defer infrastructure ────────────────────────────────────────────────────
 
 std::any IRGen::visitDeferStmt(LucisParser::DeferStmtContext* ctx) {
+        SET_DBG_LOC(ctx);
     DeferredStmt ds;
     if (ctx->callStmt())
         ds.callCtx = ctx->callStmt();
@@ -18599,6 +19015,7 @@ void IRGen::emitOneDeferred(const DeferredStmt& ds) {
 
 // { statements }  —  lexical scope block (no callbacks, just inline statements)
 std::any IRGen::visitNakedBlockStmt(LucisParser::NakedBlockStmtContext* ctx) {
+        SET_DBG_LOC(ctx);
     auto savedLocals = locals_;
     size_t savedDeferBase = deferStack_.size();
     for (auto* stmt : ctx->statement())
@@ -18616,6 +19033,7 @@ std::any IRGen::visitNakedBlockStmt(LucisParser::NakedBlockStmtContext* ctx) {
 
 // #inline { statements }  —  inject statements directly into parent scope
 std::any IRGen::visitInlineBlockStmt(LucisParser::InlineBlockStmtContext* ctx) {
+        SET_DBG_LOC(ctx);
     for (auto* stmt : ctx->statement())
         visit(stmt);
     return {};
@@ -18624,6 +19042,7 @@ std::any IRGen::visitInlineBlockStmt(LucisParser::InlineBlockStmtContext* ctx) {
 // #scope (A(), B()) { statements }  —  RAII block with guaranteed exit callbacks
 // Callbacks execute in LIFO order on every exit path (normal + early return).
 std::any IRGen::visitScopeBlockStmt(LucisParser::ScopeBlockStmtContext* ctx) {
+        SET_DBG_LOC(ctx);
     // Record stack depth before pushing this scope's callbacks.
     size_t deferBase = deferStack_.size();
 
@@ -18659,6 +19078,7 @@ std::any IRGen::visitScopeBlockStmt(LucisParser::ScopeBlockStmtContext* ctx) {
 
 // ── c_macro { ... } block ──────────────────────────────────────────────
 std::any IRGen::visitCMacroBlock(LucisParser::CMacroBlockContext* ctx) {
+        SET_DBG_LOC(ctx);
     auto tok = ctx->C_MACRO_BLOCK();
     if (!tok) return {};
     std::string fullText = tok->getText();
@@ -22909,6 +23329,7 @@ IRGen::visitArrowMethodCallExpr(LucisParser::ArrowMethodCallExprContext* ctx) {
 //      unpacks args, calls the target, and returns heap-allocated result
 //   3. Call lucis_taskCreate(trampoline, packed) → Task*
 std::any IRGen::visitSpawnExpr(LucisParser::SpawnExprContext* ctx) {
+        SET_DBG_LOC(ctx);
     auto* innerExpr = ctx->expression();
 
     // The inner expression must be a function call
@@ -23070,6 +23491,7 @@ std::any IRGen::visitSpawnExpr(LucisParser::SpawnExprContext* ctx) {
 // ── await expression ────────────────────────────────────────────────────
 // await task → T (extracts result from Task<T>)
 std::any IRGen::visitAwaitExpr(LucisParser::AwaitExprContext* ctx) {
+        SET_DBG_LOC(ctx);
     auto* taskVal = castValue(visit(ctx->expression()));
 
     auto* ptrTy = llvm::PointerType::getUnqual(*context_);
@@ -23123,6 +23545,7 @@ std::any IRGen::visitAwaitExpr(LucisParser::AwaitExprContext* ctx) {
 // ── lock statement ──────────────────────────────────────────────────────
 // lock(mtx) { ... } → lock, execute block, unlock (even on early return)
 std::any IRGen::visitLockStmt(LucisParser::LockStmtContext* ctx) {
+        SET_DBG_LOC(ctx);
     auto* mtxVal = castValue(visit(ctx->expression()));
 
     auto* ptrTy = llvm::PointerType::getUnqual(*context_);
@@ -23153,6 +23576,7 @@ std::any IRGen::visitLockStmt(LucisParser::LockStmtContext* ctx) {
 // ── try/catch/finally ────────────────────────────────────────────────────────
 
 std::any IRGen::visitTryCatchStmt(LucisParser::TryCatchStmtContext* ctx) {
+        SET_DBG_LOC(ctx);
     auto* fn     = currentFunction_;
     auto* ptrTy  = llvm::PointerType::getUnqual(*context_);
     auto* i32Ty  = llvm::Type::getInt32Ty(*context_);
@@ -23253,6 +23677,7 @@ std::any IRGen::visitTryCatchStmt(LucisParser::TryCatchStmtContext* ctx) {
 }
 
 std::any IRGen::visitThrowStmt(LucisParser::ThrowStmtContext* ctx) {
+        SET_DBG_LOC(ctx);
     auto* ptrTy  = llvm::PointerType::getUnqual(*context_);
     auto* voidTy = llvm::Type::getVoidTy(*context_);
     auto* usizeTy = module_->getDataLayout().getIntPtrType(*context_);
@@ -23323,6 +23748,7 @@ std::any IRGen::visitThrowStmt(LucisParser::ThrowStmtContext* ctx) {
 }
 
 std::any IRGen::visitTryExpr(LucisParser::TryExprContext* ctx) {
+        SET_DBG_LOC(ctx);
     auto* fn    = currentFunction_;
     auto* i32Ty = llvm::Type::getInt32Ty(*context_);
     auto* ptrTy = llvm::PointerType::getUnqual(*context_);
@@ -23474,6 +23900,7 @@ std::any IRGen::visitTryExpr(LucisParser::TryExprContext* ctx) {
 }
 
 std::any IRGen::visitCatchUnwrapExpr(LucisParser::CatchUnwrapExprContext* ctx) {
+        SET_DBG_LOC(ctx);
     auto* fn = currentFunction_;
     auto* sourceVal = castValue(visit(ctx->expression()));
     auto* sourceTI = resolveExprTypeInfo(ctx->expression());
@@ -23569,6 +23996,7 @@ std::any IRGen::visitCatchUnwrapExpr(LucisParser::CatchUnwrapExprContext* ctx) {
 }
 
 std::any IRGen::visitPropagateExpr(LucisParser::PropagateExprContext* ctx) {
+        SET_DBG_LOC(ctx);
     auto* fn = currentFunction_;
     auto* sourceVal = castValue(visit(ctx->expression()));
     auto* sourceTI = resolveExprTypeInfo(ctx->expression());
@@ -23696,6 +24124,7 @@ std::any IRGen::visitPropagateExpr(LucisParser::PropagateExprContext* ctx) {
 }
 
 std::any IRGen::visitMatchExpr(LucisParser::MatchExprContext* ctx) {
+        SET_DBG_LOC(ctx);
     auto* fn = currentFunction_;
     auto* sourceVal = castValue(visit(ctx->expression()));
     auto* sourceTI = resolveExprTypeInfo(ctx->expression());
@@ -24843,6 +25272,7 @@ bool IRGen::unifyGenericTypeArg(
 // ── Generic expression visitors ──────────────────────────────────────────
 
 std::any IRGen::visitGenericFnCallExpr(LucisParser::GenericFnCallExprContext* ctx) {
+        SET_DBG_LOC(ctx);
     auto funcName = ctx->IDENTIFIER()->getText();
 
     // Resolve type arguments
@@ -24899,6 +25329,7 @@ std::any IRGen::visitGenericFnCallExpr(LucisParser::GenericFnCallExprContext* ct
 
 std::any IRGen::visitGenericStaticMethodCallExpr(
     LucisParser::GenericStaticMethodCallExprContext* ctx) {
+        SET_DBG_LOC(ctx);
     auto ids = ctx->IDENTIFIER();
     auto structBaseName = ids[0]->getText();
     auto methodName = ids[1]->getText();
@@ -25020,6 +25451,7 @@ std::any IRGen::visitGenericStaticMethodCallExpr(
 
 std::any IRGen::visitGenericQualifiedFnCallExpr(
     LucisParser::GenericQualifiedFnCallExprContext* ctx) {
+        SET_DBG_LOC(ctx);
     auto ids = ctx->IDENTIFIER();
     if (ids.size() < 2) {
         std::cerr << "lucis: invalid qualified generic call\n";
@@ -25098,6 +25530,7 @@ std::any IRGen::visitGenericQualifiedFnCallExpr(
 }
 
 std::any IRGen::visitGenericStructLitExpr(LucisParser::GenericStructLitExprContext* ctx) {
+        SET_DBG_LOC(ctx);
     auto baseName = ctx->IDENTIFIER(0)->getText();
 
     // Resolve type arguments
@@ -25248,6 +25681,7 @@ std::any IRGen::visitGenericStructLitExpr(LucisParser::GenericStructLitExprConte
 // ── Generic struct positional init: Name<T> { expr, expr, ... } ──────
 
 std::any IRGen::visitGenericStructPosInitExpr(LucisParser::GenericStructPosInitExprContext* ctx) {
+        SET_DBG_LOC(ctx);
     auto baseName = ctx->IDENTIFIER()->getText();
 
     std::vector<const TypeInfo*> typeArgs;

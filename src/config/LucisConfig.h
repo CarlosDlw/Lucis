@@ -29,6 +29,7 @@ struct LucisConfig {
         std::string target;
         std::string optLevel;
         bool noStd;
+        bool debug = false;
         bool lto;
         bool staticLink;
         bool shared;

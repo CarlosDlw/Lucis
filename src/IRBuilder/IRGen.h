@@ -11,6 +11,7 @@
 #include <llvm/IR/Module.h>
 #include <llvm/IR/IRBuilder.h>
 #include <llvm/IR/Function.h>
+#include <llvm/IR/DIBuilder.h>
 
 #include "generated/LucisParserBaseVisitor.h"
 #include "generated/LucisParser.h"
@@ -56,6 +57,9 @@ public:
 
     // Set comptime engine for compile-time function evaluation
     void setComptimeEngine(ComptimeEngine* engine) { comptimeEngine_ = engine; }
+
+    // Enable/disable DWARF debug info emission
+    void setEmitDebugInfo(bool v) { emitDebugInfo_ = v; }
 
     // ── Visitor overrides ───────────────────────────────────────────────────
     std::any visitProgram(LucisParser::ProgramContext* ctx)             override;
@@ -349,6 +353,13 @@ private:
     // C bindings from c_macro { ... } blocks (owned by IRGen)
     CBindings cMacroBindings_;
 
+    // Debug info (DIBuilder)
+    llvm::DIBuilder* dbgBuilder_ = nullptr;
+    llvm::DICompileUnit* dbgCU_ = nullptr;
+    llvm::DIFile* dbgFile_ = nullptr;
+    llvm::DISubprogram* currentDbgScope_ = nullptr;
+    bool emitDebugInfo_ = false;
+
     // Comptime engine for compile-time function evaluation
     ComptimeEngine* comptimeEngine_ = nullptr;
 
@@ -577,4 +588,13 @@ private:
                        promoteArithmetic(llvm::Value* lhs, llvm::Value* rhs);
     // Lower [N]T array value to {T*, i64} slice for []T fields/params
     llvm::Value*       lowerArrayToSlice(llvm::Value* arrVal, llvm::Type* sliceTy);
+
+    // ── Debug info helpers ─────────────────────────────────────────────────
+    // Map a Lucis TypeInfo to an llvm::DIType for DWARF debug info.
+    llvm::DIType* getOrCreateDIType(const TypeInfo* ti);
+    // Emit dbg.declare for an alloca'd variable.
+    void emitDbgDeclare(llvm::AllocaInst* alloca, const std::string& name,
+                        const TypeInfo* ti, unsigned line, unsigned argNo = 0);
+    // Cache of created DITypes to avoid infinite recursion (e.g. *Node → Node → field *Node → ...)
+    std::unordered_map<std::string, llvm::DIType*> createdDITypes_;
 };
