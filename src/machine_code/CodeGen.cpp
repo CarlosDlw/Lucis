@@ -449,7 +449,7 @@ bool CodeGen::linkObjectFiles(const std::vector<std::string>& objectPaths,
 
 // ── Private helpers ──────────────────────────────────────────────────────────
 
-static bool emitToFile(llvm::Module* module, const std::string& outputPath, llvm::CodeGenFileType fileType, bool pic, const std::string& targetTripleStr = "", const std::string& codeModelStr = "") {
+static bool emitToFile(llvm::Module* module, const std::string& outputPath, llvm::CodeGenFileType fileType, bool pic, const std::string& targetTripleStr = "", const std::string& codeModelStr = "", const std::string& asmSyntax = "") {
     llvm::InitializeNativeTarget();
     llvm::InitializeNativeTargetAsmParser();
     llvm::InitializeNativeTargetAsmPrinter();
@@ -471,6 +471,8 @@ static bool emitToFile(llvm::Module* module, const std::string& outputPath, llvm
     auto cpu      = llvm::sys::getHostCPUName();
     auto features = llvm::StringRef("");
     llvm::TargetOptions opt;
+    if (asmSyntax == "intel")
+        opt.MCOptions.OutputAsmVariant = 1;
     auto reloc = pic ? llvm::Reloc::PIC_ : llvm::Reloc::Static;
     std::unique_ptr<llvm::TargetMachine> machine(
         createTargetMachineCompat(target, targetTriple, cpu, features, opt, reloc, 0));
@@ -513,13 +515,13 @@ bool CodeGen::emitObjectFile(llvm::Module* module, const std::string& objectPath
     return emitToFile(module, objectPath, LUCIS_CGFT_OBJECT, pic, targetTriple, codeModel);
 }
 
-bool CodeGen::emitAssembly(llvm::Module* module, const std::string& assemblyPath, bool pic, const std::string& targetTriple, const std::string& codeModel) {
+bool CodeGen::emitAssembly(llvm::Module* module, const std::string& assemblyPath, bool pic, const std::string& targetTriple, const std::string& codeModel, const std::string& asmSyntax) {
 #ifdef LLVM_VERSION_18_OR_NEWER
     auto type = llvm::CodeGenFileType::AssemblyFile;
 #else
     auto type = llvm::CGFT_AssemblyFile;
 #endif
-    return emitToFile(module, assemblyPath, type, pic, targetTriple, codeModel);
+    return emitToFile(module, assemblyPath, type, pic, targetTriple, codeModel, asmSyntax);
 }
 
 #include <llvm/Bitcode/BitcodeWriter.h>

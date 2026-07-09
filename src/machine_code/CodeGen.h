@@ -15,9 +15,11 @@ public:
                                const std::string& codeModel = "");
 
     // Emit a single LLVM module as assembly text.
+    // asmSyntax can be "" (default/att), "intel", or "att".
     static bool emitAssembly(llvm::Module* module, const std::string& assemblyPath, bool pic = true,
                              const std::string& targetTriple = "",
-                             const std::string& codeModel = "");
+                             const std::string& codeModel = "",
+                             const std::string& asmSyntax = "");
 
     // Emit a single LLVM module as bitcode.
     static bool emitBitcode(llvm::Module* module, const std::string& bitcodePath);

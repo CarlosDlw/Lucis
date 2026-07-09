@@ -43,6 +43,7 @@ void BuildCommand::buildArgs(ArgParser& parser) const {
 
     parser.addSection("Assembly");
     parser.addOption("asm", '\0', "FILE", "Assembly source file (.s/.asm) (repeatable)", true);
+    parser.addOption("asm-syntax", '\0', "att|intel", "Assembly syntax from LLVM (default: att)");
     parser.addOption("assembler", '\0', "nasm|as", "Assembler program (default: try nasm, fallback as)");
     parser.addOption("assembler-arg", '\0', "FLAG", "Flag for the assembler (repeatable)", true);
 
@@ -72,6 +73,7 @@ void BuildCommand::buildArgs(ArgParser& parser) const {
     parser.addFlag("emit-obj",  '\0', "Emit object file (.o) and stop");
     parser.addFlag("emit-bin",  '\0', "Emit raw binary (.bin) via objcopy");
     parser.addFlag("recursive", 'r', "Include all modules in emit output");
+    parser.addFlag("split", '\0', "Split emit output into one file per module (requires -o <dir>)");
 
     parser.addSection("Output");
     parser.addOption("output", 'o', "FILE", "Output path (default: <input>.out)");
@@ -191,7 +193,39 @@ int BuildCommand::run(const ArgParser& parser) {
     }
 
     bool useRecursive = parser.has("recursive");
+    bool useSplit = parser.has("split");
+    std::string asmSyntax = parser.get("asm-syntax");
+    if (!asmSyntax.empty() && asmSyntax != "att" && asmSyntax != "intel") {
+        std::cerr << "lucis: --asm-syntax must be 'att' or 'intel', got '" << asmSyntax << "'\n";
+        return 1;
+    }
     std::string outputFile = parser.get("output");
+
+    // ── Split validation ─────────────────────────────────────────────────
+    if (useSplit) {
+        if (outputFile.empty()) {
+            std::cerr << "lucis: --split requires -o/--output <directory>\n";
+            return 1;
+        }
+        if (fs::exists(outputFile) && !fs::is_directory(outputFile)) {
+            std::cerr << "lucis: --split requires -o to be a directory, but '"
+                      << outputFile << "' is a file\n";
+            return 1;
+        }
+        if (fs::exists(outputFile)) {
+            bool empty = true;
+            for (auto it = fs::directory_iterator(outputFile);
+                 it != fs::directory_iterator(); ++it) {
+                empty = false;
+                break;
+            }
+            if (!empty) {
+                std::cerr << "lucis: --split requires an empty or non-existent directory, '"
+                          << outputFile << "' is not empty\n";
+                return 1;
+            }
+        }
+    }
 
     // ── Resolve emit tasks (CLI + config) ─────────────────────────────────
     struct EmitTask {
@@ -590,13 +624,41 @@ int BuildCommand::run(const ArgParser& parser) {
             fs::create_directories(emitOutDir);
             return emitOutDir + "/" + stem + ext;
         };
+        // ── Split-mode helper: derive per-unit output path ────────────
+        auto splitUnitPath = [&](const std::string& modulePath, const char* ext) -> std::string {
+            std::string relPath = modulePath;
+            for (auto& c : relPath) if (c == '/' || c == '\\') c = '_';
+            return outputFile + "/" + relPath + ext;
+        };
 
         // ── Execute emit tasks ───────────────────────────────────────
         if (!tasks.empty()) {
             bool anyEmitError = false;
             for (auto& t : tasks) {
                 if (t.type == EmitTask::LLVM) {
-                    if (useRecursive) {
+                    if (useSplit) {
+                        fs::create_directories(outputFile);
+                        for (auto& uir : unitIRs) {
+                            std::string modPath = uir.filePath;
+                            for (auto& unit : pipeline->units) {
+                                if (unit.filePath == uir.filePath) {
+                                    modPath = unit.modulePath;
+                                    break;
+                                }
+                            }
+                            auto unitPath = splitUnitPath(modPath, ".ll");
+                            std::error_code ec;
+                            llvm::raw_fd_ostream dest(unitPath, ec, llvm::sys::fs::OF_None);
+                            if (ec) {
+                                std::cerr << "lucis: split LLVM: could not open '" << unitPath << "': " << ec.message() << "\n";
+                                anyEmitError = true;
+                            } else {
+                                uir.mod->module()->print(dest, nullptr);
+                                if (!pipeOpts.quiet)
+                                    std::cout << "lucis: LLVM IR written to '" << unitPath << "'\n";
+                            }
+                        }
+                    } else if (useRecursive) {
                         if (!t.outPath.empty()) {
                             std::error_code ec;
                             llvm::raw_fd_ostream dest(t.outPath, ec, llvm::sys::fs::OF_None);
@@ -637,13 +699,31 @@ int BuildCommand::run(const ArgParser& parser) {
                         }
                     }
                 } else if (t.type == EmitTask::ASM) {
-                    if (useRecursive) {
+                    if (useSplit) {
+                        fs::create_directories(outputFile);
+                        for (auto& uir : unitIRs) {
+                            std::string modPath = uir.filePath;
+                            for (auto& unit : pipeline->units) {
+                                if (unit.filePath == uir.filePath) {
+                                    modPath = unit.modulePath;
+                                    break;
+                                }
+                            }
+                            auto unitPath = splitUnitPath(modPath, ".s");
+                            if (!CodeGen::emitAssembly(uir.mod->module(), unitPath, usePIC, pipeOpts.targetTriple, pipeOpts.codeModel, asmSyntax)) {
+                                std::cerr << "lucis: split ASM: failed to emit '" << unitPath << "'\n";
+                                anyEmitError = true;
+                            } else if (!pipeOpts.quiet) {
+                                std::cout << "lucis: assembly written to '" << unitPath << "'\n";
+                            }
+                        }
+                    } else if (useRecursive) {
                         auto emitOneAsm = [&](llvm::Module* mod, llvm::raw_fd_ostream& dest) -> bool {
                             char tmpAsm[] = "/tmp/lucis-asm-XXXXXX.s";
                             int fd = mkstemps(tmpAsm, 2);
                             if (fd == -1) return false;
                             ::close(fd);
-                            if (!CodeGen::emitAssembly(mod, tmpAsm, usePIC, pipeOpts.targetTriple, pipeOpts.codeModel)) { fs::remove(tmpAsm); return false; }
+                            if (!CodeGen::emitAssembly(mod, tmpAsm, usePIC, pipeOpts.targetTriple, pipeOpts.codeModel, asmSyntax)) { fs::remove(tmpAsm); return false; }
                             std::ifstream in(tmpAsm);
                             dest << in.rdbuf();
                             fs::remove(tmpAsm);
@@ -669,7 +749,7 @@ int BuildCommand::run(const ArgParser& parser) {
                                 int fd = mkstemps(tmpAsm, 2);
                                 if (fd != -1) {
                                     ::close(fd);
-                                    if (CodeGen::emitAssembly(uir.mod->module(), tmpAsm, usePIC, pipeOpts.targetTriple, pipeOpts.codeModel)) {
+                                    if (CodeGen::emitAssembly(uir.mod->module(), tmpAsm, usePIC, pipeOpts.targetTriple, pipeOpts.codeModel, asmSyntax)) {
                                         std::ifstream in(tmpAsm);
                                         std::cout << in.rdbuf();
                                         std::cout << "\n";
@@ -681,7 +761,7 @@ int BuildCommand::run(const ArgParser& parser) {
                     } else {
                         if (!mainMod) { std::cerr << "lucis: no main module for ASM emit\n"; anyEmitError = true; break; }
                         if (!t.outPath.empty()) {
-                            if (!CodeGen::emitAssembly(mainMod, t.outPath, usePIC, pipeOpts.targetTriple, pipeOpts.codeModel)) anyEmitError = true;
+                            if (!CodeGen::emitAssembly(mainMod, t.outPath, usePIC, pipeOpts.targetTriple, pipeOpts.codeModel, asmSyntax)) anyEmitError = true;
                             else if (!pipeOpts.quiet)
                                 std::cout << "lucis: assembly written to '" << t.outPath << "'\n";
                         } else {
@@ -689,7 +769,7 @@ int BuildCommand::run(const ArgParser& parser) {
                             int fd = mkstemps(tmpAsm, 2);
                             if (fd != -1) {
                                 ::close(fd);
-                                if (CodeGen::emitAssembly(mainMod, tmpAsm, usePIC, pipeOpts.targetTriple, pipeOpts.codeModel)) {
+                                if (CodeGen::emitAssembly(mainMod, tmpAsm, usePIC, pipeOpts.targetTriple, pipeOpts.codeModel, asmSyntax)) {
                                     std::ifstream in(tmpAsm);
                                     std::cout << in.rdbuf();
                                 } else anyEmitError = true;
@@ -698,7 +778,25 @@ int BuildCommand::run(const ArgParser& parser) {
                         }
                     }
                 } else if (t.type == EmitTask::BC) {
-                    if (useRecursive) {
+                    if (useSplit) {
+                        fs::create_directories(outputFile);
+                        for (auto& uir : unitIRs) {
+                            std::string modPath = uir.filePath;
+                            for (auto& unit : pipeline->units) {
+                                if (unit.filePath == uir.filePath) {
+                                    modPath = unit.modulePath;
+                                    break;
+                                }
+                            }
+                            auto unitPath = splitUnitPath(modPath, ".bc");
+                            if (!CodeGen::emitBitcode(uir.mod->module(), unitPath)) {
+                                std::cerr << "lucis: split BC: failed to emit '" << unitPath << "'\n";
+                                anyEmitError = true;
+                            } else if (!pipeOpts.quiet) {
+                                std::cout << "lucis: bitcode written to '" << unitPath << "'\n";
+                            }
+                        }
+                    } else if (useRecursive) {
                         // Link all modules via LLVM Linker, then emit bitcode
                         auto masterCtx = std::make_unique<llvm::LLVMContext>();
                         std::unique_ptr<llvm::Module> masterMod;
@@ -753,7 +851,26 @@ int BuildCommand::run(const ArgParser& parser) {
                     }
                 }
 
-                if (useRecursive) {
+                if (useSplit) {
+                    // Generate individual .o files, one per unit, into output directory
+                    fs::create_directories(outputFile);
+                    for (auto& uir : unitIRs) {
+                        std::string modPath = uir.filePath;
+                        for (auto& unit : pipeline->units) {
+                            if (unit.filePath == uir.filePath) {
+                                modPath = unit.modulePath;
+                                break;
+                            }
+                        }
+                        auto unitPath = splitUnitPath(modPath, ".o");
+                        if (!CodeGen::emitObjectFile(uir.mod->module(), unitPath, usePIC, pipeOpts.targetTriple, pipeOpts.codeModel)) {
+                            std::cerr << "lucis: split OBJ: failed to emit '" << unitPath << "'\n";
+                            return 1;
+                        }
+                        if (!pipeOpts.quiet)
+                            std::cout << "lucis: object file written to '" << unitPath << "'\n";
+                    }
+                } else if (useRecursive) {
                     // Generate .o for all units, then ld -r merge
                     std::vector<std::string> allObjs;
                     for (auto& uir : unitIRs) {
