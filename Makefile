@@ -48,6 +48,10 @@ clean:
 	@rm -rf $(BUILD_DIR) .lucis/build
 	@echo "Build directory removed."
 
+## fuzzer  — compila o fuzzer de mutação
+fuzzer:
+	@$(MAKE) -C fuzzer build
+
 ## run FILE=<file.tm>  — compila e executa com um arquivo .tm
 run: build
 ifndef FILE

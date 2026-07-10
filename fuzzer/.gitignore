@@ -1,0 +1,6 @@
+# Fuzzer build artifacts
+build-fuzzer/
+
+# Saved crash/error results from fuzz runs
+crashes/
+/tmp/lucis_fuzz_tmp*

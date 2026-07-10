@@ -2428,6 +2428,18 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
         return resolveTypeSpec(ts, dims);
     };
 
+    // ── Helper: true if expr is a plain integer literal (not a variable, call, etc.)
+    auto isIntLitExpr = [](LucisParser::ExpressionContext* e) -> bool {
+        return dynamic_cast<LucisParser::IntLitExprContext*>(e) ||
+               dynamic_cast<LucisParser::HexLitExprContext*>(e) ||
+               dynamic_cast<LucisParser::OctLitExprContext*>(e) ||
+               dynamic_cast<LucisParser::BinLitExprContext*>(e) ||
+               dynamic_cast<LucisParser::SuffixedIntLitExprContext*>(e) ||
+               dynamic_cast<LucisParser::SuffixedHexLitExprContext*>(e) ||
+               dynamic_cast<LucisParser::SuffixedOctLitExprContext*>(e) ||
+               dynamic_cast<LucisParser::SuffixedBinLitExprContext*>(e);
+    };
+
     // ── Suffixed literals (Rust-style: 42u64, 0xFFi8, 3.14f32) ────────
     static const std::unordered_map<std::string, std::string> kSuffixTypeMap = {
         {"i8", "int8"}, {"i16", "int16"}, {"i32", "int32"}, {"i64", "int64"},
@@ -3239,7 +3251,9 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
                 bool kindMismatch = lhs->kind != rhs->kind;
                 bool signMismatch = lhs->kind == TypeKind::Integer &&
                                     rhs->kind == TypeKind::Integer &&
-                                    lhs->isSigned != rhs->isSigned;
+                                    lhs->isSigned != rhs->isSigned &&
+                                    !isIntLitExpr(exprs[0]) &&
+                                    !isIntLitExpr(exprs[1]);
                 if (kindMismatch || signMismatch) {
                     error(expr, "operator '" + opText +
                                      "' does not allow mixed numeric kinds ('" +
@@ -3298,7 +3312,9 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
             bool kindMismatch = lhs->kind != rhs->kind;
             bool signMismatch = lhs->kind == TypeKind::Integer &&
                                 rhs->kind == TypeKind::Integer &&
-                                lhs->isSigned != rhs->isSigned;
+                                lhs->isSigned != rhs->isSigned &&
+                                !isIntLitExpr(exprs[0]) &&
+                                !isIntLitExpr(exprs[1]);
             if (kindMismatch || signMismatch) {
                 error(expr, "operator '" + opText +
                                  "' does not allow mixed numeric kinds ('" +
@@ -3351,7 +3367,9 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
             bool kindMismatch = lhs->kind != rhs->kind;
             bool signMismatch = lhs->kind == TypeKind::Integer &&
                                 rhs->kind == TypeKind::Integer &&
-                                lhs->isSigned != rhs->isSigned;
+                                lhs->isSigned != rhs->isSigned &&
+                                !isIntLitExpr(exprs[0]) &&
+                                !isIntLitExpr(exprs[1]);
             if (kindMismatch || signMismatch) {
                 error(expr, "operator '" + opText +
                                  "' does not allow mixed numeric kinds ('" +
@@ -3400,7 +3418,8 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
             error(expr, "operator '" + opText + "' requires integer operands, got '" +
                              rhs->name + "'");
         if (lhs && rhs && lhs->kind == TypeKind::Integer && rhs->kind == TypeKind::Integer &&
-            lhs->isSigned != rhs->isSigned) {
+            lhs->isSigned != rhs->isSigned &&
+            !isIntLitExpr(exprs[0]) && !isIntLitExpr(exprs[1])) {
             error(expr, "operator '" + opText +
                              "' does not allow mixed signed/unsigned integers ('" +
                              lhs->name + "' and '" + rhs->name + "'); cast explicitly");
@@ -6013,7 +6032,21 @@ void Checker::checkUseDecls(LucisParser::ProgramContext* tree) {
             auto modPath = ModuleRegistry::usePathToModulePath(path);
 
             if (ImportResolver::isStdModule(path)) {
-                imports_.addImport(path, symbolName);
+                if (ImportResolver::moduleExportsSymbol(path, symbolName)) {
+                    imports_.addImport(path, symbolName);
+                } else if (moduleRegistry_ && moduleRegistry_->hasModule(modPath)) {
+                    auto* sym = moduleRegistry_->findSymbol(modPath, symbolName);
+                    if (!sym) {
+                        error(item, "module '" + path +
+                                    "' does not export '" + symbolName + "'");
+                    } else {
+                        userImports_[symbolName] = modPath;
+                    }
+                } else if (!moduleRegistry_ || !findModuleFile(modPath).empty()) {
+                    userImports_[symbolName] = modPath;
+                } else {
+                    error(item, "unknown module '" + path + "'");
+                }
             } else if (ImportResolver::isStdModule(path + "::" + symbolName)) {
                 userImports_[symbolName] = modPath;
             } else if (moduleRegistry_ && moduleRegistry_->hasModule(modPath)) {
@@ -6039,7 +6072,22 @@ void Checker::checkUseDecls(LucisParser::ProgramContext* tree) {
 
             if (ImportResolver::isStdModule(path)) {
                 for (auto* id : grp->IDENTIFIER()) {
-                    imports_.addImport(path, id->getText());
+                    auto symbolName = id->getText();
+                    if (ImportResolver::moduleExportsSymbol(path, symbolName)) {
+                        imports_.addImport(path, symbolName);
+                    } else if (moduleRegistry_ && moduleRegistry_->hasModule(modPath)) {
+                        auto* sym = moduleRegistry_->findSymbol(modPath, symbolName);
+                        if (!sym) {
+                            error(grp, "module '" + path +
+                                        "' does not export '" + symbolName + "'");
+                        } else {
+                            userImports_[symbolName] = modPath;
+                        }
+                    } else if (!moduleRegistry_ || !findModuleFile(modPath).empty()) {
+                        userImports_[symbolName] = modPath;
+                    } else {
+                        error(grp, "unknown module '" + path + "'");
+                    }
                 }
             } else if (moduleRegistry_ && moduleRegistry_->hasModule(modPath)) {
                 for (auto* id : grp->IDENTIFIER()) {

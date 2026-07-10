@@ -50,7 +50,7 @@ fn vprintf(string format, va_list va) void {
                         i += 2usize;
                         precision = 0u32;
                         while i < format.len() && format[i].isDigit() {
-                            precision = precision * 10 + format[i].digitToInt();
+                            precision = precision * 10 + format[i].digitToInt() as uint64;
                             i++;
                         }
                         i--; // Adjust for the while loop that looks for '}'
