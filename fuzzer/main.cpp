@@ -70,14 +70,17 @@ int main(int argc, char** argv) {
     std::filesystem::path tmpDir = std::filesystem::temp_directory_path();
     std::string tmpFile = (tmpDir / "lucis_fuzz_tmp.lc").string();
 
+    // ── Config limits ───────────────────────────────────────────────
+    constexpr unsigned kMaxPerKind = 5;
+
     // ── Stats ───────────────────────────────────────────────────────
     struct {
-        std::atomic<size_t> total{0};
-        std::atomic<size_t> ir{0};
-        std::atomic<size_t> crash{0};
-        std::atomic<size_t> checker{0};
-        std::atomic<size_t> timeout{0};
-        std::atomic<size_t> build{0};
+        std::atomic<unsigned> total{0};
+        std::atomic<unsigned> ir{0};
+        std::atomic<unsigned> crash{0};
+        std::atomic<unsigned> checker{0};
+        std::atomic<unsigned> timeout{0};
+        std::atomic<unsigned> build{0};
     } stats;
 
     auto printStats = [&]() {
@@ -111,43 +114,44 @@ int main(int argc, char** argv) {
         auto outcome = runner.run(tmpFile);
         stats.total++;
 
-        // 5. Save interesting results
+        // 5. Save interesting results (max kMaxPerKind per type)
         switch (outcome.kind) {
         case FuzzResult::IRVerifierError: {
-            stats.ir++;
-            unsigned idx = stats.ir.load();
-            saveResult(crashDir, "ir", idx, mutant, outcome.stderr);
-            std::cerr << "\n[!] IR verifier error #" << idx
-                      << " — saved to " << crashDir << "/ir_" << idx << "/\n"
-                      << outcome.stderr << "\n";
+            unsigned idx = stats.ir.fetch_add(1);
+            if (idx < kMaxPerKind) {
+                saveResult(crashDir, "ir", idx + 1, mutant, outcome.stderr);
+                std::cerr << "\n[!] IR verifier error #" << (idx + 1)
+                          << " — saved to " << crashDir << "/ir_" << (idx + 1) << "/\n"
+                          << outcome.stderr << "\n";
+            }
             break;
         }
         case FuzzResult::Crash: {
-            stats.crash++;
-            unsigned idx = stats.crash.load();
-            saveResult(crashDir, "crash", idx, mutant, outcome.stderr);
-            std::cerr << "\n[!] Crash #" << idx
-                      << " — saved to " << crashDir << "/crash_" << idx << "/\n";
-            if (!outcome.stderr.empty())
-                std::cerr << outcome.stderr.substr(0, 500) << "\n";
+            unsigned idx = stats.crash.fetch_add(1);
+            if (idx < kMaxPerKind) {
+                saveResult(crashDir, "crash", idx + 1, mutant, outcome.stderr);
+                std::cerr << "\n[!] Crash #" << (idx + 1)
+                          << " — saved to " << crashDir << "/crash_" << (idx + 1) << "/\n"
+                          << outcome.stderr << "\n";
+            }
             break;
         }
         case FuzzResult::CheckerError: {
-            stats.checker++;
-            unsigned idx = stats.checker.load();
-            saveResult(crashDir, "checker", idx, mutant, outcome.stderr);
+            unsigned idx = stats.checker.fetch_add(1);
+            if (idx < kMaxPerKind)
+                saveResult(crashDir, "checker", idx + 1, mutant, outcome.stderr);
             break;
         }
         case FuzzResult::Timeout: {
-            stats.timeout++;
-            unsigned idx = stats.timeout.load();
-            saveResult(crashDir, "timeout", idx, mutant, outcome.stderr);
+            unsigned idx = stats.timeout.fetch_add(1);
+            if (idx < kMaxPerKind)
+                saveResult(crashDir, "timeout", idx + 1, mutant, outcome.stderr);
             break;
         }
         case FuzzResult::BuildError: {
-            stats.build++;
-            unsigned idx = stats.build.load();
-            saveResult(crashDir, "build", idx, mutant, outcome.stderr);
+            unsigned idx = stats.build.fetch_add(1);
+            if (idx < kMaxPerKind)
+                saveResult(crashDir, "build", idx + 1, mutant, outcome.stderr);
             break;
         }
         default:
