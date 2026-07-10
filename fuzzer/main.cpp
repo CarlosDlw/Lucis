@@ -6,6 +6,7 @@
 #include <atomic>
 #include <chrono>
 #include <csignal>
+#include <regex>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -21,6 +22,23 @@ static bool writeTempSource(const std::string& path, const std::string& source) 
     if (!f) return false;
     f << source;
     return f.good();
+}
+
+/// Strip any existing `fn main` block and append a valid one so the code
+/// always compiles and links, cutting down false-positive build/checker errors.
+static std::string ensureMain(std::string src) {
+    static const std::regex mainPat(R"(fn\s+main\b[^{]*\{[^}]*\})",
+                                    std::regex::optimize);
+    src = std::regex_replace(src, mainPat, "");
+
+    // If there's still a leftover fn main (e.g. nested braces broke the regex),
+    // strip from the first `fn main` to end of file.
+    auto pos = src.find("fn main");
+    if (pos != std::string::npos)
+        src.resize(pos);
+
+    src += "\nfn main() int32 { return 0; }\n";
+    return src;
 }
 
 /// Save an interesting result to fuzzer/crashes/<prefix_NNN>/ for later inspection.
@@ -104,7 +122,10 @@ int main(int argc, char** argv) {
         // 2. Mutate it
         auto mutant = mutator.mutate(seed.source);
 
-        // 3. Write to temp file
+        // 3. Ensure a valid main() exists so we only catch real compiler bugs
+        mutant = ensureMain(std::move(mutant));
+
+        // 4. Write to temp file
         if (!writeTempSource(tmpFile, mutant)) {
             std::cerr << "[fuzzer] failed to write temp file\n";
             continue;
