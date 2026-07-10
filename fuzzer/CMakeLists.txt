@@ -14,4 +14,5 @@ add_executable(lucis-fuzzer
     result.cpp
 )
 
+target_compile_options(lucis-fuzzer PRIVATE -Wall -Wextra -O2)
 target_link_libraries(lucis-fuzzer PRIVATE Threads::Threads)

@@ -1,20 +1,18 @@
-#include "corpus.hpp"
 #include "mutator.hpp"
 #include "runner.hpp"
 #include "result.hpp"
+#include "corpus.hpp"
 
 #include <atomic>
 #include <chrono>
 #include <csignal>
-#include <regex>
-#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <map>
 #include <thread>
 
 static std::atomic<bool> g_running = true;
-
 static void handleSignal(int) { g_running = false; }
 
 static bool writeTempSource(const std::string& path, const std::string& source) {
@@ -24,27 +22,6 @@ static bool writeTempSource(const std::string& path, const std::string& source) 
     return f.good();
 }
 
-/// Extract the `fn main` block from source (including its body).
-static std::string extractMain(std::string_view src) {
-    // Find the last `fn main` — it's typically at the end of the file.
-    auto pos = src.rfind("fn main");
-    if (pos == std::string::npos) return {};
-    return std::string(src.substr(pos));
-}
-
-/// Replace any existing `fn main` block with the given replacement,
-/// so the mutated source keeps calling the original test functions.
-static std::string replaceMain(std::string src, const std::string& newMain) {
-    // Strip any existing fn main block (relies on it being at the end).
-    auto pos = src.rfind("fn main");
-    if (pos != std::string::npos)
-        src.resize(pos);
-
-    src += "\n" + newMain + "\n";
-    return src;
-}
-
-/// Save an interesting result to fuzzer/crashes/<prefix_NNN>/ for later inspection.
 static void saveResult(const std::string& subdir, const std::string& prefix,
                        unsigned index, const std::string& source,
                        const std::string& log) {
@@ -69,8 +46,25 @@ int main(int argc, char** argv) {
     std::string corpusDir = argc > 2 ? argv[2] : "tests";
     unsigned timeoutMs = 10000;
     unsigned maxIters = 0; // 0 = infinite
+    bool keepFails = false; // only save interesting (bugs + checker errors)
+    bool bugsOnly = false;  // only save REAL bugs (crash, IR err, checker crash)
 
-    // Saved inside fuzzer/ so .gitignore can cover it easily
+    for (int i = 1; i < argc; i++) {
+        std::string arg = argv[i];
+        if (arg == "--timeout" && i + 1 < argc)
+            timeoutMs = static_cast<unsigned>(std::stoul(argv[++i]));
+        else if (arg == "--iters" && i + 1 < argc)
+            maxIters = static_cast<unsigned>(std::stoul(argv[++i]));
+        else if (arg == "--keep-fails")
+            keepFails = true;
+        else if (arg == "--bugs-only")
+            bugsOnly = true;
+        else if (arg == "--lucis" && i + 1 < argc)
+            lucisBin = argv[++i];
+        else if (arg == "--corpus" && i + 1 < argc)
+            corpusDir = argv[++i];
+    }
+
     std::string crashDir = "fuzzer/crashes";
 
     // ── Init ────────────────────────────────────────────────────────
@@ -80,18 +74,14 @@ int main(int argc, char** argv) {
     Corpus corpus;
     corpus.loadDir(corpusDir);
 
-    if (corpus.empty()) {
-        std::cerr << "[fuzzer] no corpus found in '" << corpusDir << "'\n";
-        return 1;
-    }
-
     Mutator mutator;
+    mutator.setCorpus(&corpus);
+
     Runner runner(lucisBin, timeoutMs);
 
     std::filesystem::path tmpDir = std::filesystem::temp_directory_path();
     std::string tmpFile = (tmpDir / "lucis_fuzz_tmp.lc").string();
 
-    // ── Config limits ───────────────────────────────────────────────
     constexpr unsigned kMaxPerKind = 5;
 
     // ── Stats ───────────────────────────────────────────────────────
@@ -102,12 +92,19 @@ int main(int argc, char** argv) {
         std::atomic<unsigned> checker{0};
         std::atomic<unsigned> timeout{0};
         std::atomic<unsigned> build{0};
+        std::atomic<unsigned> ckCrash{0};
+        std::atomic<unsigned> ok{0};
     } stats;
+
+    std::map<GenStrategy, unsigned> strategyCounts;
+    std::map<GenStrategy, unsigned> strategyBugs;
 
     auto printStats = [&]() {
         std::cerr << "\r[fuzzer] runs " << stats.total.load()
+                  << " | ok " << stats.ok.load()
                   << " | ir_err " << stats.ir.load()
                   << " | crash " << stats.crash.load()
+                  << " | ck_crash " << stats.ckCrash.load()
                   << " | chk_err " << stats.checker.load()
                   << " | timeout " << stats.timeout.load()
                   << " | build_err " << stats.build.load()
@@ -116,77 +113,80 @@ int main(int argc, char** argv) {
 
     // ── Fuzz loop ───────────────────────────────────────────────────
     std::cerr << "[fuzzer] starting...\n";
-    std::error_code ec;
 
     for (unsigned iter = 0; g_running && (maxIters == 0 || iter < maxIters); iter++) {
-        // 1. Pick a seed from the corpus
-        auto& seed = corpus.randomEntry();
+        // 1. Generate code using a random strategy
+        auto mutant = mutator.generate();
+        GenStrategy strat = mutator.lastStrategy();
+        strategyCounts[strat]++;
 
-        // 2. Save the original main so it still calls the test functions
-        auto savedMain = extractMain(seed.source);
-
-        // 3. Mutate everything EXCEPT the main block
-        auto mutant = mutator.mutate(seed.source);
-
-        // 4. Re-attach the saved main (mutations may have broken it)
-        if (!savedMain.empty())
-            mutant = replaceMain(std::move(mutant), savedMain);
-        else
-            mutant += "\nfn main() int32 { return 0; }\n";
-
-        // 5. Write to temp file
+        // 2. Write to temp file
         if (!writeTempSource(tmpFile, mutant)) {
             std::cerr << "[fuzzer] failed to write temp file\n";
             continue;
         }
 
-        // 6. Run lucis
+        // 3. Run two-phase (check → build)
         auto outcome = runner.run(tmpFile);
         stats.total++;
 
-        // 5. Save interesting results (max kMaxPerKind per type)
+        // 4. Count and save interesting results
+        bool isBug = false;
         switch (outcome.kind) {
         case FuzzResult::IRVerifierError: {
             unsigned idx = stats.ir.fetch_add(1);
             if (idx < kMaxPerKind) {
                 saveResult(crashDir, "ir", idx + 1, mutant, outcome.stderr);
-                std::cerr << "\n[!] IR verifier error #" << (idx + 1)
-                          << " — saved to " << crashDir << "/ir_" << (idx + 1) << "/\n"
-                          << outcome.stderr << "\n";
+                std::cerr << "\n[!] IR verifier error #" << (idx + 1) << "\n";
             }
+            isBug = true;
             break;
         }
-        case FuzzResult::Crash: {
+        case FuzzResult::CompilerCrash: {
             unsigned idx = stats.crash.fetch_add(1);
             if (idx < kMaxPerKind) {
                 saveResult(crashDir, "crash", idx + 1, mutant, outcome.stderr);
-                std::cerr << "\n[!] Crash #" << (idx + 1)
-                          << " — saved to " << crashDir << "/crash_" << (idx + 1) << "/\n"
-                          << outcome.stderr << "\n";
+                std::cerr << "\n[!] Compiler crash #" << (idx + 1) << "\n";
             }
+            isBug = true;
+            break;
+        }
+        case FuzzResult::CheckerCrash: {
+            unsigned idx = stats.ckCrash.fetch_add(1);
+            if (idx < kMaxPerKind) {
+                saveResult(crashDir, "ck_crash", idx + 1, mutant, outcome.stderr);
+                std::cerr << "\n[!] Checker crash #" << (idx + 1) << "\n";
+            }
+            isBug = true;
             break;
         }
         case FuzzResult::CheckerError: {
             unsigned idx = stats.checker.fetch_add(1);
-            if (idx < kMaxPerKind)
+            if (!bugsOnly && idx < kMaxPerKind) {
                 saveResult(crashDir, "checker", idx + 1, mutant, outcome.stderr);
+            }
             break;
         }
         case FuzzResult::Timeout: {
             unsigned idx = stats.timeout.fetch_add(1);
-            if (idx < kMaxPerKind)
+            if (!bugsOnly && idx < kMaxPerKind)
                 saveResult(crashDir, "timeout", idx + 1, mutant, outcome.stderr);
             break;
         }
         case FuzzResult::BuildError: {
             unsigned idx = stats.build.fetch_add(1);
-            if (idx < kMaxPerKind)
+            if (!bugsOnly && keepFails && idx < kMaxPerKind)
                 saveResult(crashDir, "build", idx + 1, mutant, outcome.stderr);
             break;
         }
-        default:
+        case FuzzResult::Ok: {
+            stats.ok++;
             break;
         }
+        }
+
+        if (isBug)
+            strategyBugs[strat]++;
 
         if (iter % 100 == 0)
             printStats();
@@ -194,5 +194,37 @@ int main(int argc, char** argv) {
 
     printStats();
     std::cerr << "\n[fuzzer] done.\n";
+
+    // ── Per-strategy summary ────────────────────────────────────────
+    std::cerr << "\n[summary] Per-strategy stats:\n";
+    for (int i = 0; i < static_cast<int>(GenStrategy::Count); i++) {
+        auto s = static_cast<GenStrategy>(i);
+        auto total = strategyCounts[s];
+        auto bugs = strategyBugs[s];
+        if (total > 0) {
+            std::cerr << "  " << mutator.strategyName(i)
+                      << ": " << total << " runs, " << bugs << " bugs"
+                      << " (" << (bugs * 100 / total) << "%)\n";
+        }
+    }
+
+    // ── Best strategy ───────────────────────────────────────────────
+    GenStrategy best = GenStrategy::GrammarSimple;
+    unsigned bestRate = 0;
+    for (int i = 0; i < static_cast<int>(GenStrategy::Count); i++) {
+        auto s = static_cast<GenStrategy>(i);
+        auto total = strategyCounts[s];
+        auto bugs = strategyBugs[s];
+        if (total > 0) {
+            unsigned rate = bugs * 10000 / total;
+            if (rate > bestRate) {
+                bestRate = rate;
+                best = s;
+            }
+        }
+    }
+    std::cerr << "[summary] Best strategy: " << mutator.strategyName(static_cast<size_t>(best))
+              << " (" << (bestRate / 100) << "." << (bestRate % 100) << "% bug rate)\n";
+
     return 0;
 }

@@ -1,5 +1,6 @@
 #include "runner.hpp"
 
+#include <algorithm>
 #include <array>
 #include <chrono>
 #include <csignal>
@@ -8,18 +9,26 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
-FuzzOutcome Runner::run(std::string_view sourcePath) const {
-    std::string cmd = lucisPath_ + " build " + std::string(sourcePath);
+// =========================================================================
+// Execute a compiler phase (check or build) via fork/exec/pipe/poll
+// =========================================================================
+Runner::PhaseResult Runner::runPhase(const std::string& cmd, unsigned timeoutMs) const {
+    PhaseResult pr;
 
-    // ── Fork + exec + pipe ────────────────────────────────────────
     int stdoutPipe[2];
     int stderrPipe[2];
-    if (pipe(stdoutPipe) < 0 || pipe(stderrPipe) < 0)
-        return {FuzzResult::BuildError, -1, "pipe() failed", ""};
+    if (pipe(stdoutPipe) < 0 || pipe(stderrPipe) < 0) {
+        pr.stderr = "pipe() failed";
+        return pr;
+    }
 
     pid_t pid = fork();
-    if (pid < 0)
-        return {FuzzResult::BuildError, -1, "fork() failed", ""};
+    if (pid < 0) {
+        pr.stderr = "fork() failed";
+        close(stdoutPipe[0]); close(stdoutPipe[1]);
+        close(stderrPipe[0]); close(stderrPipe[1]);
+        return pr;
+    }
 
     if (pid == 0) {
         // ── Child ──────────────────────────────────────────────
@@ -30,7 +39,6 @@ FuzzOutcome Runner::run(std::string_view sourcePath) const {
         close(stdoutPipe[1]);
         close(stderrPipe[1]);
 
-        // Run via sh -c so shell expansion works
         execl("/bin/sh", "sh", "-c", cmd.c_str(), nullptr);
         _exit(127);
     }
@@ -40,16 +48,16 @@ FuzzOutcome Runner::run(std::string_view sourcePath) const {
     close(stderrPipe[1]);
 
     std::string output;
+    std::string errOutput;
     std::array<char, 4096> buf{};
     auto start = std::chrono::steady_clock::now();
     bool timedOut = false;
     bool stdoutDone = false, stderrDone = false;
 
     while (!stdoutDone || !stderrDone) {
-        // Check timeout
         auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::steady_clock::now() - start);
-        if (elapsed.count() > timeoutMs_) {
+        if (elapsed.count() > timeoutMs) {
             timedOut = true;
             break;
         }
@@ -58,7 +66,7 @@ FuzzOutcome Runner::run(std::string_view sourcePath) const {
             {stdoutPipe[0], POLLIN, 0},
             {stderrPipe[0], POLLIN, 0},
         };
-        int remaining = timeoutMs_ - static_cast<int>(elapsed.count());
+        int remaining = timeoutMs - static_cast<int>(elapsed.count());
         int ret = poll(fds, 2, std::max(remaining, 10));
 
         if (ret < 0) {
@@ -76,7 +84,7 @@ FuzzOutcome Runner::run(std::string_view sourcePath) const {
 
         if (fds[1].revents & POLLIN) {
             ssize_t n = read(stderrPipe[0], buf.data(), buf.size() - 1);
-            if (n > 0) { buf[n] = '\0'; output += buf.data(); }
+            if (n > 0) { buf[n] = '\0'; errOutput += buf.data(); }
             else stderrDone = true;
         } else if (fds[1].revents & POLLHUP) {
             stderrDone = true;
@@ -86,7 +94,6 @@ FuzzOutcome Runner::run(std::string_view sourcePath) const {
     // ── Kill child if timed out ────────────────────────────────────
     if (timedOut) {
         kill(pid, SIGTERM);
-        // Give it a moment to die, then force
         usleep(100000);
         kill(pid, SIGKILL);
     }
@@ -99,40 +106,62 @@ FuzzOutcome Runner::run(std::string_view sourcePath) const {
     close(stderrPipe[0]);
 
     // ── Decode result ──────────────────────────────────────────────
-    if (timedOut)
-        return {FuzzResult::Timeout, SignalTimeout,
-                "timed out after " + std::to_string(timeoutMs_) + "ms", output};
+    pr.timedOut = timedOut;
+    pr.stdout = std::move(output);
+    pr.stderr = std::move(errOutput);
 
-    int exitCode = -1;
-    bool signaled = false;
-    int termSig = 0;
+    if (timedOut) return pr;
 
     if (WIFEXITED(rawStatus)) {
-        exitCode = WEXITSTATUS(rawStatus);
+        pr.exitCode = WEXITSTATUS(rawStatus);
+        pr.ok = (pr.exitCode == 0);
     } else if (WIFSIGNALED(rawStatus)) {
-        termSig = WTERMSIG(rawStatus);
-        signaled = true;
-        exitCode = termSig;
+        pr.termSig = WTERMSIG(rawStatus);
+        pr.ok = false;
     }
 
-    if (signaled) {
-        // SIGTERM/SIGKILL from our timeout → already handled above.
-        // Real crashes are signals like SIGSEGV, SIGABRT, SIGBUS, SIGILL.
-        static const int crashSignals[] = {SIGSEGV, SIGABRT, SIGBUS, SIGFPE, SIGILL};
-        bool isCrash = false;
-        for (int s : crashSignals) {
-            if (termSig == s) { isCrash = true; break; }
-        }
-        FuzzResult kind = isCrash ? FuzzResult::Crash : FuzzResult::BuildError;
-        return {kind, SignalCrash, output, ""};
-    }
-
-    FuzzOutcome o;
-    o.exitCode = exitCode;
-    o.stderr = output;
-    o.kind = FuzzOutcome::classify(output, exitCode);
-    return o;
+    return pr;
 }
 
+// =========================================================================
+// Two-phase runner: check → build
+// =========================================================================
+FuzzOutcome Runner::run(std::string_view sourcePath) const {
+    FuzzOutcome fo;
+
+    // ── Phase 1: Checker ───────────────────────────────────────────
+    {
+        std::string cmd = lucisPath_ + " check " + std::string(sourcePath);
+        auto pr = runPhase(cmd, timeoutMs_);
+
+        fo.checkerTimedOut = pr.timedOut;
+        fo.checkerExitCode = pr.exitCode;
+        fo.checkerTermSig  = pr.termSig;
+        fo.checkerStdout   = std::move(pr.stdout);
+        fo.checkerStderr   = std::move(pr.stderr);
+
+        // If checker failed or crashed, stop here
+        if (pr.timedOut || !pr.ok || pr.termSig != 0)
+            return ResultClassifier::classify(std::move(fo));
+    }
+
+    // ── Phase 2: Build (checker passed) ─────────────────────────────
+    {
+        std::string cmd = lucisPath_ + " build " + std::string(sourcePath);
+        auto pr = runPhase(cmd, timeoutMs_);
+
+        fo.builderTimedOut = pr.timedOut;
+        fo.builderExitCode = pr.exitCode;
+        fo.builderTermSig  = pr.termSig;
+        fo.builderStdout   = std::move(pr.stdout);
+        fo.builderStderr   = std::move(pr.stderr);
+    }
+
+    return ResultClassifier::classify(std::move(fo));
+}
+
+// =========================================================================
+// Constructor
+// =========================================================================
 Runner::Runner(std::string lucisPath, unsigned timeoutMs)
     : lucisPath_(std::move(lucisPath)), timeoutMs_(timeoutMs) {}
