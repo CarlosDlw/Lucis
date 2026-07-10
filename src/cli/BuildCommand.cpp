@@ -387,6 +387,7 @@ int BuildCommand::run(const ArgParser& parser) {
         std::cerr << "lucis: [build] checking incremental cache\n";
 
     std::vector<std::string> savedLinkerFlags;
+    std::vector<std::string> savedObjectFiles;
     std::string savedFlagHash;
     {
         std::ifstream manifest(cacheManifestPath);
@@ -428,6 +429,17 @@ int BuildCommand::run(const ArgParser& parser) {
                         // Trim leading space
                         if (!savedFlagHash.empty() && savedFlagHash[0] == ' ')
                             savedFlagHash = savedFlagHash.substr(1);
+                    } else if (line.rfind("#objectFiles", 0) == 0) {
+                        savedObjectFiles.clear();
+                        size_t pos = 12;
+                        while (pos < line.size()) {
+                            while (pos < line.size() && line[pos] == ' ') pos++;
+                            if (pos >= line.size()) break;
+                            size_t end = line.find(' ', pos);
+                            if (end == std::string::npos) end = line.size();
+                            savedObjectFiles.push_back(line.substr(pos, end - pos));
+                            pos = end;
+                        }
                     }
                 } else {
                     auto sep = line.find(' ');
@@ -517,10 +529,18 @@ int BuildCommand::run(const ArgParser& parser) {
             }
         }
     } else {
-        std::error_code ec;
-        for (auto& entry : fs::directory_iterator(pipelineBuildDir, ec)) {
-            if (entry.path().extension() == ".o")
-                cachedObjectFiles.push_back(entry.path().string());
+        // Only link the .o files that were recorded in the manifest.
+        // Fallback: if the manifest predates #objectFiles support, scan the
+        // build directory (old behaviour) so the user is not left with an
+        // empty linker invocation.
+        if (!savedObjectFiles.empty()) {
+            cachedObjectFiles = savedObjectFiles;
+        } else {
+            std::error_code ec;
+            for (auto& entry : fs::directory_iterator(pipelineBuildDir, ec)) {
+                if (entry.path().extension() == ".o")
+                    cachedObjectFiles.push_back(entry.path().string());
+            }
         }
     }
 
@@ -983,6 +1003,18 @@ int BuildCommand::run(const ArgParser& parser) {
         // Extra object/archive files passed directly
         for (auto& obj : extraObjectFiles)
             objectFiles.push_back(obj);
+
+        // Save the list of object file paths in the manifest so that on cache
+        // hit we only link these files (not ALL .o files from the build dir).
+        {
+            std::ofstream manifest(cacheManifestPath, std::ios::app);
+            if (manifest) {
+                manifest << "#objectFiles";
+                for (auto& obj : objectFiles)
+                    manifest << " " << obj;
+                manifest << "\n";
+            }
+        }
     } else {
         objectFiles = std::move(cachedObjectFiles);
 

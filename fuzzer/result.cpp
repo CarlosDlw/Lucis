@@ -328,6 +328,18 @@ const std::vector<std::string> ResultClassifier::kCheckerErrors = {
 };
 
 // =========================================================================
+// Shell infrastructure errors (not Lucis bugs)
+// =========================================================================
+bool ResultClassifier::isShellError(const std::string& stderr) {
+    // "sh: --: invalid option" / "sh: --: opção inválida" etc.
+    if (stderr.find("sh: ") != std::string::npos) return true;
+    // Other shell-level messages
+    if (stderr.find("command not found") != std::string::npos) return true;
+    if (stderr.find("comando não encontrado") != std::string::npos) return true;
+    return false;
+}
+
+// =========================================================================
 // Checker crash patterns (NOT normal diagnostics)
 // =========================================================================
 bool ResultClassifier::isCheckerCrash(const std::string& stderr) {
@@ -414,6 +426,12 @@ FuzzOutcome ResultClassifier::classify(FuzzOutcome raw) {
         std::string combined = raw.checkerStderr + raw.checkerStdout;
         if (isCheckerCrash(combined)) {
             raw.kind = FuzzResult::CheckerCrash;
+            raw.stderr = raw.checkerStderr;
+            return raw;
+        }
+        // Shell infrastructure errors (e.g. "sh: --: invalid option") — never a Lucis bug
+        if (isShellError(raw.checkerStderr)) {
+            raw.kind = FuzzResult::BuildError;
             raw.stderr = raw.checkerStderr;
             return raw;
         }

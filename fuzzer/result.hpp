@@ -48,6 +48,10 @@ private:
     /// Checker-stderr patterns that indicate EXPECTED rejections (not bugs).
     static bool isExpectedCheckerError(const std::string& stderr);
 
+    /// Shell/stderr infrastructure errors (e.g. "sh: --: invalid option") —
+    /// never a Lucis bug, always an infrastructure issue.
+    static bool isShellError(const std::string& stderr);
+
     /// Checker-stderr patterns that indicate a CHECKER CRASH (SIGABRT, assertion
     /// failure, or internal error that is NOT a normal diagnostic).
     static bool isCheckerCrash(const std::string& stderr);

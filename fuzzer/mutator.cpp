@@ -396,7 +396,7 @@ std::string Mutator::genExpr(const LucisType& desired, int depth) {
         return randomLit(desired);
     }
 
-    std::uniform_int_distribution<int> choice(0, 8);
+    std::uniform_int_distribution<int> choice(0, 7);
     switch (choice(rng_)) {
     case 0: return randomLit(desired);
     case 1: return genIdentExpr(desired);
@@ -404,8 +404,7 @@ std::string Mutator::genExpr(const LucisType& desired, int depth) {
     case 3: return genUnaryExpr(desired, depth + 1);
     case 4: return genBinaryExpr(desired, depth + 1);
     case 5: return genCastExpr(desired, depth + 1);
-    case 6: return genCallExpr(desired, depth + 1);
-    case 7: return genTernaryExpr(desired, depth + 1);
+    case 6: return genTernaryExpr(desired, depth + 1);
     default: return randomLit(desired);
     }
 }
@@ -489,22 +488,6 @@ std::string Mutator::genBinaryExpr(const LucisType& desired, int depth) {
 std::string Mutator::genCastExpr(const LucisType& desired, int depth) {
     LucisType src = randomScalar();
     return "(" + genExpr(src, depth + 1) + ") as " + desired.str();
-}
-
-std::string Mutator::genCallExpr(const LucisType& desired, int depth) {
-    // Generate a call to a built-in or a known function
-    // We may not have user functions in scope, use sizeof/typeof
-    std::uniform_int_distribution<int> choice(0, 3);
-    switch (choice(rng_)) {
-    case 0: return "sizeof(" + desired.str() + ")";
-    case 1: return "typeof(" + genExpr(desired, depth + 1) + ")";
-    case 2: {
-        // Try to call a named function from corpus or a helper
-        LucisType argType = randomScalar();
-        return "dummy_fn(" + genExpr(argType, depth + 1) + ")";
-    }
-    default: return genExpr(desired, depth + 1);
-    }
 }
 
 std::string Mutator::genTernaryExpr(const LucisType& desired, int depth) {
@@ -814,15 +797,20 @@ std::string Mutator::genGrammarFull() {
             break;
         }
         case 11: {
-            // Return early
+            // Return early — after ret, any more statements are unreachable
+            // and would cause "Terminator found in the middle of a basic block"
+            // in LLVM IR verification. Stop generating for this function.
             code += "  ret;\n";
+            i = stmts; // break out of the outer loop
             break;
         }
         case 12: {
-            // Cast expression
+            // Cast expression — use unique var name to avoid duplicates
             LucisType src = randomScalar();
             LucisType dst = randomScalar();
-            code += "  " + dst.str() + " casted = " + genExpr(src, 2) + " as " + dst.str() + ";\n";
+            std::string varName = freshVarName();
+            pushVar(varName, dst);
+            code += "  " + dst.str() + " " + varName + " = " + genExpr(src, 2) + " as " + dst.str() + ";\n";
             break;
         }
         }
@@ -837,14 +825,21 @@ std::string Mutator::genGrammarFull() {
 // =========================================================================
 
 std::string Mutator::genEdgeMixedArith() {
+    // Lucis does NOT allow implicit mixed-type arithmetic.
+    // All operands must be explicitly cast to a common type.
     auto ta = randomSignedInt();
     auto tb = randomUnsignedInt();
     auto tr = randomSignedInt();
+
+    // Pick a common type for the arithmetic (int64 is wide enough for most)
+    LucisType common;
+    common.base = BaseType::Int64;
+
     std::string code;
     code += "fn test_fuzz() void {\n";
     code += "  " + ta.str() + " a = " + randomIntLit(ta) + ";\n";
     code += "  " + tb.str() + " b = " + randomIntLit(tb) + ";\n";
-    code += "  " + tr.str() + " c = a + b;\n";
+    code += "  " + tr.str() + " c = (a as " + common.str() + " + b as " + common.str() + ") as " + tr.str() + ";\n";
     code += "}\n";
     return wrapProgram(code);
 }
@@ -938,8 +933,8 @@ std::string Mutator::genEdgeMatchEnum() {
 std::string Mutator::genEdgeConstExpr() {
     std::string code;
     code += "fn test_fuzz() void {\n";
-    code += "  const int32 MAX = 100;\n";
-    code += "  const int32 MIN = -MAX;\n";
+    code += "  const MAX: int32 = 100;\n";
+    code += "  const MIN: int32 = -MAX;\n";
     code += "  int32 range = MAX - MIN;\n";
     code += "  println(range.toString());\n";
     code += "}\n";

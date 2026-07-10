@@ -42,12 +42,12 @@ static void saveResult(const std::string& subdir, const std::string& prefix,
 
 int main(int argc, char** argv) {
     // ── Config ──────────────────────────────────────────────────────
-    std::string lucisBin = argc > 1 ? argv[1] : "lucis";
-    std::string corpusDir = argc > 2 ? argv[2] : "tests";
+    std::string lucisBin = "lucis";
+    std::string corpusDir = "tests";
     unsigned timeoutMs = 10000;
     unsigned maxIters = 0; // 0 = infinite
-    bool keepFails = false; // only save interesting (bugs + checker errors)
-    bool bugsOnly = false;  // only save REAL bugs (crash, IR err, checker crash)
+    bool keepFails = false;
+    bool bugsOnly = false;
 
     for (int i = 1; i < argc; i++) {
         std::string arg = argv[i];
@@ -63,6 +63,13 @@ int main(int argc, char** argv) {
             lucisBin = argv[++i];
         else if (arg == "--corpus" && i + 1 < argc)
             corpusDir = argv[++i];
+        else if (!arg.empty() && arg[0] != '-') {
+            // Positional arguments: first is lucis path, second is corpus dir
+            if (lucisBin == "lucis")
+                lucisBin = arg;
+            else if (corpusDir == "tests")
+                corpusDir = arg;
+        }
     }
 
     std::string crashDir = "fuzzer/crashes";
