@@ -3235,11 +3235,17 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
                                  "' requires numeric operands, got '" + t->name + "'");
             }
 
-            if (!lhsBad && !rhsBad && lhs && rhs && lhs->kind != rhs->kind) {
-                error(expr, "operator '" + opText +
-                                 "' does not allow mixed numeric kinds ('" +
-                                 lhs->name + "' and '" + rhs->name +
-                                 "'); cast explicitly");
+            if (!lhsBad && !rhsBad && lhs && rhs) {
+                bool kindMismatch = lhs->kind != rhs->kind;
+                bool signMismatch = lhs->kind == TypeKind::Integer &&
+                                    rhs->kind == TypeKind::Integer &&
+                                    lhs->isSigned != rhs->isSigned;
+                if (kindMismatch || signMismatch) {
+                    error(expr, "operator '" + opText +
+                                     "' does not allow mixed numeric kinds ('" +
+                                     lhs->name + "' and '" + rhs->name +
+                                     "'); cast explicitly");
+                }
             }
         }
 
@@ -3251,8 +3257,11 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
             }
         }
 
-        if (lhs && rhs && lhs->kind == rhs->kind)
-            return lhs->bitWidth >= rhs->bitWidth ? lhs : rhs;
+        if (lhs && rhs && lhs->kind == rhs->kind) {
+            unsigned lhsBW = lhs->bitWidth == 0 ? 64 : lhs->bitWidth;
+            unsigned rhsBW = rhs->bitWidth == 0 ? 64 : rhs->bitWidth;
+            return lhsBW >= rhsBW ? lhs : rhs;
+        }
         return lhs ? lhs : rhs;
     }
 
@@ -3285,15 +3294,24 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
                              "' requires numeric operands, got '" + t->name + "'");
         }
 
-        if (!lhsBad && !rhsBad && lhs && rhs && lhs->kind != rhs->kind) {
-            error(expr, "operator '" + opText +
-                             "' does not allow mixed numeric kinds ('" +
-                             lhs->name + "' and '" + rhs->name +
-                             "'); cast explicitly");
+        if (!lhsBad && !rhsBad && lhs && rhs) {
+            bool kindMismatch = lhs->kind != rhs->kind;
+            bool signMismatch = lhs->kind == TypeKind::Integer &&
+                                rhs->kind == TypeKind::Integer &&
+                                lhs->isSigned != rhs->isSigned;
+            if (kindMismatch || signMismatch) {
+                error(expr, "operator '" + opText +
+                                 "' does not allow mixed numeric kinds ('" +
+                                 lhs->name + "' and '" + rhs->name +
+                                 "'); cast explicitly");
+            }
         }
 
-        if (lhs && rhs && lhs->kind == rhs->kind)
-            return lhs->bitWidth >= rhs->bitWidth ? lhs : rhs;
+        if (lhs && rhs && lhs->kind == rhs->kind) {
+            unsigned lhsBW = lhs->bitWidth == 0 ? 64 : lhs->bitWidth;
+            unsigned rhsBW = rhs->bitWidth == 0 ? 64 : rhs->bitWidth;
+            return lhsBW >= rhsBW ? lhs : rhs;
+        }
         return lhs ? lhs : rhs;
     }
 
@@ -3329,11 +3347,17 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
             error(expr, "operator '" + opText +
                              "' requires numeric operands, got '" + rhs->name + "'");
 
-        if (lhs && rhs && isNumeric(lhs) && isNumeric(rhs) && lhs->kind != rhs->kind) {
-            error(expr, "operator '" + opText +
-                             "' does not allow mixed numeric kinds ('" +
-                             lhs->name + "' and '" + rhs->name +
-                             "'); cast explicitly");
+        if (lhs && rhs && isNumeric(lhs) && isNumeric(rhs)) {
+            bool kindMismatch = lhs->kind != rhs->kind;
+            bool signMismatch = lhs->kind == TypeKind::Integer &&
+                                rhs->kind == TypeKind::Integer &&
+                                lhs->isSigned != rhs->isSigned;
+            if (kindMismatch || signMismatch) {
+                error(expr, "operator '" + opText +
+                                 "' does not allow mixed numeric kinds ('" +
+                                 lhs->name + "' and '" + rhs->name +
+                                 "'); cast explicitly");
+            }
         }
         return typeRegistry_.lookup("bool");
     }
@@ -3365,47 +3389,35 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
     }
 
     // ── Bitwise AND/XOR/OR ──────────────────────────────────────────
-    if (auto* ba = dynamic_cast<LucisParser::BitAndExprContext*>(expr)) {
-        auto exprs = ba->expression();
+    auto checkBitwise = [&](auto* ctx, const std::string& opText) -> const TypeInfo* {
+        auto exprs = ctx->expression();
         auto* lhs = resolveExprType(exprs[0]);
         auto* rhs = resolveExprType(exprs[1]);
         if (lhs && !isIntegerOrPointer(lhs))
-            error(expr, "operator '&' requires integer operands, got '" +
+            error(expr, "operator '" + opText + "' requires integer operands, got '" +
                              lhs->name + "'");
         if (rhs && !isIntegerOrPointer(rhs))
-            error(expr, "operator '&' requires integer operands, got '" +
+            error(expr, "operator '" + opText + "' requires integer operands, got '" +
                              rhs->name + "'");
-        if (lhs && rhs) return lhs->bitWidth >= rhs->bitWidth ? lhs : rhs;
+        if (lhs && rhs && lhs->kind == TypeKind::Integer && rhs->kind == TypeKind::Integer &&
+            lhs->isSigned != rhs->isSigned) {
+            error(expr, "operator '" + opText +
+                             "' does not allow mixed signed/unsigned integers ('" +
+                             lhs->name + "' and '" + rhs->name + "'); cast explicitly");
+        }
+        if (lhs && rhs) {
+            unsigned lhsBW = lhs->bitWidth == 0 ? 64 : lhs->bitWidth;
+            unsigned rhsBW = rhs->bitWidth == 0 ? 64 : rhs->bitWidth;
+            return lhsBW >= rhsBW ? lhs : rhs;
+        }
         return lhs ? lhs : rhs;
-    }
-
-    if (auto* bx = dynamic_cast<LucisParser::BitXorExprContext*>(expr)) {
-        auto exprs = bx->expression();
-        auto* lhs = resolveExprType(exprs[0]);
-        auto* rhs = resolveExprType(exprs[1]);
-        if (lhs && !isIntegerOrPointer(lhs))
-            error(expr, "operator '^' requires integer operands, got '" +
-                             lhs->name + "'");
-        if (rhs && !isIntegerOrPointer(rhs))
-            error(expr, "operator '^' requires integer operands, got '" +
-                             rhs->name + "'");
-        if (lhs && rhs) return lhs->bitWidth >= rhs->bitWidth ? lhs : rhs;
-        return lhs ? lhs : rhs;
-    }
-
-    if (auto* bo = dynamic_cast<LucisParser::BitOrExprContext*>(expr)) {
-        auto exprs = bo->expression();
-        auto* lhs = resolveExprType(exprs[0]);
-        auto* rhs = resolveExprType(exprs[1]);
-        if (lhs && !isIntegerOrPointer(lhs))
-            error(expr, "operator '|' requires integer operands, got '" +
-                             lhs->name + "'");
-        if (rhs && !isIntegerOrPointer(rhs))
-            error(expr, "operator '|' requires integer operands, got '" +
-                             rhs->name + "'");
-        if (lhs && rhs) return lhs->bitWidth >= rhs->bitWidth ? lhs : rhs;
-        return lhs ? lhs : rhs;
-    }
+    };
+    if (auto* ba = dynamic_cast<LucisParser::BitAndExprContext*>(expr))
+        return checkBitwise(ba, "&");
+    if (auto* bx = dynamic_cast<LucisParser::BitXorExprContext*>(expr))
+        return checkBitwise(bx, "^");
+    if (auto* bo = dynamic_cast<LucisParser::BitOrExprContext*>(expr))
+        return checkBitwise(bo, "|");
 
     // ── Logical AND/OR ──────────────────────────────────────────────
     if (auto* la = dynamic_cast<LucisParser::LogicalAndExprContext*>(expr)) {
@@ -7770,6 +7782,12 @@ std::vector<unsigned> arraySizes = extractArraySizesFromSpec(stmt->typeSpec());
                 continue;
             }
             auto* initType = resolveExprType(d->expression());
+            if (dynamic_cast<LucisParser::RangeExprContext*>(d->expression()) ||
+                dynamic_cast<LucisParser::RangeInclExprContext*>(d->expression())) {
+                error(d, "cannot infer type for '" + varName +
+                         "': range expression has no concrete type");
+                continue;
+            }
             if (!initType) {
                 error(d, "cannot infer type for '" + varName + "'");
                 continue;
@@ -7819,6 +7837,12 @@ std::vector<unsigned> arraySizes = extractArraySizesFromSpec(stmt->typeSpec());
 
         // Explicit type with initializer — validate
         auto* initType = resolveExprType(d->expression());
+        if (dynamic_cast<LucisParser::RangeExprContext*>(d->expression()) ||
+            dynamic_cast<LucisParser::RangeInclExprContext*>(d->expression())) {
+            error(d, "type mismatch: cannot initialize variable '" + varName +
+                     "' with a range expression");
+            continue;
+        }
         std::vector<unsigned> arraySizes = extractArraySizesFromSpec(stmt->typeSpec());
 
         if (typeInfo->kind == TypeKind::Extended &&

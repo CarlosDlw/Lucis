@@ -3394,6 +3394,14 @@ void CompletionProvider::addImportedSymbols(std::vector<CompletionItem> &items,
                 ci.kind = CompletionKind::Class; ci.detail = "type alias";
                 items.push_back(std::move(ci)); return;
               }
+            } else if (auto* cd = tld->constDeclStmt()) {
+              for (auto* d : cd->constDeclarator()) {
+                if (safeText(d->IDENTIFIER()) == symName) {
+                  CompletionItem ci; ci.label = symName;
+                  ci.kind = CompletionKind::Constant; ci.detail = "constant";
+                  items.push_back(std::move(ci)); return;
+                }
+              }
             }
           }
           break;
@@ -4760,6 +4768,18 @@ void CompletionProvider::addUseCompletions(std::vector<CompletionItem> &items,
             name = safeText(ta->IDENTIFIER()); kind = 4;
           } else if (auto* ext = tld->extendDecl()) {
             continue; // skip extend blocks in completion
+          } else if (auto* cd = tld->constDeclStmt()) {
+            for (auto* d : cd->constDeclarator()) {
+              name = safeText(d->IDENTIFIER());
+              if (!name.empty() && matchesPrefix(name, prefix)) {
+                CompletionItem ci;
+                ci.label = name;
+                ci.kind = CompletionKind::Constant;
+                ci.detail = "constant";
+                items.push_back(std::move(ci));
+              }
+            }
+            continue;
           }
           if (name.empty() || !matchesPrefix(name, prefix)) continue;
           CompletionItem ci;
@@ -4804,6 +4824,18 @@ void CompletionProvider::addUseCompletions(std::vector<CompletionItem> &items,
               } else if (auto* ta = tld->typeAliasDecl()) {
                 name = safeText(ta->IDENTIFIER()); kind = 4;
               } else if (auto* ext = tld->extendDecl()) {
+                continue;
+              } else if (auto* cd = tld->constDeclStmt()) {
+                for (auto* d : cd->constDeclarator()) {
+                  name = safeText(d->IDENTIFIER());
+                  if (!name.empty() && matchesPrefix(name, prefix)) {
+                    CompletionItem ci;
+                    ci.label = name;
+                    ci.kind = CompletionKind::Constant;
+                    ci.detail = "constant";
+                    items.push_back(std::move(ci));
+                  }
+                }
                 continue;
               }
               if (name.empty() || !matchesPrefix(name, prefix)) continue;
