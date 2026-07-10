@@ -6,6 +6,7 @@ build-asan/
 .lucisbuild/
 .luciscache
 *.o
+*.out
 errors/
 node_modules/
 ztests/
