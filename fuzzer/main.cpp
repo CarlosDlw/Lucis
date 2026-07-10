@@ -173,6 +173,15 @@ int main(int argc, char** argv) {
                 saveResult(crashDir, "timeout", idx + 1, mutant, outcome.stderr);
             break;
         }
+        case FuzzResult::LinkerError: {
+            unsigned idx = stats.build.fetch_add(1);
+            if (idx < kMaxPerKind) {
+                saveResult(crashDir, "linker", idx + 1, mutant, outcome.stderr);
+                std::cerr << "\n[!] Linker error #" << (idx + 1) << "\n";
+            }
+            isBug = true;
+            break;
+        }
         case FuzzResult::BuildError: {
             unsigned idx = stats.build.fetch_add(1);
             if (!bugsOnly && keepFails && idx < kMaxPerKind)

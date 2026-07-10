@@ -368,6 +368,21 @@ bool ResultClassifier::isIRVerifierError(const std::string& stderr) {
 }
 
 // =========================================================================
+// Linker error detection (checker passed, but link failed)
+// =========================================================================
+bool ResultClassifier::isLinkerError(const std::string& stderr) {
+    if (stderr.find("undefined reference") != std::string::npos) return true;
+    if (stderr.find("undefined symbol") != std::string::npos) return true;
+    if (stderr.find("linker command failed") != std::string::npos) return true;
+    if (stderr.find("ld returned") != std::string::npos) return true;
+    if (stderr.find("collect2: error") != std::string::npos) return true;
+    // macOS / Mach-O
+    if (stderr.find("symbol(s) not found") != std::string::npos) return true;
+    if (stderr.find("ld: symbol") != std::string::npos) return true;
+    return false;
+}
+
+// =========================================================================
 // Main classification logic
 // =========================================================================
 FuzzOutcome ResultClassifier::classify(FuzzOutcome raw) {
@@ -408,9 +423,10 @@ FuzzOutcome ResultClassifier::classify(FuzzOutcome raw) {
             raw.stderr = raw.checkerStderr;
             return raw;
         }
-        // UNKNOWN error message — might be new checker check or regression
-        // Treat as CheckerError (expected) but log it for review
-        raw.kind = FuzzResult::CheckerError;
+        // UNKNOWN error message — treat as CheckerCrash since it might
+        // be a new assertion failure, segfault with unexpected message,
+        // or some other internal error not covered by known patterns.
+        raw.kind = FuzzResult::CheckerCrash;
         raw.stderr = raw.checkerStderr;
         return raw;
     }
@@ -442,8 +458,16 @@ FuzzOutcome ResultClassifier::classify(FuzzOutcome raw) {
             return raw;
         }
 
-        // Checker passed but build failed — might be a linker error,
-        // missing symbols, or some other build system issue
+        // Checker passed but build failed — classify as linker error
+        // (a real bug: checker let invalid/unlinkable code through)
+        // or generic build error (infrastructure issue).
+        if (isLinkerError(combined)) {
+            raw.kind = FuzzResult::LinkerError;
+            raw.stderr = raw.builderStderr;
+            return raw;
+        }
+
+        // Other build failures (e.g., permission errors, missing toolchain)
         raw.kind = FuzzResult::BuildError;
         raw.stderr = raw.builderStderr;
         return raw;

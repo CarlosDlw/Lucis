@@ -7,11 +7,12 @@
 // ── Outcome from running the compiler ─────────────────────────────
 enum class FuzzResult {
     Ok,                // checker passed + build succeeded
-    BuildError,        // build system or linker error
+    BuildError,        // build system error (infrastructure issue)
     CheckerError,      // checker rejected code with a KNOWN diagnostic
     CheckerCrash,      // checker itself crashed (SIGSEGV, SIGABRT, etc.) — REAL BUG
     IRVerifierError,   // checker passed, but IRGen crashed/asserted — REAL BUG
     CompilerCrash,     // full compile crashed after checker passed — REAL BUG
+    LinkerError,       // checker passed, but linker failed (missing symbols, etc.) — REAL BUG
     Timeout,           // timed out
 };
 
@@ -53,6 +54,9 @@ private:
 
     /// Builder-stderr patterns for IR verifier errors
     static bool isIRVerifierError(const std::string& stderr);
+
+    /// Builder-stderr patterns for linker errors (missing symbols)
+    static bool isLinkerError(const std::string& stderr);
 
     static const std::vector<std::string> kCheckerErrors;
 };
