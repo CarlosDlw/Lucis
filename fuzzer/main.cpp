@@ -24,20 +24,23 @@ static bool writeTempSource(const std::string& path, const std::string& source) 
     return f.good();
 }
 
-/// Strip any existing `fn main` block and append a valid one so the code
-/// always compiles and links, cutting down false-positive build/checker errors.
-static std::string ensureMain(std::string src) {
-    static const std::regex mainPat(R"(fn\s+main\b[^{]*\{[^}]*\})",
-                                    std::regex::optimize);
-    src = std::regex_replace(src, mainPat, "");
+/// Extract the `fn main` block from source (including its body).
+static std::string extractMain(std::string_view src) {
+    // Find the last `fn main` — it's typically at the end of the file.
+    auto pos = src.rfind("fn main");
+    if (pos == std::string::npos) return {};
+    return std::string(src.substr(pos));
+}
 
-    // If there's still a leftover fn main (e.g. nested braces broke the regex),
-    // strip from the first `fn main` to end of file.
-    auto pos = src.find("fn main");
+/// Replace any existing `fn main` block with the given replacement,
+/// so the mutated source keeps calling the original test functions.
+static std::string replaceMain(std::string src, const std::string& newMain) {
+    // Strip any existing fn main block (relies on it being at the end).
+    auto pos = src.rfind("fn main");
     if (pos != std::string::npos)
         src.resize(pos);
 
-    src += "\nfn main() int32 { return 0; }\n";
+    src += "\n" + newMain + "\n";
     return src;
 }
 
@@ -119,19 +122,25 @@ int main(int argc, char** argv) {
         // 1. Pick a seed from the corpus
         auto& seed = corpus.randomEntry();
 
-        // 2. Mutate it
+        // 2. Save the original main so it still calls the test functions
+        auto savedMain = extractMain(seed.source);
+
+        // 3. Mutate everything EXCEPT the main block
         auto mutant = mutator.mutate(seed.source);
 
-        // 3. Ensure a valid main() exists so we only catch real compiler bugs
-        mutant = ensureMain(std::move(mutant));
+        // 4. Re-attach the saved main (mutations may have broken it)
+        if (!savedMain.empty())
+            mutant = replaceMain(std::move(mutant), savedMain);
+        else
+            mutant += "\nfn main() int32 { return 0; }\n";
 
-        // 4. Write to temp file
+        // 5. Write to temp file
         if (!writeTempSource(tmpFile, mutant)) {
             std::cerr << "[fuzzer] failed to write temp file\n";
             continue;
         }
 
-        // 4. Run lucis
+        // 6. Run lucis
         auto outcome = runner.run(tmpFile);
         stats.total++;
 
