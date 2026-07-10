@@ -828,6 +828,16 @@ LUCIS_MAP_IMPL_INT(uint8_t, i1, __int128_t,  i128, hash_key_i1, eq_key_i1)
 LUCIS_MAP_IMPL_INT(uint8_t, u1, lucis_int256_t, iinf, hash_key_u1, eq_key_u1)
 LUCIS_MAP_IMPL_INT(uint8_t, i1, lucis_int256_t, iinf, hash_key_i1, eq_key_i1)
 
+// ── Uint128/Int128 key × u1/i1 values ───────────────────────────────────
+LUCIS_MAP_IMPL_INT(__uint128_t, u128, uint8_t, u1, hash_key_u128, eq_key_u128)
+LUCIS_MAP_IMPL_INT(__uint128_t, u128, uint8_t, i1, hash_key_u128, eq_key_u128)
+LUCIS_MAP_IMPL_INT(__int128_t,  i128, uint8_t, u1, hash_key_i128,  eq_key_i128)
+LUCIS_MAP_IMPL_INT(__int128_t,  i128, uint8_t, i1, hash_key_i128,  eq_key_i128)
+
+// ── Intinf key × u1/i1 values ───────────────────────────────────────────
+LUCIS_MAP_IMPL_INT(lucis_int256_t, iinf, uint8_t, u1, hash_key_iinf, eq_key_iinf)
+LUCIS_MAP_IMPL_INT(lucis_int256_t, iinf, uint8_t, i1, hash_key_iinf, eq_key_iinf)
+
 // ═══════════════════════════════════════════════════════════════════════════
 // Raw (opaque struct) value — str key, struct val of runtime-known size
 // ═══════════════════════════════════════════════════════════════════════════

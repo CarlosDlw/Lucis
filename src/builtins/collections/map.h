@@ -277,6 +277,16 @@ LUCIS_MAP_DECL_INT_KEY(uint8_t, i1, __int128_t,  i128)
 LUCIS_MAP_DECL_INT_KEY(uint8_t, u1, lucis_int256_t, iinf)
 LUCIS_MAP_DECL_INT_KEY(uint8_t, i1, lucis_int256_t, iinf)
 
+// Uint128/Int128 key × u1/i1 values
+LUCIS_MAP_DECL_INT_KEY(__uint128_t, u128, uint8_t, u1)
+LUCIS_MAP_DECL_INT_KEY(__uint128_t, u128, uint8_t, i1)
+LUCIS_MAP_DECL_INT_KEY(__int128_t,  i128, uint8_t, u1)
+LUCIS_MAP_DECL_INT_KEY(__int128_t,  i128, uint8_t, i1)
+
+// Intinf key × u1/i1 values
+LUCIS_MAP_DECL_INT_KEY(lucis_int256_t, iinf, uint8_t, u1)
+LUCIS_MAP_DECL_INT_KEY(lucis_int256_t, iinf, uint8_t, i1)
+
 // ── Raw (opaque struct) value variants ─────────────────────────────────
 // Used when value is a user-defined struct (builtinSuffix == "raw").
 // val_size is passed explicitly to init; stored in m->val_size afterward.
