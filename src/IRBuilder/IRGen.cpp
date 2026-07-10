@@ -23005,19 +23005,18 @@ IRGen::visitMethodCallExpr(LucisParser::MethodCallExprContext* ctx) {
                 builder_->CreateIntCast(receiverVal, i8Ty, false, "tochar"));
         }
         if (tag == "int.toString") {
-            // Call lucis_itoa / lucis_utoa depending on signedness
+            // Call lucis_itoa / lucis_utoa depending on signedness.
+            // Use CreateIntCast (handles both extension AND truncation)
+            // so types wider than i64 (int128, uint128) work correctly.
             llvm::Value* val = receiverVal;
             std::string fname;
-            llvm::Type* paramTy;
+            llvm::Type* paramTy = i64Ty;
             if (isSigned) {
                 fname = "lucis_itoa";
-                paramTy = i64Ty;
-                val = builder_->CreateSExt(val, i64Ty, "ext");
             } else {
                 fname = "lucis_utoa";
-                paramTy = llvm::Type::getInt64Ty(*context_);
-                val = builder_->CreateZExt(val, paramTy, "ext");
             }
+            val = builder_->CreateIntCast(val, paramTy, isSigned, "icast");
             auto callee = declareBuiltin(fname, strTy, {paramTy});
             return static_cast<llvm::Value*>(
                 builder_->CreateCall(callee, {val}, "tostr"));
@@ -23025,9 +23024,7 @@ IRGen::visitMethodCallExpr(LucisParser::MethodCallExprContext* ctx) {
         if (tag == "int.toStringRadix") {
             llvm::Value* val = receiverVal;
             if (val->getType() != i64Ty)
-                val = isSigned
-                    ? static_cast<llvm::Value*>(builder_->CreateSExt(val, i64Ty, "ext"))
-                    : static_cast<llvm::Value*>(builder_->CreateZExt(val, i64Ty, "ext"));
+                val = builder_->CreateIntCast(val, i64Ty, isSigned, "icast");
             auto* radix = args[0];
             if (radix->getType() != i32Ty)
                 radix = builder_->CreateIntCast(radix, i32Ty, false);

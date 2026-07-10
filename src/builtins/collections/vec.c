@@ -348,6 +348,8 @@ LUCIS_VEC_IMPL(uint8_t,   u8)
 LUCIS_VEC_IMPL(uint16_t,  u16)
 LUCIS_VEC_IMPL(uint32_t,  u32)
 LUCIS_VEC_IMPL(uint64_t,  u64)
+LUCIS_VEC_IMPL(__int128_t,   i128)
+LUCIS_VEC_IMPL(__uint128_t,  u128)
 LUCIS_VEC_IMPL(float,     f32)
 LUCIS_VEC_IMPL(double,    f64)
 LUCIS_VEC_IMPL(char,      char)
@@ -411,6 +413,102 @@ LUCIS_VEC_TOSTRING_IMPL(uint32_t, u32,  "%u")
 LUCIS_VEC_TOSTRING_IMPL(uint64_t, u64,  "%llu")
 LUCIS_VEC_TOSTRING_IMPL(float,    f32,  "%g")
 LUCIS_VEC_TOSTRING_IMPL(double,   f64,  "%g")
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Vec<int128> / Vec<uint128> — custom implementations
+// (128-bit integers have no standard printf format specifier)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// Helper: format uint128 to buffer, returns chars written (like snprintf)
+static size_t u128_to_buf(char* buf, size_t cap, __uint128_t val) {
+    if (cap == 0) return 0;
+    if (val == 0) {
+        if (cap > 0) { buf[0] = '0'; if (cap > 1) buf[1] = '\0'; }
+        return 1;
+    }
+    char tmp[40];
+    int pos = 0;
+    while (val > 0 && pos < 39) {
+        tmp[pos++] = '0' + (char)(val % 10);
+        val /= 10;
+    }
+    int written = 0;
+    for (int i = 0; i < pos && written < (int)cap - 1; i++)
+        buf[written++] = tmp[pos - 1 - i];
+    if (written < (int)cap) buf[written] = '\0';
+    return (size_t)pos;
+}
+
+// Helper: format int128 to buffer, returns chars written
+static size_t i128_to_buf(char* buf, size_t cap, __int128_t val) {
+    if (cap == 0) return 0;
+    if (val == 0) {
+        if (cap > 0) { buf[0] = '0'; if (cap > 1) buf[1] = '\0'; }
+        return 1;
+    }
+    int neg = (val < 0);
+    __uint128_t abs_val = neg ? (__uint128_t)(-val) : (__uint128_t)val;
+    char tmp[40];
+    int pos = 0;
+    while (abs_val > 0 && pos < 39) {
+        tmp[pos++] = '0' + (char)(abs_val % 10);
+        abs_val /= 10;
+    }
+    int buf_idx = 0;
+    if (neg && buf_idx < (int)cap - 1) buf[buf_idx++] = '-';
+    for (int i = 0; i < pos && buf_idx < (int)cap - 1; i++)
+        buf[buf_idx++] = tmp[pos - 1 - i];
+    if (buf_idx < (int)cap) buf[buf_idx] = '\0';
+    return (size_t)(neg ? pos + 1 : pos);
+}
+
+// Macro to generate toString/join for 128-bit types using custom formatters
+#define LUCIS_VEC_TOSTRING_128_IMPL(T, SUFFIX, FMT_FN)                        \
+lucis_string lucis_vec_toString_##SUFFIX(const lucis_vec_header* v) {         \
+    if (v->len == 0) {                                                          \
+        const char* s = "[]"; lucis_string r = { s, 2 }; return r;            \
+    }                                                                           \
+    size_t cap = 64;                                                            \
+    char* buf = (char*)malloc(cap);                                             \
+    size_t pos = 0;                                                             \
+    buf[pos++] = '[';                                                           \
+    const T* d = (const T*)v->ptr;                                              \
+    for (size_t i = 0; i < v->len; i++) {                                       \
+        if (i > 0) { buf[pos++] = ','; buf[pos++] = ' '; }                     \
+        while (cap - pos < 40) { cap *= 2; buf = (char*)realloc(buf, cap); }   \
+        pos += FMT_FN(buf + pos, cap - pos, d[i]);                             \
+    }                                                                           \
+    if (pos + 1 >= cap) { cap = pos + 2; buf = (char*)realloc(buf, cap); }     \
+    buf[pos++] = ']';                                                           \
+    buf[pos] = '\0';                                                            \
+    char* _t = (char*)lucis_allocString(pos);                                  \
+    if (_t) { memcpy(_t, buf, pos); _t[pos] = '\0'; free(buf); buf = _t; }    \
+    lucis_string r = { buf, pos }; return r;                                   \
+}                                                                               \
+                                                                                \
+lucis_string lucis_vec_join_##SUFFIX(const lucis_vec_header* v,              \
+                                        lucis_string sep) {                     \
+    if (v->len == 0) { lucis_string r = { "", 0 }; return r; }                \
+    size_t cap = 64;                                                            \
+    char* buf = (char*)malloc(cap);                                             \
+    size_t pos = 0;                                                             \
+    const T* d = (const T*)v->ptr;                                              \
+    for (size_t i = 0; i < v->len; i++) {                                       \
+        if (i > 0) {                                                            \
+            while (cap - pos < sep.len + 1) { cap *= 2; buf = (char*)realloc(buf, cap); } \
+            memcpy(buf + pos, sep.ptr, sep.len); pos += sep.len;                \
+        }                                                                       \
+        while (cap - pos < 40) { cap *= 2; buf = (char*)realloc(buf, cap); }   \
+        pos += FMT_FN(buf + pos, cap - pos, d[i]);                             \
+    }                                                                           \
+    buf[pos] = '\0';                                                            \
+    char* _t = (char*)lucis_allocString(pos);                                  \
+    if (_t) { memcpy(_t, buf, pos); _t[pos] = '\0'; free(buf); buf = _t; }    \
+    lucis_string r = { buf, pos }; return r;                                   \
+}
+
+LUCIS_VEC_TOSTRING_128_IMPL(__int128_t,  i128, i128_to_buf)
+LUCIS_VEC_TOSTRING_128_IMPL(__uint128_t, u128, u128_to_buf)
 LUCIS_VEC_TOSTRING_IMPL(char,     char, "%c")
 
 // ═══════════════════════════════════════════════════════════════════════════════
