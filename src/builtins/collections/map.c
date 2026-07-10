@@ -1,5 +1,6 @@
 #include "collections/map.h"
 #include "../string/string.h"
+#include "int256.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -69,6 +70,19 @@ static uint64_t hash_key_i128(const void* key) {
 }
 static int eq_key_i128(const void* a, const void* b) {
     return *(const __int128_t*)a == *(const __int128_t*)b;
+}
+
+// 32-byte (256-bit) hash/eq — for intinf as map key
+static uint64_t hash_key_iinf(const void* key) {
+    const uint64_t* k = (const uint64_t*)key;
+    uint64_t h = splitmix64(k[0]);
+    h ^= splitmix64(k[1]);
+    h ^= splitmix64(k[2]);
+    h ^= splitmix64(k[3]);
+    return h;
+}
+static int eq_key_iinf(const void* a, const void* b) {
+    return memcmp(a, b, sizeof(lucis_int256_t)) == 0;
 }
 
 static uint64_t hash_key_str(const void* key) {
@@ -734,6 +748,14 @@ LUCIS_MAP_IMPL_INT(uint64_t, u64, __int128_t,  i128, hash_key_u64, eq_key_u64)
 // ── String key × uint128/int128 values ───────────────────────────────────
 LUCIS_MAP_IMPL_STR(__uint128_t, u128)
 LUCIS_MAP_IMPL_STR(__int128_t,  i128)
+
+// ── Int32/i64/u64 key × intinf value ────────────────────────────────────
+LUCIS_MAP_IMPL_INT(int32_t, i32, lucis_int256_t, iinf, hash_key_i32, eq_key_i32)
+LUCIS_MAP_IMPL_INT(int64_t, i64, lucis_int256_t, iinf, hash_key_i64, eq_key_i64)
+LUCIS_MAP_IMPL_INT(uint64_t, u64, lucis_int256_t, iinf, hash_key_u64, eq_key_u64)
+
+// ── String key × intinf value ───────────────────────────────────────────
+LUCIS_MAP_IMPL_STR(lucis_int256_t, iinf)
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Raw (opaque struct) value — str key, struct val of runtime-known size

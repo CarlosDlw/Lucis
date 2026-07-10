@@ -3,6 +3,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include "int256.h"
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Map<K,V> — Open-addressing hash map
@@ -217,6 +218,14 @@ LUCIS_MAP_DECL_INT_KEY(uint64_t, u64, __int128_t,  i128)
 // String key × uint128/int128 values
 LUCIS_MAP_DECL_STR_KEY(__uint128_t, u128)
 LUCIS_MAP_DECL_STR_KEY(__int128_t,  i128)
+
+// Int32/i64/u64 key × intinf values
+LUCIS_MAP_DECL_INT_KEY(int32_t, i32, lucis_int256_t, iinf)
+LUCIS_MAP_DECL_INT_KEY(int64_t, i64, lucis_int256_t, iinf)
+LUCIS_MAP_DECL_INT_KEY(uint64_t, u64, lucis_int256_t, iinf)
+
+// String key × intinf value
+LUCIS_MAP_DECL_STR_KEY(lucis_int256_t, iinf)
 
 // ── Raw (opaque struct) value variants ─────────────────────────────────
 // Used when value is a user-defined struct (builtinSuffix == "raw").

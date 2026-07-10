@@ -1,5 +1,6 @@
 #include "vec.h"
 #include "../string/string.h"
+#include "int256.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -355,6 +356,291 @@ LUCIS_VEC_IMPL(double,    f64)
 LUCIS_VEC_IMPL(char,      char)
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// Vec<intinf> — manual implementation (struct comparison needs memcmp)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+#define LUCIS_VEC_IINF_INITIAL_CAP 8
+#define LUCIS_VEC_IINF_GROWTH_FACTOR 2
+
+static inline lucis_int256_t* vec_data_iinf(lucis_vec_header* v) {
+    return (lucis_int256_t*)v->ptr;
+}
+static inline const lucis_int256_t* vec_cdata_iinf(const lucis_vec_header* v) {
+    return (const lucis_int256_t*)v->ptr;
+}
+
+static void vec_grow_iinf(lucis_vec_header* v, size_t needed) {
+    if (needed <= v->cap) return;
+    size_t newCap = v->cap ? v->cap : LUCIS_VEC_IINF_INITIAL_CAP;
+    while (newCap < needed) newCap *= LUCIS_VEC_IINF_GROWTH_FACTOR;
+    v->ptr = realloc(v->ptr, newCap * sizeof(lucis_int256_t));
+    v->cap = newCap;
+}
+
+// ── Creation / destruction ──────────────────────────────────────────────────
+void lucis_vec_init_iinf(lucis_vec_header* v) {
+    v->ptr = NULL; v->len = 0; v->cap = 0;
+}
+void lucis_vec_init_cap_iinf(lucis_vec_header* v, size_t cap) {
+    v->ptr = malloc(cap * sizeof(lucis_int256_t)); v->len = 0; v->cap = cap;
+}
+void lucis_vec_free_iinf(lucis_vec_header* v) {
+    free(v->ptr); v->ptr = NULL; v->len = 0; v->cap = 0;
+}
+
+// ── Size / capacity ─────────────────────────────────────────────────────────
+size_t lucis_vec_len_iinf(const lucis_vec_header* v) { return v->len; }
+size_t lucis_vec_capacity_iinf(const lucis_vec_header* v) { return v->cap; }
+int    lucis_vec_isEmpty_iinf(const lucis_vec_header* v) { return v->len == 0; }
+
+// ── Element access ──────────────────────────────────────────────────────────
+lucis_int256_t lucis_vec_at_iinf(const lucis_vec_header* v, size_t idx) {
+    if (idx >= v->len) {
+        fprintf(stderr, "lucis: vec index out of bounds: %zu >= %zu\n", idx, v->len);
+        exit(1);
+    }
+    return vec_cdata_iinf(v)[idx];
+}
+lucis_int256_t lucis_vec_first_iinf(const lucis_vec_header* v) {
+    if (v->len == 0) { fprintf(stderr, "lucis: vec.first() on empty vec\n"); exit(1); }
+    return vec_cdata_iinf(v)[0];
+}
+lucis_int256_t lucis_vec_last_iinf(const lucis_vec_header* v) {
+    if (v->len == 0) { fprintf(stderr, "lucis: vec.last() on empty vec\n"); exit(1); }
+    return vec_cdata_iinf(v)[v->len - 1];
+}
+void lucis_vec_set_iinf(lucis_vec_header* v, size_t idx, lucis_int256_t val) {
+    if (idx >= v->len) {
+        fprintf(stderr, "lucis: vec index out of bounds: %zu >= %zu\n", idx, v->len);
+        exit(1);
+    }
+    vec_data_iinf(v)[idx] = val;
+}
+
+// ── Mutation ────────────────────────────────────────────────────────────────
+void lucis_vec_push_iinf(lucis_vec_header* v, lucis_int256_t val) {
+    vec_grow_iinf(v, v->len + 1);
+    vec_data_iinf(v)[v->len++] = val;
+}
+lucis_int256_t lucis_vec_pop_iinf(lucis_vec_header* v) {
+    if (v->len == 0) { fprintf(stderr, "lucis: vec.pop() on empty vec\n"); exit(1); }
+    return vec_data_iinf(v)[--v->len];
+}
+void lucis_vec_insert_iinf(lucis_vec_header* v, size_t idx, lucis_int256_t val) {
+    if (idx > v->len) {
+        fprintf(stderr, "lucis: vec.insert() index out of bounds\n"); exit(1);
+    }
+    vec_grow_iinf(v, v->len + 1);
+    lucis_int256_t* d = vec_data_iinf(v);
+    memmove(&d[idx + 1], &d[idx], (v->len - idx) * sizeof(lucis_int256_t));
+    d[idx] = val;
+    v->len++;
+}
+lucis_int256_t lucis_vec_removeAt_iinf(lucis_vec_header* v, size_t idx) {
+    if (idx >= v->len) {
+        fprintf(stderr, "lucis: vec.removeAt() index out of bounds\n"); exit(1);
+    }
+    lucis_int256_t* d = vec_data_iinf(v);
+    lucis_int256_t val = d[idx];
+    memmove(&d[idx], &d[idx + 1], (v->len - idx - 1) * sizeof(lucis_int256_t));
+    v->len--;
+    return val;
+}
+lucis_int256_t lucis_vec_removeSwap_iinf(lucis_vec_header* v, size_t idx) {
+    if (idx >= v->len) {
+        fprintf(stderr, "lucis: vec.removeSwap() index out of bounds\n"); exit(1);
+    }
+    lucis_int256_t* d = vec_data_iinf(v);
+    lucis_int256_t val = d[idx];
+    d[idx] = d[v->len - 1];
+    v->len--;
+    return val;
+}
+void lucis_vec_clear_iinf(lucis_vec_header* v) {
+    v->len = 0;
+}
+void lucis_vec_fill_iinf(lucis_vec_header* v, lucis_int256_t val) {
+    lucis_int256_t* d = vec_data_iinf(v);
+    for (size_t i = 0; i < v->len; i++) d[i] = val;
+}
+void lucis_vec_swap_iinf(lucis_vec_header* v, size_t i, size_t j) {
+    if (i >= v->len || j >= v->len) {
+        fprintf(stderr, "lucis: vec.swap() index out of bounds\n"); exit(1);
+    }
+    lucis_int256_t* d = vec_data_iinf(v);
+    lucis_int256_t tmp = d[i]; d[i] = d[j]; d[j] = tmp;
+}
+
+// ── Memory ──────────────────────────────────────────────────────────────────
+void lucis_vec_reserve_iinf(lucis_vec_header* v, size_t cap) {
+    vec_grow_iinf(v, cap);
+}
+void lucis_vec_shrink_iinf(lucis_vec_header* v) {
+    if (v->len == 0) { free(v->ptr); v->ptr = NULL; v->cap = 0; }
+    else if (v->cap > v->len) {
+        v->ptr = realloc(v->ptr, v->len * sizeof(lucis_int256_t));
+        v->cap = v->len;
+    }
+}
+void lucis_vec_resize_iinf(lucis_vec_header* v, size_t len, lucis_int256_t fill) {
+    vec_grow_iinf(v, len);
+    lucis_int256_t* d = vec_data_iinf(v);
+    for (size_t i = v->len; i < len; i++) d[i] = fill;
+    v->len = len;
+}
+void lucis_vec_truncate_iinf(lucis_vec_header* v, size_t len) {
+    if (len < v->len) v->len = len;
+}
+
+// ── Search (memcmp-based comparison) ────────────────────────────────────────
+int lucis_vec_contains_iinf(const lucis_vec_header* v, lucis_int256_t val) {
+    const lucis_int256_t* d = vec_cdata_iinf(v);
+    for (size_t i = 0; i < v->len; i++)
+        if (lucis_int256_eq(&d[i], &val)) return 1;
+    return 0;
+}
+long long lucis_vec_indexOf_iinf(const lucis_vec_header* v, lucis_int256_t val) {
+    const lucis_int256_t* d = vec_cdata_iinf(v);
+    for (size_t i = 0; i < v->len; i++)
+        if (lucis_int256_eq(&d[i], &val)) return (long long)i;
+    return -1;
+}
+long long lucis_vec_lastIndexOf_iinf(const lucis_vec_header* v, lucis_int256_t val) {
+    const lucis_int256_t* d = vec_cdata_iinf(v);
+    for (size_t i = v->len; i > 0; i--)
+        if (lucis_int256_eq(&d[i - 1], &val)) return (long long)(i - 1);
+    return -1;
+}
+size_t lucis_vec_count_iinf(const lucis_vec_header* v, lucis_int256_t val) {
+    const lucis_int256_t* d = vec_cdata_iinf(v);
+    size_t c = 0;
+    for (size_t i = 0; i < v->len; i++)
+        if (lucis_int256_eq(&d[i], &val)) c++;
+    return c;
+}
+
+// ── Comparison ──────────────────────────────────────────────────────────────
+int lucis_vec_equals_iinf(const lucis_vec_header* a, const lucis_vec_header* b) {
+    if (a->len != b->len) return 0;
+    const lucis_int256_t* da = vec_cdata_iinf(a);
+    const lucis_int256_t* db = (const lucis_int256_t*)b->ptr;
+    for (size_t i = 0; i < a->len; i++)
+        if (!lucis_int256_eq(&da[i], &db[i])) return 0;
+    return 1;
+}
+int lucis_vec_isSorted_iinf(const lucis_vec_header* v) {
+    if (v->len <= 1) return 1;
+    const lucis_int256_t* d = vec_cdata_iinf(v);
+    for (size_t i = 1; i < v->len; i++)
+        if (lucis_int256_cmp(&d[i], &d[i - 1]) < 0) return 0;
+    return 1;
+}
+
+// ── Reorder ─────────────────────────────────────────────────────────────────
+void lucis_vec_reverse_iinf(lucis_vec_header* v) {
+    if (v->len <= 1) return;
+    lucis_int256_t* d = vec_data_iinf(v);
+    for (size_t i = 0, j = v->len - 1; i < j; i++, j--) {
+        lucis_int256_t tmp = d[i]; d[i] = d[j]; d[j] = tmp;
+    }
+}
+void lucis_vec_rotate_iinf(lucis_vec_header* v, int32_t steps) {
+    if (v->len <= 1) return;
+    int64_t n = (int64_t)v->len;
+    int64_t s = ((int64_t)steps % n + n) % n;
+    if (s == 0) return;
+    lucis_int256_t* d = vec_data_iinf(v);
+    for (size_t i = 0, j = v->len - 1; i < j; i++, j--) {
+        lucis_int256_t tmp = d[i]; d[i] = d[j]; d[j] = tmp; }
+    for (size_t i = 0, j = (size_t)s - 1; i < j; i++, j--) {
+        lucis_int256_t tmp = d[i]; d[i] = d[j]; d[j] = tmp; }
+    for (size_t i = (size_t)s, j = v->len - 1; i < j; i++, j--) {
+        lucis_int256_t tmp = d[i]; d[i] = d[j]; d[j] = tmp; }
+}
+
+// ── Sort ────────────────────────────────────────────────────────────────────
+static int vec_iinf_cmp_asc(const void* a, const void* b) {
+    return lucis_int256_cmp((const lucis_int256_t*)a, (const lucis_int256_t*)b);
+}
+static int vec_iinf_cmp_desc(const void* a, const void* b) {
+    return lucis_int256_cmp((const lucis_int256_t*)b, (const lucis_int256_t*)a);
+}
+void lucis_vec_sort_iinf(lucis_vec_header* v) {
+    if (v->len > 1)
+        qsort(v->ptr, v->len, sizeof(lucis_int256_t), vec_iinf_cmp_asc);
+}
+void lucis_vec_sortDesc_iinf(lucis_vec_header* v) {
+    if (v->len > 1)
+        qsort(v->ptr, v->len, sizeof(lucis_int256_t), vec_iinf_cmp_desc);
+}
+
+// ── Aggregation ─────────────────────────────────────────────────────────────
+
+// 256-bit addition helper
+static lucis_int256_t i256_add(lucis_int256_t a, lucis_int256_t b) {
+    lucis_int256_t r;
+    unsigned __int128 lo = (unsigned __int128)a.lo + (unsigned __int128)b.lo;
+    r.lo = (__int128)lo;
+    r.hi = a.hi + b.hi + (__int128)(lo < (unsigned __int128)a.lo ? 1 : 0);
+    return r;
+}
+
+lucis_int256_t lucis_vec_sum_iinf(const lucis_vec_header* v) {
+    const lucis_int256_t* d = vec_cdata_iinf(v);
+    lucis_int256_t acc = LUCIS_INT256_ZERO;
+    for (size_t i = 0; i < v->len; i++) acc = i256_add(acc, d[i]);
+    return acc;
+}
+
+lucis_int256_t lucis_vec_product_iinf(const lucis_vec_header* v) {
+    (void)v;
+    fprintf(stderr, "lucis: vec.product() not supported for intinf\n");
+    abort();
+    return LUCIS_INT256_ZERO;
+}
+
+lucis_int256_t lucis_vec_min_iinf(const lucis_vec_header* v) {
+    if (v->len == 0) { fprintf(stderr, "lucis: vec.min() on empty vec\n"); exit(1); }
+    const lucis_int256_t* d = vec_cdata_iinf(v);
+    lucis_int256_t m = d[0];
+    for (size_t i = 1; i < v->len; i++)
+        if (lucis_int256_cmp(&d[i], &m) < 0) m = d[i];
+    return m;
+}
+lucis_int256_t lucis_vec_max_iinf(const lucis_vec_header* v) {
+    if (v->len == 0) { fprintf(stderr, "lucis: vec.max() on empty vec\n"); exit(1); }
+    const lucis_int256_t* d = vec_cdata_iinf(v);
+    lucis_int256_t m = d[0];
+    for (size_t i = 1; i < v->len; i++)
+        if (lucis_int256_cmp(&d[i], &m) > 0) m = d[i];
+    return m;
+}
+double lucis_vec_average_iinf(const lucis_vec_header* v) {
+    if (v->len == 0) return 0.0;
+    const lucis_int256_t* d = vec_cdata_iinf(v);
+    double sum = 0.0;
+    for (size_t i = 0; i < v->len; i++) {
+        // Convert 256-bit signed to double (best-effort, double has 53-bit mantissa)
+        sum += (double)(__int128)d[i].hi * 3.4028236692093846e38;  // approx 2^128
+        sum += (double)(__int128)d[i].lo;
+    }
+    return sum / (double)v->len;
+}
+
+// ── Clone ───────────────────────────────────────────────────────────────────
+void lucis_vec_clone_iinf(const lucis_vec_header* src, lucis_vec_header* dst) {
+    dst->len = src->len;
+    dst->cap = src->len;
+    if (src->len > 0) {
+        dst->ptr = malloc(src->len * sizeof(lucis_int256_t));
+        memcpy(dst->ptr, src->ptr, src->len * sizeof(lucis_int256_t));
+    } else {
+        dst->ptr = NULL;
+        dst->cap = 0;
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // toString / join — format-specific implementations
 // ═══════════════════════════════════════════════════════════════════════════════
 
@@ -509,6 +795,74 @@ lucis_string lucis_vec_join_##SUFFIX(const lucis_vec_header* v,              \
 
 LUCIS_VEC_TOSTRING_128_IMPL(__int128_t,  i128, i128_to_buf)
 LUCIS_VEC_TOSTRING_128_IMPL(__uint128_t, u128, u128_to_buf)
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Vec<intinf> — custom 256-bit formatter
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// Divide a 256-bit number (4 × uint64_t, little-endian) by 10, return remainder
+static uint8_t div256_by_10(uint64_t* n) {
+    uint64_t rem = 0;
+    for (int i = 3; i >= 0; i--) {
+        __uint128_t temp = ((__uint128_t)rem << 64) | n[i];
+        n[i] = (uint64_t)(temp / 10);
+        rem = (uint64_t)(temp % 10);
+    }
+    return (uint8_t)rem;
+}
+
+// Check if all 4 uint64_t words are zero
+static int is_zero_256(const uint64_t* n) {
+    return n[0] == 0 && n[1] == 0 && n[2] == 0 && n[3] == 0;
+}
+
+// Two's complement negation of a 256-bit number (4 × uint64_t, little-endian)
+static void negate_256(uint64_t* n) {
+    uint64_t carry = 1;
+    for (int i = 0; i < 4; i++) {
+        uint64_t old = n[i];
+        n[i] = ~old + carry;
+        carry = (carry == 1 && old == 0) ? 1 : 0;
+    }
+}
+
+// Format intinf (256-bit signed) to buffer, returns chars written (like snprintf)
+static size_t iinf_to_buf(char* buf, size_t cap, lucis_int256_t val) {
+    if (cap == 0) return 0;
+
+    // Interpret as 4 × uint64_t, little-endian
+    uint64_t digits[4];
+    memcpy(digits, &val, 32);
+
+    if (is_zero_256(digits)) {
+        if (cap > 1) { buf[0] = '0'; buf[1] = '\0'; }
+        return 1;
+    }
+
+    // Handle negative: negate to get absolute value
+    int neg = 0;
+    if (val.hi < 0) {
+        neg = 1;
+        negate_256(digits);
+    }
+
+    // Extract decimal digits (max 78 for 2^256)
+    char tmp[80];
+    int pos = 0;
+    while (!is_zero_256(digits) && pos < 79) {
+        tmp[pos++] = '0' + div256_by_10(digits);
+    }
+
+    // Write in reverse order
+    int written = 0;
+    if (neg && written < (int)cap - 1) buf[written++] = '-';
+    for (int i = pos - 1; i >= 0 && written < (int)cap - 1; i--)
+        buf[written++] = tmp[i];
+    if (written < (int)cap) buf[written] = '\0';
+    return (size_t)(neg ? pos + 1 : pos);
+}
+
+LUCIS_VEC_TOSTRING_128_IMPL(lucis_int256_t, iinf, iinf_to_buf)
 LUCIS_VEC_TOSTRING_IMPL(char,     char, "%c")
 
 // ═══════════════════════════════════════════════════════════════════════════════

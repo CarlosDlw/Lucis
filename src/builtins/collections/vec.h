@@ -2,6 +2,7 @@
 
 #include <stdint.h>
 #include <stddef.h>
+#include "int256.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -84,10 +85,10 @@ LUCIS_VEC_DECLARE(int32_t,              i32)
 LUCIS_VEC_DECLARE(int64_t,              i64)
 LUCIS_VEC_DECLARE(uint8_t,              u8)
 LUCIS_VEC_DECLARE(uint16_t,             u16)
-LUCIS_VEC_DECLARE(uint32_t,             u32)
-LUCIS_VEC_DECLARE(uint64_t,             u64)
-LUCIS_VEC_DECLARE(__int128_t,           i128)
-LUCIS_VEC_DECLARE(__uint128_t,          u128)
+LUCIS_VEC_DECLARE(uint32_t,             u32)LUCIS_VEC_DECLARE(uint64_t,             u64)
+LUCIS_VEC_DECLARE(__int128_t,          i128)
+LUCIS_VEC_DECLARE(__uint128_t,         u128)
+LUCIS_VEC_DECLARE(lucis_int256_t,      iinf)
 LUCIS_VEC_DECLARE(float,                f32)
 LUCIS_VEC_DECLARE(double,               f64)
 LUCIS_VEC_DECLARE(char,                 char)
@@ -118,6 +119,7 @@ LUCIS_VEC_DECLARE_TOSTRING(u32)
 LUCIS_VEC_DECLARE_TOSTRING(u64)
 LUCIS_VEC_DECLARE_TOSTRING(i128)
 LUCIS_VEC_DECLARE_TOSTRING(u128)
+LUCIS_VEC_DECLARE_TOSTRING(iinf)
 LUCIS_VEC_DECLARE_TOSTRING(f32)
 LUCIS_VEC_DECLARE_TOSTRING(f64)
 LUCIS_VEC_DECLARE_TOSTRING(char)

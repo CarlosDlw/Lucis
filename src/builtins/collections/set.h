@@ -3,6 +3,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include "int256.h"
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Set<T> — Open-addressing hash set
@@ -72,6 +73,7 @@ LUCIS_SET_DECL_INT(uint32_t, u32)
 LUCIS_SET_DECL_INT(uint64_t, u64)
 LUCIS_SET_DECL_INT(__int128_t,  i128)
 LUCIS_SET_DECL_INT(__uint128_t, u128)
+LUCIS_SET_DECL_INT(lucis_int256_t, iinf)
 
 // String element type
 LUCIS_SET_DECL_STR()

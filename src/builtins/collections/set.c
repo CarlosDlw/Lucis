@@ -1,5 +1,6 @@
 #include "collections/set.h"
 #include "../string/string.h"
+#include "int256.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -50,6 +51,19 @@ static uint64_t hash_16(const void* k) {
 }
 static int eq_16(const void* a, const void* b) {
     return *(const __uint128_t*)a == *(const __uint128_t*)b;
+}
+
+// 32-byte (256-bit) hash/eq
+static uint64_t hash_32(const void* k) {
+    const uint64_t* key = (const uint64_t*)k;
+    uint64_t h = splitmix64(key[0]);
+    h ^= splitmix64(key[1]);
+    h ^= splitmix64(key[2]);
+    h ^= splitmix64(key[3]);
+    return h;
+}
+static int eq_32(const void* a, const void* b) {
+    return memcmp(a, b, 32) == 0;
 }
 
 // String hash/eq — FNV-1a
@@ -261,6 +275,7 @@ LUCIS_SET_IMPL_INT(int64_t,  i64, hash_8, eq_8)
 LUCIS_SET_IMPL_INT(uint64_t, u64, hash_8, eq_8)
 LUCIS_SET_IMPL_INT(__int128_t,  i128, hash_16, eq_16)
 LUCIS_SET_IMPL_INT(__uint128_t, u128, hash_16, eq_16)
+LUCIS_SET_IMPL_INT(lucis_int256_t, iinf, hash_32, eq_32)
 
 // ── String element type ──────────────────────────────────────────────────
 

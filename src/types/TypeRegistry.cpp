@@ -44,7 +44,7 @@ void TypeRegistry::registerBuiltins() {
     registerType({ "int32",  TypeKind::Integer, 32,  true, "i32"  });
     registerType({ "int64",  TypeKind::Integer, 64,  true, "i64"  });
     registerType({ "int128", TypeKind::Integer, 128, true, "i128" });
-    registerType({ "intinf", TypeKind::Integer, 256, true, "i128" }); // truncated for builtins
+    registerType({ "intinf", TypeKind::Integer, 256, true, "iinf" });
     registerType({ "isize",  TypeKind::Integer, 0,   true, "i64"  }); // platform-dependent
 
     // ── Unsigned integers ───────────────────────────────────────────────
