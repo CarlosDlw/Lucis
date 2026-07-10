@@ -176,6 +176,48 @@ LUCIS_MAP_DECL_INT_KEY(uint64_t, u64, float,    f32)
 LUCIS_MAP_DECL_INT_KEY(uint64_t, u64, double,   f64)
 LUCIS_MAP_DECL_INT_KEY_STR_VAL(uint64_t, u64)
 
+// Uint128 key × all values
+LUCIS_MAP_DECL_INT_KEY(__uint128_t, u128, int8_t,   i8)
+LUCIS_MAP_DECL_INT_KEY(__uint128_t, u128, int16_t,  i16)
+LUCIS_MAP_DECL_INT_KEY(__uint128_t, u128, int32_t,  i32)
+LUCIS_MAP_DECL_INT_KEY(__uint128_t, u128, int64_t,  i64)
+LUCIS_MAP_DECL_INT_KEY(__uint128_t, u128, uint8_t,  u8)
+LUCIS_MAP_DECL_INT_KEY(__uint128_t, u128, uint16_t, u16)
+LUCIS_MAP_DECL_INT_KEY(__uint128_t, u128, uint32_t, u32)
+LUCIS_MAP_DECL_INT_KEY(__uint128_t, u128, uint64_t, u64)
+LUCIS_MAP_DECL_INT_KEY(__uint128_t, u128, float,    f32)
+LUCIS_MAP_DECL_INT_KEY(__uint128_t, u128, double,   f64)
+LUCIS_MAP_DECL_INT_KEY_STR_VAL(__uint128_t, u128)
+
+// Int128 key × all values
+LUCIS_MAP_DECL_INT_KEY(__int128_t, i128, int8_t,   i8)
+LUCIS_MAP_DECL_INT_KEY(__int128_t, i128, int16_t,  i16)
+LUCIS_MAP_DECL_INT_KEY(__int128_t, i128, int32_t,  i32)
+LUCIS_MAP_DECL_INT_KEY(__int128_t, i128, int64_t,  i64)
+LUCIS_MAP_DECL_INT_KEY(__int128_t, i128, uint8_t,  u8)
+LUCIS_MAP_DECL_INT_KEY(__int128_t, i128, uint16_t, u16)
+LUCIS_MAP_DECL_INT_KEY(__int128_t, i128, uint32_t, u32)
+LUCIS_MAP_DECL_INT_KEY(__int128_t, i128, uint64_t, u64)
+LUCIS_MAP_DECL_INT_KEY(__int128_t, i128, float,    f32)
+LUCIS_MAP_DECL_INT_KEY(__int128_t, i128, double,   f64)
+LUCIS_MAP_DECL_INT_KEY_STR_VAL(__int128_t, i128)
+
+// Int32 key × uint128/int128 values
+LUCIS_MAP_DECL_INT_KEY(int32_t, i32, __uint128_t, u128)
+LUCIS_MAP_DECL_INT_KEY(int32_t, i32, __int128_t,  i128)
+
+// Int64 key × uint128/int128 values
+LUCIS_MAP_DECL_INT_KEY(int64_t, i64, __uint128_t, u128)
+LUCIS_MAP_DECL_INT_KEY(int64_t, i64, __int128_t,  i128)
+
+// Uint64 key × uint128/int128 values
+LUCIS_MAP_DECL_INT_KEY(uint64_t, u64, __uint128_t, u128)
+LUCIS_MAP_DECL_INT_KEY(uint64_t, u64, __int128_t,  i128)
+
+// String key × uint128/int128 values
+LUCIS_MAP_DECL_STR_KEY(__uint128_t, u128)
+LUCIS_MAP_DECL_STR_KEY(__int128_t,  i128)
+
 // ── Raw (opaque struct) value variants ─────────────────────────────────
 // Used when value is a user-defined struct (builtinSuffix == "raw").
 // val_size is passed explicitly to init; stored in m->val_size afterward.

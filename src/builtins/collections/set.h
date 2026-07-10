@@ -70,6 +70,8 @@ LUCIS_SET_DECL_INT(uint8_t,  u8)
 LUCIS_SET_DECL_INT(uint16_t, u16)
 LUCIS_SET_DECL_INT(uint32_t, u32)
 LUCIS_SET_DECL_INT(uint64_t, u64)
+LUCIS_SET_DECL_INT(__int128_t,  i128)
+LUCIS_SET_DECL_INT(__uint128_t, u128)
 
 // String element type
 LUCIS_SET_DECL_STR()

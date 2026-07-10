@@ -51,6 +51,26 @@ static int eq_key_u64(const void* a, const void* b) {
     return *(const uint64_t*)a == *(const uint64_t*)b;
 }
 
+static uint64_t hash_key_u128(const void* key) {
+    const __uint128_t* k = (const __uint128_t*)key;
+    uint64_t low = (uint64_t)*k;
+    uint64_t high = (uint64_t)(*k >> 64);
+    return splitmix64(low ^ splitmix64(high));
+}
+static int eq_key_u128(const void* a, const void* b) {
+    return *(const __uint128_t*)a == *(const __uint128_t*)b;
+}
+
+static uint64_t hash_key_i128(const void* key) {
+    const __int128_t* k = (const __int128_t*)key;
+    uint64_t low = (uint64_t)(__uint128_t)*k;
+    uint64_t high = (uint64_t)((__uint128_t)*k >> 64);
+    return splitmix64(low ^ splitmix64(high));
+}
+static int eq_key_i128(const void* a, const void* b) {
+    return *(const __int128_t*)a == *(const __int128_t*)b;
+}
+
 static uint64_t hash_key_str(const void* key) {
     const lucis_map_string* s = (const lucis_map_string*)key;
     uint64_t h = 14695981039346656037ULL;
@@ -672,6 +692,48 @@ LUCIS_MAP_IMPL_INT(uint64_t, u64, uint64_t, u64, hash_key_u64, eq_key_u64)
 LUCIS_MAP_IMPL_INT(uint64_t, u64, float,    f32, hash_key_u64, eq_key_u64)
 LUCIS_MAP_IMPL_INT(uint64_t, u64, double,   f64, hash_key_u64, eq_key_u64)
 LUCIS_MAP_IMPL_INT_STR(uint64_t, u64, hash_key_u64, eq_key_u64)
+
+// ── Uint128 key × all numeric values ─────────────────────────────────────
+LUCIS_MAP_IMPL_INT(__uint128_t, u128, int8_t,   i8,  hash_key_u128, eq_key_u128)
+LUCIS_MAP_IMPL_INT(__uint128_t, u128, int16_t,  i16, hash_key_u128, eq_key_u128)
+LUCIS_MAP_IMPL_INT(__uint128_t, u128, int32_t,  i32, hash_key_u128, eq_key_u128)
+LUCIS_MAP_IMPL_INT(__uint128_t, u128, int64_t,  i64, hash_key_u128, eq_key_u128)
+LUCIS_MAP_IMPL_INT(__uint128_t, u128, uint8_t,  u8,  hash_key_u128, eq_key_u128)
+LUCIS_MAP_IMPL_INT(__uint128_t, u128, uint16_t, u16, hash_key_u128, eq_key_u128)
+LUCIS_MAP_IMPL_INT(__uint128_t, u128, uint32_t, u32, hash_key_u128, eq_key_u128)
+LUCIS_MAP_IMPL_INT(__uint128_t, u128, uint64_t, u64, hash_key_u128, eq_key_u128)
+LUCIS_MAP_IMPL_INT(__uint128_t, u128, float,    f32, hash_key_u128, eq_key_u128)
+LUCIS_MAP_IMPL_INT(__uint128_t, u128, double,   f64, hash_key_u128, eq_key_u128)
+LUCIS_MAP_IMPL_INT_STR(__uint128_t, u128, hash_key_u128, eq_key_u128)
+
+// ── Int128 key × all numeric values ──────────────────────────────────────
+LUCIS_MAP_IMPL_INT(__int128_t, i128, int8_t,   i8,  hash_key_i128, eq_key_i128)
+LUCIS_MAP_IMPL_INT(__int128_t, i128, int16_t,  i16, hash_key_i128, eq_key_i128)
+LUCIS_MAP_IMPL_INT(__int128_t, i128, int32_t,  i32, hash_key_i128, eq_key_i128)
+LUCIS_MAP_IMPL_INT(__int128_t, i128, int64_t,  i64, hash_key_i128, eq_key_i128)
+LUCIS_MAP_IMPL_INT(__int128_t, i128, uint8_t,  u8,  hash_key_i128, eq_key_i128)
+LUCIS_MAP_IMPL_INT(__int128_t, i128, uint16_t, u16, hash_key_i128, eq_key_i128)
+LUCIS_MAP_IMPL_INT(__int128_t, i128, uint32_t, u32, hash_key_i128, eq_key_i128)
+LUCIS_MAP_IMPL_INT(__int128_t, i128, uint64_t, u64, hash_key_i128, eq_key_i128)
+LUCIS_MAP_IMPL_INT(__int128_t, i128, float,    f32, hash_key_i128, eq_key_i128)
+LUCIS_MAP_IMPL_INT(__int128_t, i128, double,   f64, hash_key_i128, eq_key_i128)
+LUCIS_MAP_IMPL_INT_STR(__int128_t, i128, hash_key_i128, eq_key_i128)
+
+// ── Int32 key × uint128/int128 values ────────────────────────────────────
+LUCIS_MAP_IMPL_INT(int32_t, i32, __uint128_t, u128, hash_key_i32, eq_key_i32)
+LUCIS_MAP_IMPL_INT(int32_t, i32, __int128_t,  i128, hash_key_i32, eq_key_i32)
+
+// ── Int64 key × uint128/int128 values ────────────────────────────────────
+LUCIS_MAP_IMPL_INT(int64_t, i64, __uint128_t, u128, hash_key_i64, eq_key_i64)
+LUCIS_MAP_IMPL_INT(int64_t, i64, __int128_t,  i128, hash_key_i64, eq_key_i64)
+
+// ── Uint64 key × uint128/int128 values ───────────────────────────────────
+LUCIS_MAP_IMPL_INT(uint64_t, u64, __uint128_t, u128, hash_key_u64, eq_key_u64)
+LUCIS_MAP_IMPL_INT(uint64_t, u64, __int128_t,  i128, hash_key_u64, eq_key_u64)
+
+// ── String key × uint128/int128 values ───────────────────────────────────
+LUCIS_MAP_IMPL_STR(__uint128_t, u128)
+LUCIS_MAP_IMPL_STR(__int128_t,  i128)
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Raw (opaque struct) value — str key, struct val of runtime-known size

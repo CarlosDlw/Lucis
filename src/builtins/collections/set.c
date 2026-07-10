@@ -41,6 +41,17 @@ static int eq_4(const void* a, const void* b) { return *(const uint32_t*)a == *(
 static uint64_t hash_8(const void* k) { return splitmix64(*(const uint64_t*)k); }
 static int eq_8(const void* a, const void* b) { return *(const uint64_t*)a == *(const uint64_t*)b; }
 
+// 16-byte (128-bit) hash/eq
+static uint64_t hash_16(const void* k) {
+    const __uint128_t* key = (const __uint128_t*)k;
+    uint64_t low = (uint64_t)*key;
+    uint64_t high = (uint64_t)(*key >> 64);
+    return splitmix64(low ^ splitmix64(high));
+}
+static int eq_16(const void* a, const void* b) {
+    return *(const __uint128_t*)a == *(const __uint128_t*)b;
+}
+
 // String hash/eq — FNV-1a
 static uint64_t hash_str(const void* key) {
     const lucis_set_string* s = (const lucis_set_string*)key;
@@ -248,6 +259,8 @@ LUCIS_SET_IMPL_INT(int32_t,  i32, hash_4, eq_4)
 LUCIS_SET_IMPL_INT(uint32_t, u32, hash_4, eq_4)
 LUCIS_SET_IMPL_INT(int64_t,  i64, hash_8, eq_8)
 LUCIS_SET_IMPL_INT(uint64_t, u64, hash_8, eq_8)
+LUCIS_SET_IMPL_INT(__int128_t,  i128, hash_16, eq_16)
+LUCIS_SET_IMPL_INT(__uint128_t, u128, hash_16, eq_16)
 
 // ── String element type ──────────────────────────────────────────────────
 
