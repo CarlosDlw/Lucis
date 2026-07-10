@@ -430,19 +430,60 @@ std::string Mutator::genParenExpr(const LucisType& desired, int depth) {
 }
 
 std::string Mutator::genUnaryExpr(const LucisType& desired, int depth) {
-    static const char* ops[] = {"-", "!", "~"};
-    if (desired.isInteger()) {
-        return std::string(ops[randInt(0, 2)]) + genParenExpr(desired, depth + 1);
+    if (desired.base == BaseType::Bool) {
+        // Bool only supports logical not (!)
+        return "!" + genParenExpr(desired, depth + 1);
     }
-    return "-" + genParenExpr(desired, depth + 1);
+    if (desired.isInteger()) {
+        // Integers support negation (-) and bitwise not (~)
+        const char* op = (randInt(0, 1) == 0) ? "-" : "~";
+        return std::string(op) + genParenExpr(desired, depth + 1);
+    }
+    if (desired.isFloat()) {
+        // Floats support negation (-)
+        return "-" + genParenExpr(desired, depth + 1);
+    }
+    // For other types, fall back to a literal
+    return randomLit(desired);
 }
 
 std::string Mutator::genBinaryExpr(const LucisType& desired, int depth) {
-    static const char* ops[] = {"+", "-", "*", "/", "%", "==", "!=", "<", ">", "<=", ">=", "&&", "||", "&", "|", "^", "<<"};
-    const char* op = ops[randInt(0, 16)];
-    std::string lhs = genExpr(desired, depth + 1);
-    std::string rhs = genExpr(desired, depth + 1);
-    return lhs + " " + op + " " + rhs;
+    if (desired.isInteger()) {
+        // Arithmetic and bitwise operators — return same type as operands
+        static const char* ops[] = {"+", "-", "*", "/", "%", "&", "|", "^", "<<"};
+        const char* op = ops[randInt(0, 8)];
+        std::string lhs = genExpr(desired, depth + 1);
+        std::string rhs = genExpr(desired, depth + 1);
+        return lhs + " " + op + " " + rhs;
+    }
+    if (desired.isFloat()) {
+        // Arithmetic operators — return same type as operands
+        static const char* ops[] = {"+", "-", "*", "/"};
+        const char* op = ops[randInt(0, 3)];
+        std::string lhs = genExpr(desired, depth + 1);
+        std::string rhs = genExpr(desired, depth + 1);
+        return lhs + " " + op + " " + rhs;
+    }
+    if (desired.base == BaseType::Bool) {
+        if (randInt(0, 1)) {
+            // Comparison operators — take numeric operands, return bool
+            LucisType numeric = randomIntType();
+            static const char* cmpOps[] = {"==", "!=", "<", ">", "<=", ">="};
+            const char* op = cmpOps[randInt(0, 5)];
+            std::string lhs = genExpr(numeric, depth + 1);
+            std::string rhs = genExpr(numeric, depth + 1);
+            return lhs + " " + op + " " + rhs;
+        } else {
+            // Logical operators — take bool operands, return bool
+            static const char* logOps[] = {"&&", "||"};
+            const char* op = logOps[randInt(0, 1)];
+            std::string lhs = genExpr(desired, depth + 1);
+            std::string rhs = genExpr(desired, depth + 1);
+            return lhs + " " + op + " " + rhs;
+        }
+    }
+    // For other types, fall back to a literal
+    return randomLit(desired);
 }
 
 std::string Mutator::genCastExpr(const LucisType& desired, int depth) {
@@ -925,12 +966,14 @@ std::string Mutator::genEdgeControlFlow() {
 
 std::string Mutator::genEdgeConcurrency() {
     std::string code;
+    code += "use std::thread::Task;\n\n";
+    // Top-level helper function for spawn (functions must be top-level in Lucis)
+    code += "fn spawn_helper() int32 {\n";
+    code += "  ret 42;\n";
+    code += "}\n\n";
     code += "fn test_fuzz() void {\n";
-    code += "  // Spawn a simple task\n";
-    code += "  auto fut = spawn fn() int32 {\n";
-    code += "    ret 42;\n";
-    code += "  };\n";
-    code += "  int32 result = await fut;\n";
+    code += "  Task<int32> t = spawn spawn_helper();\n";
+    code += "  int32 result = await t;\n";
     code += "  println(result.toString());\n";
     code += "}\n";
     return wrapProgram(code);

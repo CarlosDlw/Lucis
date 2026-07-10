@@ -276,6 +276,8 @@ LUCIS_SET_IMPL_INT(uint64_t, u64, hash_8, eq_8)
 LUCIS_SET_IMPL_INT(__int128_t,  i128, hash_16, eq_16)
 LUCIS_SET_IMPL_INT(__uint128_t, u128, hash_16, eq_16)
 LUCIS_SET_IMPL_INT(lucis_int256_t, iinf, hash_32, eq_32)
+LUCIS_SET_IMPL_INT(uint8_t, u1, hash_1, eq_1)
+LUCIS_SET_IMPL_INT(uint8_t, i1, hash_1, eq_1)
 
 // ── String element type ──────────────────────────────────────────────────
 

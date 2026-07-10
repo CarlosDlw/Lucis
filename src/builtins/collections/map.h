@@ -227,6 +227,56 @@ LUCIS_MAP_DECL_INT_KEY(uint64_t, u64, lucis_int256_t, iinf)
 // String key × intinf value
 LUCIS_MAP_DECL_STR_KEY(lucis_int256_t, iinf)
 
+// Uint1 key × all numeric values
+LUCIS_MAP_DECL_INT_KEY(uint8_t, u1, int8_t,   i8)
+LUCIS_MAP_DECL_INT_KEY(uint8_t, u1, int16_t,  i16)
+LUCIS_MAP_DECL_INT_KEY(uint8_t, u1, int32_t,  i32)
+LUCIS_MAP_DECL_INT_KEY(uint8_t, u1, int64_t,  i64)
+LUCIS_MAP_DECL_INT_KEY(uint8_t, u1, uint8_t,  u8)
+LUCIS_MAP_DECL_INT_KEY(uint8_t, u1, uint16_t, u16)
+LUCIS_MAP_DECL_INT_KEY(uint8_t, u1, uint32_t, u32)
+LUCIS_MAP_DECL_INT_KEY(uint8_t, u1, uint64_t, u64)
+LUCIS_MAP_DECL_INT_KEY(uint8_t, u1, float,    f32)
+LUCIS_MAP_DECL_INT_KEY(uint8_t, u1, double,   f64)
+LUCIS_MAP_DECL_INT_KEY_STR_VAL(uint8_t, u1)
+
+// Int1 key × all numeric values
+LUCIS_MAP_DECL_INT_KEY(uint8_t, i1, int8_t,   i8)
+LUCIS_MAP_DECL_INT_KEY(uint8_t, i1, int16_t,  i16)
+LUCIS_MAP_DECL_INT_KEY(uint8_t, i1, int32_t,  i32)
+LUCIS_MAP_DECL_INT_KEY(uint8_t, i1, int64_t,  i64)
+LUCIS_MAP_DECL_INT_KEY(uint8_t, i1, uint8_t,  u8)
+LUCIS_MAP_DECL_INT_KEY(uint8_t, i1, uint16_t, u16)
+LUCIS_MAP_DECL_INT_KEY(uint8_t, i1, uint32_t, u32)
+LUCIS_MAP_DECL_INT_KEY(uint8_t, i1, uint64_t, u64)
+LUCIS_MAP_DECL_INT_KEY(uint8_t, i1, float,    f32)
+LUCIS_MAP_DECL_INT_KEY(uint8_t, i1, double,   f64)
+LUCIS_MAP_DECL_INT_KEY_STR_VAL(uint8_t, i1)
+
+// Int32/i64/u64 key × u1/i1 values
+LUCIS_MAP_DECL_INT_KEY(int32_t, i32, uint8_t, u1)
+LUCIS_MAP_DECL_INT_KEY(int32_t, i32, uint8_t, i1)
+LUCIS_MAP_DECL_INT_KEY(int64_t, i64, uint8_t, u1)
+LUCIS_MAP_DECL_INT_KEY(int64_t, i64, uint8_t, i1)
+LUCIS_MAP_DECL_INT_KEY(uint64_t, u64, uint8_t, u1)
+LUCIS_MAP_DECL_INT_KEY(uint64_t, u64, uint8_t, i1)
+
+// String key × u1/i1 values
+LUCIS_MAP_DECL_STR_KEY(uint8_t, u1)
+LUCIS_MAP_DECL_STR_KEY(uint8_t, i1)
+
+// Uint1 key × uint128/int128 values
+LUCIS_MAP_DECL_INT_KEY(uint8_t, u1, __uint128_t, u128)
+LUCIS_MAP_DECL_INT_KEY(uint8_t, u1, __int128_t,  i128)
+
+// Int1 key × uint128/int128 values
+LUCIS_MAP_DECL_INT_KEY(uint8_t, i1, __uint128_t, u128)
+LUCIS_MAP_DECL_INT_KEY(uint8_t, i1, __int128_t,  i128)
+
+// Uint1/Int1 key × intinf value
+LUCIS_MAP_DECL_INT_KEY(uint8_t, u1, lucis_int256_t, iinf)
+LUCIS_MAP_DECL_INT_KEY(uint8_t, i1, lucis_int256_t, iinf)
+
 // ── Raw (opaque struct) value variants ─────────────────────────────────
 // Used when value is a user-defined struct (builtinSuffix == "raw").
 // val_size is passed explicitly to init; stored in m->val_size afterward.
