@@ -840,8 +840,8 @@ std::string Mutator::genEdgeArrayEdge() {
     auto elem = randomIntType();
     std::string code;
     code += "fn test_fuzz() void {\n";
-    // Zero-size array
-    code += "  [0]" + elem.str() + " empty;\n";
+    // Single-element array (zero-size arrays are not valid in Lucis)
+    code += "  [1]" + elem.str() + " single_elem;\n";
     // Single element
     code += "  [1]" + elem.str() + " single;\n";
     // Large array

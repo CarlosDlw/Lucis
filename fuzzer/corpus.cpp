@@ -159,7 +159,7 @@ void Corpus::extractFragmentsFrom(const std::string& source) {
 
 FunctionFragment Corpus::randomFunction() {
     if (cachedFunctions_.empty()) {
-        return {"test_fuzz", "fn test_fuzz()", "void", "{}", "fn test_fuzz() void {}"};
+        return {"test_fuzz", "fn test_fuzz() void", "void", "{}", "fn test_fuzz() void {}"};
     }
     std::uniform_int_distribution<size_t> d(0, cachedFunctions_.size() - 1);
     return cachedFunctions_[d(rng_)];
