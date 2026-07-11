@@ -23,17 +23,16 @@ void lucis_println_ptr(const void* val)   { printf("%p\n", val); }
 
 void lucis_println_cstr(const char* str) { printf("%s\n", str ? str : "(null)"); }
 
-static void print_i128_digits(__int128 val) {
-    if (val > 9) print_i128_digits(val / 10);
-    putchar('0' + (int)(val % 10));
-}
+// forward declaration needed by signed i128 printers below
+static void print_u128_digits(unsigned __int128 val);
 
 void lucis_println_i128(__int128 val) {
     if (val < 0) {
         putchar('-');
-        val = -val;
+        print_u128_digits(-(unsigned __int128)val);
+    } else {
+        print_u128_digits((unsigned __int128)val);
     }
-    print_i128_digits(val);
     putchar('\n');
 }
 
@@ -57,9 +56,10 @@ void lucis_print_cstr(const char* str) { printf("%s", str ? str : "(null)"); }
 void lucis_print_i128(__int128 val) {
     if (val < 0) {
         putchar('-');
-        val = -val;
+        print_u128_digits(-(unsigned __int128)val);
+    } else {
+        print_u128_digits((unsigned __int128)val);
     }
-    print_i128_digits(val);
 }
 
 // ── println (unsigned) ───────────────────────────────────────────────────────

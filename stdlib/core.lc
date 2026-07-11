@@ -1,0 +1,81 @@
+/** Standard file descriptor for input (stdin). */
+const STDIN: int32 = 0;
+/** Standard file descriptor for output (stdout). */
+const STDOUT: int32 = 1;
+/** Standard file descriptor for error (stderr). */
+const STDERR: int32 = 2;
+
+/** Minimum value of a 1-bit signed integer. */
+const INT1_MIN: int32 = -1;
+/** Maximum value of a 1-bit signed integer. */
+const INT1_MAX: int32 = 1;
+
+/** Minimum value of an 8-bit signed integer. */
+const INT8_MIN: int32 = -128;
+/** Maximum value of an 8-bit signed integer. */
+const INT8_MAX: int32 = 127;
+
+/** Minimum value of a 16-bit signed integer. */
+const INT16_MIN: int32 = -32768;
+/** Maximum value of a 16-bit signed integer. */
+const INT16_MAX: int32 = 32767;
+
+/** Minimum value of a 32-bit signed integer. */
+const INT32_MIN: int32 = -2147483648;
+/** Maximum value of a 32-bit signed integer. */
+const INT32_MAX: int32 = 2147483647;
+
+/** Minimum value of a 64-bit signed integer. */
+const INT64_MIN: int64 = -9223372036854775808;
+/** Maximum value of a 64-bit signed integer. */
+const INT64_MAX: int64 = 9223372036854775807;
+
+/** Minimum value of a 128-bit signed integer. */
+const INT128_MIN: int128 = -170141183460469231731687303715884105728;
+/** Maximum value of a 128-bit signed integer. */
+const INT128_MAX: int128 = 170141183460469231731687303715884105727;
+
+/** Minimum value of an 8-bit unsigned integer. */
+const UINT8_MIN: uint8 = 0;
+/** Maximum value of an 8-bit unsigned integer. */
+const UINT8_MAX: uint8 = 255;
+
+/** Minimum value of a 16-bit unsigned integer. */
+const UINT16_MIN: uint16 = 0;
+/** Maximum value of a 16-bit unsigned integer. */
+const UINT16_MAX: uint16 = 65535;
+
+/** Minimum value of a 32-bit unsigned integer. */
+const UINT32_MIN: uint32 = 0;
+/** Maximum value of a 32-bit unsigned integer. */
+const UINT32_MAX: uint32 = 4294967295;
+
+/** Minimum value of a 64-bit unsigned integer. */
+const UINT64_MIN: uint64 = 0;
+/** Maximum value of a 64-bit unsigned integer. */
+const UINT64_MAX: uint64 = 18446744073709551615;
+
+/** Minimum value of a 128-bit unsigned integer. */
+const UINT128_MIN: uint128 = 0;
+/** Maximum value of a 128-bit unsigned integer. */
+const UINT128_MAX: uint128 = 340282366920938463463374607431768211455;
+
+/** Minimum value of an unsigned pointer-sized integer. */
+const USIZE_MIN: usize = 0;
+
+/// Import `use std::math::ISIZE_MIN, ISIZE_MAX, USIZE_MAX` for
+/// platform-dependent pointer-width integer limits.
+
+/** Minimum finite value of a 32-bit floating-point number. */
+const FLOAT32_MIN: float32 = -3.40282347e+38f32;
+/** Maximum finite value of a 32-bit floating-point number. */
+const FLOAT32_MAX: float32 = 3.40282347e+38f32;
+
+/** Minimum finite value of a 64-bit floating-point number. */
+const FLOAT64_MIN: float64 = -1.7976931348623157e+308;
+/** Maximum finite value of a 64-bit floating-point number. */
+const FLOAT64_MAX: float64 = 1.7976931348623157e+308;
+
+// FLOAT80 and FLOAT128 min/max depend on values outside the range
+// of a float64 literal; import `use std::math::*` for those constants.
+// `double` is an alias for `float64` — see FLOAT64_MIN / FLOAT64_MAX.

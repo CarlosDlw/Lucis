@@ -5670,9 +5670,10 @@ std::any IRGen::visitCallStmt(LucisParser::CallStmtContext* ctx) {
                                     auto* argVal = castValue(visit(argList->expression(ai)));
                                     if (ai < varIdx) {
                                         if (argVal->getType() != fnTy->getParamType(ai)) {
-                                            if (argVal->getType()->isIntegerTy() && fnTy->getParamType(ai)->isIntegerTy())
-                                                argVal = builder_->CreateIntCast(argVal, fnTy->getParamType(ai), true);
-                                            else if (argVal->getType()->isFloatingPointTy() && fnTy->getParamType(ai)->isFloatingPointTy())
+                                            if (argVal->getType()->isIntegerTy() && fnTy->getParamType(ai)->isIntegerTy()) {
+                                                bool srcSigned = ai < argTypes.size() && argTypes[ai] && argTypes[ai]->isSigned;
+                                                argVal = builder_->CreateIntCast(argVal, fnTy->getParamType(ai), srcSigned);
+                                            } else if (argVal->getType()->isFloatingPointTy() && fnTy->getParamType(ai)->isFloatingPointTy())
                                                 argVal = builder_->CreateFPCast(argVal, fnTy->getParamType(ai));
                                         }
                                         callArgs.push_back(argVal);
@@ -5725,9 +5726,10 @@ std::any IRGen::visitCallStmt(LucisParser::CallStmtContext* ctx) {
                                     if (paramIdx < fnTy->getNumParams()) {
                                         auto* paramTy = fnTy->getParamType(paramIdx);
                                         if (argVal->getType() != paramTy) {
-                                            if (argVal->getType()->isIntegerTy() && paramTy->isIntegerTy())
-                                                argVal = builder_->CreateIntCast(argVal, paramTy, true);
-                                            else if (argVal->getType()->isFloatingPointTy() && paramTy->isFloatingPointTy())
+                                            if (argVal->getType()->isIntegerTy() && paramTy->isIntegerTy()) {
+                                                bool srcSigned = paramIdx < argTypes.size() && argTypes[paramIdx] && argTypes[paramIdx]->isSigned;
+                                                argVal = builder_->CreateIntCast(argVal, paramTy, srcSigned);
+                                            } else if (argVal->getType()->isFloatingPointTy() && paramTy->isFloatingPointTy())
                                                 argVal = builder_->CreateFPCast(argVal, paramTy);
                                         }
                                     }
@@ -5889,12 +5891,13 @@ std::any IRGen::visitCallStmt(LucisParser::CallStmtContext* ctx) {
           }
         }
         if (suffix.empty()) {
+          bool isUnsigned = argTypeInfo && !argTypeInfo->isSigned;
           if (argType->isIntegerTy(1))      suffix = "bool";
-          else if (argType->isIntegerTy(8))      suffix = "i8";
-          else if (argType->isIntegerTy(16))     suffix = "i16";
-          else if (argType->isIntegerTy(32))     suffix = "i32";
-          else if (argType->isIntegerTy(64))     suffix = "i64";
-          else if (argType->isIntegerTy(128))    suffix = "i128";
+          else if (argType->isIntegerTy(8))      suffix = isUnsigned ? "u8" : "i8";
+          else if (argType->isIntegerTy(16))     suffix = isUnsigned ? "u16" : "i16";
+          else if (argType->isIntegerTy(32))     suffix = isUnsigned ? "u32" : "i32";
+          else if (argType->isIntegerTy(64))     suffix = isUnsigned ? "u64" : "i64";
+          else if (argType->isIntegerTy(128))    suffix = isUnsigned ? "u128" : "i128";
           else if (argType->isFloatTy())         suffix = "f32";
           else if (argType->isDoubleTy())        suffix = "f64";
           else if (argType->isPointerTy())       suffix = "ptr";
@@ -9079,6 +9082,22 @@ std::any IRGen::visitIdentExpr(LucisParser::IdentExprContext* ctx) {
         if (name == "UINT64_MAX")
             return static_cast<llvm::Value*>(
                 llvm::ConstantInt::get(i64Ty, 18446744073709551615ULL));
+        if (name == "ISIZE_MIN" || name == "ISIZE_MAX") {
+            auto ptrWidth = module_->getDataLayout().getPointerSizeInBits();
+            auto* isizeTy = module_->getDataLayout().getIntPtrType(*context_);
+            auto val = (ptrWidth == 64)
+                ? (name == "ISIZE_MIN" ? 0x8000000000000000ULL : 0x7FFFFFFFFFFFFFFFULL)
+                : (name == "ISIZE_MIN" ? 0x80000000ULL : 0x7FFFFFFFULL);
+            return static_cast<llvm::Value*>(
+                llvm::ConstantInt::get(isizeTy, val, true));
+        }
+        if (name == "USIZE_MAX") {
+            auto ptrWidth = module_->getDataLayout().getPointerSizeInBits();
+            auto* usizeTy = module_->getDataLayout().getIntPtrType(*context_);
+            auto val = (ptrWidth == 64) ? 0xFFFFFFFFFFFFFFFFULL : 0xFFFFFFFFULL;
+            return static_cast<llvm::Value*>(
+                llvm::ConstantInt::get(usizeTy, val, false));
+        }
     }
 
     // Check if it's a module-level function (function reference)
@@ -25725,9 +25744,10 @@ std::any IRGen::visitGenericFnCallExpr(LucisParser::GenericFnCallExprContext* ct
             if (paramIdx < fnType->getNumParams()) {
                 auto* paramTy = fnType->getParamType(paramIdx);
                 if (argVal->getType() != paramTy) {
-                    if (argVal->getType()->isIntegerTy() && paramTy->isIntegerTy())
-                        argVal = builder_->CreateIntCast(argVal, paramTy, true);
-                    else if (argVal->getType()->isFloatingPointTy() && paramTy->isFloatingPointTy())
+                    if (argVal->getType()->isIntegerTy() && paramTy->isIntegerTy()) {
+                        auto* argTI = resolveExprTypeInfo(argExpr);
+                        argVal = builder_->CreateIntCast(argVal, paramTy, argTI && argTI->isSigned);
+                    } else if (argVal->getType()->isFloatingPointTy() && paramTy->isFloatingPointTy())
                         argVal = builder_->CreateFPCast(argVal, paramTy);
                 }
             }

@@ -111,6 +111,9 @@ BuiltinRegistry::BuiltinRegistry() {
     addConstant("INT64_MIN",  "int64");
     addConstant("UINT32_MAX", "uint32");
     addConstant("UINT64_MAX", "uint64");
+    addConstant("ISIZE_MIN",  "isize");
+    addConstant("ISIZE_MAX",  "isize");
+    addConstant("USIZE_MAX",  "usize");
 
     // Unary float64 → float64
     for (auto& fn : {"sqrt", "cbrt", "exp", "exp2", "ln", "log2", "log10",

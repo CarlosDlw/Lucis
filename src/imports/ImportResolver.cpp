@@ -17,6 +17,7 @@ ImportResolver::knownModules_ = {
     { "std::math", { "PI", "E", "TAU", "INF", "NAN",
                      "INT32_MAX", "INT32_MIN", "INT64_MAX", "INT64_MIN",
                      "UINT32_MAX", "UINT64_MAX",
+                     "ISIZE_MIN", "ISIZE_MAX", "USIZE_MAX",
                      "abs", "min", "max", "clamp",
                      "sqrt", "cbrt", "pow", "hypot",
                      "exp", "exp2", "ln", "log2", "log10",
