@@ -83,6 +83,7 @@ struct VariantInfo {
 struct ParamInfo {
     std::string name;
     Decl*       type = nullptr;       // non-owning pointer into SemanticDB
+    bool        isVariadic = false;
 };
 
 struct MethodInfo {

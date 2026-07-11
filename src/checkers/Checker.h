@@ -190,7 +190,8 @@ private:
     const TypeInfo* getPointerType(const TypeInfo* pointee);
     const TypeInfo* makeFunctionType(const TypeInfo* returnType,
                                      const std::vector<const TypeInfo*>& paramTypes,
-                                     bool isVariadic = false);
+                                     bool isVariadic = false,
+                                     const TypeInfo* variadicElementType = nullptr);
     std::string resolveBaseTypeName(LucisParser::TypeSpecContext* ctx);
     const TypeInfo* resolveBuiltinReturnType(const std::string& retName);
 

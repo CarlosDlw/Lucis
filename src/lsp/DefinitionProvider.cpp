@@ -1884,7 +1884,12 @@ DefinitionProvider::collectLocals(LucisParser::FunctionDeclContext* func,
     if (auto* params = func->paramList()) {
         for (auto* p : params->param()) {
             if (!p->IDENTIFIER()) continue;  // skip untyped variadic (...)
-            std::string typeName = safeText(p->typeSpec());
+            auto paramType = [](auto* pp) {
+                auto t = safeText(pp->typeSpec());
+                if (pp->SPREAD()) t = "[]" + t;
+                return t;
+            };
+            std::string typeName = paramType(p);
             std::string paramName = safeText(p->IDENTIFIER());
             result[paramName] = {typeName, 0, p->IDENTIFIER()->getSymbol()};
         }

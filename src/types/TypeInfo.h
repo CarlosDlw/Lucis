@@ -69,6 +69,7 @@ struct TypeInfo {
     const TypeInfo* returnType = nullptr;                // non-null only for Function
     std::vector<const TypeInfo*> paramTypes;              // non-empty only for Function
     bool isVariadic = false;                             // true if last param is variadic (...)
+    const TypeInfo* variadicElementType = nullptr;       // non-null for typed variadic fn(int32 ...args)
     const TypeInfo* elementType = nullptr;   // non-null for Extended generics (Vec<T> → T)
     const TypeInfo* keyType = nullptr;       // non-null for Map<K,V> → K
     const TypeInfo* valueType = nullptr;     // non-null for Map<K,V> → V

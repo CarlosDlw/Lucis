@@ -1918,7 +1918,8 @@ const TypeInfo* Checker::getPointerType(const TypeInfo* pointee) {
 
 const TypeInfo* Checker::makeFunctionType(const TypeInfo* returnType,
                                            const std::vector<const TypeInfo*>& paramTypes,
-                                           bool isVariadic) {
+                                           bool isVariadic,
+                                           const TypeInfo* variadicElementType) {
     auto ti = std::make_unique<TypeInfo>();
     ti->kind = TypeKind::Function;
     ti->bitWidth = 0;
@@ -1927,6 +1928,7 @@ const TypeInfo* Checker::makeFunctionType(const TypeInfo* returnType,
     ti->returnType = returnType;
     ti->paramTypes = paramTypes;
     ti->isVariadic = isVariadic;
+    ti->variadicElementType = variadicElementType;
 
     ti->name = "fn(";
     for (size_t i = 0; i < paramTypes.size(); i++) {
@@ -6715,6 +6717,8 @@ void Checker::registerFunctionSignature(LucisParser::FunctionDeclContext* func) 
     if (!retType) return;
 
     bool isVariadic = false;
+    bool isTypedVariadic = false;
+    const TypeInfo* variadicElemType = nullptr;
     size_t variadicIndex = 0;
     std::vector<const TypeInfo*> paramTypes;
     if (auto* paramList = func->paramList()) {
@@ -6735,14 +6739,17 @@ void Checker::registerFunctionSignature(LucisParser::FunctionDeclContext* func) 
             paramTypes.push_back(pType);
 
             if (param->SPREAD()) {
-                error(param, "typed variadic parameters are not supported (use '...' without type)");
-                return;
+                // Typed variadic: T ...name
+                isVariadic = true;
+                isTypedVariadic = true;
+                variadicElemType = pType;
+                variadicIndex = i;
             }
         }
     }
 
     if (isVariadic) {
-        if (paramTypes.empty())
+        if (!isTypedVariadic && paramTypes.empty())
             error(func, "untyped variadic function '" + funcName +
                         "' must have at least one fixed parameter before '...'");
 
@@ -6754,7 +6761,7 @@ void Checker::registerFunctionSignature(LucisParser::FunctionDeclContext* func) 
         }
     }
 
-    auto* funcType = makeFunctionType(retType, paramTypes, isVariadic);
+    auto* funcType = makeFunctionType(retType, paramTypes, isVariadic, variadicElemType);
     functions_[funcName] = funcType;
     functionDecls_[funcName] = func;
     syncToSemanticDB_Function(funcName, *funcType, currentModulePath_, func);
@@ -6798,6 +6805,11 @@ void Checker::checkFunction(LucisParser::FunctionDeclContext* func) {
             unsigned pDims = 0;
             auto* pType = resolveTypeSpec(param->typeSpec(), pDims);
             if (!pType) continue;
+
+            if (param->SPREAD()) {
+                // Typed variadic: T ...name → register as []T slice
+                pDims = 1;
+            }
 
             if (locals_.count(paramName)) {
                 error(param, "duplicate parameter name '" + paramName + "'");
@@ -8874,9 +8886,23 @@ void Checker::checkCallStmt(LucisParser::CallStmtContext* stmt) {
         if (auto* paramList = gfit->second.decl->paramList())
             formalParams = paramList->param();
 
-        if (argTypes.size() != formalParams.size()) {
+        // Check for typed variadic last param: T ...args
+        bool hasTypedVariadic = false;
+        if (!formalParams.empty()) {
+            auto* last = formalParams.back();
+            hasTypedVariadic = last && last->SPREAD() && last->typeSpec();
+        }
+        size_t fixedCount = hasTypedVariadic ? formalParams.size() - 1 : formalParams.size();
+
+        if (!hasTypedVariadic && argTypes.size() != formalParams.size()) {
             error(stmt, "generic function '" + name + "' expects " +
                          std::to_string(formalParams.size()) +
+                         " argument(s), got " + std::to_string(argTypes.size()));
+            return;
+        }
+        if (hasTypedVariadic && argTypes.size() < fixedCount) {
+            error(stmt, "generic function '" + name + "' expects at least " +
+                         std::to_string(fixedCount) +
                          " argument(s), got " + std::to_string(argTypes.size()));
             return;
         }
@@ -8903,15 +8929,18 @@ void Checker::checkCallStmt(LucisParser::CallStmtContext* stmt) {
         size_t paramCount = fnType->paramTypes.size();
 
         if (fnType->isVariadic) {
-            // Variadic: all declared params are required, extra args are variadic
-            if (argCount < paramCount) {
+            bool isTyped = fnType->variadicElementType != nullptr;
+            size_t fixedCount = isTyped && paramCount > 0 ? paramCount - 1 : paramCount;
+
+            // Typed variadic: fixed params are paramCount-1 (last is element type)
+            if (argCount < fixedCount) {
                 error(stmt, "function '" + name + "' expects at least " +
-                                 std::to_string(paramCount) +
+                                 std::to_string(fixedCount) +
                                  " arguments " + formatParamTypes(fnType->paramTypes) +
                                  ", got " + std::to_string(argCount));
             }
             // Validate fixed parameter types
-            for (size_t i = 0; i < std::min(argCount, paramCount); i++) {
+            for (size_t i = 0; i < std::min(argCount, fixedCount); i++) {
                 if (argTypes[i] && fnType->paramTypes[i] &&
                     !isAssignable(fnType->paramTypes[i], argTypes[i])) {
                     error(stmt,
@@ -8919,6 +8948,19 @@ void Checker::checkCallStmt(LucisParser::CallStmtContext* stmt) {
                         " type mismatch in '" + name + "': expected '" +
                         fnType->paramTypes[i]->name + "', got '" +
                         argTypes[i]->name + "'");
+                }
+            }
+            // Validate variadic args against element type (typed variadic only)
+            if (isTyped) {
+                for (size_t i = fixedCount; i < argCount; i++) {
+                    if (argTypes[i] && fnType->variadicElementType &&
+                        !isAssignable(fnType->variadicElementType, argTypes[i])) {
+                        error(stmt,
+                            "argument " + std::to_string(i + 1) +
+                            " type mismatch in '" + name + "': expected '" +
+                            fnType->variadicElementType->name + "', got '" +
+                            argTypes[i]->name + "'");
+                    }
                 }
             }
         } else {
@@ -10010,8 +10052,16 @@ const TypeInfo* Checker::instantiateGenericFunc(
 
     // Resolve parameter types with substitution
     std::vector<const TypeInfo*> paramTypes;
+    bool isVariadic = false;
+    bool isTypedVariadic = false;
+    const TypeInfo* variadicElemType = nullptr;
     if (auto* paramList = tmpl.decl->paramList()) {
         for (auto* param : paramList->param()) {
+            if (param->SPREAD() && !param->typeSpec()) {
+                // Untyped variadic ... — skip, no type to add
+                isVariadic = true;
+                break;
+            }
             unsigned pDims = 0;
             auto* pType = resolveTypeSpecWithSubst(param->typeSpec(), subst, pDims);
             if (!pType) {
@@ -10019,10 +10069,16 @@ const TypeInfo* Checker::instantiateGenericFunc(
                 return nullptr;
             }
             paramTypes.push_back(pType);
+            if (param->SPREAD()) {
+                // Typed variadic: T ...name
+                isVariadic = true;
+                isTypedVariadic = true;
+                variadicElemType = pType;
+            }
         }
     }
 
-    auto* funcType = makeFunctionType(retType, paramTypes);
+    auto* funcType = makeFunctionType(retType, paramTypes, isVariadic, variadicElemType);
     functions_[mangledName] = funcType;
 
     // Check the function body with the substituted locals
@@ -10033,10 +10089,14 @@ const TypeInfo* Checker::instantiateGenericFunc(
     locals_.clear();
     if (auto* paramList = tmpl.decl->paramList()) {
         for (auto* param : paramList->param()) {
+            if (param->SPREAD() && !param->IDENTIFIER())
+                continue;
             auto paramName = param->IDENTIFIER()->getText();
             unsigned pDims = 0;
             auto* pType = resolveTypeSpecWithSubst(param->typeSpec(), subst, pDims);
             if (!pType) continue;
+            if (param->SPREAD())
+                pDims = 1;
             locals_[paramName] = { pType, pDims, {}, true, true, nullptr };
         }
     }

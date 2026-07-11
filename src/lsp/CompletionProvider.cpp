@@ -3029,10 +3029,15 @@ void CompletionProvider::addLocals(std::vector<CompletionItem> &items,
         std::string name = safeText(p->IDENTIFIER());
         if (!matchesPrefix(name, prefix))
           continue;
+        auto paramType = [](auto* pp) {
+          auto t = typeSpecToString(pp->typeSpec());
+          if (pp->SPREAD()) t = "[]" + t;
+          return t;
+        };
         CompletionItem item;
         item.label = name;
         item.kind = CompletionKind::Variable;
-        item.detail = typeSpecToString(p->typeSpec());
+        item.detail = paramType(p);
         items.push_back(std::move(item));
       }
     }
@@ -6177,7 +6182,13 @@ CompletionProvider::collectLocals(LucisParser::FunctionDeclContext *func,
 
   if (auto *params = func->paramList()) {
     for (auto *p : params->param()) {
-      result[safeText(p->IDENTIFIER())] = {safeText(p->typeSpec()), 0};
+      if (!p->IDENTIFIER()) continue;
+      auto paramType = [](auto* pp) {
+        auto t = typeSpecToString(pp->typeSpec());
+        if (pp->SPREAD()) t = "[]" + t;
+        return t;
+      };
+      result[safeText(p->IDENTIFIER())] = {paramType(p), 0};
     }
   }
 

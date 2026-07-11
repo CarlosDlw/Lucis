@@ -5639,41 +5639,109 @@ std::any IRGen::visitCallStmt(LucisParser::CallStmtContext* ctx) {
             if (auto* paramList = fit->second.decl->paramList())
                 formalParams = paramList->param();
 
-            if (argTypes.size() == formalParams.size()) {
+            // Check for typed variadic last param
+            bool hasVariadic = false;
+            size_t fixedCount = formalParams.size();
+            if (!formalParams.empty()) {
+                auto* last = formalParams.back();
+                hasVariadic = last && last->SPREAD() && last->typeSpec();
+                if (hasVariadic)
+                    fixedCount = formalParams.size() - 1;
+            }
+            bool argCountOk = hasVariadic
+                ? argTypes.size() >= fixedCount
+                : argTypes.size() == formalParams.size();
+            if (argCountOk) {
                 auto inferred = inferGenericTypeArgs(fit->second.typeParams, formalParams, argTypes);
                 if (inferred) {
                     if (auto* genericFn = instantiateGenericFunc(funcName, fit->second, *inferred)) {
-                        std::vector<llvm::Value*> args;
-                        if (auto* argList = ctx->argList()) {
-                            auto* fnType = genericFn->getFunctionType();
-                            size_t paramIdx = 0;
-                            for (auto* exprCtx : argList->expression()) {
-                                auto* argVal = castValue(visit(exprCtx));
-                                if (paramIdx < fnType->getNumParams()) {
-                                    auto* paramTy = fnType->getParamType(paramIdx);
-                                    if (argVal->getType() != paramTy) {
-                                        if (argVal->getType()->isIntegerTy() && paramTy->isIntegerTy())
-                                            argVal = builder_->CreateIntCast(argVal, paramTy, true);
-                                        else if (argVal->getType()->isFloatingPointTy() && paramTy->isFloatingPointTy()) {
-                                            if (argVal->getType()->getPrimitiveSizeInBits() > paramTy->getPrimitiveSizeInBits())
-                                                argVal = builder_->CreateFPTrunc(argVal, paramTy);
-                                            else
-                                                argVal = builder_->CreateFPExt(argVal, paramTy);
+                        auto fnName = genericFn->getName().str();
+                        auto vit = variadicFunctions_.find(fnName);
+                        if (vit != variadicFunctions_.end()) {
+                            // Typed variadic: pack args at call site
+                            auto& vfInfo = vit->second;
+                            size_t varIdx = vfInfo.variadicParamIdx;
+                            auto* elemTy = vfInfo.elementType->toLLVMType(*context_, module_->getDataLayout());
+                            auto* fnTy = genericFn->getFunctionType();
+                            std::vector<llvm::Value*> callArgs;
+                            std::vector<llvm::Value*> variadicArgs;
+                            if (auto* argList = ctx->argList()) {
+                                for (size_t ai = 0; ai < argList->expression().size(); ai++) {
+                                    auto* argVal = castValue(visit(argList->expression(ai)));
+                                    if (ai < varIdx) {
+                                        if (argVal->getType() != fnTy->getParamType(ai)) {
+                                            if (argVal->getType()->isIntegerTy() && fnTy->getParamType(ai)->isIntegerTy())
+                                                argVal = builder_->CreateIntCast(argVal, fnTy->getParamType(ai), true);
+                                            else if (argVal->getType()->isFloatingPointTy() && fnTy->getParamType(ai)->isFloatingPointTy())
+                                                argVal = builder_->CreateFPCast(argVal, fnTy->getParamType(ai));
                                         }
+                                        callArgs.push_back(argVal);
+                                    } else {
+                                        if (argVal->getType() != elemTy) {
+                                            if (argVal->getType()->isIntegerTy() && elemTy->isIntegerTy())
+                                                argVal = builder_->CreateIntCast(argVal, elemTy, vfInfo.elementType->isSigned);
+                                            else if (argVal->getType()->isFloatingPointTy() && elemTy->isFloatingPointTy())
+                                                argVal = builder_->CreateFPCast(argVal, elemTy);
+                                        }
+                                        variadicArgs.push_back(argVal);
                                     }
                                 }
-                                args.push_back(argVal);
-                                paramIdx++;
+                            }
+                            auto* i64Ty = llvm::Type::getInt64Ty(*context_);
+                            auto* ptrTy = llvm::PointerType::getUnqual(*context_);
+                            if (variadicArgs.empty()) {
+                                callArgs.push_back(llvm::ConstantPointerNull::get(ptrTy));
+                                callArgs.push_back(llvm::ConstantInt::get(i64Ty, 0));
+                            } else {
+                                auto* arrTy = llvm::ArrayType::get(elemTy, variadicArgs.size());
+                                auto* alloca = builder_->CreateAlloca(arrTy, nullptr, "variadic.pack");
+                                for (size_t vi = 0; vi < variadicArgs.size(); vi++) {
+                                    auto* gep = builder_->CreateGEP(arrTy, alloca, {
+                                        llvm::ConstantInt::get(i64Ty, 0),
+                                        llvm::ConstantInt::get(i64Ty, static_cast<uint64_t>(vi))
+                                    });
+                                    builder_->CreateStore(variadicArgs[vi], gep);
+                                }
+                                callArgs.push_back(builder_->CreateGEP(arrTy, alloca, {
+                                    llvm::ConstantInt::get(i64Ty, 0),
+                                    llvm::ConstantInt::get(i64Ty, 0)
+                                }));
+                                callArgs.push_back(llvm::ConstantInt::get(i64Ty, variadicArgs.size()));
+                            }
+                            builder_->CreateCall(genericFn, callArgs);
+                            if (ctx->argList()) {
+                                auto exprs = ctx->argList()->expression();
+                                for (size_t i = 0; i < exprs.size(); i++)
+                                    cleanupTempArg(exprs[i], callArgs.size() > i ? callArgs[i] : nullptr);
+                            }
+                        } else {
+                            // Regular (non-variadic) generic call
+                            std::vector<llvm::Value*> args;
+                            if (auto* argList = ctx->argList()) {
+                                auto* fnTy = genericFn->getFunctionType();
+                                size_t paramIdx = 0;
+                                for (auto* exprCtx : argList->expression()) {
+                                    auto* argVal = castValue(visit(exprCtx));
+                                    if (paramIdx < fnTy->getNumParams()) {
+                                        auto* paramTy = fnTy->getParamType(paramIdx);
+                                        if (argVal->getType() != paramTy) {
+                                            if (argVal->getType()->isIntegerTy() && paramTy->isIntegerTy())
+                                                argVal = builder_->CreateIntCast(argVal, paramTy, true);
+                                            else if (argVal->getType()->isFloatingPointTy() && paramTy->isFloatingPointTy())
+                                                argVal = builder_->CreateFPCast(argVal, paramTy);
+                                        }
+                                    }
+                                    args.push_back(argVal);
+                                    paramIdx++;
+                                }
+                            }
+                            builder_->CreateCall(genericFn, args);
+                            if (ctx->argList()) {
+                                auto exprs = ctx->argList()->expression();
+                                for (size_t i = 0; i < exprs.size() && i < args.size(); i++)
+                                    cleanupTempArg(exprs[i], args[i]);
                             }
                         }
-                        builder_->CreateCall(genericFn, args);
-
-                        if (ctx->argList()) {
-                            auto exprs = ctx->argList()->expression();
-                            for (size_t i = 0; i < exprs.size() && i < args.size(); i++)
-                                cleanupTempArg(exprs[i], args[i]);
-                        }
-
                         return {};
                     }
                 }
@@ -12695,7 +12763,19 @@ std::any IRGen::visitFnCallExpr(LucisParser::FnCallExprContext* ctx) {
                 std::vector<LucisParser::ParamContext*> formalParams;
                 if (auto* paramList = fit->second.decl->paramList())
                     formalParams = paramList->param();
-                if (argTypes.size() == formalParams.size() &&
+                // Check for typed variadic last param
+                bool hasVariadic = false;
+                size_t fixedCount = formalParams.size();
+                if (!formalParams.empty()) {
+                    auto* last = formalParams.back();
+                    hasVariadic = last && last->SPREAD() && last->typeSpec();
+                    if (hasVariadic)
+                        fixedCount = formalParams.size() - 1;
+                }
+                bool argCountOk = hasVariadic
+                    ? argTypes.size() >= fixedCount
+                    : argTypes.size() == formalParams.size();
+                if (argCountOk &&
                     inferGenericTypeArgs(fit->second.typeParams, formalParams, argTypes))
                     goto generic_template_handled;
             }
@@ -17906,6 +17986,25 @@ const TypeInfo* IRGen::resolveExprTypeInfo(LucisParser::ExpressionContext* ctx) 
         auto name = ident->IDENTIFIER()->getText();
         auto it = locals_.find(name);
         if (it != locals_.end()) return it->second.typeInfo;
+        
+        // Variadic parameter: return element type info (the slice's element type)
+        auto vit = variadicParams_.find(name);
+        if (vit != variadicParams_.end()) {
+            // Construct a synthetic TypeInfo for the slice []T
+            auto elemName = vit->second.elementType ? vit->second.elementType->name : "?";
+            std::string sliceName = "[]" + elemName;
+            if (auto* existing = typeRegistry_.lookup(sliceName))
+                return existing;
+            TypeInfo sti;
+            sti.name = sliceName;
+            sti.kind = vit->second.elementType ? vit->second.elementType->kind : TypeKind::Void;
+            sti.elementType = vit->second.elementType;
+            sti.bitWidth = 0;
+            sti.isSigned = false;
+            sti.builtinSuffix = "ptr";
+            typeRegistry_.registerType(std::move(sti));
+            return typeRegistry_.lookup(sliceName);
+        }
         
         // Check top-level consts
         auto cit = topLevelConsts_.find(name);
@@ -25320,18 +25419,41 @@ llvm::Function* IRGen::instantiateGenericFunc(
     // Collect parameter types
     std::vector<llvm::Type*> paramLLTypes;
     std::vector<const TypeInfo*> paramTIs;
+    int variadicIdx = -1;
+    bool hasTypedVariadic = false;
+    auto* usizeTy = module_->getDataLayout().getIntPtrType(*context_);
     if (auto* paramList = tmpl.decl->paramList()) {
-        for (auto* param : paramList->param()) {
+        for (size_t pi = 0; pi < paramList->param().size(); pi++) {
+            auto* param = paramList->param(pi);
+            // Untyped variadic skip
+            if (param->SPREAD() && !param->typeSpec())
+                break;
             auto* pTI = resolveTypeInfoWithSubst(param->typeSpec(), subst);
             if (!pTI) pTI = typeRegistry_.lookup("int32");
             paramTIs.push_back(pTI);
-            paramLLTypes.push_back(pTI->toLLVMType(*context_, module_->getDataLayout()));
+            if (param->SPREAD()) {
+                // Typed variadic: emit as (ptr, i64) for the packed array
+                hasTypedVariadic = true;
+                variadicIdx = static_cast<int>(pi);
+                paramLLTypes.push_back(llvm::PointerType::getUnqual(*context_));
+                paramLLTypes.push_back(llvm::Type::getInt64Ty(*context_));
+            } else {
+                paramLLTypes.push_back(pTI->toLLVMType(*context_, module_->getDataLayout()));
+            }
         }
     }
 
     auto* fnType = llvm::FunctionType::get(retLLTy, paramLLTypes, false);
     auto* fn = llvm::Function::Create(
         fnType, llvm::Function::ExternalLinkage, mangledName, module_);
+
+    if (hasTypedVariadic && tmpl.decl->paramList()) {
+        auto* vParam = tmpl.decl->paramList()->param(variadicIdx);
+        auto* vInfo = resolveTypeInfoWithSubst(vParam->typeSpec(), subst);
+        variadicFunctions_[mangledName] = {
+            static_cast<size_t>(variadicIdx), vInfo
+        };
+    }
 
     fnReturnTypes_[mangledName] = retTI;
     fnReturnArrayDims_[mangledName] = retArrayDims;
@@ -25350,15 +25472,34 @@ llvm::Function* IRGen::instantiateGenericFunc(
 
     if (auto* paramList = tmpl.decl->paramList()) {
         auto params = paramList->param();
+        size_t llvmIdx = 0;
         for (size_t i = 0; i < params.size(); i++) {
+            // Skip untyped variadic ... (no identifier/type to store)
+            if (params[i]->SPREAD() && !params[i]->typeSpec())
+                continue;
+
             auto paramName = params[i]->IDENTIFIER()->getText();
-            auto* arg = fn->getArg(i);
-            arg->setName(paramName);
-            auto* paramLLTy = paramLLTypes[i];
-            auto* alloca = builder_->CreateAlloca(paramLLTy, nullptr, paramName);
-            builder_->CreateStore(arg, alloca);
-            auto paramDims = countArrayDims(params[i]->typeSpec());
-            locals_[paramName] = { alloca, paramTIs[i], paramDims, true };
+
+            if (params[i]->SPREAD()) {
+                // Typed variadic: store ptr and len in separate allocas
+                auto* ptrTy = llvm::PointerType::getUnqual(*context_);
+                auto* i64Ty = llvm::Type::getInt64Ty(*context_);
+                auto* ptrAlloca = builder_->CreateAlloca(ptrTy, nullptr, paramName + ".ptr");
+                auto* lenAlloca = builder_->CreateAlloca(i64Ty, nullptr, paramName + ".len");
+                builder_->CreateStore(fn->getArg(llvmIdx), ptrAlloca);
+                builder_->CreateStore(fn->getArg(llvmIdx + 1), lenAlloca);
+                variadicParams_[paramName] = { ptrAlloca, lenAlloca, paramTIs[i] };
+                llvmIdx += 2;
+            } else {
+                auto* arg = fn->getArg(llvmIdx);
+                arg->setName(paramName);
+                auto* paramLLTy = paramLLTypes[llvmIdx];
+                auto* alloca = builder_->CreateAlloca(paramLLTy, nullptr, paramName);
+                builder_->CreateStore(arg, alloca);
+                auto paramDims = countArrayDims(params[i]->typeSpec());
+                locals_[paramName] = { alloca, paramTIs[i], paramDims, true };
+                llvmIdx++;
+            }
         }
     }
 
@@ -25387,13 +25528,23 @@ std::optional<std::vector<const TypeInfo*>> IRGen::inferGenericTypeArgs(
     const std::vector<LucisParser::ParamContext*>& formalParams,
     const std::vector<const TypeInfo*>& argTypes) {
 
-    if (formalParams.size() != argTypes.size())
+    bool hasTypedVariadic = false;
+    if (!formalParams.empty()) {
+        auto* last = formalParams.back();
+        hasTypedVariadic = last && last->SPREAD() && last->typeSpec();
+    }
+    size_t fixedCount = hasTypedVariadic ? formalParams.size() - 1 : formalParams.size();
+
+    if (!hasTypedVariadic && formalParams.size() != argTypes.size())
+        return std::nullopt;
+    if (hasTypedVariadic && argTypes.size() < fixedCount)
         return std::nullopt;
 
     std::unordered_set<std::string> genericParamSet(typeParams.begin(), typeParams.end());
     std::unordered_map<std::string, const TypeInfo*> inferred;
 
-    for (size_t i = 0; i < formalParams.size(); i++) {
+    // Match fixed params
+    for (size_t i = 0; i < fixedCount; i++) {
         auto* formalParam = formalParams[i];
         auto* actualType = argTypes[i];
         if (!formalParam || !formalParam->typeSpec())
@@ -25402,8 +25553,25 @@ std::optional<std::vector<const TypeInfo*>> IRGen::inferGenericTypeArgs(
         if (!typeSpecMentionsGenericParam(formalParam->typeSpec(), genericParamSet))
             continue;
 
-        if (!unifyGenericTypeArg(formalParam->typeSpec(), actualType, genericParamSet, inferred))
+        if (!unifyGenericTypeArg(formalParam->typeSpec(), actualType, genericParamSet,
+                                 inferred)) {
             return std::nullopt;
+        }
+    }
+
+    // Match variadic args against element type
+    if (hasTypedVariadic) {
+        auto* variadicParam = formalParams.back();
+        for (size_t i = fixedCount; i < argTypes.size(); i++) {
+            auto* actualType = argTypes[i];
+            if (!variadicParam->typeSpec())
+                continue;
+            if (!typeSpecMentionsGenericParam(variadicParam->typeSpec(), genericParamSet))
+                continue;
+
+            if (!unifyGenericTypeArg(variadicParam->typeSpec(), actualType, genericParamSet, inferred))
+                return std::nullopt;
+        }
     }
 
     std::vector<const TypeInfo*> typeArgs;

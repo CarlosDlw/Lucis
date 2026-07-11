@@ -34,7 +34,7 @@ static void cloneMethods(std::vector<MethodInfo>& dst,
         copy.returnType = m.returnType;
         copy.isStatic   = m.isStatic;
         for (const auto& p : m.params) {
-            copy.params.push_back({p.name, p.type});
+            copy.params.push_back({p.name, p.type, p.isVariadic});
         }
         dst.push_back(std::move(copy));
     }
@@ -406,7 +406,7 @@ std::unique_ptr<Decl> FunctionDecl::clone() const {
     c->externABI     = externABI;
     c->genericParams = genericParams;
     for (const auto& p : params)
-        c->params.push_back({p.name, p.type});
+        c->params.push_back({p.name, p.type, p.isVariadic});
     return c;
 }
 
@@ -537,7 +537,7 @@ std::unique_ptr<Decl> IntrinsicDecl::clone() const {
     c->llvmIntrinsic  = llvmIntrinsic;
     c->builtinName    = builtinName;
     for (const auto& p : params)
-        c->params.push_back({p.name, p.type});
+        c->params.push_back({p.name, p.type, p.isVariadic});
     return c;
 }
 

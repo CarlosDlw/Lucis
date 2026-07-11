@@ -6253,7 +6253,12 @@ HoverProvider::collectLocals(LucisParser::FunctionDeclContext* func,
     if (auto* params = func->paramList()) {
         for (auto* p : params->param()) {
             if (!p->typeSpec() || !p->IDENTIFIER()) continue;
-            std::string typeName = safeText(p->typeSpec());
+            auto paramType = [this](auto* pp) {
+                auto t = typeSpecToString(pp->typeSpec());
+                if (pp->SPREAD()) t = "[]" + t;
+                return t;
+            };
+            std::string typeName = paramType(p);
             std::string paramName = safeText(p->IDENTIFIER());
             result[paramName] = {typeName, 0, true};
         }
