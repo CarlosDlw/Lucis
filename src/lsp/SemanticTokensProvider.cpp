@@ -630,35 +630,62 @@ static size_t escapeSeqLen(const std::string& s, size_t i) {
 static void emitStringSubTokens(std::vector<RawSemanticToken>& out,
                                  uint32_t line, uint32_t col,
                                  const std::string& text, size_t lexerType) {
-    // Determine prefix length (e.g. "c" for C_STR_LIT)
-    size_t pre = (lexerType == LucisLexer::C_STR_LIT) ? 1 : 0;
+    bool isBtick = (lexerType == LucisLexer::BTICK || lexerType == LucisLexer::RAW_BTICK ||
+                    lexerType == LucisLexer::INT_BTICK || lexerType == LucisLexer::SHELL_BTICK ||
+                    lexerType == LucisLexer::CMPT_BTICK);
+    char delim = isBtick ? '`' : '"';
+
+    // Determine prefix length
+    size_t pre = 0;
+    if (lexerType == LucisLexer::C_STR_LIT) pre = 1;
+    else if (lexerType == LucisLexer::RAW_BTICK) pre = 1;  // r`
+    else if (lexerType == LucisLexer::INT_BTICK) pre = 1;  // i`
+    else if (lexerType == LucisLexer::SHELL_BTICK) pre = 1; // s`
+    else if (lexerType == LucisLexer::CMPT_BTICK) pre = 1;  // c`
 
     if (pre > 0) {
         emit(out, line, col, static_cast<uint32_t>(pre), SemanticTokenType::String);
         col += static_cast<uint32_t>(pre);
     }
 
-    // opening quote
+    // opening delimiter (backtick or quote)
     emit(out, line, col, 1, SemanticTokenType::String);
     col += 1;
 
-    size_t end = text.size() - 1; // position of closing quote
+    size_t end = text.size() - 1; // position of closing delimiter
+
+    if (isBtick && pre > 0) {
+        // Prefixed backtick: the prefix is at position 0, delimiter at position 1
+        // Content starts after the opening backtick
+        end = text.size() - 1;
+    }
+
     for (size_t i = pre + 1; i < end; ) {
-        if (text[i] == '\\') {
+        if (isBtick && text[i] == '`' && i + 1 < end && text[i + 1] == '`') {
+            // Escaped backtick: `` → `
+            emit(out, line, col, 2, SemanticTokenType::EscapeSequence);
+            i += 2;
+            col += 2;
+        } else if (!isBtick && text[i] == '\\') {
             size_t elen = escapeSeqLen(text, i);
             emit(out, line, col, static_cast<uint32_t>(elen), SemanticTokenType::EscapeSequence);
             i += elen;
             col += static_cast<uint32_t>(elen);
         } else {
             size_t seg = i;
-            while (i < end && text[i] != '\\') ++i;
+            if (isBtick) {
+                while (i < end && !(text[i] == '`' && i + 1 < end && text[i + 1] == '`'))
+                    ++i;
+            } else {
+                while (i < end && text[i] != '\\') ++i;
+            }
             uint32_t segLen = static_cast<uint32_t>(i - seg);
             emit(out, line, col, segLen, SemanticTokenType::String);
             col += segLen;
         }
     }
 
-    // closing quote
+    // closing delimiter
     emit(out, line, col, 1, SemanticTokenType::String);
 }
 
@@ -1818,7 +1845,10 @@ std::vector<uint32_t> SemanticTokensProvider::tokenize(const std::string& source
             emit(raw, line, col, len, SemanticTokenType::Keyword);
         }
         else if (type == LucisLexer::STR_LIT || type == LucisLexer::C_STR_LIT ||
-                 type == LucisLexer::CHAR_LIT) {
+                 type == LucisLexer::CHAR_LIT ||
+                 type == LucisLexer::BTICK || type == LucisLexer::RAW_BTICK ||
+                 type == LucisLexer::INT_BTICK || type == LucisLexer::SHELL_BTICK ||
+                 type == LucisLexer::CMPT_BTICK) {
             emitStringSubTokens(raw, line, col, tok->getText(), type);
         }
         // Operators

@@ -199,6 +199,8 @@ public:
 
     virtual std::any visitGenericEnumNamedVariantExpr(LucisParser::GenericEnumNamedVariantExprContext *context) = 0;
 
+    virtual std::any visitBtickExpr(LucisParser::BtickExprContext *context) = 0;
+
     virtual std::any visitRshiftExpr(LucisParser::RshiftExprContext *context) = 0;
 
     virtual std::any visitArrowMethodCallExpr(LucisParser::ArrowMethodCallExprContext *context) = 0;
@@ -228,6 +230,8 @@ public:
     virtual std::any visitSuffixedLeadingDotFloatExpr(LucisParser::SuffixedLeadingDotFloatExprContext *context) = 0;
 
     virtual std::any visitBitAndExpr(LucisParser::BitAndExprContext *context) = 0;
+
+    virtual std::any visitIntBtickExpr(LucisParser::IntBtickExprContext *context) = 0;
 
     virtual std::any visitIsExpr(LucisParser::IsExprContext *context) = 0;
 
@@ -274,6 +278,10 @@ public:
     virtual std::any visitPreDecrExpr(LucisParser::PreDecrExprContext *context) = 0;
 
     virtual std::any visitSpreadExpr(LucisParser::SpreadExprContext *context) = 0;
+
+    virtual std::any visitRawBtickExpr(LucisParser::RawBtickExprContext *context) = 0;
+
+    virtual std::any visitShellBtickExpr(LucisParser::ShellBtickExprContext *context) = 0;
 
     virtual std::any visitCatchUnwrapExpr(LucisParser::CatchUnwrapExprContext *context) = 0;
 
@@ -342,6 +350,8 @@ public:
     virtual std::any visitLogicalOrExpr(LucisParser::LogicalOrExprContext *context) = 0;
 
     virtual std::any visitSizeofExpr(LucisParser::SizeofExprContext *context) = 0;
+
+    virtual std::any visitCmptBtickExpr(LucisParser::CmptBtickExprContext *context) = 0;
 
     virtual std::any visitEqExpr(LucisParser::EqExprContext *context) = 0;
 

@@ -124,6 +124,9 @@ typedef struct {
 lucis_str_slice lucis_sprintf(const char* fmt, unsigned long fmtLen,
                                 const lucis_str_slice* args, unsigned long argCount);
 
+// Shell command execution — runs cmd via popen, returns stdout
+lucis_str_slice lucis_system(const char* cmd, unsigned long cmdLen);
+
 #ifdef __cplusplus
 }
 #endif

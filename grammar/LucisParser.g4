@@ -478,6 +478,11 @@ literalPattern
     | FLOAT_LIT
     | STR_LIT
     | C_STR_LIT
+    | BTICK
+    | RAW_BTICK
+    | INT_BTICK
+    | SHELL_BTICK
+    | CMPT_BTICK
     | CHAR_LIT
     | NULL_LIT
     | BOOL_LIT
@@ -601,6 +606,11 @@ expression
     | CHAR_LIT                                                 # charLitExpr
     | STR_LIT                                                  # strLitExpr
     | C_STR_LIT                                                # cStrLitExpr
+    | BTICK                                                     # btickExpr
+    | RAW_BTICK                                                 # rawBtickExpr
+    | INT_BTICK                                                 # intBtickExpr
+    | SHELL_BTICK                                               # shellBtickExpr
+    | CMPT_BTICK                                                # cmptBtickExpr
     | PIPE paramList? PIPE block                               # lambdaBlockExpr
     | PIPE paramList? PIPE expression                          # lambdaExpr
     | IDENTIFIER                                               # identExpr

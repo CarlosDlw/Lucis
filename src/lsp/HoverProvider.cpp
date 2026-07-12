@@ -2417,6 +2417,12 @@ std::optional<HoverResult> HoverProvider::walkExprForHover(
             return makeResult(hoveredToken, "```lucis\nstring\n```");
         if (auto* cs = dynamic_cast<LucisParser::CStrLitExprContext*>(expr))
             return makeResult(hoveredToken, "```lucis\n*char\n```");
+        if (dynamic_cast<LucisParser::BtickExprContext*>(expr) ||
+            dynamic_cast<LucisParser::RawBtickExprContext*>(expr) ||
+            dynamic_cast<LucisParser::IntBtickExprContext*>(expr) ||
+            dynamic_cast<LucisParser::ShellBtickExprContext*>(expr) ||
+            dynamic_cast<LucisParser::CmptBtickExprContext*>(expr))
+            return makeResult(hoveredToken, "```lucis\nstring\n```");
     }
 
     // ── Plain identifier ─────────────────────────────────────────────
@@ -4842,6 +4848,12 @@ static std::string inferExprTypeName(
     if (dynamic_cast<LucisParser::CharLitExprContext*>(expr))  return "char";
     if (dynamic_cast<LucisParser::StrLitExprContext*>(expr))   return "string";
     if (dynamic_cast<LucisParser::CStrLitExprContext*>(expr))  return "*char";
+    if (dynamic_cast<LucisParser::BtickExprContext*>(expr) ||
+        dynamic_cast<LucisParser::RawBtickExprContext*>(expr) ||
+        dynamic_cast<LucisParser::IntBtickExprContext*>(expr) ||
+        dynamic_cast<LucisParser::ShellBtickExprContext*>(expr) ||
+        dynamic_cast<LucisParser::CmptBtickExprContext*>(expr))
+        return "string";
 
     // ── Inline assembly expression ────────────────────────────
     if (auto* asmE = dynamic_cast<LucisParser::AsmExprContext*>(expr)) {

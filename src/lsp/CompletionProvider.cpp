@@ -750,6 +750,14 @@ static std::string inferExprTypeName(
   if (dynamic_cast<LucisParser::CStrLitExprContext *>(expr))
     return "*char";
 
+  // ── Backtick string expressions ───────────────────────────
+  if (dynamic_cast<LucisParser::BtickExprContext *>(expr) ||
+      dynamic_cast<LucisParser::RawBtickExprContext *>(expr) ||
+      dynamic_cast<LucisParser::IntBtickExprContext *>(expr) ||
+      dynamic_cast<LucisParser::ShellBtickExprContext *>(expr) ||
+      dynamic_cast<LucisParser::CmptBtickExprContext *>(expr))
+    return "string";
+
   // ── Inline assembly expression ────────────────────────────
   if (auto* asmE = dynamic_cast<LucisParser::AsmExprContext*>(expr)) {
     auto* outList = asmE->asmOutputList();

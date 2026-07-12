@@ -326,3 +326,58 @@ lucis_str_slice lucis_sprintf(const char* fmt, unsigned long fmtLen,
     lucis_str_slice result = { out, pos };
     return result;
 }
+
+// ── Shell command execution ───────────────────────────────────────────────────
+lucis_str_slice lucis_system(const char* cmd, unsigned long cmdLen) {
+    // Null-terminate the command
+    char* cmdNull = (char*)lucis_allocString(cmdLen + 1);
+    if (!cmdNull) {
+        lucis_str_slice empty = { "", 0 };
+        return empty;
+    }
+    memcpy(cmdNull, cmd, cmdLen);
+    cmdNull[cmdLen] = '\0';
+
+    FILE* fp = popen(cmdNull, "r");
+    lucis_freeStr(cmdNull, cmdLen + 1);
+    if (!fp) {
+        lucis_str_slice empty = { "", 0 };
+        return empty;
+    }
+
+    size_t cap = 1024;
+    size_t len = 0;
+    char* buf = (char*)lucis_allocString(cap);
+    if (!buf) {
+        pclose(fp);
+        lucis_str_slice empty = { "", 0 };
+        return empty;
+    }
+
+    char line[4096];
+    while (fgets(line, sizeof(line), fp)) {
+        size_t lineLen = strlen(line);
+        if (len + lineLen >= cap) {
+            cap *= 2;
+            char* newBuf = (char*)lucis_allocString(cap);
+            if (!newBuf) {
+                lucis_freeStr(buf, cap);
+                pclose(fp);
+                lucis_str_slice empty = { "", 0 };
+                return empty;
+            }
+            memcpy(newBuf, buf, len);
+            lucis_freeStr(buf, cap);
+            buf = newBuf;
+        }
+        memcpy(buf + len, line, lineLen);
+        len += lineLen;
+    }
+
+    pclose(fp);
+
+    // Shrink to fit (optional — just null-terminate for safety)
+    buf[len] = '\0';
+    lucis_str_slice result = { buf, len };
+    return result;
+}

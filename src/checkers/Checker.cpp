@@ -377,6 +377,40 @@ std::optional<uint64_t> Checker::tryGetCStringLiteralLen(LucisParser::Expression
     if (auto* str = dynamic_cast<LucisParser::StrLitExprContext*>(expr))
         return decodeLen(str->STR_LIT()->getText(), "");
 
+    // Backtick strings — raw content (no escape processing)
+    // Extract content between backticks, handling prefix characters.
+    auto backtickContentLen = [](const std::string& tok) -> std::optional<size_t> {
+        // tok includes the delimiters; find first and last backtick
+        auto first = tok.find('`');
+        if (first == std::string::npos) return std::nullopt;
+        auto last = tok.rfind('`');
+        if (last == std::string::npos || last <= first) return std::nullopt;
+        // Content is between first and last backtick
+        auto content = tok.substr(first + 1, last - first - 1);
+        // Replace escaped backticks (`` → `) for byte-length
+        size_t len = 0;
+        for (size_t i = 0; i < content.size(); i++) {
+            if (content[i] == '`' && i + 1 < content.size() && content[i + 1] == '`') {
+                len += 1;
+                i += 1;
+            } else {
+                len += 1;
+            }
+        }
+        return len;
+    };
+
+    if (auto* bt = dynamic_cast<LucisParser::BtickExprContext*>(expr))
+        return backtickContentLen(bt->BTICK()->getText());
+    if (auto* bt = dynamic_cast<LucisParser::RawBtickExprContext*>(expr))
+        return backtickContentLen(bt->RAW_BTICK()->getText());
+    if (auto* bt = dynamic_cast<LucisParser::IntBtickExprContext*>(expr))
+        return backtickContentLen(bt->INT_BTICK()->getText());
+    if (auto* bt = dynamic_cast<LucisParser::ShellBtickExprContext*>(expr))
+        return backtickContentLen(bt->SHELL_BTICK()->getText());
+    if (auto* bt = dynamic_cast<LucisParser::CmptBtickExprContext*>(expr))
+        return backtickContentLen(bt->CMPT_BTICK()->getText());
+
     return std::nullopt;
 }
 
@@ -509,8 +543,17 @@ bool Checker::isDropTrackedType(const TypeInfo* type, unsigned arrayDims) const 
     return false;
 }
 
+static bool isBacktickExpr(LucisParser::ExpressionContext* expr) {
+    return dynamic_cast<LucisParser::BtickExprContext*>(expr) ||
+           dynamic_cast<LucisParser::RawBtickExprContext*>(expr) ||
+           dynamic_cast<LucisParser::IntBtickExprContext*>(expr) ||
+           dynamic_cast<LucisParser::ShellBtickExprContext*>(expr) ||
+           dynamic_cast<LucisParser::CmptBtickExprContext*>(expr);
+}
+
 bool Checker::isBorrowedStringExpr(LucisParser::ExpressionContext* expr) const {
     if (dynamic_cast<LucisParser::StrLitExprContext*>(expr)) return true;
+    if (isBacktickExpr(expr)) return true;
     if (auto* call = dynamic_cast<LucisParser::FnCallExprContext*>(expr)) {
         if (auto* ident = dynamic_cast<LucisParser::IdentExprContext*>(call->expression())) {
             auto name = ident->IDENTIFIER()->getText();
@@ -2507,6 +2550,14 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
     // C string literal: c"hello" → *char (null-terminated)
     if (dynamic_cast<LucisParser::CStrLitExprContext*>(expr))
         return getPointerType(typeRegistry_.lookup("char"));
+
+    // Backtick strings — all return `string`
+    if (dynamic_cast<LucisParser::BtickExprContext*>(expr) ||
+        dynamic_cast<LucisParser::RawBtickExprContext*>(expr) ||
+        dynamic_cast<LucisParser::IntBtickExprContext*>(expr) ||
+        dynamic_cast<LucisParser::ShellBtickExprContext*>(expr) ||
+        dynamic_cast<LucisParser::CmptBtickExprContext*>(expr))
+        return typeRegistry_.lookup("string");
 
     // ── Inline assembly expression ────────────────────────────
     if (auto* asmE = dynamic_cast<LucisParser::AsmExprContext*>(expr)) {

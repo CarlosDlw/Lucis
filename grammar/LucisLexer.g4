@@ -141,6 +141,13 @@ BOOL_LIT  : 'true' | 'false';
 C_STR_LIT : 'c"' (~["\\\r\n] | '\\' .)* '"';
 STR_LIT   : '"' (~["\\\r\n] | '\\' .)* '"';
 
+// Backtick strings — multi-line, all content verbatim
+BTICK       : '`'  (~'`' | '``')* '`';
+RAW_BTICK   : 'r`' (~'`' | '``')* '`';
+INT_BTICK   : 'i`' (~'`' | '``')* '`';
+SHELL_BTICK : 's`' (~'`' | '``')* '`';
+CMPT_BTICK  : 'c`' (~'`' | '``')* '`';
+
 // Character literal with escape sequences: 'a', '\n', '\x41', '\u0041', '\U00000041', '\e', '\?', '\377'
 fragment CHAR_ESC : '\\' ('n' | 'r' | 't' | '\\' | '\'' | '"' | 'a' | 'b' | 'f' | 'v' | 'e' | 'E' | '?')
                   | '\\x' [0-9a-fA-F] [0-9a-fA-F]

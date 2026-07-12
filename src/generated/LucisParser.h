@@ -30,16 +30,18 @@ public:
     SUFFIXED_BIN = 89, SUFFIXED_INT = 90, SUFFIXED_INT_FLOAT = 91, SUFFIXED_FLOAT = 92, 
     SUFFIXED_FLOAT_INT = 93, SUFFIXED_DOT_FLOAT = 94, HEX_LIT = 95, OCT_LIT = 96, 
     BIN_LIT = 97, INT_LIT = 98, FLOAT_LIT = 99, BOOL_LIT = 100, C_STR_LIT = 101, 
-    STR_LIT = 102, CHAR_LIT = 103, ATTR_ERROR = 104, WILDCARD = 105, IDENTIFIER = 106, 
-    PLUS_ASSIGN = 107, MINUS_ASSIGN = 108, STAR_ASSIGN = 109, SLASH_ASSIGN = 110, 
-    PERCENT_ASSIGN = 111, AMP_ASSIGN = 112, PIPE_ASSIGN = 113, CARET_ASSIGN = 114, 
-    LSHIFT_ASSIGN = 115, RSHIFT_ASSIGN = 116, SEMI = 117, COLON = 118, SCOPE = 119, 
-    COMMA = 120, DOT = 121, ASSIGN = 122, LPAREN = 123, RPAREN = 124, LBRACE = 125, 
-    RBRACE = 126, LBRACKET = 127, RBRACKET = 128, STAR = 129, AMPERSAND = 130, 
-    MINUS = 131, PLUS = 132, SLASH = 133, PERCENT = 134, EQ = 135, NEQ = 136, 
-    LTE = 137, GTE = 138, LT = 139, GT = 140, LAND = 141, LOR = 142, NOT = 143, 
-    INCR = 144, DECR = 145, LSHIFT = 146, PIPE = 147, CARET = 148, TILDE = 149, 
-    QUESTION = 150, WS = 151, LINE_COMMENT = 152, BLOCK_COMMENT = 153
+    STR_LIT = 102, BTICK = 103, RAW_BTICK = 104, INT_BTICK = 105, SHELL_BTICK = 106, 
+    CMPT_BTICK = 107, CHAR_LIT = 108, ATTR_ERROR = 109, WILDCARD = 110, 
+    IDENTIFIER = 111, PLUS_ASSIGN = 112, MINUS_ASSIGN = 113, STAR_ASSIGN = 114, 
+    SLASH_ASSIGN = 115, PERCENT_ASSIGN = 116, AMP_ASSIGN = 117, PIPE_ASSIGN = 118, 
+    CARET_ASSIGN = 119, LSHIFT_ASSIGN = 120, RSHIFT_ASSIGN = 121, SEMI = 122, 
+    COLON = 123, SCOPE = 124, COMMA = 125, DOT = 126, ASSIGN = 127, LPAREN = 128, 
+    RPAREN = 129, LBRACE = 130, RBRACE = 131, LBRACKET = 132, RBRACKET = 133, 
+    STAR = 134, AMPERSAND = 135, MINUS = 136, PLUS = 137, SLASH = 138, PERCENT = 139, 
+    EQ = 140, NEQ = 141, LTE = 142, GTE = 143, LT = 144, GT = 145, LAND = 146, 
+    LOR = 147, NOT = 148, INCR = 149, DECR = 150, LSHIFT = 151, PIPE = 152, 
+    CARET = 153, TILDE = 154, QUESTION = 155, WS = 156, LINE_COMMENT = 157, 
+    BLOCK_COMMENT = 158
   };
 
   enum {
@@ -1797,6 +1799,11 @@ public:
     antlr4::tree::TerminalNode *FLOAT_LIT();
     antlr4::tree::TerminalNode *STR_LIT();
     antlr4::tree::TerminalNode *C_STR_LIT();
+    antlr4::tree::TerminalNode *BTICK();
+    antlr4::tree::TerminalNode *RAW_BTICK();
+    antlr4::tree::TerminalNode *INT_BTICK();
+    antlr4::tree::TerminalNode *SHELL_BTICK();
+    antlr4::tree::TerminalNode *CMPT_BTICK();
     antlr4::tree::TerminalNode *CHAR_LIT();
     antlr4::tree::TerminalNode *NULL_LIT();
     antlr4::tree::TerminalNode *BOOL_LIT();
@@ -1887,6 +1894,15 @@ public:
     antlr4::tree::TerminalNode* COLON(size_t i);
     std::vector<ExpressionContext *> expression();
     ExpressionContext* expression(size_t i);
+
+    virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+  };
+
+  class  BtickExprContext : public ExpressionContext {
+  public:
+    BtickExprContext(ExpressionContext *ctx);
+
+    antlr4::tree::TerminalNode *BTICK();
 
     virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
   };
@@ -2059,6 +2075,15 @@ public:
     std::vector<ExpressionContext *> expression();
     ExpressionContext* expression(size_t i);
     antlr4::tree::TerminalNode *AMPERSAND();
+
+    virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+  };
+
+  class  IntBtickExprContext : public ExpressionContext {
+  public:
+    IntBtickExprContext(ExpressionContext *ctx);
+
+    antlr4::tree::TerminalNode *INT_BTICK();
 
     virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
   };
@@ -2332,6 +2357,24 @@ public:
 
     antlr4::tree::TerminalNode *SPREAD();
     ExpressionContext *expression();
+
+    virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+  };
+
+  class  RawBtickExprContext : public ExpressionContext {
+  public:
+    RawBtickExprContext(ExpressionContext *ctx);
+
+    antlr4::tree::TerminalNode *RAW_BTICK();
+
+    virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+  };
+
+  class  ShellBtickExprContext : public ExpressionContext {
+  public:
+    ShellBtickExprContext(ExpressionContext *ctx);
+
+    antlr4::tree::TerminalNode *SHELL_BTICK();
 
     virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
   };
@@ -2775,6 +2818,15 @@ public:
     antlr4::tree::TerminalNode *LPAREN();
     TypeSpecContext *typeSpec();
     antlr4::tree::TerminalNode *RPAREN();
+
+    virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+  };
+
+  class  CmptBtickExprContext : public ExpressionContext {
+  public:
+    CmptBtickExprContext(ExpressionContext *ctx);
+
+    antlr4::tree::TerminalNode *CMPT_BTICK();
 
     virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
   };

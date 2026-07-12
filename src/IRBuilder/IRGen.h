@@ -125,6 +125,11 @@ public:
     std::any visitCharLitExpr(LucisParser::CharLitExprContext* ctx)     override;
     std::any visitStrLitExpr(LucisParser::StrLitExprContext* ctx)       override;
     std::any visitCStrLitExpr(LucisParser::CStrLitExprContext* ctx)   override;
+    std::any visitBtickExpr(LucisParser::BtickExprContext* ctx)         override;
+    std::any visitRawBtickExpr(LucisParser::RawBtickExprContext* ctx)     override;
+    std::any visitIntBtickExpr(LucisParser::IntBtickExprContext* ctx)     override;
+    std::any visitShellBtickExpr(LucisParser::ShellBtickExprContext* ctx) override;
+    std::any visitCmptBtickExpr(LucisParser::CmptBtickExprContext* ctx)   override;
     std::any visitAsmExpr(LucisParser::AsmExprContext* ctx)           override;
     std::any visitIdentExpr(LucisParser::IdentExprContext* ctx)         override;
     std::any visitArrayLitExpr(LucisParser::ArrayLitExprContext* ctx)   override;

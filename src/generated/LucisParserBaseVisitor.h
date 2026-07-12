@@ -375,6 +375,10 @@ public:
     return visitChildren(ctx);
   }
 
+  virtual std::any visitBtickExpr(LucisParser::BtickExprContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
   virtual std::any visitRshiftExpr(LucisParser::RshiftExprContext *ctx) override {
     return visitChildren(ctx);
   }
@@ -432,6 +436,10 @@ public:
   }
 
   virtual std::any visitBitAndExpr(LucisParser::BitAndExprContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual std::any visitIntBtickExpr(LucisParser::IntBtickExprContext *ctx) override {
     return visitChildren(ctx);
   }
 
@@ -524,6 +532,14 @@ public:
   }
 
   virtual std::any visitSpreadExpr(LucisParser::SpreadExprContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual std::any visitRawBtickExpr(LucisParser::RawBtickExprContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual std::any visitShellBtickExpr(LucisParser::ShellBtickExprContext *ctx) override {
     return visitChildren(ctx);
   }
 
@@ -660,6 +676,10 @@ public:
   }
 
   virtual std::any visitSizeofExpr(LucisParser::SizeofExprContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual std::any visitCmptBtickExpr(LucisParser::CmptBtickExprContext *ctx) override {
     return visitChildren(ctx);
   }
 

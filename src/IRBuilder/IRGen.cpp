@@ -8818,6 +8818,288 @@ std::any IRGen::visitCStrLitExpr(LucisParser::CStrLitExprContext* ctx) {
     return static_cast<llvm::Value*>(cstrGlobal);
 }
 
+// ── Raw backtick: `...` or r`...` ──────────────────────────────────────────
+static std::string decodeRawBacktick(const std::string& raw) {
+    auto first = raw.find('`');
+    auto last  = raw.rfind('`');
+    if (first == std::string::npos || last == std::string::npos || last <= first)
+        return {};
+    auto content = raw.substr(first + 1, last - first - 1);
+    std::string out;
+    out.reserve(content.size());
+    for (size_t i = 0; i < content.size(); i++) {
+        if (content[i] == '`' && i + 1 < content.size() && content[i + 1] == '`') {
+            out += '`';
+            i += 1;
+        } else {
+            out += content[i];
+        }
+    }
+    return out;
+}
+
+static llvm::Value* emitBtickString(llvm::IRBuilder<>& builder, llvm::Module* mod,
+                                      llvm::LLVMContext& ctx,
+                                      const TypeRegistry& typeRegistry,
+                                      const std::string& str,
+                                      const std::string& globalName) {
+    auto* strGlobal = builder.CreateGlobalString(str, globalName, 0, mod);
+    auto* strTy = typeRegistry.lookup("string")
+        ->toLLVMType(ctx, mod->getDataLayout());
+    auto* usizeTy = mod->getDataLayout().getIntPtrType(ctx);
+    auto* len = llvm::ConstantInt::get(usizeTy, str.size());
+    llvm::Value* strStruct = llvm::UndefValue::get(strTy);
+    strStruct = builder.CreateInsertValue(strStruct, strGlobal, 0, "str_ptr");
+    strStruct = builder.CreateInsertValue(strStruct, len,       1, "str_len");
+    return strStruct;
+}
+
+std::any IRGen::visitBtickExpr(LucisParser::BtickExprContext* ctx) {
+        SET_DBG_LOC(ctx);
+    auto raw = ctx->BTICK()->getText();
+    auto str = decodeRawBacktick(raw);
+    return static_cast<llvm::Value*>(
+        emitBtickString(*builder_, module_, *context_, typeRegistry_, str, ".btick"));
+}
+
+std::any IRGen::visitRawBtickExpr(LucisParser::RawBtickExprContext* ctx) {
+        SET_DBG_LOC(ctx);
+    auto raw = ctx->RAW_BTICK()->getText();
+    auto str = decodeRawBacktick(raw);
+    return static_cast<llvm::Value*>(
+        emitBtickString(*builder_, module_, *context_, typeRegistry_, str, ".rbtick"));
+}
+
+// ── Interpolated backtick: i`text{expr}more` ────────────────────────────────
+// Lowers to sprintf("text {} more", expr...)
+// Each {expr} is parsed as a sub-expression and evaluated at runtime.
+static bool isSimpleIdent(const std::string& s) {
+    if (s.empty()) return false;
+    for (char c : s) if (!std::isalnum(c) && c != '_') return false;
+    return true;
+}
+
+std::any IRGen::visitIntBtickExpr(LucisParser::IntBtickExprContext* ctx) {
+        SET_DBG_LOC(ctx);
+    auto raw = ctx->INT_BTICK()->getText();
+    auto first = raw.find('`');
+    auto last  = raw.rfind('`');
+    if (first == std::string::npos || last == std::string::npos || last <= first)
+        return static_cast<llvm::Value*>(llvm::UndefValue::get(
+            typeRegistry_.lookup("string")->toLLVMType(*context_, module_->getDataLayout())));
+    auto content = raw.substr(first + 1, last - first - 1);
+
+    // Parse segments: literal text and {expr} interpolations
+    struct Segment { bool isExpr; std::string text; };
+    std::vector<Segment> segs;
+    size_t braceDepth = 0;
+    std::string cur;
+    for (size_t i = 0; i < content.size(); i++) {
+        if (content[i] == '{' && braceDepth == 0) {
+            segs.push_back({false, cur});
+            cur.clear();
+            braceDepth = 1;
+        } else if (content[i] == '}' && braceDepth == 1) {
+            segs.push_back({true, cur});
+            cur.clear();
+            braceDepth = 0;
+        } else if (content[i] == '`' && i + 1 < content.size() && content[i + 1] == '`') {
+            cur += '`';
+            i += 1;
+        } else {
+            cur += content[i];
+        }
+    }
+    segs.push_back({false, cur});
+
+    // Build format string: literal text + "{}" per expression
+    std::string fmt;
+    size_t numExprs = 0;
+    for (auto& seg : segs) {
+        if (seg.isExpr) {
+            fmt += "{}";
+            numExprs++;
+        } else {
+            fmt += seg.text;
+        }
+    }
+
+    // Evaluate sub-expressions
+    auto* strTy   = typeRegistry_.lookup("string")
+                        ->toLLVMType(*context_, module_->getDataLayout());
+    auto* sliceTy = strTy; // {ptr, i64}
+    auto* ptrTy   = llvm::PointerType::getUnqual(*context_);
+    auto* usizeTy = module_->getDataLayout().getIntPtrType(*context_);
+    auto* i64Ty   = llvm::Type::getInt64Ty(*context_);
+
+    std::vector<llvm::Value*> exprVals;
+    exprVals.reserve(numExprs);
+
+    // Keep ParseResults alive for the duration of visiting
+    std::vector<ParseResult> held;
+
+    for (auto& seg : segs) {
+        if (!seg.isExpr) continue;
+
+        llvm::Value* val = nullptr;
+
+        // Fast path: simple variable lookup
+        if (isSimpleIdent(seg.text)) {
+            auto it = locals_.find(seg.text);
+            if (it != locals_.end()) {
+                auto* ty = it->second.typeInfo->toLLVMType(*context_, module_->getDataLayout());
+                val = builder_->CreateLoad(ty, it->second.alloca, seg.text);
+                exprVals.push_back(val);
+                continue;
+            }
+        }
+
+        // Full path: wrap expression in a dummy function and parse properly
+        std::string wrap = "fn __ibtick_" + std::to_string(held.size()) +
+                           "() int32 { return (" + seg.text + "); }";
+        auto pr = Parser::parseString(wrap);
+        if (pr.tree && !pr.hasErrors) {
+            // Navigate: program → topLevelDecl → functionDecl → functionDefinition → block → stmt → returnStmt → expression
+            auto tds = pr.tree->topLevelDecl();
+            if (!tds.empty() && tds[0]->functionDecl()) {
+                auto* fd = tds[0]->functionDecl();
+                if (auto* block = fd->block()) {
+                    auto stmts = block->statement();
+                    if (!stmts.empty() && stmts[0]->returnStmt()) {
+                        held.push_back(std::move(pr));
+                        val = castValue(visit(stmts[0]->returnStmt()->expression()));
+                    }
+                }
+            }
+        }
+
+        if (val) {
+            exprVals.push_back(val);
+        } else {
+            exprVals.push_back(llvm::Constant::getNullValue(sliceTy));
+        }
+    }
+
+    // Build lucis_sprintf call
+    // Arguments: lucis_sprintf(fmtPtr, fmtLen, argsPtr, argsCount)
+    auto* fmtGlobal = builder_->CreateGlobalString(fmt, ".ibtick", 0, module_);
+    auto* fmtLen    = llvm::ConstantInt::get(usizeTy, fmt.size());
+    auto* zero      = llvm::ConstantInt::get(i64Ty, 0);
+
+    llvm::Value* argsPtr   = llvm::ConstantPointerNull::get(ptrTy);
+    llvm::Value* argsCount = llvm::ConstantInt::get(usizeTy, 0);
+
+    if (!exprVals.empty()) {
+        size_t n = exprVals.size();
+        auto* arrTy = llvm::ArrayType::get(sliceTy, n);
+        auto* arrAlloca = builder_->CreateAlloca(arrTy, nullptr, "ibtick.args");
+
+        for (size_t i = 0; i < n; i++) {
+            auto* arg = exprVals[i];
+            llvm::Value* converted = nullptr;
+
+            if (arg->getType() == sliceTy) {
+                converted = arg;
+            } else if (arg->getType()->isIntegerTy(1)) {
+                auto* trueStr  = builder_->CreateGlobalString("true", ".str.true", 0, module_);
+                auto* falseStr = builder_->CreateGlobalString("false", ".str.false", 0, module_);
+                auto* trueLen  = llvm::ConstantInt::get(usizeTy, 4);
+                auto* falseLen = llvm::ConstantInt::get(usizeTy, 5);
+                auto* ptr = builder_->CreateSelect(arg, trueStr, falseStr);
+                auto* len = builder_->CreateSelect(arg, trueLen, falseLen);
+                converted = llvm::UndefValue::get(sliceTy);
+                converted = builder_->CreateInsertValue(converted, ptr, 0);
+                converted = builder_->CreateInsertValue(converted, len, 1);
+            } else if (arg->getType()->isIntegerTy()) {
+                auto* ext = builder_->CreateIntCast(arg, i64Ty, true, "icast");
+                auto fn = declareBuiltin("lucis_itoa", sliceTy, {i64Ty});
+                converted = builder_->CreateCall(fn, {ext}, "itoa");
+            } else if (arg->getType()->isFloatingPointTy()) {
+                auto* dblTy = llvm::Type::getDoubleTy(*context_);
+                auto* ext = arg->getType()->isFloatTy()
+                    ? builder_->CreateFPExt(arg, dblTy, "fext")
+                    : arg;
+                auto fn = declareBuiltin("lucis_ftoa", sliceTy, {dblTy});
+                converted = builder_->CreateCall(fn, {ext}, "ftoa");
+            } else {
+                converted = arg;
+            }
+
+            auto* idx = llvm::ConstantInt::get(i64Ty, i);
+            auto* gep = builder_->CreateGEP(arrTy, arrAlloca, {zero, idx});
+            builder_->CreateStore(converted, gep);
+        }
+
+        argsPtr   = builder_->CreateGEP(arrTy, arrAlloca, {zero, zero}, "ibtick.args.ptr");
+        argsCount = llvm::ConstantInt::get(usizeTy, n);
+    }
+
+    auto callee = declareBuiltin("lucis_sprintf", strTy,
+        {ptrTy, usizeTy, ptrTy, usizeTy});
+    auto* ret = builder_->CreateCall(callee,
+        {fmtGlobal, fmtLen, argsPtr, argsCount}, "ibtick.sprintf");
+
+    auto* retPtr = builder_->CreateExtractValue(ret, 0, "ibtick.ptr");
+    auto* retLen = builder_->CreateExtractValue(ret, 1, "ibtick.len");
+    llvm::Value* strStruct = llvm::UndefValue::get(strTy);
+    strStruct = builder_->CreateInsertValue(strStruct, retPtr, 0);
+    strStruct = builder_->CreateInsertValue(strStruct, retLen, 1);
+    return static_cast<llvm::Value*>(strStruct);
+}
+
+// ── Shell backtick: s`command` ──────────────────────────────────────────────
+std::any IRGen::visitShellBtickExpr(LucisParser::ShellBtickExprContext* ctx) {
+        SET_DBG_LOC(ctx);
+    auto raw = ctx->SHELL_BTICK()->getText();
+    auto cmd = decodeRawBacktick(raw);
+
+    // Call lucis_system(cmd) at runtime
+    auto* strGlobal = builder_->CreateGlobalString(cmd, ".scmd", 0, module_);
+    auto* strTy   = typeRegistry_.lookup("string")
+                        ->toLLVMType(*context_, module_->getDataLayout());
+    auto* voidTy  = llvm::Type::getVoidTy(*context_);
+    auto* ptrTy   = llvm::PointerType::getUnqual(*context_);
+    auto* usizeTy = module_->getDataLayout().getIntPtrType(*context_);
+
+    // Build {ptr, len} argument for the command string
+    auto* cmdLen = llvm::ConstantInt::get(usizeTy, cmd.size());
+    llvm::Value* cmdStruct = llvm::UndefValue::get(strTy);
+    cmdStruct = builder_->CreateInsertValue(cmdStruct, strGlobal, 0, "cmd_ptr");
+    cmdStruct = builder_->CreateInsertValue(cmdStruct, cmdLen,    1, "cmd_len");
+
+    // Call lucis_system(cmdStruct) → returns lucis_str_result
+    auto callee = declareBuiltin("lucis_system", strTy, {strTy});
+    return static_cast<llvm::Value*>(
+        builder_->CreateCall(callee, {cmdStruct}, "shell_result"));
+}
+
+// ── Comptime backtick: c`command` ───────────────────────────────────────────
+std::any IRGen::visitCmptBtickExpr(LucisParser::CmptBtickExprContext* ctx) {
+        SET_DBG_LOC(ctx);
+    auto raw = ctx->CMPT_BTICK()->getText();
+    auto cmd = decodeRawBacktick(raw);
+
+    // Execute command at compile time
+    auto* pipe = popen(cmd.c_str(), "r");
+    if (!pipe) {
+        std::cerr << "lucis: comptime shell command failed: " << cmd << "\n";
+        return static_cast<llvm::Value*>(
+            emitBtickString(*builder_, module_, *context_, typeRegistry_, "", ".cbtick"));
+    }
+    std::string result;
+    char buf[4096];
+    while (auto n = fread(buf, 1, sizeof(buf), pipe))
+        result.append(buf, n);
+    pclose(pipe);
+
+    // Trim trailing newline
+    while (!result.empty() && (result.back() == '\n' || result.back() == '\r'))
+        result.pop_back();
+
+    return static_cast<llvm::Value*>(
+        emitBtickString(*builder_, module_, *context_, typeRegistry_, result, ".cbtick"));
+}
+
 std::any IRGen::visitLambdaExpr(LucisParser::LambdaExprContext* ctx) {
         SET_DBG_LOC(ctx);
     // Check cache first (avoid double-generation during auto type inference)
@@ -17882,6 +18164,14 @@ const TypeInfo* IRGen::resolveExprTypeInfo(LucisParser::ExpressionContext* ctx) 
         typeRegistry_.registerType(std::move(ti));
         return typeRegistry_.lookup(ptrName);
     }
+
+    // ── Backtick string expressions ───────────────────────────────
+    if (dynamic_cast<LucisParser::BtickExprContext*>(ctx) ||
+        dynamic_cast<LucisParser::RawBtickExprContext*>(ctx) ||
+        dynamic_cast<LucisParser::IntBtickExprContext*>(ctx) ||
+        dynamic_cast<LucisParser::ShellBtickExprContext*>(ctx) ||
+        dynamic_cast<LucisParser::CmptBtickExprContext*>(ctx))
+        return typeRegistry_.lookup("string");
 
     // ── Function call to comptime function ─────────────────────────
     if (auto* call = dynamic_cast<LucisParser::FnCallExprContext*>(ctx)) {
