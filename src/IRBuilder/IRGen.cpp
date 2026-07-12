@@ -1041,6 +1041,16 @@ void IRGen::generateConstInitFunction() {
         auto* exprVal = std::any_cast<llvm::Value*>(visit(decl->expression()));
         if (!exprVal) continue;
 
+        // Coerce to the global's type if needed
+        auto* globalTy = global->getValueType();
+        if (exprVal->getType() != globalTy) {
+            bool srcSigned = true;
+            if (auto* srcTI = resolveExprTypeInfo(decl->expression())) {
+                if (srcTI->kind == TypeKind::Integer) srcSigned = srcTI->isSigned;
+            }
+            exprVal = coerceValueToType(exprVal, globalTy, srcSigned);
+        }
+
         // Store the evaluated value into the global variable
         builder_->CreateStore(exprVal, global);
     }
@@ -2978,6 +2988,13 @@ std::any IRGen::visitConstDeclStmt(LucisParser::ConstDeclStmtContext* ctx) {
             // Function-scoped const: alloca + store (like a local variable)
             auto* initVal = castValue(visit(d->expression()));
             if (!initVal) continue;
+
+            // Coerce the value to the destination type if needed
+            bool srcSigned = true;
+            if (auto* srcTI = resolveExprTypeInfo(d->expression())) {
+                if (srcTI->kind == TypeKind::Integer) srcSigned = srcTI->isSigned;
+            }
+            initVal = coerceValueToType(initVal, llvmType, srcSigned);
 
             auto* alloca = builder_->CreateAlloca(llvmType, nullptr, name);
             builder_->CreateStore(initVal, alloca);
@@ -10646,6 +10663,47 @@ std::any IRGen::visitFieldAccessExpr(LucisParser::FieldAccessExprContext* ctx) {
 
         auto it = locals_.find(varName);
         if (it == locals_.end()) {
+            // Check if it's a top-level const
+            {
+                auto cit = topLevelConsts_.find(varName);
+                if (cit != topLevelConsts_.end()) {
+                    auto* global = cit->second.global;
+                    auto* structTI = cit->second.typeInfo;
+                    if (structTI && (structTI->kind == TypeKind::Struct ||
+                                     structTI->kind == TypeKind::Union)) {
+                        int fieldIdx = -1;
+                        const TypeInfo* fieldTI = nullptr;
+                        for (size_t f = 0; f < structTI->fields.size(); f++) {
+                            if (structTI->fields[f].name == fieldName) {
+                                fieldIdx = static_cast<int>(f);
+                                fieldTI = structTI->fields[f].typeInfo;
+                                break;
+                            }
+                        }
+                        if (fieldIdx >= 0) {
+                            auto* globalTy = global->getValueType();
+                            auto* structVal = builder_->CreateLoad(globalTy, global, varName);
+                            auto* fieldLLTy = buildFieldLLVMType(fieldTI,
+                                structTI->fields[fieldIdx].arrayDims,
+                                structTI->fields[fieldIdx].arraySizes);
+                            if (structTI->kind == TypeKind::Union) {
+                                auto* ptrTy = llvm::PointerType::getUnqual(*context_);
+                                auto* ptr = builder_->CreatePointerCast(global, ptrTy);
+                                return static_cast<llvm::Value*>(
+                                    builder_->CreateLoad(fieldLLTy, ptr, fieldName));
+                            }
+                            return static_cast<llvm::Value*>(
+                                builder_->CreateExtractValue(structVal,
+                                    {static_cast<unsigned>(fieldIdx)}, fieldName));
+                        }
+                    }
+                    std::cerr << "lucis: '" << structTI->name
+                              << "' has no field '" << fieldName << "'\n";
+                    return static_cast<llvm::Value*>(
+                        llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
+                }
+            }
+
             // Check if it's a C struct macro (e.g. RED.r where RED is a Color macro)
             auto smIt = cStructMacros_.find(varName);
             if (smIt != cStructMacros_.end()) {
@@ -16414,6 +16472,28 @@ std::any IRGen::visitAddSubExpr(LucisParser::AddSubExprContext* ctx) {
                 llvm::ConstantInt::get(i64Ty, elemSize), "ptrdiff.elems");
         }
         return static_cast<llvm::Value*>(diff);
+    }
+
+    // ── String concatenation ────────────────────────────────────────
+    {
+        auto* lhsTI = resolveExprTypeInfo(ctx->expression(0));
+        auto* rhsTI = resolveExprTypeInfo(ctx->expression(1));
+        if (lhsTI && rhsTI &&
+            lhsTI->kind == TypeKind::String && rhsTI->kind == TypeKind::String) {
+            auto* ptrTy   = llvm::PointerType::getUnqual(*context_);
+            auto* usizeTy = module_->getDataLayout().getIntPtrType(*context_);
+            auto* strTy   = lhs->getType();
+
+            auto* lhsPtr = builder_->CreateExtractValue(lhs, {0}, "lhs.ptr");
+            auto* lhsLen = builder_->CreateExtractValue(lhs, {1}, "lhs.len");
+            auto* rhsPtr = builder_->CreateExtractValue(rhs, {0}, "rhs.ptr");
+            auto* rhsLen = builder_->CreateExtractValue(rhs, {1}, "rhs.len");
+
+            auto callee = declareBuiltin("lucis_concat", strTy,
+                                        {ptrTy, usizeTy, ptrTy, usizeTy});
+            return static_cast<llvm::Value*>(
+                builder_->CreateCall(callee, {lhsPtr, lhsLen, rhsPtr, rhsLen}, "strcat"));
+        }
     }
 
     // ── Normal arithmetic ───────────────────────────────────────────

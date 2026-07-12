@@ -15,6 +15,7 @@
 #include "types/BuiltinRegistry.h"
 #include "intrinsics/IntrinsicRegistry.h"
 #include "comptime/ComptimeRegistry.h"
+#include "comptime/ComptimeValue.h"
 #include "namespace/ModuleRegistry.h"
 #include "lsp/Diagnostic.h"
 #include "semantic/SemanticDB.h"
@@ -94,8 +95,10 @@ private:
     // Top-level const variables, persisted across function-scope clears
     std::unordered_map<std::string, VarInfo> globalVars_;
 
-    // Compile-time known integer values (for consts and locals initialized with literals)
-    std::unordered_map<std::string, int64_t> compileTimeValues_;
+    // Compile-time known constant values (for const declarations)
+    std::unordered_map<std::string, ComptimeValue> compileTimeValues_;
+
+    std::optional<ComptimeValue> evaluateConstExpr(LucisParser::ExpressionContext* expr);
 
     // Labels declared in the current function (for asm goto validation)
     std::unordered_set<std::string> currentFunctionLabels_;

@@ -1598,7 +1598,11 @@ const TypeInfo* Checker::resolveTypeSpec(LucisParser::TypeSpecContext* ctx,
             if (lit != locals_.end() && lit->second.isConst) {
                 auto cit = compileTimeValues_.find(identName);
                 if (cit != compileTimeValues_.end()) {
-                    int64_t size = cit->second;
+                    if (cit->second.kind() != ComptimeValue::Kind::Int) {
+                        error(cur, "const '" + identName + "' must be an integer to be used as array size");
+                        return nullptr;
+                    }
+                    int64_t size = cit->second.asInt();
                     if (size <= 0) {
                         error(cur, "array size must be a positive integer, got '" +
                               identName + "' = " + std::to_string(size));
@@ -3351,6 +3355,15 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
         // pointer - pointer → i64 (ptrdiff)
         if (lhsPtr && rhsPtr && opText == "-") {
             return typeRegistry_.lookup("i64");
+        }
+
+        // string + string → string
+        if (lhs && rhs && lhs->kind == TypeKind::String && rhs->kind == TypeKind::String) {
+            if (opText != "+") {
+                error(expr, "operator '-' does not support string operands");
+                return lhs;
+            }
+            return typeRegistry_.lookup("string");
         }
 
         bool lhsBad = lhs && !isNumeric(lhs);
@@ -7565,6 +7578,414 @@ void Checker::checkForClassicStmt(LucisParser::ForClassicStmtContext* stmt,
 //  Statement checks
 // ═══════════════════════════════════════════════════════════════════════
 
+// ── Const expression evaluator ─────────────────────────────────────────────
+// Walks the AST and computes the compile-time value of a const expression.
+// Returns std::nullopt if the expression cannot be evaluated at compile time.
+static int64_t parseIntLiteral(const std::string& text, int base = 0) {
+    std::string clean;
+    clean.reserve(text.size());
+    for (char c : text) {
+        if (c == '\'' && base != 16) continue; // digit separators (exclude hex 'a'..'f')
+        clean += c;
+    }
+    auto pos = clean.find_first_not_of("+-xXoObB");
+    if (pos == std::string::npos) return 0;
+    std::string num = clean.substr(pos);
+    try {
+        return std::stoll(num, nullptr, base);
+    } catch (...) { return 0; }
+}
+
+static std::string stripSuffix(const std::string& text) {
+    static const char* suffixes[] = {
+        "i8","i16","i32","i64","i128","iinf","isize",
+        "u8","u16","u32","u64","u128","usize",
+        "f32","f64","f80","f128", nullptr
+    };
+    for (const char** s = suffixes; *s; ++s) {
+        auto slen = strlen(*s);
+        if (text.size() > slen && text.compare(text.size() - slen, slen, *s) == 0)
+            return text.substr(0, text.size() - slen);
+    }
+    return text;
+}
+
+std::optional<ComptimeValue> Checker::evaluateConstExpr(LucisParser::ExpressionContext* expr) {
+    if (!expr) return std::nullopt;
+
+    // ── Unsuffixed integer literals ────────────────────────────────
+    auto evalIntLit = [](const std::string& text, int base) -> std::optional<ComptimeValue> {
+        return ComptimeValue::intVal(parseIntLiteral(text, base));
+    };
+
+    if (auto* n = dynamic_cast<LucisParser::IntLitExprContext*>(expr))
+        return evalIntLit(n->INT_LIT()->getText(), 0);
+    if (auto* n = dynamic_cast<LucisParser::HexLitExprContext*>(expr))
+        return evalIntLit(n->HEX_LIT()->getText(), 16);
+    if (auto* n = dynamic_cast<LucisParser::OctLitExprContext*>(expr))
+        return evalIntLit(n->OCT_LIT()->getText(), 8);
+    if (auto* n = dynamic_cast<LucisParser::BinLitExprContext*>(expr))
+        return evalIntLit(n->BIN_LIT()->getText(), 2);
+
+    // ── Suffixed integer literals ───────────────────────────────────
+    if (auto* n = dynamic_cast<LucisParser::SuffixedIntLitExprContext*>(expr))
+        return ComptimeValue::intVal(parseIntLiteral(stripSuffix(n->SUFFIXED_INT()->getText()), 0));
+    if (auto* n = dynamic_cast<LucisParser::SuffixedHexLitExprContext*>(expr))
+        return ComptimeValue::intVal(parseIntLiteral(stripSuffix(n->SUFFIXED_HEX()->getText()), 16));
+    if (auto* n = dynamic_cast<LucisParser::SuffixedOctLitExprContext*>(expr))
+        return ComptimeValue::intVal(parseIntLiteral(stripSuffix(n->SUFFIXED_OCT()->getText()), 8));
+    if (auto* n = dynamic_cast<LucisParser::SuffixedBinLitExprContext*>(expr))
+        return ComptimeValue::intVal(parseIntLiteral(stripSuffix(n->SUFFIXED_BIN()->getText()), 2));
+
+    // ── Float literals ──────────────────────────────────────────────
+    auto evalFloatLit = [](const std::string& text) -> std::optional<ComptimeValue> {
+        try { return ComptimeValue::floatVal(std::stod(text)); } catch (...) { return std::nullopt; }
+    };
+    if (dynamic_cast<LucisParser::FloatLitExprContext*>(expr)) {
+        auto raw = static_cast<LucisParser::FloatLitExprContext*>(expr)->FLOAT_LIT()->getText();
+        return evalFloatLit(raw);
+    }
+    if (auto* ld = dynamic_cast<LucisParser::LeadingDotFloatLitExprContext*>(expr)) {
+        if (ld->INT_LIT()) {
+            return evalFloatLit("0." + ld->INT_LIT()->getText());
+        }
+        return evalFloatLit("0.0");
+    }
+    if (auto* n = dynamic_cast<LucisParser::SuffixedFloatLitExprContext*>(expr))
+        return evalFloatLit(stripSuffix(n->SUFFIXED_FLOAT()->getText()));
+    if (auto* sd = dynamic_cast<LucisParser::SuffixedLeadingDotFloatExprContext*>(expr)) {
+        auto raw = sd->SUFFIXED_DOT_FLOAT()->getText();
+        return evalFloatLit("0." + stripSuffix(raw));
+    }
+    if (auto* n = dynamic_cast<LucisParser::SuffixedFloatIntExprContext*>(expr))
+        return evalFloatLit(stripSuffix(n->SUFFIXED_FLOAT_INT()->getText()));
+    if (auto* n = dynamic_cast<LucisParser::SuffixedIntFloatExprContext*>(expr))
+        return evalFloatLit(stripSuffix(n->SUFFIXED_INT_FLOAT()->getText()));
+
+    // ── Bool, char, null literals ───────────────────────────────────
+    if (dynamic_cast<LucisParser::BoolLitExprContext*>(expr)) {
+        auto raw = static_cast<LucisParser::BoolLitExprContext*>(expr)->BOOL_LIT()->getText();
+        return ComptimeValue::boolVal(raw == "true");
+    }
+    if (auto* ch = dynamic_cast<LucisParser::CharLitExprContext*>(expr)) {
+        auto raw = ch->CHAR_LIT()->getText();
+        if (raw.size() >= 2 && raw[0] == '\'') {
+            if (raw.size() == 3 && raw[1] != '\\')
+                return ComptimeValue::intVal(static_cast<uint8_t>(raw[1]));
+            if (raw.size() > 2 && raw[1] == '\\') {
+                if (raw[2] == 'n') return ComptimeValue::intVal(10);
+                if (raw[2] == 't') return ComptimeValue::intVal(9);
+                if (raw[2] == '0') return ComptimeValue::intVal(0);
+                if (raw[2] == '\\') return ComptimeValue::intVal(92);
+                if (raw[2] == '\'') return ComptimeValue::intVal(39);
+                return ComptimeValue::intVal(static_cast<uint8_t>(raw[2]));
+            }
+        }
+        return ComptimeValue::intVal(0);
+    }
+    if (dynamic_cast<LucisParser::NullLitExprContext*>(expr))
+        return ComptimeValue::intVal(0);
+
+    // ── String literals ─────────────────────────────────────────────
+    if (auto* s = dynamic_cast<LucisParser::StrLitExprContext*>(expr)) {
+        auto raw = s->STR_LIT()->getText();
+        if (raw.size() >= 2) {
+            std::string unescaped;
+            for (size_t i = 1; i < raw.size() - 1; i++) {
+                if (raw[i] == '\\' && i + 1 < raw.size() - 1) {
+                    switch (raw[++i]) {
+                        case 'n': unescaped += '\n'; break;
+                        case 't': unescaped += '\t'; break;
+                        case '0': unescaped += '\0'; break;
+                        case '\\': unescaped += '\\'; break;
+                        case '"': unescaped += '"'; break;
+                        default: unescaped += raw[i]; break;
+                    }
+                } else {
+                    unescaped += raw[i];
+                }
+            }
+            return ComptimeValue::stringVal(unescaped);
+        }
+        return ComptimeValue::stringVal("");
+    }
+
+    // ── Identifier reference (other const) ──────────────────────────
+    if (auto* id = dynamic_cast<LucisParser::IdentExprContext*>(expr)) {
+        auto name = id->IDENTIFIER()->getText();
+        auto it = compileTimeValues_.find(name);
+        if (it != compileTimeValues_.end())
+            return it->second;
+        return std::nullopt;
+    }
+
+    // ── Parenthesized ───────────────────────────────────────────────
+    if (auto* paren = dynamic_cast<LucisParser::ParenExprContext*>(expr))
+        return evaluateConstExpr(paren->expression());
+
+    // ── Unary operators ─────────────────────────────────────────────
+    if (auto* neg = dynamic_cast<LucisParser::NegExprContext*>(expr)) {
+        auto v = evaluateConstExpr(neg->expression());
+        if (!v) return std::nullopt;
+        if (v->kind() == ComptimeValue::Kind::Int) return ComptimeValue::intVal(-v->asInt());
+        if (v->kind() == ComptimeValue::Kind::Float) return ComptimeValue::floatVal(-v->asFloat());
+        return std::nullopt;
+    }
+    if (auto* lnot = dynamic_cast<LucisParser::LogicalNotExprContext*>(expr)) {
+        auto v = evaluateConstExpr(lnot->expression());
+        if (!v) return std::nullopt;
+        if (v->kind() == ComptimeValue::Kind::Bool) return ComptimeValue::boolVal(!v->asBool());
+        if (v->kind() == ComptimeValue::Kind::Int) return ComptimeValue::boolVal(!v->asInt());
+        return std::nullopt;
+    }
+    if (auto* bnot = dynamic_cast<LucisParser::BitNotExprContext*>(expr)) {
+        auto v = evaluateConstExpr(bnot->expression());
+        if (!v || v->kind() != ComptimeValue::Kind::Int) return std::nullopt;
+        return ComptimeValue::intVal(~v->asInt());
+    }
+
+    // ── Binary operators ────────────────────────────────────────────
+    auto evalBinary = [this](auto* ctx, auto opFn) -> std::optional<ComptimeValue> {
+        auto sub = ctx->expression();
+        if (sub.size() != 2) return std::nullopt;
+        auto lhs = evaluateConstExpr(sub[0]);
+        auto rhs = evaluateConstExpr(sub[1]);
+        if (!lhs || !rhs) return std::nullopt;
+        return opFn(*lhs, *rhs);
+    };
+
+    // Arithmetic
+    if (auto* mul = dynamic_cast<LucisParser::MulExprContext*>(expr)) {
+        return evalBinary(mul, [&](const ComptimeValue& a, const ComptimeValue& b)
+                         -> std::optional<ComptimeValue> {
+            if (a.kind() == ComptimeValue::Kind::Int && b.kind() == ComptimeValue::Kind::Int) {
+                // Determine op from token text
+                auto raw = mul->getText();
+                if (raw.find('*') != std::string::npos) return ComptimeValue::intVal(a.asInt() * b.asInt());
+                if (raw.find('/') != std::string::npos) {
+                    if (b.asInt() == 0) return std::nullopt;
+                    return ComptimeValue::intVal(a.asInt() / b.asInt());
+                }
+                if (raw.find('%') != std::string::npos) {
+                    if (b.asInt() == 0) return std::nullopt;
+                    return ComptimeValue::intVal(a.asInt() % b.asInt());
+                }
+                return std::nullopt;
+            }
+            if (a.kind() == ComptimeValue::Kind::Float && b.kind() == ComptimeValue::Kind::Float) {
+                auto raw = mul->getText();
+                if (raw.find('*') != std::string::npos) return ComptimeValue::floatVal(a.asFloat() * b.asFloat());
+                if (raw.find('/') != std::string::npos) {
+                    if (b.asFloat() == 0.0) return std::nullopt;
+                    return ComptimeValue::floatVal(a.asFloat() / b.asFloat());
+                }
+                return std::nullopt;
+            }
+            return std::nullopt;
+        });
+    }
+
+    if (auto* add = dynamic_cast<LucisParser::AddSubExprContext*>(expr)) {
+        return evalBinary(add, [&](const ComptimeValue& a, const ComptimeValue& b)
+                         -> std::optional<ComptimeValue> {
+            if (a.kind() == ComptimeValue::Kind::Int && b.kind() == ComptimeValue::Kind::Int) {
+                auto raw = add->getText();
+                if (raw.find('+') != std::string::npos) return ComptimeValue::intVal(a.asInt() + b.asInt());
+                if (raw.find('-') != std::string::npos) return ComptimeValue::intVal(a.asInt() - b.asInt());
+                return std::nullopt;
+            }
+            if (a.kind() == ComptimeValue::Kind::Float && b.kind() == ComptimeValue::Kind::Float) {
+                auto raw = add->getText();
+                if (raw.find('+') != std::string::npos) return ComptimeValue::floatVal(a.asFloat() + b.asFloat());
+                if (raw.find('-') != std::string::npos) return ComptimeValue::floatVal(a.asFloat() - b.asFloat());
+                return std::nullopt;
+            }
+            if (a.kind() == ComptimeValue::Kind::String && b.kind() == ComptimeValue::Kind::String) {
+                return ComptimeValue::stringVal(a.asString() + b.asString());
+            }
+            return std::nullopt;
+        });
+    }
+
+    // Shift
+    if (auto* lsh = dynamic_cast<LucisParser::LshiftExprContext*>(expr)) {
+        return evalBinary(lsh, [](const ComptimeValue& a, const ComptimeValue& b)
+                         -> std::optional<ComptimeValue> {
+            if (a.kind() != ComptimeValue::Kind::Int || b.kind() != ComptimeValue::Kind::Int)
+                return std::nullopt;
+            return ComptimeValue::intVal(a.asInt() << b.asInt());
+        });
+    }
+    if (auto* rsh = dynamic_cast<LucisParser::RshiftExprContext*>(expr)) {
+        return evalBinary(rsh, [](const ComptimeValue& a, const ComptimeValue& b)
+                         -> std::optional<ComptimeValue> {
+            if (a.kind() != ComptimeValue::Kind::Int || b.kind() != ComptimeValue::Kind::Int)
+                return std::nullopt;
+            // Use logical shift for unsigned, arithmetic for signed
+            // We default to arithmetic (signed) for simplicity
+            return ComptimeValue::intVal(a.asInt() >> b.asInt());
+        });
+    }
+
+    // Relational
+    if (auto* rel = dynamic_cast<LucisParser::RelExprContext*>(expr)) {
+        return evalBinary(rel, [&](const ComptimeValue& a, const ComptimeValue& b)
+                         -> std::optional<ComptimeValue> {
+            bool result = false;
+            auto raw = rel->getText();
+            if (a.kind() == ComptimeValue::Kind::Int && b.kind() == ComptimeValue::Kind::Int) {
+                if (raw.find("<=") != std::string::npos) result = a.asInt() <= b.asInt();
+                else if (raw.find(">=") != std::string::npos) result = a.asInt() >= b.asInt();
+                else if (raw.find('<') != std::string::npos) result = a.asInt() < b.asInt();
+                else if (raw.find('>') != std::string::npos) result = a.asInt() > b.asInt();
+                return ComptimeValue::boolVal(result);
+            }
+            if (a.kind() == ComptimeValue::Kind::Float && b.kind() == ComptimeValue::Kind::Float) {
+                if (raw.find("<=") != std::string::npos) result = a.asFloat() <= b.asFloat();
+                else if (raw.find(">=") != std::string::npos) result = a.asFloat() >= b.asFloat();
+                else if (raw.find('<') != std::string::npos) result = a.asFloat() < b.asFloat();
+                else if (raw.find('>') != std::string::npos) result = a.asFloat() > b.asFloat();
+                return ComptimeValue::boolVal(result);
+            }
+            return std::nullopt;
+        });
+    }
+
+    // Equality
+    if (auto* eq = dynamic_cast<LucisParser::EqExprContext*>(expr)) {
+        return evalBinary(eq, [&](const ComptimeValue& a, const ComptimeValue& b)
+                         -> std::optional<ComptimeValue> {
+            bool result = false;
+            auto raw = eq->getText();
+            bool isEq = raw.find("==") != std::string::npos;
+            if (a.kind() == ComptimeValue::Kind::Int && b.kind() == ComptimeValue::Kind::Int)
+                result = (a.asInt() == b.asInt());
+            else if (a.kind() == ComptimeValue::Kind::Float && b.kind() == ComptimeValue::Kind::Float)
+                result = (a.asFloat() == b.asFloat());
+            else if (a.kind() == ComptimeValue::Kind::Bool && b.kind() == ComptimeValue::Kind::Bool)
+                result = (a.asBool() == b.asBool());
+            else if (a.kind() == ComptimeValue::Kind::String && b.kind() == ComptimeValue::Kind::String)
+                result = (a.asString() == b.asString());
+            else return std::nullopt;
+            return ComptimeValue::boolVal(isEq ? result : !result);
+        });
+    }
+
+    // Bitwise
+    if (auto* ba = dynamic_cast<LucisParser::BitAndExprContext*>(expr)) {
+        return evalBinary(ba, [](const ComptimeValue& a, const ComptimeValue& b)
+                         -> std::optional<ComptimeValue> {
+            if (a.kind() != ComptimeValue::Kind::Int || b.kind() != ComptimeValue::Kind::Int)
+                return std::nullopt;
+            return ComptimeValue::intVal(a.asInt() & b.asInt());
+        });
+    }
+    if (auto* bx = dynamic_cast<LucisParser::BitXorExprContext*>(expr)) {
+        return evalBinary(bx, [](const ComptimeValue& a, const ComptimeValue& b)
+                         -> std::optional<ComptimeValue> {
+            if (a.kind() != ComptimeValue::Kind::Int || b.kind() != ComptimeValue::Kind::Int)
+                return std::nullopt;
+            return ComptimeValue::intVal(a.asInt() ^ b.asInt());
+        });
+    }
+    if (auto* bo = dynamic_cast<LucisParser::BitOrExprContext*>(expr)) {
+        return evalBinary(bo, [](const ComptimeValue& a, const ComptimeValue& b)
+                         -> std::optional<ComptimeValue> {
+            if (a.kind() != ComptimeValue::Kind::Int || b.kind() != ComptimeValue::Kind::Int)
+                return std::nullopt;
+            return ComptimeValue::intVal(a.asInt() | b.asInt());
+        });
+    }
+
+    // Logical
+    if (auto* la = dynamic_cast<LucisParser::LogicalAndExprContext*>(expr)) {
+        return evalBinary(la, [](const ComptimeValue& a, const ComptimeValue& b)
+                         -> std::optional<ComptimeValue> {
+            if (a.kind() == ComptimeValue::Kind::Bool && b.kind() == ComptimeValue::Kind::Bool)
+                return ComptimeValue::boolVal(a.asBool() && b.asBool());
+            if (a.kind() == ComptimeValue::Kind::Int && b.kind() == ComptimeValue::Kind::Int)
+                return ComptimeValue::boolVal(a.asInt() && b.asInt());
+            return std::nullopt;
+        });
+    }
+    if (auto* lo = dynamic_cast<LucisParser::LogicalOrExprContext*>(expr)) {
+        return evalBinary(lo, [](const ComptimeValue& a, const ComptimeValue& b)
+                         -> std::optional<ComptimeValue> {
+            if (a.kind() == ComptimeValue::Kind::Bool && b.kind() == ComptimeValue::Kind::Bool)
+                return ComptimeValue::boolVal(a.asBool() || b.asBool());
+            if (a.kind() == ComptimeValue::Kind::Int && b.kind() == ComptimeValue::Kind::Int)
+                return ComptimeValue::boolVal(a.asInt() || b.asInt());
+            return std::nullopt;
+        });
+    }
+    if (auto* nc = dynamic_cast<LucisParser::NullCoalExprContext*>(expr)) {
+        return evalBinary(nc, [](const ComptimeValue& a, const ComptimeValue& b)
+                         -> std::optional<ComptimeValue> {
+            if (a.kind() == ComptimeValue::Kind::Int)
+                return a.asInt() != 0 ? a : b;
+            if (a.kind() == ComptimeValue::Kind::Bool)
+                return a.asBool() ? a : b;
+            return b;
+        });
+    }
+
+    // ── Ternary ─────────────────────────────────────────────────────
+    if (auto* tern = dynamic_cast<LucisParser::TernaryExprContext*>(expr)) {
+        auto sub = tern->expression();
+        if (sub.size() != 3) return std::nullopt;
+        auto cond = evaluateConstExpr(sub[0]);
+        if (!cond) return std::nullopt;
+        bool isTrue = (cond->kind() == ComptimeValue::Kind::Bool) ? cond->asBool()
+                    : (cond->kind() == ComptimeValue::Kind::Int) ? (cond->asInt() != 0)
+                    : false;
+        return evaluateConstExpr(isTrue ? sub[1] : sub[2]);
+    }
+
+    // ── sizeof / typeof ─────────────────────────────────────────────
+    if (auto* sz = dynamic_cast<LucisParser::SizeofExprContext*>(expr)) {
+        if (auto* ts = sz->typeSpec()) {
+            unsigned dims = 0;
+            auto* ti = resolveTypeSpec(ts, dims);
+            if (!ti) return std::nullopt;
+            // Estimate size from bitWidth
+            if (ti->bitWidth > 0)
+                return ComptimeValue::intVal(ti->bitWidth / 8);
+            if (ti->kind == TypeKind::Pointer)
+                return ComptimeValue::intVal(8); // assume 64-bit pointer
+            return ComptimeValue::intVal(1);
+        }
+    }
+
+    // ── Enum access: EnumType::Variant ──────────────────────────────
+    auto findEnumVariant = [&](const TypeInfo* enumTI,
+                               const std::string& varName) -> std::optional<ComptimeValue> {
+        if (!enumTI || enumTI->kind != TypeKind::Enum) return std::nullopt;
+        for (auto& v : enumTI->enumVariantInfos) {
+            if (v.name == varName)
+                return ComptimeValue::intVal(static_cast<int64_t>(v.discriminant));
+        }
+        return std::nullopt;
+    };
+    if (auto* ea = dynamic_cast<LucisParser::EnumAccessExprContext*>(expr)) {
+        auto ids = ea->IDENTIFIER();
+        if (ids.size() >= 2) {
+            return findEnumVariant(typeRegistry_.lookup(ids[0]->getText()),
+                                   ids[1]->getText());
+        }
+        return std::nullopt;
+    }
+    if (auto* gea = dynamic_cast<LucisParser::GenericEnumAccessExprContext*>(expr)) {
+        auto ids = gea->IDENTIFIER();
+        if (ids.size() >= 2) {
+            return findEnumVariant(typeRegistry_.lookup(ids[0]->getText()),
+                                   ids.back()->getText());
+        }
+        return std::nullopt;
+    }
+
+    return std::nullopt;
+}
+
 bool Checker::isValidConstExpr(LucisParser::ExpressionContext* expr) {
     // Literals — always valid
     if (dynamic_cast<LucisParser::IntLitExprContext*>(expr) ||
@@ -7584,6 +8005,8 @@ bool Checker::isValidConstExpr(LucisParser::ExpressionContext* expr) {
         dynamic_cast<LucisParser::SuffixedFloatIntExprContext*>(expr) ||
         dynamic_cast<LucisParser::BoolLitExprContext*>(expr) ||
         dynamic_cast<LucisParser::CharLitExprContext*>(expr) ||
+        dynamic_cast<LucisParser::StrLitExprContext*>(expr) ||
+        dynamic_cast<LucisParser::CStrLitExprContext*>(expr) ||
         dynamic_cast<LucisParser::NullLitExprContext*>(expr))
         return true;
 
@@ -7671,6 +8094,34 @@ bool Checker::isValidConstExpr(LucisParser::ExpressionContext* expr) {
         dynamic_cast<LucisParser::TypeofExprContext*>(expr))
         return true;
 
+    // Struct/union positional init: Point { 10, 20 }
+    if (auto* spi = dynamic_cast<LucisParser::StructPosInitExprContext*>(expr)) {
+        for (auto* e : spi->expression())
+            if (!isValidConstExpr(e)) return false;
+        return true;
+    }
+
+    // Struct/union named init: Point { x: 10, y: 20 }
+    if (auto* sl = dynamic_cast<LucisParser::StructLitExprContext*>(expr)) {
+        for (auto* e : sl->expression())
+            if (!isValidConstExpr(e)) return false;
+        return true;
+    }
+
+    // Qualified positional init: Namespace::Point { 10, 20 }
+    if (auto* qspi = dynamic_cast<LucisParser::QualifiedStructPosInitExprContext*>(expr)) {
+        for (auto* e : qspi->expression())
+            if (!isValidConstExpr(e)) return false;
+        return true;
+    }
+
+    // Qualified named init: Namespace::Point { x: 10, y: 20 }
+    if (auto* qsn = dynamic_cast<LucisParser::QualifiedStructNamedInitExprContext*>(expr)) {
+        for (auto* e : qsn->expression())
+            if (!isValidConstExpr(e)) return false;
+        return true;
+    }
+
     return false;
 }
 
@@ -7747,14 +8198,11 @@ void Checker::checkConstDeclStmt(LucisParser::ConstDeclStmtContext* stmt) {
                 globalVars_[name] = it->second;
         }
 
-        // Store compile-time integer literal value for use in array dimensions
+        // Store compile-time evaluated value for use in array dimensions and other const exprs
         if (d->expression()) {
-            if (auto* intLit = dynamic_cast<LucisParser::IntLitExprContext*>(d->expression())) {
-                try {
-                    compileTimeValues_[name] = std::stoll(intLit->getText());
-                } catch (const std::out_of_range&) {
-                    // Value too large for int64_t (e.g., int128, intinf) - skip storage
-                }
+            auto ev = evaluateConstExpr(d->expression());
+            if (ev) {
+                compileTimeValues_[name] = *ev;
             }
         }
     }
@@ -7914,13 +8362,10 @@ std::vector<unsigned> arraySizes = extractArraySizesFromSpec(stmt->typeSpec());
             vi.scopeDepth = scopeDepth_;
             updateOwnershipOnInitialization(vi, d->expression());
             locals_[varName] = vi;
-            // Store compile-time integer literal value for use in array dimensions
-            if (auto* intLit = dynamic_cast<LucisParser::IntLitExprContext*>(d->expression())) {
-                try {
-                    compileTimeValues_[varName] = std::stoll(intLit->getText());
-                } catch (const std::out_of_range&) {
-                    // Value too large for int64_t (e.g., int128, intinf) - skip storage
-                }
+            // Store compile-time value for use in array dimensions
+            {
+                auto cv = evaluateConstExpr(d->expression());
+                if (cv) compileTimeValues_[varName] = *cv;
             }
             markExprAsMoved(d->expression(), stmt);
             trackVarBufferFromExpr(varName, d->expression(), initType);
@@ -8040,13 +8485,10 @@ std::vector<unsigned> arraySizes = extractArraySizesFromSpec(stmt->typeSpec());
         vi.scopeDepth = scopeDepth_;
         updateOwnershipOnInitialization(vi, d->expression());
         locals_[varName] = vi;
-        // Store compile-time integer literal value for use in array dimensions
-        if (auto* intLit = dynamic_cast<LucisParser::IntLitExprContext*>(d->expression())) {
-            try {
-                compileTimeValues_[varName] = std::stoll(intLit->getText());
-            } catch (const std::out_of_range&) {
-                // Value too large for int64_t (e.g., int128, intinf) - skip storage
-            }
+        // Store compile-time value for use in array dimensions
+        {
+            auto cv = evaluateConstExpr(d->expression());
+            if (cv) compileTimeValues_[varName] = *cv;
         }
         markExprAsMoved(d->expression(), stmt);
         trackVarBufferFromExpr(varName, d->expression(), typeInfo);
@@ -8245,6 +8687,11 @@ void Checker::checkFieldAssignStmt(LucisParser::FieldAssignStmtContext* stmt) {
     auto it = locals_.find(varName);
     if (it == locals_.end()) {
         error(stmt, "undefined variable '" + varName + "'");
+        return;
+    }
+
+    if (it->second.isConst) {
+        error(stmt, "cannot assign to constant '" + varName + "'");
         return;
     }
 
@@ -9256,8 +9703,8 @@ std::vector<unsigned> Checker::extractArraySizesFromSpec(LucisParser::TypeSpecCo
         } else if (spec->IDENTIFIER()) {
             auto identName = spec->IDENTIFIER()->getText();
             auto it = compileTimeValues_.find(identName);
-            if (it != compileTimeValues_.end()) {
-                sizes.push_back(static_cast<unsigned>(it->second));
+            if (it != compileTimeValues_.end() && it->second.kind() == ComptimeValue::Kind::Int) {
+                sizes.push_back(static_cast<unsigned>(it->second.asInt()));
             }
         }
         spec = spec->typeSpec().empty() ? nullptr : spec->typeSpec(0);
