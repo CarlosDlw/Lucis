@@ -596,6 +596,16 @@ fn moveRight(int32 fd, int32 count) bool {
 
 // ── Style constants (bitmask) ─────────────────────────────────
 
+/** Styles enum */
+enum Style {
+  BOLD        = 1,
+  DIM         = 2,
+  ITALIC      = 4,
+  UNDERLINE   = 8,
+  REVERSE     = 16,
+  STRIKE      = 32
+}
+
 /** Bold style flag. */
 const STYLE_BOLD:      int32 = 1;
 /** Dim / faint style flag. */
@@ -610,6 +620,25 @@ const STYLE_REVERSE:   int32 = 16;
 const STYLE_STRIKE:    int32 = 32;
 
 // ── Color constants (ANSI 16-color palette) ───────────────────
+/** ANSI colors enum */
+enum Color {
+  BLACK         = 0,
+  RED           = 1,
+  GREEN         = 2,
+  YELLOW        = 3,
+  BLUE          = 4,
+  MAGENTA       = 5,
+  CYAN          = 6,
+  WHITE         = 7,
+  BRIGHT_BLACK  = 8,
+  BRIGHT_RED    = 9,
+  BRIGHT_GREEN  = 10,
+  BRIGHT_YELLOW = 11,
+  BRIGHT_BLUE   = 12,
+  BRIGHT_MAGENTA= 13,
+  BRIGHT_CYAN   = 14,
+  BRIGHT_WHITE  = 15
+}
 
 /** ANSI color 0: Black. */
 const COLOR_BLACK:        int32 = 0;
