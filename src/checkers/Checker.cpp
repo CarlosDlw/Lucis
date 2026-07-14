@@ -1448,6 +1448,17 @@ bool Checker::check(LucisParser::ProgramContext* tree) {
     if (hasErrors())
         return false;
 
+    // Validate attributes on all top-level declarations
+    for (auto* decl : tree->topLevelDecl()) {
+        validateAttributeList(decl->attributeList(), "top-level declaration");
+        if (auto* ed = decl->enumDecl())
+            for (auto* v : ed->enumVariant())
+                validateAttributeList(v->attributeList(), "enum variant");
+        if (auto* sd = decl->structDecl())
+            for (auto* f : sd->structField())
+                validateAttributeList(f->attributeList(), "struct field");
+    }
+
     // Pass 4: register function signatures (before checking bodies)
     // When moduleRegistry_ is present, external symbols are registered
     // in pass 1.5, but we must still ensure local file functions are registered
@@ -8130,6 +8141,36 @@ bool Checker::isValidConstExpr(LucisParser::ExpressionContext* expr) {
         return true;
     }
 
+    return false;
+}
+
+// ── Attribute validation ────────────────────────────────────────
+
+static const std::unordered_set<std::string> s_knownAttributes = {
+    "error", "deprecated", "repr",
+    "no_mangle", "export", "link_section",
+    "must_use", "noreturn", "non_exhaustive",
+    "inline", "cold", "hot",
+    "allow", "deny", "doc",
+};
+
+void Checker::validateAttributeList(AttributeListContext* attrs, const std::string& contextName) {
+    if (!attrs) return;
+    for (auto* a : attrs->attribute()) {
+        auto attrName = a->IDENTIFIER()->getText();
+        if (s_knownAttributes.find(attrName) == s_knownAttributes.end()) {
+            error(a, "unknown attribute '" + attrName + "'");
+        }
+        // TODO: validate arguments per-attribute type
+    }
+}
+
+bool Checker::hasAttribute(AttributeListContext* attrs, const std::string& name) const {
+    if (!attrs) return false;
+    for (auto* a : attrs->attribute()) {
+        if (a->IDENTIFIER()->getText() == name)
+            return true;
+    }
     return false;
 }
 

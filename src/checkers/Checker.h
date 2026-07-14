@@ -232,6 +232,12 @@ private:
     void checkVarDeclStmt(LucisParser::VarDeclStmtContext* stmt);
     void checkConstDeclStmt(LucisParser::ConstDeclStmtContext* stmt);
     bool isValidConstExpr(LucisParser::ExpressionContext* expr);
+
+    // ── Attribute validation ────────────────────────────────────────
+    using AttributeListContext = LucisParser::AttributeListContext;
+    using AttributeContext = LucisParser::AttributeContext;
+    void validateAttributeList(AttributeListContext* attrs, const std::string& contextName);
+    bool hasAttribute(AttributeListContext* attrs, const std::string& name) const;
     void checkAssignStmt(LucisParser::AssignStmtContext* stmt);
     void checkCompoundAssignStmt(LucisParser::CompoundAssignStmtContext* stmt);
     void checkFieldAssignStmt(LucisParser::FieldAssignStmtContext* stmt);
