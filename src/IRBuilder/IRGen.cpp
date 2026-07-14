@@ -1933,6 +1933,27 @@ std::any IRGen::visitFunctionDecl(LucisParser::FunctionDeclContext* ctx) {
         // #[noreturn]
         if (hasAttribute(attrs, "noreturn"))
             func->addFnAttr(llvm::Attribute::NoReturn);
+        // #[optimize(speed)] / #[optimize(size)]
+        if (hasAttribute(attrs, "optimize")) {
+            for (auto* a : attrs->attribute()) {
+                if (a->IDENTIFIER() && a->IDENTIFIER()->getText() == "optimize") {
+                    if (auto* argList = a->attrArgList()) {
+                        for (auto* arg : argList->attrArg()) {
+                            if (arg->IDENTIFIER()) {
+                                auto val = arg->IDENTIFIER()->getText();
+                                if (val == "size")
+                                    func->addFnAttr(llvm::Attribute::OptimizeForSize);
+                                else if (val == "speed")
+                                    func->addFnAttr("optimize-for-speed");
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        // #[used] — prevent dead-stripping
+        if (hasAttribute(attrs, "used"))
+            func->setVisibility(llvm::GlobalValue::DefaultVisibility);
     }
 
     currentFunction_ = func;
@@ -2998,10 +3019,33 @@ std::any IRGen::visitConstDeclStmt(LucisParser::ConstDeclStmtContext* ctx) {
                 "const_" + name
             );
 
-            // Apply #[link_section("...")] from parent constDeclStmt
-            auto linkSect = getAttributeStringArg(ctx->attributeList(), "link_section");
+            // Apply attributes on const decl
+            auto* attrs = ctx->attributeList();
+            // #[link_section("...")]
+            auto linkSect = getAttributeStringArg(attrs, "link_section");
             if (!linkSect.empty())
                 global->setSection(linkSect);
+            // #[thread_local]
+            if (hasAttribute(attrs, "thread_local"))
+                global->setThreadLocal(true);
+            // #[align(n)]
+            if (hasAttribute(attrs, "align")) {
+                for (auto* a : attrs->attribute()) {
+                    if (a->IDENTIFIER() && a->IDENTIFIER()->getText() == "align") {
+                        if (auto* argList = a->attrArgList()) {
+                            for (auto* arg : argList->attrArg()) {
+                                if (arg->INT_LIT()) {
+                                    uint64_t alignVal = std::stoull(arg->getText());
+                                    global->setAlignment(llvm::Align(alignVal));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            // #[used]
+            if (hasAttribute(attrs, "used"))
+                global->setVisibility(llvm::GlobalValue::DefaultVisibility);
 
             TopLevelConst tlc{global, typeInfo, dims};
             topLevelConsts_[name] = tlc;

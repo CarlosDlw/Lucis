@@ -142,4 +142,37 @@ void registerBuiltinAttributes(AttributeRegistry& reg) {
             return attr.args.size() == 1 && attr.args[0].kind == AttributeArg::String;
         }
     });
+
+    // ── thread_local: global is thread-local storage ──────────────────
+    reg.registerAttribute("thread_local", AttributeHandler{
+        .validate = [](const Attribute& attr, const TypeInfo*, std::vector<std::string>&) {
+            return attr.args.empty();
+        }
+    });
+
+    // ── used: prevent linker from removing the symbol ─────────────────
+    reg.registerAttribute("used", AttributeHandler{
+        .validate = [](const Attribute& attr, const TypeInfo*, std::vector<std::string>&) {
+            return attr.args.empty();
+        }
+    });
+
+    // ── optimize(speed | size): optimization hint ─────────────────────
+    reg.registerAttribute("optimize", AttributeHandler{
+        .validate = [](const Attribute& attr, const TypeInfo*, std::vector<std::string>&) -> bool {
+            if (attr.args.size() != 1) return false;
+            if (attr.args[0].kind != AttributeArg::Ident) return false;
+            return attr.args[0].identValue == "speed" || attr.args[0].identValue == "size";
+        }
+    });
+
+    // ── align(n): minimum alignment for struct/global ─────────────────
+    reg.registerAttribute("align", AttributeHandler{
+        .validate = [](const Attribute& attr, const TypeInfo*, std::vector<std::string>&) -> bool {
+            if (attr.args.size() != 1) return false;
+            if (attr.args[0].kind != AttributeArg::Int) return false;
+            int64_t n = attr.args[0].intValue;
+            return n > 0 && (n & (n - 1)) == 0; // power of 2
+        }
+    });
 }
