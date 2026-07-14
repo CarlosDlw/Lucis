@@ -240,6 +240,7 @@ set(SOURCES
     src/cli/HelpCommand.cpp
     src/parser/Parser.cpp
     src/checkers/Checker.cpp
+    src/attributes/AttributeRegistry.cpp
     src/comptime/ComptimeRegistry.cpp
     src/comptime/ComptimeValue.cpp
     src/comptime/ComptimeJIT.cpp
