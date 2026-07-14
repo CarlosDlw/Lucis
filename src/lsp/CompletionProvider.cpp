@@ -2246,6 +2246,11 @@ CompletionProvider::complete(const std::string &source, size_t line, size_t col,
   }
   }
 
+  // Attribute completions (#[name] or #[name(...)])
+  if (!req.prefix.empty() && req.prefix[0] == '#') {
+    addAttributeCompletions(items, req.prefix, line, source);
+  }
+
   dedup(items);
   return items;
 }
@@ -4633,43 +4638,6 @@ void CompletionProvider::addUseCompletions(std::vector<CompletionItem> &items,
       }
     }
 
-    // Attribute completions (#[name] or #[name(...)])
-    if (!prefix.empty() && prefix[0] == '#') {
-      std::string searchKey = (prefix.size() > 1 && prefix[1] == '[')
-        ? prefix.substr(2) : prefix.substr(1);
-      static const std::vector<std::pair<std::string, std::string>> s_attrCompletions = {
-        {"error", "Marks enum variant as the error variant for ? and catch"},
-        {"deprecated", "Marks a declaration as deprecated"},
-        {"deprecated(since, note)", "Marks a declaration as deprecated with version and reason"},
-        {"repr(C)", "Use C-compatible struct/union layout"},
-        {"repr(packed)", "Use packed struct/union layout (no padding)"},
-        {"no_mangle", "Preserve the original symbol name (no name mangling)"},
-        {"export", "Force external linkage for the symbol"},
-        {"link_section(\"...\")", "Place the symbol in a specific ELF section"},
-        {"must_use", "Warn if the return value is discarded"},
-        {"noreturn", "Declares that this function never returns"},
-        {"non_exhaustive", "Enum may gain new variants in future versions"},
-        {"inline(always)", "Always inline this function"},
-        {"inline(never)", "Never inline this function"},
-        {"cold", "This function is rarely executed"},
-        {"hot", "This function is hot (frequently executed)"},
-        {"doc(\"...\")", "Documentation string for the declaration"},
-      };
-      for (auto& [label, detail] : s_attrCompletions) {
-        std::string prefixedLabel = "#[" + label + "]";
-        if (!matchesPrefix(prefixedLabel, prefix) &&
-            !matchesPrefix(label, searchKey))
-          continue;
-        CompletionItem ci;
-        ci.label = prefixedLabel;
-        ci.kind = CompletionKind::Keyword;
-        ci.detail = detail;
-        ci.insertText = prefixedLabel;
-        ci.filterText = prefixedLabel;
-        items.push_back(std::move(ci));
-      }
-    }
-
     return;
   }
 
@@ -5552,6 +5520,90 @@ void CompletionProvider::addKeywords(std::vector<CompletionItem> &items,
     ci.insertText = "#scope (${1:fn()}) {\n\t$0\n}";
     ci.insertTextFormat = InsertTextFormat::Snippet;
     ci.filterText = "#scope";
+    items.push_back(std::move(ci));
+  }
+}
+
+void CompletionProvider::addAttributeCompletions(
+    std::vector<CompletionItem>& items,
+    const std::string& prefix,
+    size_t cursorLine,
+    const std::string& source) {
+  std::string searchKey = (prefix.size() > 1 && prefix[1] == '[')
+    ? prefix.substr(2) : prefix.substr(1);
+
+  // Determine declaration context by scanning forward from cursor
+  // (attributes always appear BEFORE the declaration).
+  enum AttrCtx { General, CtxFn, CtxStruct, CtxEnum, CtxConst, CtxEnumVariant };
+  AttrCtx ctx = General;
+  {
+    // Scan the rest of the current line for keyword hints
+    size_t nl = source.find('\n', source.rfind('\n', cursorLine));
+    if (nl == std::string::npos) nl = source.size();
+    size_t bol = source.rfind('\n', cursorLine);
+    if (bol == std::string::npos) bol = 0;
+    std::string restOfLine = source.substr(bol, nl - bol);
+
+    auto hasKw = [&](const std::string& kw) {
+      return restOfLine.find(kw, bol == 0 ? 0 : restOfLine.find_first_not_of(" \t#[a-z_]( \t")) != std::string::npos;
+    };
+    // Simple heuristic: look for the declaration keyword
+    if (restOfLine.find(" fn ") != std::string::npos || restOfLine.find("\tfn ") != std::string::npos)
+      ctx = CtxFn;
+    else if (restOfLine.find(" enum ") != std::string::npos)
+      ctx = CtxEnum;
+    else if (restOfLine.find(" struct ") != std::string::npos || restOfLine.find(" union ") != std::string::npos)
+      ctx = CtxStruct;
+    else if (restOfLine.find(" const ") != std::string::npos)
+      ctx = CtxConst;
+  }
+
+  // Each entry: {label, detail, validFor}
+  static const struct {
+    const char* label;
+    const char* detail;
+    unsigned validFor; // bitmask: 1<<CtxFn, 1<<CtxStruct, etc.
+  } s_attrCompletions[] = {
+    {"error", "Marks enum variant as the error variant for ? and catch", 1<<CtxEnumVariant},
+    {"deprecated", "Marks a declaration as deprecated", 1<<General|1<<CtxFn|1<<CtxStruct|1<<CtxEnum|1<<CtxConst},
+    {"repr(C)", "Use C-compatible struct/union layout", 1<<CtxStruct|1<<CtxEnum},
+    {"repr(packed)", "Use packed struct/union layout (no padding)", 1<<CtxStruct|1<<CtxEnum},
+    {"no_mangle", "Preserve the original symbol name (no name mangling)", 1<<CtxFn|1<<CtxConst},
+    {"export", "Force external linkage for the symbol", 1<<CtxFn|1<<CtxConst},
+    {"link_section(\"...\")", "Place the symbol in a specific ELF section", 1<<CtxFn|1<<CtxConst},
+    {"must_use", "Warn if the return value is discarded", 1<<CtxFn},
+    {"noreturn", "Declares that this function never returns", 1<<CtxFn},
+    {"non_exhaustive", "Enum may gain new variants in future versions", 1<<CtxEnum},
+    {"inline(always)", "Always inline this function", 1<<CtxFn},
+    {"inline(never)", "Never inline this function", 1<<CtxFn},
+    {"cold", "This function is rarely executed", 1<<CtxFn},
+    {"hot", "This function is hot (frequently executed)", 1<<CtxFn},
+    {"optimize(speed)", "Optimize for speed", 1<<CtxFn},
+    {"optimize(size)", "Optimize for size", 1<<CtxFn},
+    {"thread_local", "Global is thread-local storage", 1<<CtxConst},
+    {"used", "Prevent linker from removing the symbol", 1<<CtxFn|1<<CtxConst},
+    {"align(n)", "Minimum alignment of global variable", 1<<CtxConst},
+    {"doc(\"...\")", "Documentation string for the declaration", 1<<General|1<<CtxFn|1<<CtxStruct|1<<CtxEnum|1<<CtxConst},
+    {"allow(...)", "Suppress specific lint warnings", 1<<General|1<<CtxFn|1<<CtxStruct|1<<CtxEnum|1<<CtxConst},
+    {"deny(...)", "Deny specific lint warnings", 1<<General|1<<CtxFn|1<<CtxStruct|1<<CtxEnum|1<<CtxConst},
+  };
+  for (auto& entry : s_attrCompletions) {
+    unsigned bit = ctx == CtxEnumVariant ? 1<<CtxEnumVariant
+                : ctx == General        ? 1<<General
+                : 0;
+    if (ctx != General && ctx != CtxEnumVariant)
+      bit = 1u << static_cast<unsigned>(ctx);
+    if (!(entry.validFor & bit))
+      continue;
+
+    std::string prefixedLabel = std::string("#[") + entry.label + "]";
+    if (!matchesPrefix(prefixedLabel, prefix) &&
+        !matchesPrefix(entry.label, searchKey))
+      continue;
+    CompletionItem ci;
+    ci.label = prefixedLabel;
+    ci.kind = CompletionKind::Keyword;
+    ci.detail = entry.label;
     items.push_back(std::move(ci));
   }
 }

@@ -251,6 +251,12 @@ private:
     void addDocTagCompletions(std::vector<CompletionItem>& items,
                               const std::string& prefix);
 
+    // Add #[...] attribute completions filtered by declaration context.
+    void addAttributeCompletions(std::vector<CompletionItem>& items,
+                                 const std::string& prefix,
+                                 size_t cursorLine,
+                                 const std::string& source);
+
     // ── Helpers ─────────────────────────────────────────────────────
 
     // Resolve the return type of a method call on a given receiver type.

@@ -587,6 +587,11 @@ static void walkTree(IdentMap& map, antlr4::tree::ParseTree* node) {
         }
     }
 
+    // ── #[attr_name] ── attribute names are decorators
+    else if (auto* ctx = dynamic_cast<LucisParser::AttributeContext*>(node)) {
+        classifyIdent(map, ctx->IDENTIFIER(), SemanticTokenType::Decorator);
+    }
+
     // Recurse into children
     for (size_t i = 0; i < node->children.size(); ++i) {
         walkTree(map, node->children[i]);
