@@ -1856,9 +1856,11 @@ std::any IRGen::visitFunctionDecl(LucisParser::FunctionDeclContext* ctx) {
 
     // If main has args, emit the user's code under a different name
     std::string emitName = funcName;
+    bool noMangle = hasAttribute(ctx->attributeList(), "no_mangle");
+    bool isExport = hasAttribute(ctx->attributeList(), "export");
     if (isMainWithArgs) {
         emitName = "lucis_user_main";
-    } else if (funcName != "main") {
+    } else if (funcName != "main" && !noMangle) {
         bool isStdlib = (currentFile_.rfind("/usr/", 0) == 0);
         if (isStdlib)
             emitName = ModuleRegistry::mangle(currentModulePath_, funcName);
@@ -1871,8 +1873,10 @@ std::any IRGen::visitFunctionDecl(LucisParser::FunctionDeclContext* ctx) {
     llvm::Function* func = module_->getFunction(emitName);
     if (!func) {
         auto* funcType = llvm::FunctionType::get(returnType, paramTypes, isVarArg);
+        auto linkage = isExport ? llvm::Function::ExternalLinkage
+                                : llvm::Function::ExternalLinkage;
         func = llvm::Function::Create(
-            funcType, llvm::Function::ExternalLinkage, emitName, module_);
+            funcType, linkage, emitName, module_);
     }
 
     // Name each parameter for readable IR
@@ -1893,6 +1897,42 @@ std::any IRGen::visitFunctionDecl(LucisParser::FunctionDeclContext* ctx) {
                 llvmIdx++;
             }
         }
+    }
+
+    // ── Apply function attributes ────────────────────────────────────
+    {
+        auto* attrs = ctx->attributeList();
+        // #[link_section("name")]
+        auto linkSect = getAttributeStringArg(attrs, "link_section");
+        if (!linkSect.empty())
+            func->setSection(linkSect);
+        // #[inline(always)] / #[inline(never)]
+        if (hasAttribute(attrs, "inline")) {
+            for (auto* a : attrs->attribute()) {
+                if (a->IDENTIFIER() && a->IDENTIFIER()->getText() == "inline") {
+                    if (auto* argList = a->attrArgList()) {
+                        for (auto* arg : argList->attrArg()) {
+                            if (arg->IDENTIFIER()) {
+                                auto val = arg->IDENTIFIER()->getText();
+                                if (val == "always")
+                                    func->addFnAttr(llvm::Attribute::AlwaysInline);
+                                else if (val == "never")
+                                    func->addFnAttr(llvm::Attribute::NoInline);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        // #[cold]
+        if (hasAttribute(attrs, "cold"))
+            func->addFnAttr(llvm::Attribute::Cold);
+        // #[hot]
+        if (hasAttribute(attrs, "hot"))
+            func->addFnAttr(llvm::Attribute::InlineHint);
+        // #[noreturn]
+        if (hasAttribute(attrs, "noreturn"))
+            func->addFnAttr(llvm::Attribute::NoReturn);
     }
 
     currentFunction_ = func;
@@ -2957,6 +2997,11 @@ std::any IRGen::visitConstDeclStmt(LucisParser::ConstDeclStmtContext* ctx) {
                 llvm::Constant::getNullValue(llvmType),
                 "const_" + name
             );
+
+            // Apply #[link_section("...")] from parent constDeclStmt
+            auto linkSect = getAttributeStringArg(ctx->attributeList(), "link_section");
+            if (!linkSect.empty())
+                global->setSection(linkSect);
 
             TopLevelConst tlc{global, typeInfo, dims};
             topLevelConsts_[name] = tlc;
@@ -26602,4 +26647,32 @@ std::any IRGen::visitGenericStructPosInitExpr(LucisParser::GenericStructPosInitE
 
     return static_cast<llvm::Value*>(
         builder_->CreateLoad(structLLTy, alloca, "generic_struct_lit"));
+}
+
+// ── Attribute helpers ───────────────────────────────────────────────
+
+bool IRGen::hasAttribute(LucisParser::AttributeListContext* attrs, const std::string& name) {
+    if (!attrs) return false;
+    for (auto* a : attrs->attribute()) {
+        if (a->IDENTIFIER() && a->IDENTIFIER()->getText() == name)
+            return true;
+    }
+    return false;
+}
+
+std::string IRGen::getAttributeStringArg(LucisParser::AttributeListContext* attrs, const std::string& name) {
+    if (!attrs) return "";
+    for (auto* a : attrs->attribute()) {
+        if (a->IDENTIFIER() && a->IDENTIFIER()->getText() == name) {
+            if (auto* argList = a->attrArgList()) {
+                for (auto* arg : argList->attrArg()) {
+                    if (arg->STR_LIT())
+                        return arg->STR_LIT()->getText();
+                    if (arg->C_STR_LIT())
+                        return arg->C_STR_LIT()->getText();
+                }
+            }
+        }
+    }
+    return "";
 }

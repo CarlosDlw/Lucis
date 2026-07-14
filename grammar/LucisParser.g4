@@ -63,31 +63,29 @@ attributeList
 
 // Top-level declarations
 topLevelDecl
-    : attributeList
-      ( useDecl
-      | includeDecl
-      | typeAliasDecl
-      | structDecl
-      | unionDecl
-      | enumDecl
-      | extendDecl
-      | externDecl
-      | functionDecl
-      | constDeclStmt
-      | cMacroBlock
-      | asmBBlock
-      )
+    : useDecl
+    | includeDecl
+    | typeAliasDecl
+    | structDecl
+    | unionDecl
+    | enumDecl
+    | extendDecl
+    | externDecl
+    | functionDecl
+    | constDeclStmt
+    | cMacroBlock
+    | asmBBlock
     ;
 
 // type BinOp = fn(int32, int32) -> int32;
 typeAliasDecl
-    : TYPE IDENTIFIER ASSIGN typeSpec SEMI
+    : attributeList TYPE IDENTIFIER ASSIGN typeSpec SEMI
     ;
 
 // enum Color { Red, Green, Blue }
 // enum Result<T, E> { Ok(T), Err(E) }
 enumDecl
-    : ENUM IDENTIFIER typeParamList? LBRACE enumVariant (COMMA enumVariant)* COMMA? RBRACE
+    : attributeList ENUM IDENTIFIER typeParamList? LBRACE enumVariant (COMMA enumVariant)* COMMA? RBRACE
     ;
 
 enumVariant
@@ -105,7 +103,7 @@ enumPayloadField
 // struct Point { int32 x; int32 y; }
 // struct Node<T> { T value; *Node<T> next; }
 structDecl
-    : STRUCT IDENTIFIER typeParamList? (COLON typeSpec)? LBRACE structField* RBRACE
+    : attributeList STRUCT IDENTIFIER typeParamList? (COLON typeSpec)? LBRACE structField* RBRACE
     ;
 
 structField
@@ -114,17 +112,17 @@ structField
 
 // union Value { int32 i; float32 f; *void ptr; }
 unionDecl
-    : UNION IDENTIFIER typeParamList? LBRACE unionField* RBRACE
+    : attributeList UNION IDENTIFIER typeParamList? LBRACE unionField* RBRACE
     ;
 
 unionField
-    : typeSpec IDENTIFIER SEMI
+    : attributeList typeSpec IDENTIFIER SEMI
     ;
 
 // extern int32 puts(*char s);
 // extern int32 printf(*char fmt, ...);
 externDecl
-    : EXTERN typeSpec IDENTIFIER LPAREN externParamList? (COMMA SPREAD)? RPAREN SEMI
+    : attributeList EXTERN typeSpec IDENTIFIER LPAREN externParamList? (COMMA SPREAD)? RPAREN SEMI
     ;
 
 externParamList
@@ -139,13 +137,13 @@ externParam
 // fn max<T>(T a, T b) T { ... }
 // fn makePoint() LIB::Point { ... }
 functionDecl
-    : COMPTIME? FN IDENTIFIER typeParamList? LPAREN paramList? RPAREN (IDENTIFIER SCOPE)? typeSpec block
+    : attributeList COMPTIME? FN IDENTIFIER typeParamList? LPAREN paramList? RPAREN (IDENTIFIER SCOPE)? typeSpec block
     ;
 
 // extend Point { ... }
 // extend Node<T> { ... }
 extendDecl
-    : EXTEND IDENTIFIER typeParamList? LBRACE extendMethod* RBRACE
+    : attributeList EXTEND IDENTIFIER typeParamList? LBRACE extendMethod* RBRACE
     ;
 
 // <T>, <K, V>, <T: numeric>
@@ -291,7 +289,7 @@ varDeclarator
 
 // const NAME = VALUE;   or   const NAME: TYPE = VALUE;
 constDeclStmt
-    : CONST constDeclarator (COMMA constDeclarator)* SEMI
+    : attributeList CONST constDeclarator (COMMA constDeclarator)* SEMI
     ;
 
 constDeclarator

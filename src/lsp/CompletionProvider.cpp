@@ -4633,18 +4633,41 @@ void CompletionProvider::addUseCompletions(std::vector<CompletionItem> &items,
       }
     }
 
-    // #[error] attribute — marks an enum variant as the error variant
-    bool matchAttrError = (!prefix.empty() && prefix[0] == '#' &&
-                            matchesPrefix("[error]", prefix.substr(1))) ||
-                           matchesPrefix("#[error]", prefix);
-    if (matchAttrError) {
-      CompletionItem ci;
-      ci.label = "#[error]";
-      ci.kind = CompletionKind::Keyword;
-      ci.detail = "Marks enum variant as the error variant for ? and catch";
-      ci.insertText = "#[error]";
-      ci.filterText = "#[error]";
-      items.push_back(std::move(ci));
+    // Attribute completions (#[name] or #[name(...)])
+    if (!prefix.empty() && prefix[0] == '#') {
+      std::string searchKey = (prefix.size() > 1 && prefix[1] == '[')
+        ? prefix.substr(2) : prefix.substr(1);
+      static const std::vector<std::pair<std::string, std::string>> s_attrCompletions = {
+        {"error", "Marks enum variant as the error variant for ? and catch"},
+        {"deprecated", "Marks a declaration as deprecated"},
+        {"deprecated(since, note)", "Marks a declaration as deprecated with version and reason"},
+        {"repr(C)", "Use C-compatible struct/union layout"},
+        {"repr(packed)", "Use packed struct/union layout (no padding)"},
+        {"no_mangle", "Preserve the original symbol name (no name mangling)"},
+        {"export", "Force external linkage for the symbol"},
+        {"link_section(\"...\")", "Place the symbol in a specific ELF section"},
+        {"must_use", "Warn if the return value is discarded"},
+        {"noreturn", "Declares that this function never returns"},
+        {"non_exhaustive", "Enum may gain new variants in future versions"},
+        {"inline(always)", "Always inline this function"},
+        {"inline(never)", "Never inline this function"},
+        {"cold", "This function is rarely executed"},
+        {"hot", "This function is hot (frequently executed)"},
+        {"doc(\"...\")", "Documentation string for the declaration"},
+      };
+      for (auto& [label, detail] : s_attrCompletions) {
+        std::string prefixedLabel = "#[" + label + "]";
+        if (!matchesPrefix(prefixedLabel, prefix) &&
+            !matchesPrefix(label, searchKey))
+          continue;
+        CompletionItem ci;
+        ci.label = prefixedLabel;
+        ci.kind = CompletionKind::Keyword;
+        ci.detail = detail;
+        ci.insertText = prefixedLabel;
+        ci.filterText = prefixedLabel;
+        items.push_back(std::move(ci));
+      }
     }
 
     return;

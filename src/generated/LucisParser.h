@@ -1,5 +1,5 @@
 
-// Generated from LucisParser.g4 by ANTLR 4.13.2
+// Generated from /home/carlos/Projects/Cpp/Lux/grammar/LucisParser.g4 by ANTLR 4.13.2
 
 #pragma once
 
@@ -386,7 +386,6 @@ public:
   public:
     TopLevelDeclContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
-    AttributeListContext *attributeList();
     UseDeclContext *useDecl();
     IncludeDeclContext *includeDecl();
     TypeAliasDeclContext *typeAliasDecl();
@@ -411,6 +410,7 @@ public:
   public:
     TypeAliasDeclContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
+    AttributeListContext *attributeList();
     antlr4::tree::TerminalNode *TYPE();
     antlr4::tree::TerminalNode *IDENTIFIER();
     antlr4::tree::TerminalNode *ASSIGN();
@@ -428,6 +428,7 @@ public:
   public:
     EnumDeclContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
+    AttributeListContext *attributeList();
     antlr4::tree::TerminalNode *ENUM();
     antlr4::tree::TerminalNode *IDENTIFIER();
     antlr4::tree::TerminalNode *LBRACE();
@@ -490,6 +491,7 @@ public:
   public:
     StructDeclContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
+    AttributeListContext *attributeList();
     antlr4::tree::TerminalNode *STRUCT();
     antlr4::tree::TerminalNode *IDENTIFIER();
     antlr4::tree::TerminalNode *LBRACE();
@@ -527,6 +529,7 @@ public:
   public:
     UnionDeclContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
+    AttributeListContext *attributeList();
     antlr4::tree::TerminalNode *UNION();
     antlr4::tree::TerminalNode *IDENTIFIER();
     antlr4::tree::TerminalNode *LBRACE();
@@ -546,6 +549,7 @@ public:
   public:
     UnionFieldContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
+    AttributeListContext *attributeList();
     TypeSpecContext *typeSpec();
     antlr4::tree::TerminalNode *IDENTIFIER();
     antlr4::tree::TerminalNode *SEMI();
@@ -561,6 +565,7 @@ public:
   public:
     ExternDeclContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
+    AttributeListContext *attributeList();
     antlr4::tree::TerminalNode *EXTERN();
     TypeSpecContext *typeSpec();
     antlr4::tree::TerminalNode *IDENTIFIER();
@@ -612,6 +617,7 @@ public:
   public:
     FunctionDeclContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
+    AttributeListContext *attributeList();
     antlr4::tree::TerminalNode *FN();
     std::vector<antlr4::tree::TerminalNode *> IDENTIFIER();
     antlr4::tree::TerminalNode* IDENTIFIER(size_t i);
@@ -635,6 +641,7 @@ public:
   public:
     ExtendDeclContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
+    AttributeListContext *attributeList();
     antlr4::tree::TerminalNode *EXTEND();
     antlr4::tree::TerminalNode *IDENTIFIER();
     antlr4::tree::TerminalNode *LBRACE();
@@ -1105,6 +1112,7 @@ public:
   public:
     ConstDeclStmtContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
+    AttributeListContext *attributeList();
     antlr4::tree::TerminalNode *CONST();
     std::vector<ConstDeclaratorContext *> constDeclarator();
     ConstDeclaratorContext* constDeclarator(size_t i);

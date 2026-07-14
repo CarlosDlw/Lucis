@@ -21,6 +21,7 @@
 #include "semantic/SemanticDB.h"
 
 #include "ffi/CBindings.h"
+#include "attributes/AttributeRegistry.h"
 
 class Checker {
 public:
@@ -56,6 +57,7 @@ private:
     BuiltinRegistry          builtinRegistry_;
     IntrinsicRegistry        intrinsicRegistry_;
     ComptimeRegistry         comptimeRegistry_;
+    AttributeRegistry        attrRegistry_;
 
     // Variable info tracked per-function scope
     struct VarInfo {

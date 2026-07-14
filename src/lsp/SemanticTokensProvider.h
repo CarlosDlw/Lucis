@@ -25,6 +25,7 @@ enum class SemanticTokenType : uint32_t {
     Operator      = 14,
     Macro         = 15,
     EscapeSequence = 16,
+    Decorator      = 17,
 };
 
 // LSP Semantic Token Modifiers (bit flags)

@@ -528,6 +528,10 @@ private:
 
     // Helpers
     const TypeInfo*    resolveTypeInfo(LucisParser::TypeSpecContext* ctx);
+    // Attribute helpers: check if an attribute list contains a named attribute
+    static bool hasAttribute(LucisParser::AttributeListContext* attrs, const std::string& name);
+    // Get a string argument from an attribute (e.g., link_section("mysect"))
+    static std::string getAttributeStringArg(LucisParser::AttributeListContext* attrs, const std::string& name);
 
     // Phase 2: Sync a type from SemanticDB into the local TypeRegistry.
     // Returns true if the type was successfully registered (or already exists).

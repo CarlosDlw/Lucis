@@ -21,7 +21,7 @@ const std::vector<std::string>& SemanticTokensProvider::tokenTypes() {
         "namespace", "type", "struct", "enum", "enumMember",
         "function", "method", "parameter", "variable", "property",
         "keyword", "comment", "string", "number", "operator", "macro",
-        "escapeSequence"
+        "escapeSequence", "decorator"
     };
     return types;
 }
@@ -62,7 +62,7 @@ static bool isKeyword(size_t tokenType) {
         case LucisLexer::EXTEND: case LucisLexer::TRY: case LucisLexer::CATCH:
         case LucisLexer::FINALLY: case LucisLexer::THROW: case LucisLexer::DEFER:
         case LucisLexer::EXTERN: case LucisLexer::AUTO: case LucisLexer::NULL_LIT:
-        case LucisLexer::RET:    case LucisLexer::OR:   case LucisLexer::ATTR_OPEN:
+        case LucisLexer::RET:    case LucisLexer::OR:
         case LucisLexer::MATCH:  case LucisLexer::WILDCARD:
         case LucisLexer::INLINE_BLOCK: case LucisLexer::SCOPE_BLOCK:
         case LucisLexer::ASM:    case LucisLexer::VOLATILE: case LucisLexer::GOTO:
@@ -1840,6 +1840,9 @@ std::vector<uint32_t> SemanticTokensProvider::tokenize(const std::string& source
                  type == LucisLexer::SUFFIXED_INT_FLOAT ||
                  type == LucisLexer::SUFFIXED_FLOAT_INT) {
             emit(raw, line, col, len, SemanticTokenType::Number);
+        }
+        else if (type == LucisLexer::ATTR_OPEN) {
+            emit(raw, line, col, len, SemanticTokenType::Decorator);
         }
         else if (type == LucisLexer::BOOL_LIT) {
             emit(raw, line, col, len, SemanticTokenType::Keyword);

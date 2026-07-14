@@ -20,6 +20,7 @@
 Checker::Checker()
     : intrinsicRegistry_(typeRegistry_) {
     registerGlobalBuiltins();
+    registerBuiltinAttributes(attrRegistry_);
 }
 
 static const EnumVariantInfo* findEnumVariantInfo(const TypeInfo* enumType,
@@ -1450,13 +1451,25 @@ bool Checker::check(LucisParser::ProgramContext* tree) {
 
     // Validate attributes on all top-level declarations
     for (auto* decl : tree->topLevelDecl()) {
-        validateAttributeList(decl->attributeList(), "top-level declaration");
+        auto* attrs = decl->functionDecl()    ? static_cast<AttributeListContext*>(decl->functionDecl()->attributeList())
+                    : decl->structDecl()       ? decl->structDecl()->attributeList()
+                    : decl->unionDecl()        ? decl->unionDecl()->attributeList()
+                    : decl->enumDecl()         ? decl->enumDecl()->attributeList()
+                    : decl->typeAliasDecl()    ? decl->typeAliasDecl()->attributeList()
+                    : decl->externDecl()       ? decl->externDecl()->attributeList()
+                    : decl->extendDecl()       ? decl->extendDecl()->attributeList()
+                    : decl->constDeclStmt()    ? decl->constDeclStmt()->attributeList()
+                    : nullptr;
+        validateAttributeList(attrs, "top-level declaration");
         if (auto* ed = decl->enumDecl())
             for (auto* v : ed->enumVariant())
                 validateAttributeList(v->attributeList(), "enum variant");
         if (auto* sd = decl->structDecl())
             for (auto* f : sd->structField())
                 validateAttributeList(f->attributeList(), "struct field");
+        if (auto* ud = decl->unionDecl())
+            for (auto* f : ud->unionField())
+                validateAttributeList(f->attributeList(), "union field");
     }
 
     // Pass 4: register function signatures (before checking bodies)
@@ -6475,15 +6488,7 @@ void Checker::checkEnumDecl(LucisParser::EnumDeclContext* decl) {
 
         EnumVariantInfo info;
         info.name = variant;
-        info.isError = false;
-        if (auto* al = variantDecl->attributeList()) {
-            for (auto* a : al->attribute()) {
-                if (a->IDENTIFIER() && a->IDENTIFIER()->getText() == "error") {
-                    info.isError = true;
-                    break;
-                }
-            }
-        }
+        info.isError = hasAttribute(variantDecl->attributeList(), "error");
 
         if (variantDecl->ASSIGN()) {
             auto discVal = tryEvalUSizeExpr(variantDecl->expression());
@@ -8146,22 +8151,44 @@ bool Checker::isValidConstExpr(LucisParser::ExpressionContext* expr) {
 
 // ── Attribute validation ────────────────────────────────────────
 
-static const std::unordered_set<std::string> s_knownAttributes = {
-    "error", "deprecated", "repr",
-    "no_mangle", "export", "link_section",
-    "must_use", "noreturn", "non_exhaustive",
-    "inline", "cold", "hot",
-    "allow", "deny", "doc",
-};
-
 void Checker::validateAttributeList(AttributeListContext* attrs, const std::string& contextName) {
     if (!attrs) return;
     for (auto* a : attrs->attribute()) {
         auto attrName = a->IDENTIFIER()->getText();
-        if (s_knownAttributes.find(attrName) == s_knownAttributes.end()) {
+        if (!attrRegistry_.isKnown(attrName)) {
             error(a, "unknown attribute '" + attrName + "'");
+            continue;
         }
-        // TODO: validate arguments per-attribute type
+        // TODO: validate arguments per-attribute type via registry handler
+        auto* handler = attrRegistry_.lookup(attrName);
+        if (handler && handler->validate) {
+            // Build Attribute struct from AST node for validation
+            Attribute attr;
+            attr.name = attrName;
+            attr.line = a->getStart() ? a->getStart()->getLine() : 0;
+            attr.col  = a->getStart() ? a->getStart()->getCharPositionInLine() : 0;
+            if (auto* argList = a->attrArgList()) {
+                for (auto* arg : argList->attrArg()) {
+                    if (arg->IDENTIFIER())
+                        attr.args.push_back({AttributeArg::Ident, arg->getText(), "", 0, 0.0});
+                    else if (arg->STR_LIT() || arg->C_STR_LIT())
+                        attr.args.push_back({AttributeArg::String, "", arg->getText(), 0, 0.0});
+                    else if (arg->INT_LIT() || arg->HEX_LIT() || arg->OCT_LIT() || arg->BIN_LIT())
+                        attr.args.push_back({AttributeArg::Int, "", "", std::stoll(arg->getText()), 0.0});
+                    else if (arg->FLOAT_LIT())
+                        attr.args.push_back({AttributeArg::Float, "", "", 0, std::stod(arg->getText())});
+                    else if (arg->BOOL_LIT())
+                        attr.args.push_back({AttributeArg::Int, "", "", arg->getText() == "true" ? 1 : 0, 0.0});
+                }
+            }
+            std::vector<std::string> errors;
+            if (!handler->validate(attr, nullptr, errors)) {
+                for (auto& err : errors)
+                    error(a, "invalid attribute '" + attrName + "': " + err);
+                if (errors.empty())
+                    error(a, "invalid attribute '" + attrName + "'");
+            }
+        }
     }
 }
 
