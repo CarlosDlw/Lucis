@@ -6475,7 +6475,14 @@ std::string HoverProvider::formatEnumDecl(LucisParser::EnumDeclContext* decl) {
     auto variants = decl->enumVariant();
     for (size_t i = 0; i < variants.size(); i++) {
         auto* v = variants[i];
-        if (v->ATTR_ERROR()) ss << "    #[error]\n";
+        if (auto* al = v->attributeList()) {
+            for (auto* a : al->attribute()) {
+                if (a->IDENTIFIER() && a->IDENTIFIER()->getText() == "error") {
+                    ss << "    #[error]\n";
+                    break;
+                }
+            }
+        }
         ss << "    " << safeText(v->IDENTIFIER());
         if (v->LPAREN()) {
             ss << "(";

@@ -25723,7 +25723,15 @@ const TypeInfo* IRGen::instantiateGenericEnum(
 
         EnumVariantInfo info;
         info.name = variantName;
-        info.isError = (variantDecl->ATTR_ERROR() != nullptr);
+        info.isError = false;
+        if (auto* al = variantDecl->attributeList()) {
+            for (auto* a : al->attribute()) {
+                if (a->IDENTIFIER() && a->IDENTIFIER()->getText() == "error") {
+                    info.isError = true;
+                    break;
+                }
+            }
+        }
         if (variantDecl->ASSIGN()) {
             info.discriminant = static_cast<unsigned>(
                 evalEnumDiscExpr(variantDecl->expression()));

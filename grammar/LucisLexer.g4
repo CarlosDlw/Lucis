@@ -159,8 +159,8 @@ fragment CHAR_ESC : '\\' ('n' | 'r' | 't' | '\\' | '\'' | '"' | 'a' | 'b' | 'f' 
                   ;
 CHAR_LIT  : '\'' ( CHAR_ESC | ~['\\r\n] ) '\'';
 
-// Identifier
-ATTR_ERROR : '#[error]' ;
+// Attribute start: #[
+ATTR_OPEN : '#[' ;
 
 WILDCARD : '_' ;
 

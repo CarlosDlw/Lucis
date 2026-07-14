@@ -35,6 +35,14 @@ public:
 
     virtual std::any visitIncludeDecl(LucisParser::IncludeDeclContext *context) = 0;
 
+    virtual std::any visitAttrArg(LucisParser::AttrArgContext *context) = 0;
+
+    virtual std::any visitAttrArgList(LucisParser::AttrArgListContext *context) = 0;
+
+    virtual std::any visitAttribute(LucisParser::AttributeContext *context) = 0;
+
+    virtual std::any visitAttributeList(LucisParser::AttributeListContext *context) = 0;
+
     virtual std::any visitTopLevelDecl(LucisParser::TopLevelDeclContext *context) = 0;
 
     virtual std::any visitTypeAliasDecl(LucisParser::TypeAliasDeclContext *context) = 0;

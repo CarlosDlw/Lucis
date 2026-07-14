@@ -31,45 +31,45 @@ public:
     SUFFIXED_FLOAT_INT = 93, SUFFIXED_DOT_FLOAT = 94, HEX_LIT = 95, OCT_LIT = 96, 
     BIN_LIT = 97, INT_LIT = 98, FLOAT_LIT = 99, BOOL_LIT = 100, C_STR_LIT = 101, 
     STR_LIT = 102, BTICK = 103, RAW_BTICK = 104, INT_BTICK = 105, SHELL_BTICK = 106, 
-    CMPT_BTICK = 107, CHAR_LIT = 108, ATTR_ERROR = 109, WILDCARD = 110, 
-    IDENTIFIER = 111, PLUS_ASSIGN = 112, MINUS_ASSIGN = 113, STAR_ASSIGN = 114, 
-    SLASH_ASSIGN = 115, PERCENT_ASSIGN = 116, AMP_ASSIGN = 117, PIPE_ASSIGN = 118, 
-    CARET_ASSIGN = 119, LSHIFT_ASSIGN = 120, RSHIFT_ASSIGN = 121, SEMI = 122, 
-    COLON = 123, SCOPE = 124, COMMA = 125, DOT = 126, ASSIGN = 127, LPAREN = 128, 
-    RPAREN = 129, LBRACE = 130, RBRACE = 131, LBRACKET = 132, RBRACKET = 133, 
-    STAR = 134, AMPERSAND = 135, MINUS = 136, PLUS = 137, SLASH = 138, PERCENT = 139, 
-    EQ = 140, NEQ = 141, LTE = 142, GTE = 143, LT = 144, GT = 145, LAND = 146, 
-    LOR = 147, NOT = 148, INCR = 149, DECR = 150, LSHIFT = 151, PIPE = 152, 
-    CARET = 153, TILDE = 154, QUESTION = 155, WS = 156, LINE_COMMENT = 157, 
-    BLOCK_COMMENT = 158
+    CMPT_BTICK = 107, CHAR_LIT = 108, ATTR_OPEN = 109, WILDCARD = 110, IDENTIFIER = 111, 
+    PLUS_ASSIGN = 112, MINUS_ASSIGN = 113, STAR_ASSIGN = 114, SLASH_ASSIGN = 115, 
+    PERCENT_ASSIGN = 116, AMP_ASSIGN = 117, PIPE_ASSIGN = 118, CARET_ASSIGN = 119, 
+    LSHIFT_ASSIGN = 120, RSHIFT_ASSIGN = 121, SEMI = 122, COLON = 123, SCOPE = 124, 
+    COMMA = 125, DOT = 126, ASSIGN = 127, LPAREN = 128, RPAREN = 129, LBRACE = 130, 
+    RBRACE = 131, LBRACKET = 132, RBRACKET = 133, STAR = 134, AMPERSAND = 135, 
+    MINUS = 136, PLUS = 137, SLASH = 138, PERCENT = 139, EQ = 140, NEQ = 141, 
+    LTE = 142, GTE = 143, LT = 144, GT = 145, LAND = 146, LOR = 147, NOT = 148, 
+    INCR = 149, DECR = 150, LSHIFT = 151, PIPE = 152, CARET = 153, TILDE = 154, 
+    QUESTION = 155, WS = 156, LINE_COMMENT = 157, BLOCK_COMMENT = 158
   };
 
   enum {
     RuleProgram = 0, RulePreambleDecl = 1, RuleUseDecl = 2, RuleModulePath = 3, 
-    RuleIncludeDecl = 4, RuleTopLevelDecl = 5, RuleTypeAliasDecl = 6, RuleEnumDecl = 7, 
-    RuleEnumVariant = 8, RuleEnumPayloadField = 9, RuleStructDecl = 10, 
-    RuleStructField = 11, RuleUnionDecl = 12, RuleUnionField = 13, RuleExternDecl = 14, 
-    RuleExternParamList = 15, RuleExternParam = 16, RuleFunctionDecl = 17, 
-    RuleExtendDecl = 18, RuleTypeParamList = 19, RuleTypeParam = 20, RuleExtendMethod = 21, 
-    RuleParamList = 22, RuleParam = 23, RuleBlock = 24, RuleStatement = 25, 
-    RuleDeferStmt = 26, RuleNakedBlockStmt = 27, RuleInlineBlockStmt = 28, 
-    RuleScopeBlockStmt = 29, RuleScopeCallbackList = 30, RuleScopeCallback = 31, 
-    RuleLabelDef = 32, RuleAsmStmt = 33, RuleAsmOutputList = 34, RuleAsmInputList = 35, 
-    RuleAsmClobberList = 36, RuleAsmGotoLabelList = 37, RuleAsmOutput = 38, 
-    RuleAsmOperand = 39, RuleExprStmt = 40, RuleVarDeclStmt = 41, RuleVarDeclarator = 42, 
-    RuleConstDeclStmt = 43, RuleConstDeclarator = 44, RuleAssignStmt = 45, 
-    RuleCompoundAssignStmt = 46, RuleFieldAssignStmt = 47, RuleFieldCompoundAssignStmt = 48, 
-    RuleIndexFieldAssignStmt = 49, RuleFieldIndexAssignStmt = 50, RuleDerefAssignStmt = 51, 
-    RuleDerefCompoundAssignStmt = 52, RuleArrowAssignStmt = 53, RuleArrowCompoundAssignStmt = 54, 
-    RuleArrowAnyAssignStmt = 55, RuleArrowAnyCompoundAssignStmt = 56, RuleCallStmt = 57, 
-    RuleArgList = 58, RuleReturnStmt = 59, RuleIfStmt = 60, RuleElseIfClause = 61, 
-    RuleElseClause = 62, RuleIfBody = 63, RuleForStmt = 64, RuleBreakStmt = 65, 
-    RuleContinueStmt = 66, RuleLoopStmt = 67, RuleWhileStmt = 68, RuleDoWhileStmt = 69, 
-    RuleLockStmt = 70, RuleTryCatchStmt = 71, RuleCatchClause = 72, RuleFinallyClause = 73, 
-    RuleThrowStmt = 74, RuleSwitchStmt = 75, RuleCaseClause = 76, RuleDefaultClause = 77, 
-    RuleMatchArm = 78, RulePattern = 79, RuleLiteralPattern = 80, RuleExpression = 81, 
-    RuleTypeSpec = 82, RuleFnTypeSpec = 83, RulePrimitiveType = 84, RuleCMacroBlock = 85, 
-    RuleAsmBBlock = 86
+    RuleIncludeDecl = 4, RuleAttrArg = 5, RuleAttrArgList = 6, RuleAttribute = 7, 
+    RuleAttributeList = 8, RuleTopLevelDecl = 9, RuleTypeAliasDecl = 10, 
+    RuleEnumDecl = 11, RuleEnumVariant = 12, RuleEnumPayloadField = 13, 
+    RuleStructDecl = 14, RuleStructField = 15, RuleUnionDecl = 16, RuleUnionField = 17, 
+    RuleExternDecl = 18, RuleExternParamList = 19, RuleExternParam = 20, 
+    RuleFunctionDecl = 21, RuleExtendDecl = 22, RuleTypeParamList = 23, 
+    RuleTypeParam = 24, RuleExtendMethod = 25, RuleParamList = 26, RuleParam = 27, 
+    RuleBlock = 28, RuleStatement = 29, RuleDeferStmt = 30, RuleNakedBlockStmt = 31, 
+    RuleInlineBlockStmt = 32, RuleScopeBlockStmt = 33, RuleScopeCallbackList = 34, 
+    RuleScopeCallback = 35, RuleLabelDef = 36, RuleAsmStmt = 37, RuleAsmOutputList = 38, 
+    RuleAsmInputList = 39, RuleAsmClobberList = 40, RuleAsmGotoLabelList = 41, 
+    RuleAsmOutput = 42, RuleAsmOperand = 43, RuleExprStmt = 44, RuleVarDeclStmt = 45, 
+    RuleVarDeclarator = 46, RuleConstDeclStmt = 47, RuleConstDeclarator = 48, 
+    RuleAssignStmt = 49, RuleCompoundAssignStmt = 50, RuleFieldAssignStmt = 51, 
+    RuleFieldCompoundAssignStmt = 52, RuleIndexFieldAssignStmt = 53, RuleFieldIndexAssignStmt = 54, 
+    RuleDerefAssignStmt = 55, RuleDerefCompoundAssignStmt = 56, RuleArrowAssignStmt = 57, 
+    RuleArrowCompoundAssignStmt = 58, RuleArrowAnyAssignStmt = 59, RuleArrowAnyCompoundAssignStmt = 60, 
+    RuleCallStmt = 61, RuleArgList = 62, RuleReturnStmt = 63, RuleIfStmt = 64, 
+    RuleElseIfClause = 65, RuleElseClause = 66, RuleIfBody = 67, RuleForStmt = 68, 
+    RuleBreakStmt = 69, RuleContinueStmt = 70, RuleLoopStmt = 71, RuleWhileStmt = 72, 
+    RuleDoWhileStmt = 73, RuleLockStmt = 74, RuleTryCatchStmt = 75, RuleCatchClause = 76, 
+    RuleFinallyClause = 77, RuleThrowStmt = 78, RuleSwitchStmt = 79, RuleCaseClause = 80, 
+    RuleDefaultClause = 81, RuleMatchArm = 82, RulePattern = 83, RuleLiteralPattern = 84, 
+    RuleExpression = 85, RuleTypeSpec = 86, RuleFnTypeSpec = 87, RulePrimitiveType = 88, 
+    RuleCMacroBlock = 89, RuleAsmBBlock = 90
   };
 
   explicit LucisParser(antlr4::TokenStream *input);
@@ -94,6 +94,10 @@ public:
   class UseDeclContext;
   class ModulePathContext;
   class IncludeDeclContext;
+  class AttrArgContext;
+  class AttrArgListContext;
+  class AttributeContext;
+  class AttributeListContext;
   class TopLevelDeclContext;
   class TypeAliasDeclContext;
   class EnumDeclContext;
@@ -308,10 +312,81 @@ public:
 
   IncludeDeclContext* includeDecl();
 
+  class  AttrArgContext : public antlr4::ParserRuleContext {
+  public:
+    AttrArgContext(antlr4::ParserRuleContext *parent, size_t invokingState);
+    virtual size_t getRuleIndex() const override;
+    antlr4::tree::TerminalNode *IDENTIFIER();
+    antlr4::tree::TerminalNode *INT_LIT();
+    antlr4::tree::TerminalNode *HEX_LIT();
+    antlr4::tree::TerminalNode *OCT_LIT();
+    antlr4::tree::TerminalNode *BIN_LIT();
+    antlr4::tree::TerminalNode *FLOAT_LIT();
+    antlr4::tree::TerminalNode *STR_LIT();
+    antlr4::tree::TerminalNode *C_STR_LIT();
+    antlr4::tree::TerminalNode *BOOL_LIT();
+    antlr4::tree::TerminalNode *MINUS();
+
+
+    virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+   
+  };
+
+  AttrArgContext* attrArg();
+
+  class  AttrArgListContext : public antlr4::ParserRuleContext {
+  public:
+    AttrArgListContext(antlr4::ParserRuleContext *parent, size_t invokingState);
+    virtual size_t getRuleIndex() const override;
+    std::vector<AttrArgContext *> attrArg();
+    AttrArgContext* attrArg(size_t i);
+    std::vector<antlr4::tree::TerminalNode *> COMMA();
+    antlr4::tree::TerminalNode* COMMA(size_t i);
+
+
+    virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+   
+  };
+
+  AttrArgListContext* attrArgList();
+
+  class  AttributeContext : public antlr4::ParserRuleContext {
+  public:
+    AttributeContext(antlr4::ParserRuleContext *parent, size_t invokingState);
+    virtual size_t getRuleIndex() const override;
+    antlr4::tree::TerminalNode *ATTR_OPEN();
+    antlr4::tree::TerminalNode *IDENTIFIER();
+    antlr4::tree::TerminalNode *RBRACKET();
+    antlr4::tree::TerminalNode *LPAREN();
+    antlr4::tree::TerminalNode *RPAREN();
+    AttrArgListContext *attrArgList();
+
+
+    virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+   
+  };
+
+  AttributeContext* attribute();
+
+  class  AttributeListContext : public antlr4::ParserRuleContext {
+  public:
+    AttributeListContext(antlr4::ParserRuleContext *parent, size_t invokingState);
+    virtual size_t getRuleIndex() const override;
+    std::vector<AttributeContext *> attribute();
+    AttributeContext* attribute(size_t i);
+
+
+    virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+   
+  };
+
+  AttributeListContext* attributeList();
+
   class  TopLevelDeclContext : public antlr4::ParserRuleContext {
   public:
     TopLevelDeclContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
+    AttributeListContext *attributeList();
     UseDeclContext *useDecl();
     IncludeDeclContext *includeDecl();
     TypeAliasDeclContext *typeAliasDecl();
@@ -374,8 +449,8 @@ public:
   public:
     EnumVariantContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
+    AttributeListContext *attributeList();
     antlr4::tree::TerminalNode *IDENTIFIER();
-    antlr4::tree::TerminalNode *ATTR_ERROR();
     antlr4::tree::TerminalNode *LPAREN();
     std::vector<TypeSpecContext *> typeSpec();
     TypeSpecContext* typeSpec(size_t i);
@@ -436,6 +511,7 @@ public:
   public:
     StructFieldContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
+    AttributeListContext *attributeList();
     TypeSpecContext *typeSpec();
     antlr4::tree::TerminalNode *IDENTIFIER();
     antlr4::tree::TerminalNode *SEMI();

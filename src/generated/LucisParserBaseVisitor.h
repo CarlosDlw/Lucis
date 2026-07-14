@@ -47,6 +47,22 @@ public:
     return visitChildren(ctx);
   }
 
+  virtual std::any visitAttrArg(LucisParser::AttrArgContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual std::any visitAttrArgList(LucisParser::AttrArgListContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual std::any visitAttribute(LucisParser::AttributeContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual std::any visitAttributeList(LucisParser::AttributeListContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
   virtual std::any visitTopLevelDecl(LucisParser::TopLevelDeclContext *ctx) override {
     return visitChildren(ctx);
   }

@@ -36,20 +36,47 @@ includeDecl
     | INCLUDE_LOCAL
     ;
 
+// Attribute arguments: identifiers, string literals, integer literals, bools, etc.
+attrArg
+    : IDENTIFIER
+    | INT_LIT
+    | HEX_LIT | OCT_LIT | BIN_LIT
+    | FLOAT_LIT
+    | STR_LIT | C_STR_LIT
+    | BOOL_LIT
+    | MINUS INT_LIT
+    | MINUS FLOAT_LIT
+    ;
+
+attrArgList
+    : attrArg (COMMA attrArg)*
+    ;
+
+// Attribute: #[name] or #[name(arg1, arg2, ...)]
+attribute
+    : ATTR_OPEN IDENTIFIER (LPAREN attrArgList? RPAREN)? RBRACKET
+    ;
+
+attributeList
+    : attribute*
+    ;
+
 // Top-level declarations
 topLevelDecl
-    : useDecl
-    | includeDecl
-    | typeAliasDecl
-    | structDecl
-    | unionDecl
-    | enumDecl
-    | extendDecl
-    | externDecl
-    | functionDecl
-    | constDeclStmt
-    | cMacroBlock
-    | asmBBlock
+    : attributeList
+      ( useDecl
+      | includeDecl
+      | typeAliasDecl
+      | structDecl
+      | unionDecl
+      | enumDecl
+      | extendDecl
+      | externDecl
+      | functionDecl
+      | constDeclStmt
+      | cMacroBlock
+      | asmBBlock
+      )
     ;
 
 // type BinOp = fn(int32, int32) -> int32;
@@ -64,7 +91,7 @@ enumDecl
     ;
 
 enumVariant
-    : ATTR_ERROR? IDENTIFIER
+    : attributeList IDENTIFIER
       ( LPAREN typeSpec (COMMA typeSpec)* RPAREN
       | LBRACE enumPayloadField (COMMA enumPayloadField)* COMMA? RBRACE
       | ASSIGN expression
@@ -82,7 +109,7 @@ structDecl
     ;
 
 structField
-    : typeSpec IDENTIFIER SEMI
+    : attributeList typeSpec IDENTIFIER SEMI
     ;
 
 // union Value { int32 i; float32 f; *void ptr; }

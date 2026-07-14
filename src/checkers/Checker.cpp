@@ -6464,7 +6464,15 @@ void Checker::checkEnumDecl(LucisParser::EnumDeclContext* decl) {
 
         EnumVariantInfo info;
         info.name = variant;
-        info.isError = (variantDecl->ATTR_ERROR() != nullptr);
+        info.isError = false;
+        if (auto* al = variantDecl->attributeList()) {
+            for (auto* a : al->attribute()) {
+                if (a->IDENTIFIER() && a->IDENTIFIER()->getText() == "error") {
+                    info.isError = true;
+                    break;
+                }
+            }
+        }
 
         if (variantDecl->ASSIGN()) {
             auto discVal = tryEvalUSizeExpr(variantDecl->expression());
