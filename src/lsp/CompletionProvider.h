@@ -109,6 +109,7 @@ private:
         IncludeHeader,  // #include <| — show available C headers
         UseImport,      // use path::| — show modules and symbols
         DocComment,     // inside /** ... */ — show doc-tags
+        Attribute,      // #[attr| — inside attribute brackets
     };
 
     struct CompletionRequest {

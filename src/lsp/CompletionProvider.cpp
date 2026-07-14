@@ -2247,7 +2247,7 @@ CompletionProvider::complete(const std::string &source, size_t line, size_t col,
   }
 
   // Attribute completions (#[name] or #[name(...)])
-  if (!req.prefix.empty() && req.prefix[0] == '#') {
+  if (req.context == CompletionContext::Attribute) {
     addAttributeCompletions(items, req.prefix, line, source);
   }
 
@@ -2309,6 +2309,28 @@ CompletionProvider::analyzeContext(const std::string &source, size_t line,
       char closing = (delimiter == '<') ? '>' : '"';
       req.closingCharPresent = (col < lineText.size() && lineText[col] == closing);
       return req;
+    }
+  }
+
+  // Check for `#[...]` attribute completion
+  {
+    // Detect #[...| pattern (cursor inside attribute brackets)
+    auto hashPos = before.rfind('#');
+    if (hashPos != std::string::npos && hashPos + 1 < before.size() && before[hashPos + 1] == '[') {
+      // Check there's no ']' before cursor (still inside brackets)
+      auto afterBracket = before.substr(hashPos + 2);
+      if (afterBracket.find(']') == std::string::npos) {
+        req.context = CompletionContext::Attribute;
+        // The "#[" is part of the trigger; the actual prefix is after "#["
+        // and only contains word chars.
+        size_t p = afterBracket.size();
+        while (p > 0 && (std::isalnum(afterBracket[p - 1]) || afterBracket[p - 1] == '_'))
+          --p;
+        req.prefix = afterBracket.substr(p);
+        // Keep '#' as marker in prefix so the guard can detect it
+        req.prefix = "#[" + req.prefix;
+        return req;
+      }
     }
   }
 
@@ -5529,33 +5551,36 @@ void CompletionProvider::addAttributeCompletions(
     const std::string& prefix,
     size_t cursorLine,
     const std::string& source) {
-  std::string searchKey = (prefix.size() > 1 && prefix[1] == '[')
-    ? prefix.substr(2) : prefix.substr(1);
+  // prefix comes as "#[partialName" — extract the partial name after #[]
+  size_t hashBracketEnd = prefix.find('[');
+  std::string searchKey = (hashBracketEnd != std::string::npos && hashBracketEnd + 1 < prefix.size())
+    ? prefix.substr(hashBracketEnd + 1) : "";
 
-  // Determine declaration context by scanning forward from cursor
-  // (attributes always appear BEFORE the declaration).
+  // Determine declaration context by scanning the NEXT line
+  // (attributes always appear BEFORE the declaration they annotate).
   enum AttrCtx { General, CtxFn, CtxStruct, CtxEnum, CtxConst, CtxEnumVariant };
   AttrCtx ctx = General;
   {
-    // Scan the rest of the current line for keyword hints
-    size_t nl = source.find('\n', source.rfind('\n', cursorLine));
-    if (nl == std::string::npos) nl = source.size();
-    size_t bol = source.rfind('\n', cursorLine);
-    if (bol == std::string::npos) bol = 0;
-    std::string restOfLine = source.substr(bol, nl - bol);
-
-    auto hasKw = [&](const std::string& kw) {
-      return restOfLine.find(kw, bol == 0 ? 0 : restOfLine.find_first_not_of(" \t#[a-z_]( \t")) != std::string::npos;
-    };
-    // Simple heuristic: look for the declaration keyword
-    if (restOfLine.find(" fn ") != std::string::npos || restOfLine.find("\tfn ") != std::string::npos)
-      ctx = CtxFn;
-    else if (restOfLine.find(" enum ") != std::string::npos)
-      ctx = CtxEnum;
-    else if (restOfLine.find(" struct ") != std::string::npos || restOfLine.find(" union ") != std::string::npos)
-      ctx = CtxStruct;
-    else if (restOfLine.find(" const ") != std::string::npos)
-      ctx = CtxConst;
+    // Look at the next line (the line after the cursor)
+    size_t nextNl = source.find('\n', source.rfind('\n', cursorLine) + 1);
+    if (nextNl != std::string::npos) {
+      size_t nextEnd = source.find('\n', nextNl + 1);
+      if (nextEnd == std::string::npos) nextEnd = source.size();
+      std::string nextLine = source.substr(nextNl + 1, nextEnd - nextNl - 1);
+      // Strip leading whitespace
+      auto firstNonSpace = nextLine.find_first_not_of(" \t");
+      if (firstNonSpace != std::string::npos)
+        nextLine = nextLine.substr(firstNonSpace);
+      // Check what declaration keyword follows
+      if (nextLine.rfind("fn ", 0) == 0 || nextLine.rfind("fn\t", 0) == 0)
+        ctx = CtxFn;
+      else if (nextLine.rfind("enum ", 0) == 0 || nextLine.rfind("enum\t", 0) == 0)
+        ctx = CtxEnum;
+      else if (nextLine.rfind("struct ", 0) == 0 || nextLine.rfind("union ", 0) == 0)
+        ctx = CtxStruct;
+      else if (nextLine.rfind("const ", 0) == 0 || nextLine.rfind("const\t", 0) == 0)
+        ctx = CtxConst;
+    }
   }
 
   // Each entry: {label, detail, validFor}
@@ -5588,11 +5613,7 @@ void CompletionProvider::addAttributeCompletions(
     {"deny(...)", "Deny specific lint warnings", 1<<General|1<<CtxFn|1<<CtxStruct|1<<CtxEnum|1<<CtxConst},
   };
   for (auto& entry : s_attrCompletions) {
-    unsigned bit = ctx == CtxEnumVariant ? 1<<CtxEnumVariant
-                : ctx == General        ? 1<<General
-                : 0;
-    if (ctx != General && ctx != CtxEnumVariant)
-      bit = 1u << static_cast<unsigned>(ctx);
+    unsigned bit = 1u << static_cast<unsigned>(ctx);
     if (!(entry.validFor & bit))
       continue;
 
