@@ -6,6 +6,7 @@
 #include <unordered_map>
 #include <unordered_set>
 
+#include "attributes/AttributeRegistry.h"
 #include "generated/LucisParser.h"
 #include "ffi/CBindings.h"
 #include "types/BuiltinRegistry.h"
@@ -93,6 +94,7 @@ private:
     MethodRegistry methodRegistry_;
     ExtendedTypeRegistry extTypeRegistry_;
     IntrinsicRegistry intrinsicRegistry_;
+    AttributeRegistry attrRegistry_;
     bool hasIncludeBindingsCache_ = false;
     std::string includeFingerprintCache_;
     CBindings includeBindingsCache_;

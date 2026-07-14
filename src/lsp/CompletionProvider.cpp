@@ -16,7 +16,9 @@
 
 namespace fs = std::filesystem;
 
-CompletionProvider::CompletionProvider() : intrinsicRegistry_(typeRegistry_) {}
+CompletionProvider::CompletionProvider() : intrinsicRegistry_(typeRegistry_) {
+    registerBuiltinAttributes(attrRegistry_);
+}
 
 // Normalize lowercase native keywords (vec, map, set) to registry CamelCase
 // (Vec, Map, Set)
@@ -5560,71 +5562,161 @@ void CompletionProvider::addAttributeCompletions(
   // (attributes always appear BEFORE the declaration they annotate).
   enum AttrCtx { General, CtxFn, CtxStruct, CtxEnum, CtxConst, CtxEnumVariant };
   AttrCtx ctx = General;
+  bool hasNextLine = true;
   {
-    // Look at the next line (the line after the cursor)
-    size_t nextNl = source.find('\n', source.rfind('\n', cursorLine) + 1);
-    if (nextNl != std::string::npos) {
-      size_t nextEnd = source.find('\n', nextNl + 1);
-      if (nextEnd == std::string::npos) nextEnd = source.size();
-      std::string nextLine = source.substr(nextNl + 1, nextEnd - nextNl - 1);
-      // Strip leading whitespace
-      auto firstNonSpace = nextLine.find_first_not_of(" \t");
-      if (firstNonSpace != std::string::npos)
-        nextLine = nextLine.substr(firstNonSpace);
-      // Check what declaration keyword follows
-      if (nextLine.rfind("fn ", 0) == 0 || nextLine.rfind("fn\t", 0) == 0)
-        ctx = CtxFn;
-      else if (nextLine.rfind("enum ", 0) == 0 || nextLine.rfind("enum\t", 0) == 0)
-        ctx = CtxEnum;
-      else if (nextLine.rfind("struct ", 0) == 0 || nextLine.rfind("union ", 0) == 0)
-        ctx = CtxStruct;
-      else if (nextLine.rfind("const ", 0) == 0 || nextLine.rfind("const\t", 0) == 0)
-        ctx = CtxConst;
+    // Convert cursorLine (0-based) to byte offset of the line after the cursor
+    size_t curLineStart = 0;
+    for (size_t i = 0; i < cursorLine; ) {
+      auto nl = source.find('\n', curLineStart);
+      if (nl == std::string::npos) break;
+      curLineStart = nl + 1;
+      ++i;
+    }
+    // curLineStart = byte offset of start of cursor's line.
+    // Find the \n that ends the current line.
+    size_t curLineEnd = source.find('\n', curLineStart);
+    if (curLineEnd != std::string::npos) {
+      size_t nextStart = curLineEnd + 1;
+      if (nextStart >= source.size()) {
+        hasNextLine = false;
+      } else {
+        size_t nextEnd = source.find('\n', nextStart);
+        if (nextEnd == std::string::npos) nextEnd = source.size();
+        std::string nextLine = source.substr(nextStart, nextEnd - nextStart);
+        // Strip leading whitespace
+        auto firstNonSpace = nextLine.find_first_not_of(" \t");
+        if (firstNonSpace != std::string::npos)
+          nextLine = nextLine.substr(firstNonSpace);
+        // Check for enum variant (PascalCase identifier + optional data)
+        if (!nextLine.empty() && std::isupper(static_cast<unsigned char>(nextLine[0]))) {
+          size_t i = 1;
+          while (i < nextLine.size() && (std::isalnum(static_cast<unsigned char>(nextLine[i])) || nextLine[i] == '_'))
+            ++i;
+          if (i < nextLine.size() && (nextLine[i] == ',' || nextLine[i] == '(' || nextLine[i] == '{'))
+            ctx = CtxEnumVariant;
+          else if (i == nextLine.size())
+            ctx = CtxEnumVariant;
+        }
+        // Check what declaration keyword follows
+        if (nextLine.rfind("fn ", 0) == 0 || nextLine.rfind("fn\t", 0) == 0)
+          ctx = CtxFn;
+        else if (nextLine.rfind("enum ", 0) == 0 || nextLine.rfind("enum\t", 0) == 0)
+          ctx = CtxEnum;
+        else if (nextLine.rfind("struct ", 0) == 0 || nextLine.rfind("union ", 0) == 0)
+          ctx = CtxStruct;
+        else if (nextLine.rfind("const ", 0) == 0 || nextLine.rfind("const\t", 0) == 0)
+          ctx = CtxConst;
+      }
+    } else {
+      hasNextLine = false;
     }
   }
 
-  // Each entry: {label, detail, validFor}
+  // ── Completion metadata ──
+  // Descriptions + context restrictions for builtin attributes.
   static const struct {
-    const char* label;
-    const char* detail;
-    unsigned validFor; // bitmask: 1<<CtxFn, 1<<CtxStruct, etc.
-  } s_attrCompletions[] = {
+    const char* name;
+    const char* desc;
+    unsigned ctx;
+  } s_attrBase[] = {
     {"error", "Marks enum variant as the error variant for ? and catch", 1<<CtxEnumVariant},
     {"deprecated", "Marks a declaration as deprecated", 1<<General|1<<CtxFn|1<<CtxStruct|1<<CtxEnum|1<<CtxConst},
-    {"repr(C)", "Use C-compatible struct/union layout", 1<<CtxStruct|1<<CtxEnum},
-    {"repr(packed)", "Use packed struct/union layout (no padding)", 1<<CtxStruct|1<<CtxEnum},
     {"no_mangle", "Preserve the original symbol name (no name mangling)", 1<<CtxFn|1<<CtxConst},
     {"export", "Force external linkage for the symbol", 1<<CtxFn|1<<CtxConst},
-    {"link_section(\"...\")", "Place the symbol in a specific ELF section", 1<<CtxFn|1<<CtxConst},
     {"must_use", "Warn if the return value is discarded", 1<<CtxFn},
     {"noreturn", "Declares that this function never returns", 1<<CtxFn},
     {"non_exhaustive", "Enum may gain new variants in future versions", 1<<CtxEnum},
-    {"inline(always)", "Always inline this function", 1<<CtxFn},
-    {"inline(never)", "Never inline this function", 1<<CtxFn},
     {"cold", "This function is rarely executed", 1<<CtxFn},
     {"hot", "This function is hot (frequently executed)", 1<<CtxFn},
-    {"optimize(speed)", "Optimize for speed", 1<<CtxFn},
-    {"optimize(size)", "Optimize for size", 1<<CtxFn},
     {"thread_local", "Global is thread-local storage", 1<<CtxConst},
     {"used", "Prevent linker from removing the symbol", 1<<CtxFn|1<<CtxConst},
-    {"align(n)", "Minimum alignment of global variable", 1<<CtxConst},
-    {"doc(\"...\")", "Documentation string for the declaration", 1<<General|1<<CtxFn|1<<CtxStruct|1<<CtxEnum|1<<CtxConst},
-    {"allow(...)", "Suppress specific lint warnings", 1<<General|1<<CtxFn|1<<CtxStruct|1<<CtxEnum|1<<CtxConst},
-    {"deny(...)", "Deny specific lint warnings", 1<<General|1<<CtxFn|1<<CtxStruct|1<<CtxEnum|1<<CtxConst},
   };
-  for (auto& entry : s_attrCompletions) {
-    unsigned bit = 1u << static_cast<unsigned>(ctx);
-    if (!(entry.validFor & bit))
-      continue;
 
-    std::string prefixedLabel = std::string("#[") + entry.label + "]";
-    if (!matchesPrefix(prefixedLabel, prefix) &&
-        !matchesPrefix(entry.label, searchKey))
+  // Expanded forms for attributes with known valid argument patterns.
+  // The bare attribute name is still emitted when skipBase is false.
+  static const struct {
+    const char* baseName;
+    const char* display;   // text shown in popup + inserted on accept
+    const char* desc;
+    unsigned ctx;
+    bool skipBase;         // if true, hide the bare base name
+  } s_expanded[] = {
+    {"repr", "repr(C)", "Use C-compatible struct/union layout", 1<<CtxStruct|1<<CtxEnum, true},
+    {"repr", "repr(packed)", "Use packed struct/union layout (no padding)", 1<<CtxStruct|1<<CtxEnum, true},
+    {"repr", "repr(transparent)", "Use transparent struct/union layout", 1<<CtxStruct|1<<CtxEnum, true},
+    {"inline", "inline(always)", "Always inline this function", 1<<CtxFn, false},
+    {"inline", "inline(never)", "Never inline this function", 1<<CtxFn, false},
+    {"optimize", "optimize(speed)", "Optimize for speed", 1<<CtxFn, true},
+    {"optimize", "optimize(size)", "Optimize for size", 1<<CtxFn, true},
+    {"link_section", "link_section(\"...\")", "Place the symbol in a specific ELF section", 1<<CtxFn|1<<CtxConst, false},
+    {"allow", "allow(...)", "Suppress specific lint warnings", 1<<General|1<<CtxFn|1<<CtxStruct|1<<CtxEnum|1<<CtxConst, false},
+    {"deny", "deny(...)", "Deny specific lint warnings", 1<<General|1<<CtxFn|1<<CtxStruct|1<<CtxEnum|1<<CtxConst, false},
+    {"doc", "doc(\"...\")", "Documentation string for the declaration", 1<<General|1<<CtxFn|1<<CtxStruct|1<<CtxEnum|1<<CtxConst, false},
+    {"align", "align(n)", "Minimum alignment of global variable", 1<<CtxConst, false},
+  };
+
+  unsigned bit = 1u << static_cast<unsigned>(ctx);
+  auto regNames = attrRegistry_.allNames();
+  std::unordered_set<std::string> known(regNames.begin(), regNames.end());
+
+  // Quick lookup: baseName → not-in-registry → skip unknown expanded forms
+  auto isKnown = [&](const std::string& n) { return known.count(n); };
+
+  // ── Emit expanded forms ──────────────────────────────────────────
+  for (auto& ex : s_expanded) {
+    if (!isKnown(ex.baseName))
+      continue;
+    if (hasNextLine && !(ex.ctx & bit))
+      continue;
+    if (!matchesPrefix(std::string("#[") + ex.display + "]", prefix) &&
+        !matchesPrefix(ex.display, searchKey))
       continue;
     CompletionItem ci;
-    ci.label = prefixedLabel;
+    ci.label = ex.display;
     ci.kind = CompletionKind::Keyword;
-    ci.detail = entry.label;
+    ci.detail = ex.desc;
+    ci.filterText = ex.display;
+    ci.insertText = ex.display;
+    items.push_back(std::move(ci));
+  }
+
+  // ── Emit bare names from registry ────────────────────────────────
+  for (auto& name : regNames) {
+    // Check whether this name should be hidden because expanded covers it
+    bool skip = false;
+    for (auto& ex : s_expanded) {
+      if (ex.baseName == name && ex.skipBase) {
+        skip = true;
+        break;
+      }
+    }
+    if (skip)
+      continue;
+
+    // Look up description + context, default to all-contexts
+    std::string desc;
+    unsigned validFor = static_cast<unsigned>(-1);
+    for (auto& b : s_attrBase) {
+      if (b.name == name) {
+        desc = b.desc;
+        validFor = b.ctx;
+        break;
+      }
+    }
+
+    if (hasNextLine && !(validFor & bit))
+      continue;
+
+    if (!matchesPrefix(std::string("#[") + name + "]", prefix) &&
+        !matchesPrefix(name, searchKey))
+      continue;
+
+    CompletionItem ci;
+    ci.label = name;
+    ci.kind = CompletionKind::Keyword;
+    ci.detail = desc;
+    ci.filterText = name;
+    ci.insertText = name;
     items.push_back(std::move(ci));
   }
 }
