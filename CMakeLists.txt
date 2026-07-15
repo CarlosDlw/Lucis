@@ -241,6 +241,8 @@ set(SOURCES
     src/parser/Parser.cpp
     src/checkers/Checker.cpp
     src/attributes/AttributeRegistry.cpp
+    src/attributes/CfgPredicate.cpp
+    src/attributes/TargetInfo.cpp
     src/comptime/ComptimeRegistry.cpp
     src/comptime/ComptimeValue.cpp
     src/comptime/ComptimeJIT.cpp

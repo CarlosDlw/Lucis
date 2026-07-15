@@ -25,10 +25,98 @@
 #include "namespace/ModuleRegistry.h"
 #include "ffi/CBindings.h"
 #include "ffi/CMacroEval.h"
+#include "attributes/CfgPredicate.h"
+#include "attributes/TargetInfo.h"
+#include "attributes/Attribute.h"
 
 #include <cctype>
 #include <iostream>
 #include <optional>
+
+// ── Cfg predicate parsing helpers (mirrors Checker.cpp logic) ───────────────
+static CfgPredicate irParseCfgAttrArg(LucisParser::AttrArgContext* arg) {
+    CfgPredicate pred;
+    if (!arg) return pred;
+    if (arg->ASSIGN()) {
+        pred.type = CfgPredicate::KeyValue;
+        if (arg->IDENTIFIER())
+            pred.name = arg->IDENTIFIER()->getText();
+        if (auto* val = arg->attrArg()) {
+            if (val->STR_LIT()) {
+                auto raw = val->STR_LIT()->getText();
+                if (raw.size() >= 2 && raw.front() == '"' && raw.back() == '"')
+                    pred.stringValue = raw.substr(1, raw.size() - 2);
+                else
+                    pred.stringValue = raw;
+            } else if (val->IDENTIFIER()) {
+                pred.stringValue = val->IDENTIFIER()->getText();
+            }
+        }
+        return pred;
+    }
+    if (arg->LPAREN()) {
+        pred.type = CfgPredicate::Call;
+        if (arg->IDENTIFIER())
+            pred.name = arg->IDENTIFIER()->getText();
+        if (auto* argList = arg->attrArgList()) {
+            for (auto* child : argList->attrArg())
+                pred.args.push_back(irParseCfgAttrArg(child));
+        }
+        return pred;
+    }
+    if (arg->IDENTIFIER()) {
+        pred.type = CfgPredicate::Ident;
+        pred.name = arg->IDENTIFIER()->getText();
+        return pred;
+    }
+    return pred;
+}
+
+static CfgPredicate irParseCfgFromAttribute(const Attribute& attr) {
+    if (!attr.rawCtx) {
+        CfgPredicate p;
+        p.type = CfgPredicate::Ident;
+        p.name = "true";
+        return p;
+    }
+    auto* listCtx = attr.rawCtx->getRuleContext<LucisParser::AttrArgListContext>(0);
+    if (!listCtx) {
+        CfgPredicate p;
+        p.type = CfgPredicate::Ident;
+        p.name = "true";
+        return p;
+    }
+    auto args = listCtx->attrArg();
+    if (args.empty()) {
+        CfgPredicate p;
+        p.type = CfgPredicate::Ident;
+        p.name = "true";
+        return p;
+    }
+    if (args.size() == 1)
+        return irParseCfgAttrArg(args[0]);
+    CfgPredicate allPred;
+    allPred.type = CfgPredicate::Call;
+    allPred.name = "all";
+    for (auto* a : args)
+        allPred.args.push_back(irParseCfgAttrArg(a));
+    return allPred;
+}
+
+static bool irDeclActive(LucisParser::AttributeListContext* attrs) {
+    if (!attrs) return true;
+    TargetInfo target(llvm::sys::getDefaultTargetTriple());
+    for (auto* a : attrs->attribute()) {
+        if (!a->IDENTIFIER() || a->IDENTIFIER()->getText() != "cfg") continue;
+        Attribute attr;
+        attr.name = "cfg";
+        attr.rawCtx = a;
+        auto pred = irParseCfgFromAttribute(attr);
+        if (!pred.evaluate(target))
+            return false;
+    }
+    return true;
+}
 
 // ── Debug info helper macro ──────────────────────────────────────────────────
 #define SET_DBG_LOC(ctx)                                                          \
@@ -1702,6 +1790,7 @@ IRGen::MethodEntry* IRGen::findMethodEntryInChain(const TypeInfo* ti,
 // ── Forward-declare a user function (signature only, no body) ───────────
 void IRGen::forwardDeclareFunction(LucisParser::FunctionDeclContext* ctx) {
     if (!ctx) return;
+    if (!irDeclActive(ctx->attributeList())) return;
     // Generic function templates are not forward-declared — only instantiations are
     if (ctx->typeParamList()) {
         if (ctx->IDENTIFIER().empty()) {
@@ -1801,6 +1890,7 @@ void IRGen::forwardDeclareFunction(LucisParser::FunctionDeclContext* ctx) {
 std::any IRGen::visitFunctionDecl(LucisParser::FunctionDeclContext* ctx) {
     // Generic function templates are handled on-demand at call sites
     if (ctx->typeParamList()) return {};
+    if (!irDeclActive(ctx->attributeList())) return {};
 
     // Comptime functions are not compiled to runtime code
     if (ctx->COMPTIME()) return {};

@@ -3,6 +3,8 @@
 #include "ffi/CBindings.h"
 #include "ffi/CMacroEval.h"
 #include "parser/Parser.h"
+#include "attributes/CfgPredicate.h"
+#include "attributes/TargetInfo.h"
 #include <cctype>
 #include <cstdio>
 #include <cstdlib>
@@ -16,11 +18,140 @@
 #include <vector>
 
 // In Checker.cpp, ensure we update any places where IntrinsicRegistry is initialized or used.
-// Checker constructor:
+
+// ── Forward declarations for cfg helpers ──────────────────────────────
+static CfgPredicate parseCfgAttrArg(LucisParser::AttrArgContext* arg);
+static CfgPredicate parseCfgFromAttribute(const Attribute& attr);
+
+// ── Cfg predicate parsing helpers ──────────────────────────────────────
+static CfgPredicate parseCfgAttrArg(LucisParser::AttrArgContext* arg) {
+    CfgPredicate pred;
+    if (!arg) return pred;
+
+    // Key-value: target_os = "linux"
+    if (arg->ASSIGN()) {
+        pred.type = CfgPredicate::KeyValue;
+        if (arg->IDENTIFIER())
+            pred.name = arg->IDENTIFIER()->getText();
+        if (auto* val = arg->attrArg()) {
+            if (val->STR_LIT()) {
+                auto raw = val->STR_LIT()->getText();
+                if (raw.size() >= 2 && raw.front() == '"' && raw.back() == '"')
+                    pred.stringValue = raw.substr(1, raw.size() - 2);
+                else
+                    pred.stringValue = raw;
+            } else if (val->IDENTIFIER()) {
+                pred.stringValue = val->IDENTIFIER()->getText();
+            }
+        }
+        return pred;
+    }
+
+    // Function call: all(...), any(...), not(...)
+    if (arg->LPAREN()) {
+        pred.type = CfgPredicate::Call;
+        if (arg->IDENTIFIER())
+            pred.name = arg->IDENTIFIER()->getText();
+        if (auto* argList = arg->attrArgList()) {
+            for (auto* child : argList->attrArg())
+                pred.args.push_back(parseCfgAttrArg(child));
+        }
+        return pred;
+    }
+
+    // Bare identifier: unix, windows, debug, etc.
+    if (arg->IDENTIFIER()) {
+        pred.type = CfgPredicate::Ident;
+        pred.name = arg->IDENTIFIER()->getText();
+        return pred;
+    }
+
+    return pred;
+}
+
+static CfgPredicate parseCfgFromAttribute(const Attribute& attr) {
+    if (!attr.rawCtx) {
+        CfgPredicate p;
+        p.type = CfgPredicate::Ident;
+        p.name = "true";
+        return p;
+    }
+    // rawCtx is an AttributeContext*; dynamic_cast won't work cross-class
+    // so use getRuleContext to find the child AttrArgListContext.
+    auto* listCtx = attr.rawCtx->getRuleContext<LucisParser::AttrArgListContext>(0);
+    if (!listCtx) {
+        CfgPredicate p;
+        p.type = CfgPredicate::Ident;
+        p.name = "true";
+        return p;
+    }
+
+    auto args = listCtx->attrArg();
+    if (args.empty()) {
+        CfgPredicate p;
+        p.type = CfgPredicate::Ident;
+        p.name = "true";
+        return p;
+    }
+
+    // Single argument: use directly
+    if (args.size() == 1)
+        return parseCfgAttrArg(args[0]);
+
+    // Multiple arguments: implicit all(...)
+    CfgPredicate allPred;
+    allPred.type = CfgPredicate::Call;
+    allPred.name = "all";
+    for (auto* a : args)
+        allPred.args.push_back(parseCfgAttrArg(a));
+    return allPred;
+}
+
+// ── Check if a declaration is active (not disabled by #[cfg(false)]) ───
+bool Checker::isDeclActive(AttributeListContext* attrs) const {
+    if (!attrs) return true;
+    TargetInfo target(targetTriple_, debugMode_);
+    for (auto* a : attrs->attribute()) {
+        if (!a->IDENTIFIER()) continue;
+        if (a->IDENTIFIER()->getText() != "cfg") continue;
+        auto attrName = a->IDENTIFIER()->getText();
+        auto* handler = attrRegistry_.lookup(attrName);
+        if (!handler) continue;
+        Attribute attr;
+        attr.name = attrName;
+        attr.rawCtx = a;
+        auto pred = parseCfgFromAttribute(attr);
+        if (!pred.evaluate(target))
+            return false;
+    }
+    return true;
+}
+
+// ── Checker constructor ───────────────────────────────────────────────
 Checker::Checker()
     : intrinsicRegistry_(typeRegistry_) {
     registerGlobalBuiltins();
     registerBuiltinAttributes(attrRegistry_);
+
+    // Register #[cfg(...)] — special attribute that controls conditional compilation.
+    attrRegistry_.registerAttribute("cfg", AttributeHandler{
+        .validate = [](const Attribute& attr, const TypeInfo*, std::vector<std::string>& errors) -> bool {
+            if (attr.rawCtx) {
+                auto pred = parseCfgFromAttribute(attr);
+                if (pred.type == CfgPredicate::Call && pred.name != "all" &&
+                    pred.name != "any" && pred.name != "not") {
+                    errors.push_back("unknown cfg predicate '" + pred.name + "'");
+                    return false;
+                }
+                // Check 'not' has exactly 1 argument
+                if (pred.type == CfgPredicate::Call && pred.name == "not" && pred.args.size() != 1) {
+                    errors.push_back("'not' predicate requires exactly 1 argument");
+                    return false;
+                }
+            }
+            return true;
+        }
+    });
 }
 
 static const EnumVariantInfo* findEnumVariantInfo(const TypeInfo* enumType,
@@ -6240,6 +6371,7 @@ void Checker::checkUseDecls(LucisParser::ProgramContext* tree) {
 }
 
 void Checker::checkTypeAliasDecl(LucisParser::TypeAliasDeclContext* decl) {
+    if (!isDeclActive(decl->attributeList())) return;
     auto name = decl->IDENTIFIER()->getText();
 
     auto* existing = typeRegistry_.lookup(name);
@@ -6307,6 +6439,7 @@ void Checker::checkTypeAliasDecl(LucisParser::TypeAliasDeclContext* decl) {
 }
 
 void Checker::checkStructDecl(LucisParser::StructDeclContext* decl) {
+    if (!isDeclActive(decl->attributeList())) return;
     auto name = decl->IDENTIFIER()->getText();
 
     // Generic struct template — register as template, not as concrete type
@@ -6367,6 +6500,7 @@ void Checker::checkStructDecl(LucisParser::StructDeclContext* decl) {
     }
 
     for (auto* field : decl->structField()) {
+        if (!isDeclActive(field->attributeList())) continue;
         unsigned fieldDims = 0;
         auto* fieldTI = resolveTypeSpec(field->typeSpec(), fieldDims);
         if (!fieldTI) {
@@ -6397,6 +6531,7 @@ void Checker::checkStructDecl(LucisParser::StructDeclContext* decl) {
 }
 
 void Checker::checkUnionDecl(LucisParser::UnionDeclContext* decl) {
+    if (!isDeclActive(decl->attributeList())) return;
     auto name = decl->IDENTIFIER()->getText();
 
     if (auto* tpl = decl->typeParamList()) {
@@ -6435,6 +6570,7 @@ void Checker::checkUnionDecl(LucisParser::UnionDeclContext* decl) {
 
     std::unordered_set<std::string> seen;
     for (auto* field : decl->unionField()) {
+        if (!isDeclActive(field->attributeList())) continue;
         unsigned fieldDims = 0;
         auto* fieldTI = resolveTypeSpec(field->typeSpec(), fieldDims);
         if (!fieldTI) {
@@ -6455,6 +6591,7 @@ void Checker::checkUnionDecl(LucisParser::UnionDeclContext* decl) {
 }
 
 void Checker::checkEnumDecl(LucisParser::EnumDeclContext* decl) {
+    if (!isDeclActive(decl->attributeList())) return;
     auto name = decl->IDENTIFIER()->getText();
 
     if (typeRegistry_.lookup(name) || genericEnumTemplates_.count(name)) {
@@ -6483,6 +6620,7 @@ void Checker::checkEnumDecl(LucisParser::EnumDeclContext* decl) {
     std::unordered_set<std::string> seen;
     unsigned nextDiscriminant = 0;
     for (auto* variantDecl : decl->enumVariant()) {
+        if (!isDeclActive(variantDecl->attributeList())) continue;
         auto variant = variantDecl->IDENTIFIER()->getText();
         if (!seen.insert(variant).second) {
             error(variantDecl, "duplicate enum variant '" + variant +
@@ -6594,6 +6732,7 @@ void Checker::checkEnumDecl(LucisParser::EnumDeclContext* decl) {
 }
 
 void Checker::checkExtendDecl(LucisParser::ExtendDeclContext* decl) {
+    if (!isDeclActive(decl->attributeList())) return;
     auto structName = decl->IDENTIFIER()->getText();
 
     bool isGenericStruct = genericStructTemplates_.count(structName) != 0;
@@ -6769,6 +6908,7 @@ void Checker::registerFunctionSignature(LucisParser::FunctionDeclContext* func) 
         error(func, "function must have a valid name");
         return;
     }
+    if (!isDeclActive(func->attributeList())) return;
     auto funcName = func->IDENTIFIER(0)->getText();
 
     // Comptime functions: register in comptime registry, skip normal registration
@@ -6859,6 +6999,38 @@ void Checker::registerFunctionSignature(LucisParser::FunctionDeclContext* func) 
     functions_[funcName] = funcType;
     functionDecls_[funcName] = func;
     syncToSemanticDB_Function(funcName, *funcType, currentModulePath_, func);
+
+    // ── Validate main() signature ───────────────────────────────────────
+    if (funcName == "main" && !func->COMPTIME()) {
+        if (!retType || retType->name != "int32") {
+            error(func, "main function must return 'int32', got '" +
+                  (retType ? retType->name : "unknown") + "'");
+        }
+        if (auto* paramList = func->paramList()) {
+            auto params = paramList->param();
+            if (params.size() > 1) {
+                error(func, "main function accepts at most 1 parameter");
+            } else if (params.size() == 1) {
+                auto* param = params[0];
+                unsigned pDims = 0;
+                auto* pType = resolveTypeSpec(param->typeSpec(), pDims);
+                if (pType) {
+                    bool valid = false;
+                    if (pType->name == "Vec<string>")
+                        valid = true;
+                    if (pDims == 1 && pType->kind == TypeKind::Pointer &&
+                        pType->pointeeType && pType->pointeeType->name == "char")
+                        valid = true;
+                    if (!valid) {
+                        std::string typeName = pType->name;
+                        if (pDims > 0) typeName = "[]" + typeName;
+                        error(param, "main function parameter must be 'Vec<string>' or '[]cstring', "
+                              "got '" + typeName + "'");
+                    }
+                }
+            }
+        }
+    }
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -6866,6 +7038,7 @@ void Checker::registerFunctionSignature(LucisParser::FunctionDeclContext* func) 
 // ═══════════════════════════════════════════════════════════════════════
 
 void Checker::checkFunction(LucisParser::FunctionDeclContext* func) {
+    if (!isDeclActive(func->attributeList())) return;
     // Generic function templates are not checked directly — only their instantiations are.
     if (func->typeParamList()) return;
 
@@ -8173,8 +8346,15 @@ void Checker::validateAttributeList(AttributeListContext* attrs, const std::stri
             attr.name = attrName;
             attr.line = a->getStart() ? a->getStart()->getLine() : 0;
             attr.col  = a->getStart() ? a->getStart()->getCharPositionInLine() : 0;
+            attr.rawCtx = a;
             if (auto* argList = a->attrArgList()) {
                 for (auto* arg : argList->attrArg()) {
+                    // Key-value and call forms are handled by rawCtx access;
+                    // build flat args only for simple literals.
+                    if (arg->ASSIGN())
+                        continue; // keyValueArg — handled via rawCtx
+                    if (arg->LPAREN())
+                        continue; // callArg — handled via rawCtx
                     if (arg->IDENTIFIER())
                         attr.args.push_back({AttributeArg::Ident, arg->getText(), "", 0, 0.0});
                     else if (arg->STR_LIT() || arg->C_STR_LIT())
@@ -8208,6 +8388,7 @@ bool Checker::hasAttribute(AttributeListContext* attrs, const std::string& name)
 }
 
 void Checker::checkConstDeclStmt(LucisParser::ConstDeclStmtContext* stmt) {
+    if (!isDeclActive(stmt->attributeList())) return;
     auto decls = stmt->constDeclarator();
     if (decls.empty()) return;
 
@@ -9311,6 +9492,7 @@ void Checker::registerGlobalBuiltins() {
 // ═══════════════════════════════════════════════════════════════════════
 
 void Checker::checkExternDecl(LucisParser::ExternDeclContext* decl) {
+    if (!isDeclActive(decl->attributeList())) return;
     auto funcName = decl->IDENTIFIER()->getText();
 
     unsigned retDims = 0;

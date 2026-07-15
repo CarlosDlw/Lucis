@@ -1,5 +1,11 @@
 #include "cli/LucisPipeline.h"
 #include "parser/Parser.h"
+
+#ifdef LLVM_VERSION_15_OR_NEWER
+#  include <llvm/TargetParser/Host.h>
+#else
+#  include <llvm/Support/Host.h>
+#endif
 #include "checkers/Checker.h"
 #include "namespace/ModuleRegistry.h"
 #include "ffi/CBindings.h"
@@ -354,6 +360,11 @@ std::unique_ptr<PipelineResult> LucisPipeline::run(const Options& opts) {
         checker.setProjectPaths(result->projectRoot, opts.sourcePaths);
         checker.setCBindings(result->cBindings.get());
         checker.setSemanticDB(result->semanticDB.get());
+        checker.setTargetTriple(
+            opts.targetTriple.empty()
+                ? llvm::sys::getDefaultTargetTriple()
+                : opts.targetTriple);
+        checker.setDebugMode(opts.emitDebugInfo);
         bool passed = checker.check(unit.parseResult->tree);
         for (auto& err : checker.errors())
             printErrorLine(unit.filePath + ": " + err);

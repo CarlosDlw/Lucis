@@ -37,12 +37,15 @@ includeDecl
     ;
 
 // Attribute arguments: identifiers, string literals, integer literals, bools, etc.
+// Extended with key=value pairs and nested function-call forms for #[cfg(...)].
 attrArg
-    : IDENTIFIER
+    : IDENTIFIER ASSIGN attrArg
+    | IDENTIFIER LPAREN attrArgList? RPAREN
+    | IDENTIFIER
     | INT_LIT
-    | HEX_LIT | OCT_LIT | BIN_LIT
+    | ( HEX_LIT | OCT_LIT | BIN_LIT )
     | FLOAT_LIT
-    | STR_LIT | C_STR_LIT
+    | ( STR_LIT | C_STR_LIT )
     | BOOL_LIT
     | MINUS INT_LIT
     | MINUS FLOAT_LIT

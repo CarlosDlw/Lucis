@@ -23,6 +23,9 @@
 #include "ffi/CBindings.h"
 #include "attributes/AttributeRegistry.h"
 
+struct CfgPredicate;
+struct TargetInfo;
+
 class Checker {
 public:
     Checker();
@@ -46,6 +49,13 @@ public:
     // Set semantic DB for Phase 1 parallel population (alongside TypeRegistry).
     void setSemanticDB(semantic::SemanticDB* db) { semanticDB_ = db; }
     semantic::SemanticDB* semanticDB() { return semanticDB_; }
+
+    // Configure cross-compilation target.
+    void setTargetTriple(const std::string& triple) { targetTriple_ = triple; }
+    void setDebugMode(bool debug) { debugMode_ = debug; }
+
+    // Returns false if the declaration has #[cfg(...)] that evaluates to false.
+    bool isDeclActive(LucisParser::AttributeListContext* attrs) const;
 
 private:
     std::vector<std::string> errors_;
@@ -507,4 +517,8 @@ private:
                                         LucisParser::ExtendDeclContext* decl);
     void syncToSemanticDB_GenericInstantiation(const std::string& mangledName,
                                                const TypeInfo& concreteTI);
+
+    // ── Cross-compilation target info ─────────────────────────────────
+    std::string targetTriple_;
+    bool debugMode_ = false;
 };

@@ -1,5 +1,5 @@
 
-// Generated from /home/carlos/Projects/Cpp/Lux/grammar/LucisParser.g4 by ANTLR 4.13.2
+// Generated from LucisParser.g4 by ANTLR 4.13.2
 
 #pragma once
 
@@ -317,6 +317,11 @@ public:
     AttrArgContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
     antlr4::tree::TerminalNode *IDENTIFIER();
+    antlr4::tree::TerminalNode *ASSIGN();
+    AttrArgContext *attrArg();
+    antlr4::tree::TerminalNode *LPAREN();
+    antlr4::tree::TerminalNode *RPAREN();
+    AttrArgListContext *attrArgList();
     antlr4::tree::TerminalNode *INT_LIT();
     antlr4::tree::TerminalNode *HEX_LIT();
     antlr4::tree::TerminalNode *OCT_LIT();
