@@ -69,8 +69,9 @@ private:
     };
     std::unordered_map<std::string, DocCommentCacheEntry> crossFileDocCache_;
 
-    // Attach doc-comment (if any) to hover markdown.
-    std::string withDoc(const std::string& md, size_t declLine);
+    // Attach doc-comment and #[doc("...")] attribute (if any) to hover markdown.
+    std::string withDoc(const std::string& md, size_t declLine,
+                        LucisParser::AttributeListContext* attrs = nullptr);
 
     // Load and cache doc-comments for cross-file symbols.
     const std::vector<DocComment>& docCommentsForFile(const std::string& filePath);

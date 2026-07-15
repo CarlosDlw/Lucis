@@ -4,24 +4,24 @@ Attributes are metadata annotations placed before declarations using `#[...]` sy
 
 ```lucis
 #[deprecated]
-fn oldFunc() -> void {}
+fn oldFunc() void {}
 
 #[repr(C)]
-struct Point { x: float64; y: float64; }
+struct Point { float64 x; float64 y; }
 
 #[export]
 #[no_mangle]
-fn visible() -> void {}
+fn visible() void {}
 ```
 
 Attributes with arguments use parentheses:
 
 ```lucis
 #[link_section(".text.hot")]
-fn hotPath() -> void {}
+fn hotPath() void {}
 
 #[inline(always)]
-fn tiny() -> void {}
+fn tiny() void {}
 ```
 
 ---
@@ -47,19 +47,19 @@ enum Result {
 ---
 
 ### `#[deprecated]`
-Marks a declaration as deprecated. Reserved for future use (currently no warning is emitted).
+Marks a declaration as deprecated. The checker emits a warning when a deprecated function is called.
 
 ```lucis
 #[deprecated]
-fn oldApi() -> void {}
+fn oldApi() void {}
 
 #[deprecated("use newApi instead")]
-fn legacy() -> void {}
+fn legacy() void {}
 ```
 
 **Applies to:** Any declaration  
 **Arguments:** 0–2 string arguments (optional message and/or removal note)  
-**Checker effect:** Validated but not yet enforced  
+**Checker effect:** Emits warning on call  
 **IR effect:** None
 
 ---
@@ -75,12 +75,12 @@ Controls the in-memory layout of structs and unions for ABI compatibility.
 
 ```lucis
 #[repr(C)]
-struct Point { x: float64; y: float64; }
+struct Point { float64 x; float64 y; }
 
 #[repr(packed)]
 struct Header {
-    flags: uint8;
-    length: uint16;
+    uint8 flags;
+    uint16 length;
 }
 ```
 
@@ -96,7 +96,7 @@ Preserves the original function name in the object file (no module-path mangling
 
 ```lucis
 #[no_mangle]
-fn startup() -> void {}
+fn startup() void {}
 ```
 
 **Applies to:** Function, global const  
@@ -110,7 +110,7 @@ Force external linkage for the symbol, making it visible to the linker.
 
 ```lucis
 #[export]
-fn api_entry() -> void {}
+fn api_entry() void {}
 ```
 
 **Applies to:** Function, global const  
@@ -124,10 +124,10 @@ Places the function or global variable in a named ELF/MachO section.
 
 ```lucis
 #[link_section(".text.hot")]
-fn frequentlyCalled() -> void {}
+fn frequentlyCalled() void {}
 
 #[link_section(".data.persistent")]
-const CACHE_TABLE: [int32; 256] = […];
+const CACHE_TABLE: int32 = 0;
 ```
 
 **Applies to:** Function, global const  
@@ -141,7 +141,7 @@ Warns if the return value of a function is discarded. Reserved for future use.
 
 ```lucis
 #[must_use]
-fn compute() -> int32 {}
+fn compute() int32 {}
 ```
 
 **Applies to:** Function  
@@ -156,7 +156,7 @@ Declares that a function never returns (infinite loop, process exit, etc.).
 
 ```lucis
 #[noreturn]
-fn abort() -> void {
+fn abort() void {
     loop { /* halt */ }
 }
 ```
@@ -195,10 +195,10 @@ Controls function inlining behavior.
 
 ```lucis
 #[inline(always)]
-fn fastPath(x: int32) -> int32 { x * 2 }
+fn fastPath(int32 x) int32 { x * 2 }
 
 #[inline(never)]
-fn coldPath() -> void { /* expensive setup */ }
+fn coldPath() void { /* expensive setup */ }
 ```
 
 **Applies to:** Function  
@@ -212,7 +212,7 @@ Marks a function as rarely executed. LLVM uses this hint to optimize for size ov
 
 ```lucis
 #[cold]
-fn errorHandler() -> void { /* unrecoverable */ }
+fn errorHandler() void { /* unrecoverable */ }
 ```
 
 **Applies to:** Function  
@@ -226,7 +226,7 @@ Marks a function as frequently executed. LLVM uses this hint to optimize more ag
 
 ```lucis
 #[hot]
-fn renderFrame() -> void { /* performance-critical */ }
+fn renderFrame() void { /* performance-critical */ }
 ```
 
 **Applies to:** Function  
@@ -240,8 +240,8 @@ Suppresses specific lint warnings for the annotated declaration. Reserved for fu
 
 ```lucis
 #[allow(unused_variable)]
-fn demo() -> void {
-    let x = 42;
+fn demo() void {
+    int32 x = 42;
 }
 ```
 
@@ -267,12 +267,13 @@ Associates a documentation string with the declaration.
 
 ```lucis
 #[doc("Computes the square root of x")]
-fn sqrt(x: float64) -> float64 {}
+fn sqrt(float64 x) float64 {}
 ```
 
 **Applies to:** Any declaration  
 **Arguments:** 1 string argument  
 **Checker effect:** Validated  
+**LSP effect:** Shown in hover tooltip  
 **IR effect:** None
 
 ---
@@ -281,7 +282,8 @@ fn sqrt(x: float64) -> float64 {}
 Marks a global variable as thread-local storage. Each thread gets its own copy.
 
 ```lucis
-const #[thread_local] TLS_BUF: [uint8; 1024] = [0; 1024];
+#[thread_local]
+const TLS_VAL: int32 = 42;
 ```
 
 **Applies to:** Global const  
@@ -295,7 +297,7 @@ Prevents the linker from removing the symbol during dead-stripping.
 
 ```lucis
 #[used]
-const KEEP_ME: *uint8 = c"important data";
+const KEEP_ME: float64 = 3.14;
 ```
 
 **Applies to:** Function, global const  
@@ -314,12 +316,12 @@ Provides optimization hints for a function.
 
 ```lucis
 #[optimize(speed)]
-fn hotLoop() -> void {
+fn hotLoop() void {
     for int32 i in 0..1000000 { /* tight loop */ }
 }
 
 #[optimize(size)]
-fn compact() -> void { /* minimal code */ }
+fn compact() void { /* minimal code */ }
 ```
 
 **Applies to:** Function  
@@ -333,7 +335,7 @@ Sets the minimum alignment of a global variable. The value must be a power of tw
 
 ```lucis
 #[align(64)]
-const CACHE_LINE: [uint8; 64] = [0; 64];
+const CACHE_LINE: int32 = 0;
 ```
 
 **Applies to:** Global const  

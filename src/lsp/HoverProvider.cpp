@@ -160,8 +160,33 @@ static std::string normalizeHoverMarkdown(std::string contents) {
 //  Doc-comment helper
 // ═══════════════════════════════════════════════════════════════════════
 
-std::string HoverProvider::withDoc(const std::string& md, size_t declLine) {
-    return appendDocToHover(md, docComments_, declLine);
+std::string HoverProvider::withDoc(const std::string& md, size_t declLine,
+                                    LucisParser::AttributeListContext* attrs) {
+    std::string result = appendDocToHover(md, docComments_, declLine);
+    // Also append #[doc("...")] attribute content if present
+    if (attrs) {
+        for (auto* attr : attrs->attribute()) {
+            if (!attr || !attr->IDENTIFIER()) continue;
+            if (attr->IDENTIFIER()->getText() != "doc") continue;
+            auto* argList = attr->attrArgList();
+            if (!argList || argList->attrArg().empty()) continue;
+            auto* arg = argList->attrArg(0);
+            if (!arg) continue;
+            auto* strLit = arg->STR_LIT();
+            if (!strLit) continue;
+            std::string docText = strLit->getText();
+            // Strip surrounding quotes
+            if (docText.size() >= 2 && docText.front() == '"' && docText.back() == '"')
+                docText = docText.substr(1, docText.size() - 2);
+            if (!docText.empty()) {
+                if (result != md)
+                    result += "\n";
+                result += "\n---\n\n" + docText;
+            }
+            break;
+        }
+    }
+    return result;
 }
 
 const std::vector<DocComment>&
@@ -391,7 +416,7 @@ std::optional<HoverResult> HoverProvider::hover(const std::string& source,
             if (func->IDENTIFIER().empty()) continue;
             auto* nameToken = func->IDENTIFIER(0)->getSymbol();
             if (nameToken == hoveredToken) {
-                return makeResult(nameToken, withDoc(formatFunctionDecl(func), func->getStart()->getLine() - 1));
+                return makeResult(nameToken, withDoc(formatFunctionDecl(func), func->getStart()->getLine() - 1, func->attributeList()));
             }
             // Check parameter names
             if (auto* params = func->paramList()) {
@@ -414,7 +439,7 @@ std::optional<HoverResult> HoverProvider::hover(const std::string& source,
         if (auto* sd = tld->structDecl()) {
             if (sd->IDENTIFIER()) continue;
             if (sd->IDENTIFIER()->getSymbol() == hoveredToken) {
-                return makeResult(hoveredToken, withDoc(formatStructDecl(sd), sd->getStart()->getLine() - 1));
+                return makeResult(hoveredToken, withDoc(formatStructDecl(sd), sd->getStart()->getLine() - 1, sd->attributeList()));
             }
             // Hover on field names inside struct
             for (auto* f : sd->structField()) {
@@ -432,7 +457,7 @@ std::optional<HoverResult> HoverProvider::hover(const std::string& source,
             auto* enumName = ed->IDENTIFIER();
             if (!enumName) continue;
             if (enumName->getSymbol() == hoveredToken) {
-                return makeResult(hoveredToken, withDoc(formatEnumDecl(ed), ed->getStart()->getLine() - 1));
+                return makeResult(hoveredToken, withDoc(formatEnumDecl(ed), ed->getStart()->getLine() - 1, ed->attributeList()));
             }
             // Hover on variant name
             for (auto* variant : ed->enumVariant()) {
@@ -449,7 +474,7 @@ std::optional<HoverResult> HoverProvider::hover(const std::string& source,
         if (auto* ud = tld->unionDecl()) {
             if (!ud->IDENTIFIER()) continue;
             if (ud->IDENTIFIER()->getSymbol() == hoveredToken) {
-                return makeResult(hoveredToken, withDoc(formatUnionDecl(ud), ud->getStart()->getLine() - 1));
+                return makeResult(hoveredToken, withDoc(formatUnionDecl(ud), ud->getStart()->getLine() - 1, ud->attributeList()));
             }
             for (auto* f : ud->unionField()) {
                 if (!f->IDENTIFIER()) continue;
@@ -465,7 +490,7 @@ std::optional<HoverResult> HoverProvider::hover(const std::string& source,
         if (auto* ext = tld->extendDecl()) {
             if (!ext->IDENTIFIER()) continue;
             if (ext->IDENTIFIER()->getSymbol() == hoveredToken) {
-                std::string md = withDoc(formatExtendMethods(ext), ext->getStart()->getLine() - 1);
+                std::string md = withDoc(formatExtendMethods(ext), ext->getStart()->getLine() - 1, ext->attributeList());
                 return makeResult(hoveredToken, md);
             }
         }
@@ -476,7 +501,7 @@ std::optional<HoverResult> HoverProvider::hover(const std::string& source,
             if (ta->IDENTIFIER()->getSymbol() == hoveredToken) {
                 std::string md = "```lucis\ntype " + tokenText + " = "
                                + typeSpecToString(ta->typeSpec()) + "\n```";
-                return makeResult(hoveredToken, withDoc(md, ta->getStart()->getLine() - 1));
+                return makeResult(hoveredToken, withDoc(md, ta->getStart()->getLine() - 1, ta->attributeList()));
             }
         }
 
@@ -484,7 +509,7 @@ std::optional<HoverResult> HoverProvider::hover(const std::string& source,
         if (auto* ext = tld->externDecl()) {
             if (!ext->IDENTIFIER()) continue;
             if (ext->IDENTIFIER()->getSymbol() == hoveredToken) {
-                return makeResult(hoveredToken, withDoc(formatExternDecl(ext), ext->getStart()->getLine() - 1));
+                return makeResult(hoveredToken, withDoc(formatExternDecl(ext), ext->getStart()->getLine() - 1, ext->attributeList()));
             }
         }
     }
@@ -769,14 +794,14 @@ std::optional<HoverResult> HoverProvider::hoverIdent(
     // 2) User-defined function
     auto* funcDecl = findFunctionDecl(tree, name);
     if (funcDecl) {
-        return makeResult(token, withDoc(formatFunctionDecl(funcDecl), funcDecl->getStart()->getLine() - 1));
+        return makeResult(token, withDoc(formatFunctionDecl(funcDecl), funcDecl->getStart()->getLine() - 1, funcDecl->attributeList()));
     }
 
     // 2b) Extern function declaration
     for (auto* tld : tree->topLevelDecl()) {
         if (auto* ext = tld->externDecl()) {
             if (ext->IDENTIFIER() && safeText(ext->IDENTIFIER()) == name) {
-                return makeResult(token, withDoc(formatExternDecl(ext), ext->getStart()->getLine() - 1));
+                return makeResult(token, withDoc(formatExternDecl(ext), ext->getStart()->getLine() - 1, ext->attributeList()));
             }
         }
     }
@@ -951,19 +976,19 @@ std::optional<HoverResult> HoverProvider::hoverIdent(
     // 12) User-defined struct type
     auto* structDecl = findStructDecl(tree, name);
     if (structDecl) {
-        return makeResult(token, withDoc(formatStructDecl(structDecl), structDecl->getStart()->getLine() - 1));
+        return makeResult(token, withDoc(formatStructDecl(structDecl), structDecl->getStart()->getLine() - 1, structDecl->attributeList()));
     }
 
     // 13) User-defined enum type
     auto* enumDecl = findEnumDecl(tree, name);
     if (enumDecl) {
-        return makeResult(token, withDoc(formatEnumDecl(enumDecl), enumDecl->getStart()->getLine() - 1));
+        return makeResult(token, withDoc(formatEnumDecl(enumDecl), enumDecl->getStart()->getLine() - 1, enumDecl->attributeList()));
     }
 
     // 14) User-defined union type
     auto* unionDecl = findUnionDecl(tree, name);
     if (unionDecl) {
-        return makeResult(token, withDoc(formatUnionDecl(unionDecl), unionDecl->getStart()->getLine() - 1));
+        return makeResult(token, withDoc(formatUnionDecl(unionDecl), unionDecl->getStart()->getLine() - 1, unionDecl->attributeList()));
     }
 
     // 15) Type alias
@@ -971,7 +996,7 @@ std::optional<HoverResult> HoverProvider::hoverIdent(
     if (aliasDecl) {
         std::string md = "```lucis\ntype " + name + " = "
                        + typeSpecToString(aliasDecl->typeSpec()) + "\n```";
-        return makeResult(token, withDoc(md, aliasDecl->getStart()->getLine() - 1));
+        return makeResult(token, withDoc(md, aliasDecl->getStart()->getLine() - 1, aliasDecl->attributeList()));
     }
 
     // 16) Extended type base name (Vec, Map, Set, Task) — normalize lowercase keywords
@@ -1014,7 +1039,7 @@ std::optional<HoverResult> HoverProvider::hoverIdent(
             auto* v = variant->IDENTIFIER();
             if (v && v->getText() == name) {
                 std::string md = "```lucis\n(variant) " + resolvedEnumName + "::" + name + "\n```";
-                return makeResult(token, withDoc(md, ed->getStart()->getLine() - 1));
+                return makeResult(token, withDoc(md, ed->getStart()->getLine() - 1, ed->attributeList()));
             }
         }
         return std::nullopt;
@@ -1684,13 +1709,13 @@ std::optional<HoverResult> HoverProvider::walkExprForHover(
                     if (!fd) return std::nullopt;
                     if (!fd->typeParamList()) {
                         return makeResult(hoveredToken,
-                            withDoc(formatFunctionDecl(fd), fd->getStart()->getLine() - 1));
+                            withDoc(formatFunctionDecl(fd), fd->getStart()->getLine() - 1, fd->attributeList()));
                     }
 
                     auto* encFunc = findEnclosingFunction(tree, cursorLine);
                     if (!encFunc) {
                         return makeResult(hoveredToken,
-                            withDoc(formatFunctionDecl(fd), fd->getStart()->getLine() - 1));
+                            withDoc(formatFunctionDecl(fd), fd->getStart()->getLine() - 1, fd->attributeList()));
                     }
                     auto locals = collectLocals(encFunc, cursorLine, tree, &bindings, project);
 
@@ -1718,7 +1743,7 @@ std::optional<HoverResult> HoverProvider::walkExprForHover(
                     if (auto* pl = fd->paramList()) formalParams = pl->param();
                     if (actualArgTypes.size() != formalParams.size()) {
                         return makeResult(hoveredToken,
-                            withDoc(formatFunctionDecl(fd), fd->getStart()->getLine() - 1));
+                            withDoc(formatFunctionDecl(fd), fd->getStart()->getLine() - 1, fd->attributeList()));
                     }
 
                     std::unordered_map<std::string, std::string> inferred;
@@ -1738,7 +1763,7 @@ std::optional<HoverResult> HoverProvider::walkExprForHover(
 
                     if (!ok) {
                         return makeResult(hoveredToken,
-                            withDoc(formatFunctionDecl(fd), fd->getStart()->getLine() - 1));
+                            withDoc(formatFunctionDecl(fd), fd->getStart()->getLine() - 1, fd->attributeList()));
                     }
 
                     std::string retType = substituteTypeParams(safeText(fd->typeSpec()), inferred);
@@ -1754,7 +1779,7 @@ std::optional<HoverResult> HoverProvider::walkExprForHover(
                         }
                     }
                     ss << ")\n```";
-                    return makeResult(hoveredToken, withDoc(ss.str(), fd->getStart()->getLine() - 1));
+                    return makeResult(hoveredToken, withDoc(ss.str(), fd->getStart()->getLine() - 1, fd->attributeList()));
                 };
 
                 for (auto* tld : tree->topLevelDecl()) {
@@ -1922,7 +1947,7 @@ std::optional<HoverResult> HoverProvider::walkExprForHover(
 
                 if (!fd->typeParamList()) {
                     return makeResult(hoveredToken,
-                        withDoc(formatFunctionDecl(fd), fd->getStart()->getLine() - 1));
+                        withDoc(formatFunctionDecl(fd), fd->getStart()->getLine() - 1, fd->attributeList()));
                 }
 
                 std::unordered_map<std::string, std::string> subst;
@@ -1947,7 +1972,7 @@ std::optional<HoverResult> HoverProvider::walkExprForHover(
                     }
                 }
                 ss << ")\n```";
-                return makeResult(hoveredToken, withDoc(ss.str(), fd->getStart()->getLine() - 1));
+                return makeResult(hoveredToken, withDoc(ss.str(), fd->getStart()->getLine() - 1, fd->attributeList()));
             }
 
             return hoverIdent(fnId->getText(), hoveredToken, tree, bindings,
@@ -3617,15 +3642,15 @@ std::optional<HoverResult> HoverProvider::hoverTypeName(
 
     // User struct
     auto* sd = findStructDecl(tree, name);
-    if (sd) return makeResult(token, withDoc(formatStructDecl(sd), sd->getStart()->getLine() - 1));
+    if (sd) return makeResult(token, withDoc(formatStructDecl(sd), sd->getStart()->getLine() - 1, sd->attributeList()));
 
     // User enum
     auto* ed = findEnumDecl(tree, name);
-    if (ed) return makeResult(token, withDoc(formatEnumDecl(ed), ed->getStart()->getLine() - 1));
+    if (ed) return makeResult(token, withDoc(formatEnumDecl(ed), ed->getStart()->getLine() - 1, ed->attributeList()));
 
     // User union
     auto* ud = findUnionDecl(tree, name);
-    if (ud) return makeResult(token, withDoc(formatUnionDecl(ud), ud->getStart()->getLine() - 1));
+    if (ud) return makeResult(token, withDoc(formatUnionDecl(ud), ud->getStart()->getLine() - 1, ud->attributeList()));
 
     // Type alias
     auto* ta = findTypeAliasDecl(tree, name);

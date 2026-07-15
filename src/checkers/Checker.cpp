@@ -4313,8 +4313,14 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
                     }
                 }
             }
-            if (!calleeName.empty())
+            if (!calleeName.empty()) {
                 analyzeUnsafeCBufferCall(calleeName, expr, argExprs);
+                auto declIt = functionDecls_.find(calleeName);
+                if (declIt != functionDecls_.end() &&
+                    declIt->second->attributeList() &&
+                    hasAttribute(declIt->second->attributeList(), "deprecated"))
+                    warning(expr, "call to deprecated function '" + calleeName + "'");
+            }
             applyCallOwnershipEffects(calleeName, argExprs, expr);
             return calleeType->returnType;
         }
@@ -9402,6 +9408,15 @@ void Checker::checkCallStmt(LucisParser::CallStmtContext* stmt) {
             msg += ". Did you forget '" + hint + "'?";
         error(stmt, msg);
         return;
+    }
+
+    // Warn if calling a deprecated function
+    {
+        auto declIt = functionDecls_.find(name);
+        if (declIt != functionDecls_.end() &&
+            declIt->second->attributeList() &&
+            hasAttribute(declIt->second->attributeList(), "deprecated"))
+            warning(stmt, "call to deprecated function '" + name + "'");
     }
 
     // Resolve all argument types
