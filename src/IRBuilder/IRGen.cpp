@@ -8546,6 +8546,22 @@ static int suffixFloatWidth(const std::string& suf) {
     return 64; // fallback
 }
 
+/// Choose the smallest standard integer type (32, 64, 128, or 256 bits)
+/// that can hold the given literal value.
+static llvm::Type* literalIntType(llvm::LLVMContext& ctx, const llvm::APInt& ap) {
+    unsigned bits = 32;
+    unsigned sz = ap.getActiveBits() + 1;
+    if (ap.isNegative()) {
+        sz = (-ap).getActiveBits() + 1;
+    }
+    if (sz > 32) {
+        if (sz <= 64) bits = 64;
+        else if (sz <= 128) bits = 128;
+        else bits = 256;
+    }
+    return llvm::Type::getIntNTy(ctx, bits);
+}
+
 std::any IRGen::visitSuffixedIntLitExpr(LucisParser::SuffixedIntLitExprContext* ctx) {
         SET_DBG_LOC(ctx);
     std::string suffix;
@@ -8690,24 +8706,24 @@ std::any IRGen::visitHexLitExpr(LucisParser::HexLitExprContext* ctx) {
         SET_DBG_LOC(ctx);
     auto text = stripUnderscores(ctx->HEX_LIT()->getText().substr(2)); // strip "0x"/"0X"
     llvm::APInt ap(256, text, 16);
-    auto* ty = llvm::Type::getIntNTy(*context_, 256);
-    return static_cast<llvm::Value*>(llvm::ConstantInt::get(ty, ap));
+    auto* ty = literalIntType(*context_, ap);
+    return static_cast<llvm::Value*>(llvm::ConstantInt::get(ty, ap.sextOrTrunc(ty->getIntegerBitWidth())));
 }
 
 std::any IRGen::visitOctLitExpr(LucisParser::OctLitExprContext* ctx) {
         SET_DBG_LOC(ctx);
     auto text = stripUnderscores(ctx->OCT_LIT()->getText().substr(2)); // strip "0o"/"0O"
     llvm::APInt ap(256, text, 8);
-    auto* ty = llvm::Type::getIntNTy(*context_, 256);
-    return static_cast<llvm::Value*>(llvm::ConstantInt::get(ty, ap));
+    auto* ty = literalIntType(*context_, ap);
+    return static_cast<llvm::Value*>(llvm::ConstantInt::get(ty, ap.sextOrTrunc(ty->getIntegerBitWidth())));
 }
 
 std::any IRGen::visitBinLitExpr(LucisParser::BinLitExprContext* ctx) {
         SET_DBG_LOC(ctx);
     auto text = stripUnderscores(ctx->BIN_LIT()->getText().substr(2)); // strip "0b"/"0B"
     llvm::APInt ap(256, text, 2);
-    auto* ty = llvm::Type::getIntNTy(*context_, 256);
-    return static_cast<llvm::Value*>(llvm::ConstantInt::get(ty, ap));
+    auto* ty = literalIntType(*context_, ap);
+    return static_cast<llvm::Value*>(llvm::ConstantInt::get(ty, ap.sextOrTrunc(ty->getIntegerBitWidth())));
 }
 
 std::any IRGen::visitFloatLitExpr(LucisParser::FloatLitExprContext* ctx) {
