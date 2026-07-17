@@ -40,7 +40,7 @@ public:
     MINUS = 136, PLUS = 137, SLASH = 138, PERCENT = 139, EQ = 140, NEQ = 141, 
     LTE = 142, GTE = 143, LT = 144, GT = 145, LAND = 146, LOR = 147, NOT = 148, 
     INCR = 149, DECR = 150, LSHIFT = 151, PIPE = 152, CARET = 153, TILDE = 154, 
-    QUESTION = 155, WS = 156, LINE_COMMENT = 157, BLOCK_COMMENT = 158
+    QUESTION = 155, AT = 156, WS = 157, LINE_COMMENT = 158, BLOCK_COMMENT = 159
   };
 
   enum {
@@ -1077,6 +1077,7 @@ public:
   public:
     VarDeclStmtContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
+    AttributeListContext *attributeList();
     TypeSpecContext *typeSpec();
     antlr4::tree::TerminalNode *LPAREN();
     std::vector<antlr4::tree::TerminalNode *> IDENTIFIER();
@@ -2153,6 +2154,19 @@ public:
     SuffixedLeadingDotFloatExprContext(ExpressionContext *ctx);
 
     antlr4::tree::TerminalNode *SUFFIXED_DOT_FLOAT();
+
+    virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+  };
+
+  class  CfgExprContext : public ExpressionContext {
+  public:
+    CfgExprContext(ExpressionContext *ctx);
+
+    antlr4::tree::TerminalNode *AT();
+    antlr4::tree::TerminalNode *IDENTIFIER();
+    antlr4::tree::TerminalNode *LPAREN();
+    ExpressionContext *expression();
+    antlr4::tree::TerminalNode *RPAREN();
 
     virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
   };

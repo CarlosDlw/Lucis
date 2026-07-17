@@ -49,6 +49,7 @@ public:
         std::string codeModel;
         std::string entryPoint;
         bool emitDebugInfo = false;
+        bool printCfg = false;
     };
 
     static std::unique_ptr<PipelineResult> run(const Options& opts);

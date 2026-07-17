@@ -127,6 +127,19 @@ bool Checker::isDeclActive(AttributeListContext* attrs) const {
     return true;
 }
 
+// ── Print target cfg info (--print-cfg) ──────────────────────────────
+void Checker::printCfgInfo() const {
+    TargetInfo target(targetTriple_, debugMode_);
+    std::cerr << "Target triple: " << targetTriple_ << "\n";
+    std::cerr << "  target_os:             " << target.get("target_os") << "\n";
+    std::cerr << "  target_arch:           " << target.get("target_arch") << "\n";
+    std::cerr << "  target_endian:         " << target.get("target_endian") << "\n";
+    std::cerr << "  target_pointer_width:  " << target.get("target_pointer_width") << "\n";
+    std::cerr << "  target_os_family:      " << target.get("target_os_family") << "\n";
+    std::cerr << "  target_triple:         " << target.get("target_triple") << "\n";
+    std::cerr << "  debug_assertions:      " << (debugMode_ ? "true" : "false") << "\n";
+}
+
 // ── Checker constructor ───────────────────────────────────────────────
 Checker::Checker()
     : intrinsicRegistry_(typeRegistry_) {
@@ -2782,6 +2795,34 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
         }
         // Unnamed output: return int64 (register-wide default for auto)
         return typeRegistry_.lookup("int64");
+    }
+
+    // ── @cfg(…) compile-time evaluated expression ─────────────
+    if (auto* cfg = dynamic_cast<LucisParser::CfgExprContext*>(expr)) {
+        // Populate target constants on first use
+        if (compileTimeValues_.find("target_os") == compileTimeValues_.end()) {
+            TargetInfo target(targetTriple_, debugMode_);
+            compileTimeValues_["target_os"] = ComptimeValue::stringVal(target.os);
+            compileTimeValues_["target_arch"] = ComptimeValue::stringVal(target.arch);
+            compileTimeValues_["target_endian"] = ComptimeValue::stringVal(target.endian);
+            compileTimeValues_["target_pointer_width"] = ComptimeValue::intVal(
+                static_cast<int64_t>(target.pointerWidth));
+            compileTimeValues_["target_os_family"] = ComptimeValue::stringVal(target.osFamily);
+            compileTimeValues_["target_triple"] = ComptimeValue::stringVal(target.triple);
+            compileTimeValues_["debug_assertions"] = ComptimeValue::boolVal(target.debug);
+        }
+        auto inner = cfg->expression();
+        auto result = evaluateConstExpr(inner);
+        if (!result) {
+            error(cfg, "'@cfg' predicate must be a constant expression");
+            return typeRegistry_.lookup("bool");
+        }
+        if (result->kind() != ComptimeValue::Kind::Bool &&
+            result->kind() != ComptimeValue::Kind::Int) {
+            error(cfg, "'@cfg' must evaluate to a boolean");
+            return typeRegistry_.lookup("bool");
+        }
+        return typeRegistry_.lookup("bool");
     }
 
     if (dynamic_cast<LucisParser::NullLitExprContext*>(expr))
@@ -7635,6 +7676,15 @@ void Checker::checkIfStmt(LucisParser::IfStmtContext* stmt,
         error(stmt, "condition has type '" + condType->name +
                     "', expected 'bool' or numeric type");
 
+    // ── Dead branch elimination for compile-time constant conditions ──
+    auto constCond = evaluateConstExpr(stmt->expression());
+    bool isConstTrue = false;
+    bool isConstFalse = false;
+    if (constCond && constCond->kind() == ComptimeValue::Kind::Bool) {
+        isConstTrue = constCond->asBool();
+        isConstFalse = !constCond->asBool();
+    }
+
     // Collect init sets from each branch for flow-sensitive init analysis.
     // Only propagate if ALL branches (including else) initialize a variable.
     std::vector<std::unordered_set<std::string>> branchInits;
@@ -7644,26 +7694,34 @@ void Checker::checkIfStmt(LucisParser::IfStmtContext* stmt,
     if (!ifBindName.empty() && ifBindTI)
         locals_[ifBindName] = {ifBindTI, 0, {}, true, true, nullptr};
     branchInits.emplace_back();
-    checkIfBodyTracked(stmt->ifBody(), branchInits.back());
+    if (!isConstFalse)
+        checkIfBodyTracked(stmt->ifBody(), branchInits.back());
     if (!ifBindName.empty()) locals_.erase(ifBindName);
 
     // Check else-if clauses
     for (auto* elseIf : stmt->elseIfClause()) {
+        if (isConstTrue) break; // dead branch
         auto* eifCondType = resolveExprType(elseIf->expression());
         if (eifCondType && !isConditionType(eifCondType))
             error(elseIf, "condition has type '" + eifCondType->name +
                           "', expected 'bool' or numeric type");
+        auto eifConstCond = evaluateConstExpr(elseIf->expression());
+        bool eifConstFalse = eifConstCond && eifConstCond->kind() == ComptimeValue::Kind::Bool
+                             && !eifConstCond->asBool();
         auto [eifBindName, eifBindTI] = extractIsBinding(elseIf->expression());
         if (!eifBindName.empty() && eifBindTI)
             locals_[eifBindName] = {eifBindTI, 0, {}, true, true, nullptr};
         branchInits.emplace_back();
-        checkIfBodyTracked(elseIf->ifBody(), branchInits.back());
+        if (!eifConstFalse)
+            checkIfBodyTracked(elseIf->ifBody(), branchInits.back());
         if (!eifBindName.empty()) locals_.erase(eifBindName);
+        if (eifConstCond && eifConstCond->kind() == ComptimeValue::Kind::Bool && eifConstCond->asBool())
+            isConstTrue = true; // subsequent else-ifs and else are dead
     }
 
     // Check else clause
     bool hasElse = (stmt->elseClause() != nullptr);
-    if (hasElse) {
+    if (hasElse && !isConstTrue) {
         branchInits.emplace_back();
         checkIfBodyTracked(stmt->elseClause()->ifBody(), branchInits.back());
     }
@@ -7815,6 +7873,10 @@ static std::string stripSuffix(const std::string& text) {
 
 std::optional<ComptimeValue> Checker::evaluateConstExpr(LucisParser::ExpressionContext* expr) {
     if (!expr) return std::nullopt;
+
+    // ── @cfg(…) — unwrap and evaluate inner expression ──────────
+    if (auto* cfg = dynamic_cast<LucisParser::CfgExprContext*>(expr))
+        return evaluateConstExpr(cfg->expression());
 
     // ── Unsuffixed integer literals ────────────────────────────────
     auto evalIntLit = [](const std::string& text, int base) -> std::optional<ComptimeValue> {
@@ -8186,6 +8248,46 @@ std::optional<ComptimeValue> Checker::evaluateConstExpr(LucisParser::ExpressionC
         return std::nullopt;
     }
 
+    // ── Built-in function calls (all, any within @cfg) ────────────────
+    if (auto* fc = dynamic_cast<LucisParser::FnCallExprContext*>(expr)) {
+        // Check if the callee is a bare identifier (not a method chain)
+        if (auto* ident = dynamic_cast<LucisParser::IdentExprContext*>(fc->expression())) {
+            auto name = ident->IDENTIFIER()->getText();
+            auto* args = fc->argList();
+            if (!args) return ComptimeValue::boolVal(true);
+            auto argExprs = args->expression();
+
+            if (name == "all") {
+                for (auto* a : argExprs) {
+                    auto v = evaluateConstExpr(a);
+                    if (!v || (v->kind() == ComptimeValue::Kind::Bool && !v->asBool()))
+                        return ComptimeValue::boolVal(false);
+                    if (v->kind() != ComptimeValue::Kind::Bool) return std::nullopt;
+                }
+                return ComptimeValue::boolVal(true);
+            }
+
+            if (name == "any") {
+                for (auto* a : argExprs) {
+                    auto v = evaluateConstExpr(a);
+                    if (v && v->kind() == ComptimeValue::Kind::Bool && v->asBool())
+                        return ComptimeValue::boolVal(true);
+                    if (v && v->kind() != ComptimeValue::Kind::Bool) return std::nullopt;
+                }
+                return ComptimeValue::boolVal(false);
+            }
+
+            if (name == "not") {
+                if (argExprs.size() == 1) {
+                    auto v = evaluateConstExpr(argExprs[0]);
+                    if (v && v->kind() == ComptimeValue::Kind::Bool)
+                        return ComptimeValue::boolVal(!v->asBool());
+                }
+                return std::nullopt;
+            }
+        }
+    }
+
     return std::nullopt;
 }
 
@@ -8472,6 +8574,7 @@ void Checker::checkConstDeclStmt(LucisParser::ConstDeclStmtContext* stmt) {
 }
 
 void Checker::checkVarDeclStmt(LucisParser::VarDeclStmtContext* stmt) {
+    if (!isDeclActive(stmt->attributeList())) return;
     // ── Tuple destructuring: auto (x, y) = expr; ─────────────────────
     if (stmt->LPAREN()) {
         auto ids = stmt->IDENTIFIER();

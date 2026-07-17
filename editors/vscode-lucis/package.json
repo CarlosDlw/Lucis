@@ -32,6 +32,19 @@
         "path": "./syntaxes/lucis.tmLanguage.json"
       }
     ],
+    "semanticTokenModifiers": [
+      {
+        "id": "cfgInactive",
+        "description": "Token is inside a #[cfg(false)] declaration"
+      }
+    ],
+    "semanticTokenScopes": [
+      {
+        "scopes": {
+          "*.cfgInactive": ["comment"]
+        }
+      }
+    ],
     "commands": [
       {
         "command": "lucis.restartServer",

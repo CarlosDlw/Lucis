@@ -64,6 +64,9 @@ public:
     // Enable/disable DWARF debug info emission
     void setEmitDebugInfo(bool v) { emitDebugInfo_ = v; }
 
+    // Set debug output mode (--debug flag) for debug_assertions / @cfg("debug")
+    void setDebugOutput(bool v) { debugOutput_ = v; }
+
     // ── Visitor overrides ───────────────────────────────────────────────────
     std::any visitProgram(LucisParser::ProgramContext* ctx)             override;
     std::any visitStructDecl(LucisParser::StructDeclContext* ctx)       override;
@@ -132,6 +135,15 @@ public:
     std::any visitCmptBtickExpr(LucisParser::CmptBtickExprContext* ctx)   override;
     std::any visitAsmExpr(LucisParser::AsmExprContext* ctx)           override;
     std::any visitIdentExpr(LucisParser::IdentExprContext* ctx)         override;
+    std::any visitCfgExpr(LucisParser::CfgExprContext* ctx)             override;
+
+    // ── @cfg(...) compile-time evaluation helpers ─────────────
+    bool evalCfgPredicate(LucisParser::ExpressionContext* expr);
+    std::optional<std::string> evalCfgIdentOrString(LucisParser::ExpressionContext* expr);
+    std::optional<int64_t> evalCfgIntValue(LucisParser::ExpressionContext* expr);
+    std::optional<bool> getCfgTargetValue(const std::string& name);
+    std::optional<std::string> getCfgTargetString(const std::string& name);
+    std::optional<int64_t> getCfgTargetInt(const std::string& name);
     std::any visitArrayLitExpr(LucisParser::ArrayLitExprContext* ctx)   override;
     std::any visitListCompExpr(LucisParser::ListCompExprContext* ctx)   override;
     std::any visitIndexExpr(LucisParser::IndexExprContext* ctx)         override;
@@ -368,6 +380,9 @@ private:
     llvm::DIFile* dbgFile_ = nullptr;
     llvm::DISubprogram* currentDbgScope_ = nullptr;
     bool emitDebugInfo_ = false;
+
+    // Debug mode flag (--debug): controls debug_assertions / @cfg("debug")
+    bool debugOutput_ = false;
 
     // Comptime engine for compile-time function evaluation
     ComptimeEngine* comptimeEngine_ = nullptr;

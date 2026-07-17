@@ -53,6 +53,8 @@ public:
     // Configure cross-compilation target.
     void setTargetTriple(const std::string& triple) { targetTriple_ = triple; }
     void setDebugMode(bool debug) { debugMode_ = debug; }
+    void setPrintCfg(bool p) { printCfg_ = p; }
+    void printCfgInfo() const;
 
     // Returns false if the declaration has #[cfg(...)] that evaluates to false.
     bool isDeclActive(LucisParser::AttributeListContext* attrs) const;
@@ -521,4 +523,5 @@ private:
     // ── Cross-compilation target info ─────────────────────────────────
     std::string targetTriple_;
     bool debugMode_ = false;
+    bool printCfg_ = false;
 };

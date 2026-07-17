@@ -1,0 +1,247 @@
+[lucis-lsp] server started
+[lucis-lsp] initialize
+[lucis-lsp] root path: /tmp
+[lucis-lsp] initialized
+[lucis-lsp] warming C header cache...
+[lucis-lsp] using explicit cache path: /tmp/.lucis/headers.cache
+[lucis-lsp] cache file not found: /tmp/.lucis/headers.cache
+[lucis-lsp] scanning system headers (this may take a while)...
+[lucis-lsp] opened: file:///tmp/_lsp_test.lc
+lucis: cannot open file '/tmp/_lsp_test.lc'
+[lucis-lsp] didOpen error: filesystem error: cannot increment recursive directory iterator: Permission denied
+[lucis-lsp] shutdown
+[lucis-lsp] server stopped
+[lucis-lsp] server started
+[lucis-lsp] initialize
+[lucis-lsp] root path: /tmp
+[lucis-lsp] initialized
+[lucis-lsp] warming C header cache...
+[lucis-lsp] using explicit cache path: /tmp/.lucis/headers.cache
+[lucis-lsp] cache file not found: /tmp/.lucis/headers.cache
+[lucis-lsp] scanning system headers (this may take a while)...
+[lucis-lsp] opened: file:///tmp/_lsp_test.lc
+lucis: cannot open file '/tmp/_lsp_test.lc'
+[lucis-lsp] didOpen error: filesystem error: cannot increment recursive directory iterator: Permission denied
+[lucis-lsp] shutdown
+[lucis-lsp] server stopped
+[lucis-lsp] server started
+[lucis-lsp] initialize
+[lucis-lsp] root path: /tmp
+[lucis-lsp] initialized
+[lucis-lsp] warming C header cache...
+[lucis-lsp] using explicit cache path: /tmp/.lucis/headers.cache
+[lucis-lsp] cache file not found: /tmp/.lucis/headers.cache
+[lucis-lsp] scanning system headers (this may take a while)...
+[lucis-lsp] opened: file:///tmp/_lsp_test.lc
+lucis: cannot open file '/tmp/_lsp_test.lc'
+[lucis-lsp] didOpen error: filesystem error: cannot increment recursive directory iterator: Permission denied
+[lucis-lsp] shutdown
+[lucis-lsp] server stopped
+[lucis-lsp] server started
+[lucis-lsp] initialize
+[lucis-lsp] root path: /tmp
+[lucis-lsp] initialized
+[lucis-lsp] warming C header cache...
+[lucis-lsp] using explicit cache path: /tmp/.lucis/headers.cache
+[lucis-lsp] cache file not found: /tmp/.lucis/headers.cache
+[lucis-lsp] scanning system headers (this may take a while)...
+[lucis-lsp] opened: file:///tmp/_lsp_test.lc
+lucis: cannot open file '/tmp/_lsp_test.lc'
+[lucis-lsp] didOpen error: filesystem error: cannot increment recursive directory iterator: Permission denied
+[lucis-lsp] shutdown
+[lucis-lsp] server stopped
+[lucis-lsp] server started
+[lucis-lsp] initialize
+[lucis-lsp] root path: /tmp
+[lucis-lsp] initialized
+[lucis-lsp] warming C header cache...
+[lucis-lsp] using explicit cache path: /tmp/.lucis/headers.cache
+[lucis-lsp] cache file not found: /tmp/.lucis/headers.cache
+[lucis-lsp] scanning system headers (this may take a while)...
+[lucis-lsp] opened: file:///tmp/_lsp_test.lc
+lucis: cannot open file '/tmp/_lsp_test.lc'
+[lucis-lsp] didOpen error: filesystem error: cannot increment recursive directory iterator: Permission denied
+[lucis-lsp] shutdown
+[lucis-lsp] server stopped
+[lucis-lsp] server started
+[lucis-lsp] initialize
+[lucis-lsp] root path: /tmp
+[lucis-lsp] initialized
+[lucis-lsp] warming C header cache...
+[lucis-lsp] using explicit cache path: /tmp/.lucis/headers.cache
+[lucis-lsp] cache file not found: /tmp/.lucis/headers.cache
+[lucis-lsp] scanning system headers (this may take a while)...
+[lucis-lsp] opened: file:///tmp/_lsp_test.lc
+lucis: cannot open file '/tmp/_lsp_test.lc'
+[lucis-lsp] didOpen error: filesystem error: cannot increment recursive directory iterator: Permission denied
+[lucis-lsp] shutdown
+[lucis-lsp] server stopped
+[lucis-lsp] server started
+[lucis-lsp] initialize
+[lucis-lsp] root path: /tmp
+[lucis-lsp] initialized
+[lucis-lsp] warming C header cache...
+[lucis-lsp] using explicit cache path: /tmp/.lucis/headers.cache
+[lucis-lsp] cache file not found: /tmp/.lucis/headers.cache
+[lucis-lsp] scanning system headers (this may take a while)...
+[lucis-lsp] opened: file:///tmp/_lsp_test.lc
+lucis: cannot open file '/tmp/_lsp_test.lc'
+[lucis-lsp] didOpen error: filesystem error: cannot increment recursive directory iterator: Permission denied
+[lucis-lsp] shutdown
+[lucis-lsp] server stopped
+[lucis-lsp] server started
+[lucis-lsp] initialize
+[lucis-lsp] root path: /tmp
+[lucis-lsp] initialized
+[lucis-lsp] warming C header cache...
+[lucis-lsp] using explicit cache path: /tmp/.lucis/headers.cache
+[lucis-lsp] cache file not found: /tmp/.lucis/headers.cache
+[lucis-lsp] scanning system headers (this may take a while)...
+[lucis-lsp] opened: file:///tmp/_lsp_test.lc
+lucis: cannot open file '/tmp/_lsp_test.lc'
+[lucis-lsp] didOpen error: filesystem error: cannot increment recursive directory iterator: Permission denied
+[lucis-lsp] shutdown
+[lucis-lsp] server stopped
+[lucis-lsp] server started
+[lucis-lsp] initialize
+[lucis-lsp] root path: /tmp
+[lucis-lsp] initialized
+[lucis-lsp] warming C header cache...
+[lucis-lsp] using explicit cache path: /tmp/.lucis/headers.cache
+[lucis-lsp] cache file not found: /tmp/.lucis/headers.cache
+[lucis-lsp] scanning system headers (this may take a while)...
+[lucis-lsp] opened: file:///tmp/_lsp_test.lc
+lucis: cannot open file '/tmp/_lsp_test.lc'
+[lucis-lsp] didOpen error: filesystem error: cannot increment recursive directory iterator: Permission denied
+[lucis-lsp] shutdown
+[lucis-lsp] server stopped
+[lucis-lsp] server started
+[lucis-lsp] initialize
+[lucis-lsp] root path: /tmp
+[lucis-lsp] initialized
+[lucis-lsp] warming C header cache...
+[lucis-lsp] using explicit cache path: /tmp/.lucis/headers.cache
+[lucis-lsp] cache file not found: /tmp/.lucis/headers.cache
+[lucis-lsp] scanning system headers (this may take a while)...
+[lucis-lsp] opened: file:///tmp/_lsp_test.lc
+lucis: cannot open file '/tmp/_lsp_test.lc'
+[lucis-lsp] didOpen error: filesystem error: cannot increment recursive directory iterator: Permission denied
+[lucis-lsp] shutdown
+[lucis-lsp] server stopped
+[lucis-lsp] server started
+[lucis-lsp] initialize
+[lucis-lsp] root path: /tmp
+[lucis-lsp] initialized
+[lucis-lsp] warming C header cache...
+[lucis-lsp] using explicit cache path: /tmp/.lucis/headers.cache
+[lucis-lsp] cache file not found: /tmp/.lucis/headers.cache
+[lucis-lsp] scanning system headers (this may take a while)...
+[lucis-lsp] opened: file:///tmp/_lsp_test.lc
+lucis: cannot open file '/tmp/_lsp_test.lc'
+[lucis-lsp] didOpen error: filesystem error: cannot increment recursive directory iterator: Permission denied
+[lucis-lsp] shutdown
+[lucis-lsp] server stopped
+[lucis-lsp] server started
+[lucis-lsp] initialize
+[lucis-lsp] root path: /tmp
+[lucis-lsp] initialized
+[lucis-lsp] warming C header cache...
+[lucis-lsp] using explicit cache path: /tmp/.lucis/headers.cache
+[lucis-lsp] cache file not found: /tmp/.lucis/headers.cache
+[lucis-lsp] scanning system headers (this may take a while)...
+[lucis-lsp] opened: file:///tmp/_lsp_test.lc
+lucis: cannot open file '/tmp/_lsp_test.lc'
+[lucis-lsp] didOpen error: filesystem error: cannot increment recursive directory iterator: Permission denied
+[lucis-lsp] shutdown
+[lucis-lsp] server stopped
+[lucis-lsp] server started
+[lucis-lsp] initialize
+[lucis-lsp] root path: /tmp
+[lucis-lsp] initialized
+[lucis-lsp] warming C header cache...
+[lucis-lsp] using explicit cache path: /tmp/.lucis/headers.cache
+[lucis-lsp] cache file not found: /tmp/.lucis/headers.cache
+[lucis-lsp] scanning system headers (this may take a while)...
+[lucis-lsp] opened: file:///tmp/_lsp_test.lc
+lucis: cannot open file '/tmp/_lsp_test.lc'
+[lucis-lsp] didOpen error: filesystem error: cannot increment recursive directory iterator: Permission denied
+[lucis-lsp] shutdown
+[lucis-lsp] server stopped
+[lucis-lsp] server started
+[lucis-lsp] initialize
+[lucis-lsp] root path: /tmp
+[lucis-lsp] initialized
+[lucis-lsp] warming C header cache...
+[lucis-lsp] using explicit cache path: /tmp/.lucis/headers.cache
+[lucis-lsp] cache file not found: /tmp/.lucis/headers.cache
+[lucis-lsp] scanning system headers (this may take a while)...
+[lucis-lsp] opened: file:///tmp/_lsp_test.lc
+lucis: cannot open file '/tmp/_lsp_test.lc'
+[lucis-lsp] didOpen error: filesystem error: cannot increment recursive directory iterator: Permission denied
+[lucis-lsp] shutdown
+[lucis-lsp] server stopped
+[lucis-lsp] server started
+[lucis-lsp] initialize
+[lucis-lsp] root path: /tmp
+[lucis-lsp] initialized
+[lucis-lsp] warming C header cache...
+[lucis-lsp] using explicit cache path: /tmp/.lucis/headers.cache
+[lucis-lsp] cache file not found: /tmp/.lucis/headers.cache
+[lucis-lsp] scanning system headers (this may take a while)...
+[lucis-lsp] opened: file:///tmp/_lsp_test.lc
+lucis: cannot open file '/tmp/_lsp_test.lc'
+[lucis-lsp] didOpen error: filesystem error: cannot increment recursive directory iterator: Permission denied
+[lucis-lsp] shutdown
+[lucis-lsp] server stopped
+[lucis-lsp] server started
+[lucis-lsp] initialize
+[lucis-lsp] root path: /tmp
+[lucis-lsp] initialized
+[lucis-lsp] warming C header cache...
+[lucis-lsp] using explicit cache path: /tmp/.lucis/headers.cache
+[lucis-lsp] cache file not found: /tmp/.lucis/headers.cache
+[lucis-lsp] scanning system headers (this may take a while)...
+[lucis-lsp] opened: file:///tmp/_lsp_test.lc
+lucis: cannot open file '/tmp/_lsp_test.lc'
+[lucis-lsp] didOpen error: filesystem error: cannot increment recursive directory iterator: Permission denied
+[lucis-lsp] shutdown
+[lucis-lsp] server stopped
+[lucis-lsp] server started
+[lucis-lsp] initialize
+[lucis-lsp] root path: /tmp
+[lucis-lsp] initialized
+[lucis-lsp] warming C header cache...
+[lucis-lsp] using explicit cache path: /tmp/.lucis/headers.cache
+[lucis-lsp] cache file not found: /tmp/.lucis/headers.cache
+[lucis-lsp] scanning system headers (this may take a while)...
+[lucis-lsp] opened: file:///tmp/_lsp_test.lc
+lucis: cannot open file '/tmp/_lsp_test.lc'
+[lucis-lsp] didOpen error: filesystem error: cannot increment recursive directory iterator: Permission denied
+[lucis-lsp] shutdown
+[lucis-lsp] server stopped
+[lucis-lsp] server started
+[lucis-lsp] initialize
+[lucis-lsp] root path: /tmp
+[lucis-lsp] initialized
+[lucis-lsp] warming C header cache...
+[lucis-lsp] using explicit cache path: /tmp/.lucis/headers.cache
+[lucis-lsp] cache file not found: /tmp/.lucis/headers.cache
+[lucis-lsp] scanning system headers (this may take a while)...
+[lucis-lsp] opened: file:///tmp/_lsp_test.lc
+lucis: cannot open file '/tmp/_lsp_test.lc'
+[lucis-lsp] didOpen error: filesystem error: cannot increment recursive directory iterator: Permission denied
+[lucis-lsp] shutdown
+[lucis-lsp] server stopped
+[lucis-lsp] server started
+[lucis-lsp] initialize
+[lucis-lsp] root path: /tmp
+[lucis-lsp] initialized
+[lucis-lsp] warming C header cache...
+[lucis-lsp] using explicit cache path: /tmp/.lucis/headers.cache
+[lucis-lsp] cache file not found: /tmp/.lucis/headers.cache
+[lucis-lsp] scanning system headers (this may take a while)...
+[lucis-lsp] opened: file:///tmp/_lsp_test.lc
+lucis: cannot open file '/tmp/_lsp_test.lc'
+[lucis-lsp] didOpen error: filesystem error: cannot increment recursive directory iterator: Permission denied
+[lucis-lsp] shutdown
+[lucis-lsp] server stopped

@@ -175,4 +175,12 @@ void registerBuiltinAttributes(AttributeRegistry& reg) {
             return n > 0 && (n & (n - 1)) == 0; // power of 2
         }
     });
+
+    // ── cfg(…): conditional compilation predicate ────────────────────
+    // Full validation (predicate structure) is done in the Checker.
+    reg.registerAttribute("cfg", AttributeHandler{
+        .validate = [](const Attribute&, const TypeInfo*, std::vector<std::string>&) -> bool {
+            return true; // structural validation done in Checker
+        }
+    });
 }

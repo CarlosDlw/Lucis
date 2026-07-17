@@ -2250,7 +2250,12 @@ CompletionProvider::complete(const std::string &source, size_t line, size_t col,
 
   // Attribute completions (#[name] or #[name(...)])
   if (req.context == CompletionContext::Attribute) {
-    addAttributeCompletions(items, req.prefix, line, source);
+    addAttributeCompletions(items, req.prefix, line, req.col, source);
+  }
+
+  // @cfg(…) completions
+  if (req.context == CompletionContext::AtCfg) {
+    addAtCfgCompletions(items, source, line, req.col);
   }
 
   dedup(items);
@@ -2267,6 +2272,7 @@ CompletionProvider::analyzeContext(const std::string &source, size_t line,
                                    LucisParser::ProgramContext *tree) {
 
   CompletionRequest req;
+  req.col = col;
 
   // Get the current line text
   std::istringstream stream(source);
@@ -2332,6 +2338,32 @@ CompletionProvider::analyzeContext(const std::string &source, size_t line,
         // Keep '#' as marker in prefix so the guard can detect it
         req.prefix = "#[" + req.prefix;
         return req;
+      }
+    }
+  }
+
+  // Check for @cfg(…) completion, or bare @ suggesting cfg
+  {
+    auto atPos = before.rfind('@');
+    if (atPos != std::string::npos) {
+      std::string afterAt = before.substr(atPos + 1);
+      if (afterAt.size() >= 4 && afterAt.substr(0, 4) == "cfg(") {
+        // Check that there's no closing ')' before cursor
+        auto afterParen = before.substr(atPos + 5);
+        if (afterParen.find(')') == std::string::npos) {
+          req.context = CompletionContext::AtCfg;
+          return req;
+        }
+      } else {
+        // Bare @ (or @cf, etc.) — suggest cfg if afterAt is an identifier prefix
+        bool valid = true;
+        for (char c : afterAt) {
+          if (!std::isalnum(c) && c != '_') { valid = false; break; }
+        }
+        if (valid) {
+          req.context = CompletionContext::AtCfg;
+          return req;
+        }
       }
     }
   }
@@ -5548,15 +5580,123 @@ void CompletionProvider::addKeywords(std::vector<CompletionItem> &items,
   }
 }
 
+// ── Helper: analyse cursor context inside #[cfg(...)] ────────────────
+// insideContent is the full text between "#[" and cursor (e.g. "cfg(target_os = \"li").
+enum class CfgCtxKind { NotCfg, Predicate, Value };
+
+static CfgCtxKind analyzeCfgContext(const std::string& insideContent,
+                                    std::string& outPartial,
+                                    std::string& outKey) {
+  outPartial.clear();
+  outKey.clear();
+
+  // Must start with "cfg("
+  if (insideContent.size() < 4 ||
+      insideContent[0] != 'c' || insideContent[1] != 'f' ||
+      insideContent[2] != 'g' || insideContent[3] != '(')
+    return CfgCtxKind::NotCfg;
+
+  // Walk through the content tracking paren depth and key=value structure.
+  size_t i = 4; // skip "cfg("
+  int depth = 1;
+  size_t lastEq = std::string::npos;
+  size_t lastComma = std::string::npos;
+  bool inString = false;
+
+  while (i < insideContent.size()) {
+    char c = insideContent[i];
+    if (inString) {
+      if (c == '"' && (i == 0 || insideContent[i - 1] != '\\'))
+        inString = false;
+    } else {
+      if (c == '"')
+        inString = true;
+      else if (c == '(')
+        ++depth;
+      else if (c == ')') {
+        if (--depth == 0) break;
+      } else if (c == '=' && depth == 1) {
+        lastEq = i;
+      } else if (c == ',' && depth == 1) {
+        lastComma = i;
+        lastEq = std::string::npos; // reset for the next predicate
+      }
+    }
+    ++i;
+  }
+
+  if (depth <= 0) return CfgCtxKind::NotCfg;
+
+  if (lastEq != std::string::npos &&
+      (lastComma == std::string::npos || lastEq > lastComma)) {
+    // After '=' → value position
+    // Extract key name
+    size_t ks = (lastComma != std::string::npos) ? lastComma + 1 : 4;
+    while (ks < lastEq && (insideContent[ks] == ' ' || insideContent[ks] == '\t'))
+      ++ks;
+    size_t ke = ks;
+    while (ke < lastEq && (std::isalnum(insideContent[ke]) || insideContent[ke] == '_'))
+      ++ke;
+    outKey = insideContent.substr(ks, ke - ks);
+
+    // Extract partial value text
+    size_t vs = lastEq + 1;
+    while (vs < insideContent.size() && (insideContent[vs] == ' ' || insideContent[vs] == '\t'))
+      ++vs;
+    outPartial = insideContent.substr(vs);
+
+    return CfgCtxKind::Value;
+  }
+
+  // Before '=' → predicate/key/shorthand position
+  size_t ps = (lastComma != std::string::npos) ? lastComma + 1 : 4;
+  // If cursor is inside a nested predicate call (all/any/not), find the
+  // innermost open paren and take everything after it as the partial.
+  size_t rp = insideContent.rfind('(');
+  if (rp != std::string::npos && rp >= ps)
+    ps = rp + 1;
+  while (ps < insideContent.size() && (insideContent[ps] == ' ' || insideContent[ps] == '\t'))
+    ++ps;
+  outPartial = insideContent.substr(ps);
+
+  return CfgCtxKind::Predicate;
+}
+
+// ── Helper: extract full "#[...]" content from source line up to cursor ─
+static std::string getAttrContent(const std::string& source, size_t cursorLine, size_t cursorCol) {
+  size_t curLineStart = 0;
+  for (size_t i = 0; i < cursorLine; ++i) {
+    auto nl = source.find('\n', curLineStart);
+    if (nl == std::string::npos) break;
+    curLineStart = nl + 1;
+  }
+  size_t curLineEnd = source.find('\n', curLineStart);
+  if (curLineEnd == std::string::npos) curLineEnd = source.size();
+  std::string curLine = source.substr(curLineStart, curLineEnd - curLineStart);
+  auto hb = curLine.rfind("#[");
+  if (hb == std::string::npos) return "";
+  // Take only up to cursor column (relative to start of line, capped)
+  size_t end = (cursorCol < curLine.size()) ? cursorCol : curLine.size();
+  if (end <= hb + 2) return "";
+  return curLine.substr(hb + 2, end - hb - 2);
+}
+
 void CompletionProvider::addAttributeCompletions(
     std::vector<CompletionItem>& items,
     const std::string& prefix,
     size_t cursorLine,
+    size_t cursorCol,
     const std::string& source) {
   // prefix comes as "#[partialName" — extract the partial name after #[]
   size_t hashBracketEnd = prefix.find('[');
   std::string searchKey = (hashBracketEnd != std::string::npos && hashBracketEnd + 1 < prefix.size())
     ? prefix.substr(hashBracketEnd + 1) : "";
+
+  // Extract full #[...] content from source for cfg context analysis
+  std::string attrContent = getAttrContent(source, cursorLine, cursorCol);
+  std::string cfgPartial, cfgKey;
+  CfgCtxKind cfgCtx = analyzeCfgContext(attrContent, cfgPartial, cfgKey);
+  bool isInsideCfg = (cfgCtx != CfgCtxKind::NotCfg);
 
   // Determine declaration context by scanning the NEXT line
   // (attributes always appear BEFORE the declaration they annotate).
@@ -5630,6 +5770,7 @@ void CompletionProvider::addAttributeCompletions(
     {"hot", "This function is hot (frequently executed)", 1<<CtxFn},
     {"thread_local", "Global is thread-local storage", 1<<CtxConst},
     {"used", "Prevent linker from removing the symbol", 1<<CtxFn|1<<CtxConst},
+    {"cfg", "Conditional compilation predicate", static_cast<unsigned>(-1)},
   };
 
   // Expanded forms for attributes with known valid argument patterns.
@@ -5693,6 +5834,11 @@ void CompletionProvider::addAttributeCompletions(
     if (skip)
       continue;
 
+    // Don't show bare 'cfg' when already inside cfg(…) — context-based
+    // completions will handle it.
+    if (name == "cfg" && isInsideCfg)
+      continue;
+
     // Look up description + context, default to all-contexts
     std::string desc;
     unsigned validFor = static_cast<unsigned>(-1);
@@ -5718,6 +5864,208 @@ void CompletionProvider::addAttributeCompletions(
     ci.filterText = name;
     ci.insertText = name;
     items.push_back(std::move(ci));
+  }
+
+  // ── #[cfg(...)] context-based completions ────────────────────────────
+  if (cfgCtx == CfgCtxKind::Predicate) {
+    // Cursor before '=' → offer keys, shorthands, and call predicates
+    static const struct {
+      const char* text;
+      const char* desc;
+    } s_cfgPreds[] = {
+      {"target_os", "Operating system"},
+      {"target_arch", "CPU architecture"},
+      {"target_endian", "Endianness"},
+      {"target_pointer_width", "Pointer width in bits"},
+      {"target_os_family", "OS family (unix / windows)"},
+      {"target_triple", "Full target triple"},
+      {"debug_assertions", "Debug mode flag"},
+
+      {"unix", "Shorthand: target_os_family = \"unix\""},
+      {"windows", "Shorthand: target_os = \"windows\""},
+      {"x86_64", "Shorthand: target_arch = \"x86_64\""},
+      {"aarch64", "Shorthand: target_arch = \"aarch64\""},
+      {"debug", "Shorthand: debug_assertions"},
+
+      {"all", "All conditions must be true — all(…)"},
+      {"any", "Any condition must be true — any(…)"},
+      {"not", "Condition must be false — not(…)"},
+    };
+
+    for (auto& cp : s_cfgPreds) {
+      if (!matchesPrefix(std::string(cp.text), cfgPartial)) continue;
+      CompletionItem ci;
+      ci.label = cp.text;
+      ci.kind = CompletionKind::Keyword;
+      ci.detail = cp.desc;
+      ci.insertText = cp.text;
+      items.push_back(std::move(ci));
+    }
+
+  } else if (cfgCtx == CfgCtxKind::Value) {
+    // After '=' → offer values for the known key
+    static const struct {
+      const char* key;
+      const char* value;
+    } s_cfgValues[] = {
+      {"target_os", "\"linux\""},
+      {"target_os", "\"windows\""},
+      {"target_os", "\"macos\""},
+      {"target_os", "\"freebsd\""},
+      {"target_os", "\"openbsd\""},
+      {"target_os", "\"netbsd\""},
+      {"target_arch", "\"x86_64\""},
+      {"target_arch", "\"aarch64\""},
+      {"target_arch", "\"riscv64\""},
+      {"target_arch", "\"x86\""},
+      {"target_arch", "\"arm\""},
+      {"target_arch", "\"wasm64\""},
+      {"target_arch", "\"wasm32\""},
+      {"target_endian", "\"little\""},
+      {"target_endian", "\"big\""},
+      {"target_os_family", "\"unix\""},
+      {"target_os_family", "\"windows\""},
+      {"debug_assertions", "true"},
+      {"debug_assertions", "false"},
+    };
+
+    for (auto& cv : s_cfgValues) {
+      if (cv.key != cfgKey) continue;
+      std::string display = cv.value;
+      if (!matchesPrefix(display, cfgPartial)) continue;
+      CompletionItem ci;
+      ci.label = display;
+      ci.kind = CompletionKind::Keyword;
+      ci.detail = std::string("cfg value for ") + cfgKey;
+      ci.insertText = display;
+      items.push_back(std::move(ci));
+    }
+  }
+}
+
+void CompletionProvider::addAtCfgCompletions(
+    std::vector<CompletionItem>& items,
+    const std::string& source,
+    size_t cursorLine,
+    size_t cursorCol) {
+  // Extract content between @cfg( and cursor
+  std::string cfgContent;
+  std::string barePrefix;
+  bool isBare = false;
+  {
+    size_t curLineStart = 0;
+    for (size_t i = 0; i < cursorLine; ) {
+      auto nl = source.find('\n', curLineStart);
+      if (nl == std::string::npos) break;
+      curLineStart = nl + 1;
+      ++i;
+    }
+    size_t curLineEnd = source.find('\n', curLineStart);
+    if (curLineEnd == std::string::npos) curLineEnd = source.size();
+    std::string curLine = source.substr(curLineStart, curLineEnd - curLineStart);
+    auto atPos = curLine.rfind('@');
+    if (atPos == std::string::npos) return;
+    auto cfgParen = curLine.find("cfg(", atPos);
+    if (cfgParen == std::string::npos) {
+      // Bare @ — suggest cfg if the text after @ is a prefix of "cfg"
+      barePrefix = curLine.substr(atPos + 1, cursorCol > atPos + 1 ? cursorCol - atPos - 1 : 0);
+      isBare = true;
+    } else {
+      // Include "cfg(" prefix so analyzeCfgContext can parse it
+      size_t start = cfgParen;
+      size_t end = (cursorCol < curLine.size()) ? cursorCol : curLine.size();
+      if (end <= start) {
+        cfgContent = "cfg(";
+      } else {
+        cfgContent = "cfg(" + curLine.substr(cfgParen + 4, end - cfgParen - 4);
+      }
+    }
+  }
+
+  if (isBare) {
+    // Suggest just "cfg" when typing after @
+    if (matchesPrefix(std::string("cfg"), barePrefix)) {
+      CompletionItem ci;
+      ci.label = "cfg";
+      ci.kind = CompletionKind::Keyword;
+      ci.detail = "Conditional compilation — @cfg(…)";
+      ci.insertText = "cfg(";
+      items.push_back(std::move(ci));
+    }
+    return;
+  }
+
+  std::string cfgPartial, cfgKey;
+  auto cfgCtx = analyzeCfgContext(cfgContent, cfgPartial, cfgKey);
+  if (cfgCtx == CfgCtxKind::NotCfg) return;
+
+  // Same tables as addAttributeCompletions
+  static const struct {
+    const char* text;
+    const char* desc;
+  } s_cfgPreds[] = {
+    {"target_os", "Operating system"},
+    {"target_arch", "CPU architecture"},
+    {"target_endian", "Endianness"},
+    {"target_pointer_width", "Pointer width in bits"},
+    {"target_os_family", "OS family (unix / windows)"},
+    {"target_triple", "Full target triple"},
+    {"debug_assertions", "Debug mode flag"},
+    {"unix", "Shorthand: target_os_family = \"unix\""},
+    {"windows", "Shorthand: target_os = \"windows\""},
+    {"x86_64", "Shorthand: target_arch = \"x86_64\""},
+    {"aarch64", "Shorthand: target_arch = \"aarch64\""},
+    {"debug", "Shorthand: debug_assertions"},
+    {"all", "All conditions must be true — all(…)"},
+    {"any", "Any condition must be true — any(…)"},
+    {"not", "Condition must be false — not(…)"},
+  };
+  static const struct {
+    const char* key;
+    const char* value;
+  } s_cfgValues[] = {
+    {"target_os", "\"linux\""},
+    {"target_os", "\"windows\""},
+    {"target_os", "\"macos\""},
+    {"target_os", "\"freebsd\""},
+    {"target_os", "\"openbsd\""},
+    {"target_os", "\"netbsd\""},
+    {"target_arch", "\"x86_64\""},
+    {"target_arch", "\"aarch64\""},
+    {"target_arch", "\"riscv64\""},
+    {"target_arch", "\"x86\""},
+    {"target_arch", "\"arm\""},
+    {"target_arch", "\"wasm64\""},
+    {"target_arch", "\"wasm32\""},
+    {"target_endian", "\"little\""},
+    {"target_endian", "\"big\""},
+    {"target_os_family", "\"unix\""},
+    {"target_os_family", "\"windows\""},
+    {"debug_assertions", "true"},
+    {"debug_assertions", "false"},
+  };
+
+  if (cfgCtx == CfgCtxKind::Predicate) {
+    for (auto& cp : s_cfgPreds) {
+      if (!matchesPrefix(std::string(cp.text), cfgPartial)) continue;
+      CompletionItem ci;
+      ci.label = cp.text;
+      ci.kind = CompletionKind::Keyword;
+      ci.detail = cp.desc;
+      ci.insertText = cp.text;
+      items.push_back(std::move(ci));
+    }
+  } else if (cfgCtx == CfgCtxKind::Value) {
+    for (auto& cv : s_cfgValues) {
+      if (cv.key != cfgKey) continue;
+      if (!matchesPrefix(std::string(cv.value), cfgPartial)) continue;
+      CompletionItem ci;
+      ci.label = cv.value;
+      ci.kind = CompletionKind::Keyword;
+      ci.detail = std::string("cfg value for ") + cfgKey;
+      ci.insertText = cv.value;
+      items.push_back(std::move(ci));
+    }
   }
 }
 

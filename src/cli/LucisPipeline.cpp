@@ -365,7 +365,12 @@ std::unique_ptr<PipelineResult> LucisPipeline::run(const Options& opts) {
                 ? llvm::sys::getDefaultTargetTriple()
                 : opts.targetTriple);
         checker.setDebugMode(opts.emitDebugInfo);
+        checker.setPrintCfg(opts.printCfg);
         bool passed = checker.check(unit.parseResult->tree);
+        if (opts.printCfg) {
+            checker.printCfgInfo();
+            return result;
+        }
         for (auto& err : checker.errors())
             printErrorLine(unit.filePath + ": " + err);
         if (!passed) anyCheckError = true;

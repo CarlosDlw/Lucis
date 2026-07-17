@@ -237,6 +237,8 @@ public:
 
     virtual std::any visitSuffixedLeadingDotFloatExpr(LucisParser::SuffixedLeadingDotFloatExprContext *context) = 0;
 
+    virtual std::any visitCfgExpr(LucisParser::CfgExprContext *context) = 0;
+
     virtual std::any visitBitAndExpr(LucisParser::BitAndExprContext *context) = 0;
 
     virtual std::any visitIntBtickExpr(LucisParser::IntBtickExprContext *context) = 0;

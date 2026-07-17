@@ -282,8 +282,8 @@ exprStmt
 // int32 x = 42;  or  int32 x;
 // Qualified type: LIB::Point p = ...;
 varDeclStmt
-    : (IDENTIFIER SCOPE)? typeSpec LPAREN IDENTIFIER (COMMA IDENTIFIER)* RPAREN ASSIGN expression SEMI  // auto (x, y) = expr;
-    | (IDENTIFIER SCOPE)? typeSpec varDeclarator (COMMA varDeclarator)* SEMI
+    : attributeList (IDENTIFIER SCOPE)? typeSpec LPAREN IDENTIFIER (COMMA IDENTIFIER)* RPAREN ASSIGN expression SEMI  // auto (x, y) = expr;
+    | attributeList (IDENTIFIER SCOPE)? typeSpec varDeclarator (COMMA varDeclarator)* SEMI
     ;
 
 varDeclarator
@@ -642,6 +642,7 @@ expression
     | PIPE paramList? PIPE block                               # lambdaBlockExpr
     | PIPE paramList? PIPE expression                          # lambdaExpr
     | IDENTIFIER                                               # identExpr
+    | AT IDENTIFIER LPAREN expression RPAREN                   # cfgExpr
     | ASM VOLATILE? INTEL? LPAREN STR_LIT (COMMA STR_LIT)*
         (COLON asmOutputList?
          (COLON asmInputList?

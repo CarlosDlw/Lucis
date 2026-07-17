@@ -1,5 +1,7 @@
 #include "IRBuilder/IRGen.h"
 
+#include "attributes/TargetInfo.h"
+
 #include <llvm/IR/BasicBlock.h>
 #include <llvm/IR/Constants.h>
 #include <llvm/IR/Instructions.h>
@@ -11,6 +13,7 @@
 
 #include <vector>
 #include <unordered_map>
+#include <optional>
 #include <filesystem>
 #include <fstream>
 
@@ -3070,6 +3073,7 @@ llvm::Value* IRGen::ptrToIntIfNeeded(llvm::Value* val) {
 
 // const NAME = VALUE; or const NAME: TYPE = VALUE;
 std::any IRGen::visitConstDeclStmt(LucisParser::ConstDeclStmtContext* ctx) {
+    if (!irDeclActive(ctx->attributeList())) return {};
         SET_DBG_LOC(ctx);
     auto decls = ctx->constDeclarator();
     if (decls.empty()) return nullptr;
@@ -3195,6 +3199,7 @@ std::any IRGen::visitConstDeclStmt(LucisParser::ConstDeclStmtContext* ctx) {
 
 // int32 x = 42;   or   []int32 arr = [1, 2, 3];   or   Vec<int32> v = [1, 2, 3];
 std::any IRGen::visitVarDeclStmt(LucisParser::VarDeclStmtContext* ctx) {
+    if (!irDeclActive(ctx->attributeList())) return {};
         SET_DBG_LOC(ctx);
     // ── Tuple destructuring: auto (x, y) = expr; ────────────────────
     if (ctx->LPAREN()) {
@@ -7705,6 +7710,63 @@ std::any IRGen::visitIfStmt(LucisParser::IfStmtContext* ctx) {
         locals_ = savedLocals;
     };
 
+    // ── Dead branch elimination for @cfg(…) conditions ─────────
+    {
+        auto* condExpr = ctx->expression();
+        if (auto* cfgCtx = dynamic_cast<LucisParser::CfgExprContext*>(condExpr)) {
+            auto* inner = cfgCtx->expression();
+            bool cfgVal = evalCfgPredicate(inner);
+            if (cfgVal) {
+                // @cfg(true): emit only the if-body, skip else/elif
+                emitIfBody(ctx->ifBody());
+                // If body didn't terminate, need a merge block
+                if (!builder_->GetInsertBlock()->getTerminator()) {
+                    auto* mergeBlock = llvm::BasicBlock::Create(*context_, "if.end", currentFunction_);
+                    builder_->CreateBr(mergeBlock);
+                    builder_->SetInsertPoint(mergeBlock);
+                }
+                return std::any();
+            } else {
+                // @cfg(false): skip if-body, find the first non-false elif or else
+                bool foundBranch = false;
+                for (auto* elseIf : elseIfs) {
+                    auto* eifCfg = dynamic_cast<LucisParser::CfgExprContext*>(elseIf->expression());
+                    if (eifCfg) {
+                        bool eifVal = evalCfgPredicate(eifCfg->expression());
+                        if (eifVal) {
+                            emitIfBody(elseIf->ifBody());
+                            foundBranch = true;
+                            break;
+                        }
+                    } else {
+                        // Non-cfg elif — evaluate at runtime
+                        auto* cond = castValue(visit(elseIf->expression()));
+                        cond = toBool(cond, resolveExprTypeInfo(elseIf->expression()), "tobool");
+                        auto* bodyBlock = llvm::BasicBlock::Create(*context_, "elif.then", currentFunction_);
+                        auto* mergeBlock = llvm::BasicBlock::Create(*context_, "if.end", currentFunction_);
+                        builder_->CreateCondBr(cond, bodyBlock, mergeBlock);
+                        builder_->SetInsertPoint(bodyBlock);
+                        emitIfBody(elseIf->ifBody());
+                        if (!builder_->GetInsertBlock()->getTerminator())
+                            builder_->CreateBr(mergeBlock);
+                        builder_->SetInsertPoint(mergeBlock);
+                        foundBranch = true;
+                        break;
+                    }
+                }
+                if (!foundBranch && elseClause) {
+                    emitIfBody(elseClause->ifBody());
+                }
+                if (!builder_->GetInsertBlock()->getTerminator()) {
+                    auto* mergeBlock = llvm::BasicBlock::Create(*context_, "if.end", currentFunction_);
+                    builder_->CreateBr(mergeBlock);
+                    builder_->SetInsertPoint(mergeBlock);
+                }
+                return std::any();
+            }
+        }
+    }
+
     // Total branches: 1 (if) + N (else if) + optional else
     size_t totalBranches = 1 + elseIfs.size();
 
@@ -9508,6 +9570,175 @@ std::any IRGen::visitLambdaBlockExpr(LucisParser::LambdaBlockExprContext* ctx) {
 
     lambdaCache_[ctx] = fn;
     return static_cast<llvm::Value*>(fn);
+}
+
+std::any IRGen::visitCfgExpr(LucisParser::CfgExprContext* ctx) {
+        SET_DBG_LOC(ctx);
+    // Evaluate @cfg(…) at compile time using TargetInfo
+    auto* inner = ctx->expression();
+    bool value = evalCfgPredicate(inner);
+    return static_cast<llvm::Value*>(builder_->getInt1(value));
+}
+
+// ── Helper: evaluate @cfg predicate expression ─────────────────────
+bool IRGen::evalCfgPredicate(LucisParser::ExpressionContext* expr) {
+    // Bool literals
+    if (auto* b = dynamic_cast<LucisParser::BoolLitExprContext*>(expr))
+        return b->BOOL_LIT()->getText() == "true";
+
+    // Parenthesized
+    if (auto* paren = dynamic_cast<LucisParser::ParenExprContext*>(expr))
+        return evalCfgPredicate(paren->expression());
+
+    // Logical NOT
+    if (auto* lnot = dynamic_cast<LucisParser::LogicalNotExprContext*>(expr))
+        return !evalCfgPredicate(lnot->expression());
+
+    // Logical AND (short-circuit)
+    if (auto* land = dynamic_cast<LucisParser::LogicalAndExprContext*>(expr)) {
+        auto sub = land->expression();
+        return evalCfgPredicate(sub[0]) && evalCfgPredicate(sub[1]);
+    }
+
+    // Logical OR (short-circuit)
+    if (auto* lor = dynamic_cast<LucisParser::LogicalOrExprContext*>(expr)) {
+        auto sub = lor->expression();
+        return evalCfgPredicate(sub[0]) || evalCfgPredicate(sub[1]);
+    }
+
+    // Equality / inequality
+    if (auto* eq = dynamic_cast<LucisParser::EqExprContext*>(expr)) {
+        auto sub = eq->expression();
+        auto lhs = evalCfgIdentOrString(sub[0]);
+        auto rhs = evalCfgIdentOrString(sub[1]);
+        if (!lhs || !rhs) return true; // fallback
+        auto raw = eq->getText();
+        bool isEq = raw.find("==") != std::string::npos;
+        return isEq ? (*lhs == *rhs) : (*lhs != *rhs);
+    }
+
+    // Relational (<, >, <=, >=)
+    if (auto* rel = dynamic_cast<LucisParser::RelExprContext*>(expr)) {
+        auto sub = rel->expression();
+        auto lhs = evalCfgIntValue(sub[0]);
+        auto rhs = evalCfgIntValue(sub[1]);
+        if (!lhs || !rhs) return true;
+        auto raw = rel->getText();
+        if (raw.find("<=") != std::string::npos) return *lhs <= *rhs;
+        if (raw.find(">=") != std::string::npos) return *lhs >= *rhs;
+        if (raw.find('<') != std::string::npos) return *lhs < *rhs;
+        if (raw.find('>') != std::string::npos) return *lhs > *rhs;
+        return true;
+    }
+
+    // Function calls: all(), any(), not() — built-in cfg combinators
+    if (auto* fn = dynamic_cast<LucisParser::FnCallExprContext*>(expr)) {
+        if (auto* ident = dynamic_cast<LucisParser::IdentExprContext*>(fn->expression())) {
+            auto name = ident->IDENTIFIER()->getText();
+            auto* args = fn->argList();
+            auto argExprs = args ? args->expression() : std::vector<LucisParser::ExpressionContext*>();
+
+            if (name == "all") {
+                for (auto* a : argExprs) {
+                    if (!evalCfgPredicate(a)) return false;
+                }
+                return true;
+            }
+            if (name == "any") {
+                for (auto* a : argExprs) {
+                    if (evalCfgPredicate(a)) return true;
+                }
+                return false;
+            }
+            if (name == "not") {
+                if (argExprs.size() == 1)
+                    return !evalCfgPredicate(argExprs[0]);
+                return true;
+            }
+        }
+    }
+
+    // Bare identifier: treat as boolean (debug_assertions → true)
+    if (auto* id = dynamic_cast<LucisParser::IdentExprContext*>(expr)) {
+        auto name = id->IDENTIFIER()->getText();
+        // Check target info
+        auto val = getCfgTargetValue(name);
+        if (val) return *val;
+        // Unknown identifier → fallback true
+        return true;
+    }
+
+    return true; // fallback
+}
+
+// Helper: resolve an identifier or string literal to an optional string
+std::optional<std::string> IRGen::evalCfgIdentOrString(LucisParser::ExpressionContext* expr) {
+    if (auto* s = dynamic_cast<LucisParser::StrLitExprContext*>(expr)) {
+        auto raw = s->STR_LIT()->getText();
+        if (raw.size() >= 2)
+            return raw.substr(1, raw.size() - 2);
+        return "";
+    }
+    if (auto* id = dynamic_cast<LucisParser::IdentExprContext*>(expr)) {
+        auto name = id->IDENTIFIER()->getText();
+        return getCfgTargetString(name);
+    }
+    if (auto* b = dynamic_cast<LucisParser::BoolLitExprContext*>(expr))
+        return b->BOOL_LIT()->getText() == "true" ? std::string("true") : std::string("false");
+    return std::nullopt;
+}
+
+// Helper: resolve identifier or literal to an optional integer
+std::optional<int64_t> IRGen::evalCfgIntValue(LucisParser::ExpressionContext* expr) {
+    if (auto* n = dynamic_cast<LucisParser::IntLitExprContext*>(expr)) {
+        std::string t = n->INT_LIT()->getText();
+        return static_cast<int64_t>(std::stoll(t));
+    }
+    if (auto* id = dynamic_cast<LucisParser::IdentExprContext*>(expr)) {
+        auto name = id->IDENTIFIER()->getText();
+        auto val = getCfgTargetValue(name);
+        if (val) return static_cast<int64_t>(*val ? 1 : 0);
+        return getCfgTargetInt(name);
+    }
+    return std::nullopt;
+}
+
+// ── Target info helpers ──────────────────────────────────────────
+std::optional<bool> IRGen::getCfgTargetValue(const std::string& name) {
+    if (name == "debug_assertions")
+        return debugOutput_;
+    return std::nullopt;
+}
+
+std::optional<std::string> IRGen::getCfgTargetString(const std::string& name) {
+    // Use target triple from the current module
+    auto tripleStr = module_->getTargetTriple().str();
+    if (tripleStr.empty())
+        tripleStr = llvm::sys::getDefaultTargetTriple();
+    TargetInfo target(tripleStr, debugOutput_);
+    if (name == "target_os") return target.os;
+    if (name == "target_arch") return target.arch;
+    if (name == "target_endian") return target.endian;
+    if (name == "target_os_family") return target.osFamily;
+    if (name == "target_triple") return target.triple;
+    // Shorthand expansions
+    if (name == "unix") return target.osFamily;
+    if (name == "windows") return std::string("windows");
+    if (name == "x86_64") return std::string("x86_64");
+    if (name == "aarch64") return std::string("aarch64");
+    if (name == "debug") return debugOutput_ ? std::string("true") : std::string("false");
+    return std::nullopt;
+}
+
+std::optional<int64_t> IRGen::getCfgTargetInt(const std::string& name) {
+    if (name == "target_pointer_width") {
+        auto tripleStr = module_->getTargetTriple().str();
+        if (tripleStr.empty())
+            tripleStr = llvm::sys::getDefaultTargetTriple();
+        TargetInfo target(tripleStr, debugOutput_);
+        return static_cast<int64_t>(target.pointerWidth);
+    }
+    return std::nullopt;
 }
 
 std::any IRGen::visitIdentExpr(LucisParser::IdentExprContext* ctx) {

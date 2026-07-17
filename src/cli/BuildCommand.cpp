@@ -80,6 +80,7 @@ void BuildCommand::buildArgs(ArgParser& parser) const {
     parser.addOption("output", 'o', "FILE", "Output path (default: <input>.out)");
 
     parser.addSection("General");
+    parser.addFlag("print-cfg", '\0', "Print target cfg constants and exit");
     parser.addFlag("ignore-config", '\0', "Ignore lucis.yaml, use CLI flags only");
     parser.addFlag("quiet", 'q', "Suppress pipeline logs");
     parser.addOption("config", '\0', "FILE", "Path to lucis.yaml configuration");
@@ -121,6 +122,7 @@ int BuildCommand::run(const ArgParser& parser) {
     if (pipeOpts.targetTriple.empty() && useConfig)
         pipeOpts.targetTriple = cfg->build.target;
     pipeOpts.codeModel = useConfig ? cfg->build.codeModel : "";
+    pipeOpts.printCfg = parser.has("print-cfg");
 
     // Linker entry: CLI (--linker-entry / --entry) > config.linker.entry
     std::string linkerEntry = parser.has("linker-entry") ? parser.get("linker-entry") :

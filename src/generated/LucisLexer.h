@@ -40,7 +40,7 @@ public:
     MINUS = 136, PLUS = 137, SLASH = 138, PERCENT = 139, EQ = 140, NEQ = 141, 
     LTE = 142, GTE = 143, LT = 144, GT = 145, LAND = 146, LOR = 147, NOT = 148, 
     INCR = 149, DECR = 150, LSHIFT = 151, PIPE = 152, CARET = 153, TILDE = 154, 
-    QUESTION = 155, WS = 156, LINE_COMMENT = 157, BLOCK_COMMENT = 158
+    QUESTION = 155, AT = 156, WS = 157, LINE_COMMENT = 158, BLOCK_COMMENT = 159
   };
 
   explicit LucisLexer(antlr4::CharStream *input);

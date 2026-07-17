@@ -1063,6 +1063,13 @@ std::optional<HoverResult> HoverProvider::hoverIdent(
         }
     }
 
+    // @cfg(…) — conditional compilation expression
+    if (name == "cfg") {
+        std::string md = "```lucis\n@cfg(…)\n```\nConditional compilation expression. "
+                         "Evaluated at compile time based on the target platform.";
+        return makeResult(token, md);
+    }
+
     return std::nullopt;
 }
 
@@ -2496,6 +2503,21 @@ std::optional<HoverResult> HoverProvider::walkExprForHover(
             auto r = walkBlockForHover(lbe->block(), hoveredToken, tokenText,
                                         tree, bindings, cursorLine, project);
             if (r) return r;
+        }
+        return std::nullopt;
+    }
+
+    // ── @cfg(…) ── conditional compilation expression ────────────────
+    if (auto* ce = dynamic_cast<LucisParser::CfgExprContext*>(expr)) {
+        if (ce->IDENTIFIER() && ce->IDENTIFIER()->getSymbol() == hoveredToken) {
+            std::string md = "```lucis\n@cfg(…)\n```\nConditional compilation expression. "
+                             "Evaluated at compile time based on the target platform.";
+            return makeResult(hoveredToken, md);
+        }
+        // Recurse into inner expression (the predicate value)
+        if (ce->expression()) {
+            return walkExprForHover(ce->expression(), hoveredToken, tokenText,
+                                    tree, bindings, cursorLine, project);
         }
         return std::nullopt;
     }

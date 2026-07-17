@@ -112,11 +112,13 @@ private:
         UseImport,      // use path::| — show modules and symbols
         DocComment,     // inside /** ... */ — show doc-tags
         Attribute,      // #[attr| — inside attribute brackets
+        AtCfg,          // @cfg(| — inside @cfg(…) expression
     };
 
     struct CompletionRequest {
         CompletionContext context = CompletionContext::General;
         std::string prefix;          // partial identifier typed so far
+        size_t col = 0;              // cursor column (0-based)
         std::string receiverType;    // for dot/arrow: struct type name
         std::string receiverVar;     // for dot/arrow: receiver variable name (resolve later)
         std::string receiverCall;    // for dot: receiver function call name (e.g. foo().|)
@@ -258,7 +260,14 @@ private:
     void addAttributeCompletions(std::vector<CompletionItem>& items,
                                  const std::string& prefix,
                                  size_t cursorLine,
+                                 size_t cursorCol,
                                  const std::string& source);
+
+    // Add @cfg(…) completions (reuses cfg predicate/value tables).
+    void addAtCfgCompletions(std::vector<CompletionItem>& items,
+                             const std::string& source,
+                             size_t cursorLine,
+                             size_t cursorCol);
 
     // ── Helpers ─────────────────────────────────────────────────────
 

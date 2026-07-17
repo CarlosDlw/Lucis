@@ -2,6 +2,15 @@
 #include "parser/Parser.h"
 #include "generated/LucisLexer.h"
 #include "generated/LucisParser.h"
+#include "attributes/CfgPredicate.h"
+#include "attributes/TargetInfo.h"
+#include "attributes/Attribute.h"
+
+#ifdef LLVM_VERSION_15_OR_NEWER
+#  include <llvm/TargetParser/Host.h>
+#else
+#  include <llvm/Support/Host.h>
+#endif
 
 #include <algorithm>
 #include <regex>
@@ -29,7 +38,7 @@ const std::vector<std::string>& SemanticTokensProvider::tokenTypes() {
 const std::vector<std::string>& SemanticTokensProvider::tokenModifiers() {
     static const std::vector<std::string> mods = {
         "declaration", "definition", "readonly", "static", "defaultLibrary",
-        "comptime"
+        "comptime", "cfgInactive"
     };
     return mods;
 }
@@ -109,6 +118,71 @@ static bool isOperator(size_t tokenType) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
+//  Cfg predicate helpers (for #[cfg] inactive detection)
+// ═══════════════════════════════════════════════════════════════════════
+
+static CfgPredicate lspParseCfgAttrArg(LucisParser::AttrArgContext* arg) {
+    CfgPredicate pred;
+    if (!arg) return pred;
+    if (arg->ASSIGN()) {
+        pred.type = CfgPredicate::KeyValue;
+        if (arg->IDENTIFIER()) pred.name = arg->IDENTIFIER()->getText();
+        if (auto* val = arg->attrArg()) {
+            if (val->STR_LIT()) {
+                auto raw = val->STR_LIT()->getText();
+                if (raw.size() >= 2 && raw.front() == '"' && raw.back() == '"')
+                    pred.stringValue = raw.substr(1, raw.size() - 2);
+                else pred.stringValue = raw;
+            } else if (val->IDENTIFIER()) {
+                pred.stringValue = val->IDENTIFIER()->getText();
+            }
+        }
+        return pred;
+    }
+    if (arg->LPAREN()) {
+        pred.type = CfgPredicate::Call;
+        if (arg->IDENTIFIER()) pred.name = arg->IDENTIFIER()->getText();
+        if (auto* argList = arg->attrArgList()) {
+            for (auto* child : argList->attrArg())
+                pred.args.push_back(lspParseCfgAttrArg(child));
+        }
+        return pred;
+    }
+    if (arg->IDENTIFIER()) {
+        pred.type = CfgPredicate::Ident;
+        pred.name = arg->IDENTIFIER()->getText();
+        return pred;
+    }
+    return pred;
+}
+
+static CfgPredicate lspParseCfg(const Attribute& attr) {
+    if (!attr.rawCtx) { CfgPredicate p; p.type = CfgPredicate::Ident; p.name = "true"; return p; }
+    auto* listCtx = attr.rawCtx->getRuleContext<LucisParser::AttrArgListContext>(0);
+    if (!listCtx) { CfgPredicate p; p.type = CfgPredicate::Ident; p.name = "true"; return p; }
+    auto args = listCtx->attrArg();
+    if (args.empty()) { CfgPredicate p; p.type = CfgPredicate::Ident; p.name = "true"; return p; }
+    if (args.size() == 1) return lspParseCfgAttrArg(args[0]);
+    CfgPredicate allPred;
+    allPred.type = CfgPredicate::Call; allPred.name = "all";
+    for (auto* a : args) allPred.args.push_back(lspParseCfgAttrArg(a));
+    return allPred;
+}
+
+static bool declActive(LucisParser::AttributeListContext* attrs) {
+    if (!attrs) return true;
+    TargetInfo target(llvm::sys::getDefaultTargetTriple());
+    for (auto* a : attrs->attribute()) {
+        if (!a->IDENTIFIER() || a->IDENTIFIER()->getText() != "cfg") continue;
+        Attribute attr;
+        attr.name = "cfg"; attr.rawCtx = a;
+        if (!lspParseCfg(attr).evaluate(target))
+            return false;
+    }
+    return true;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
 //  Collect contextual identifiers from the parse tree
 // ═══════════════════════════════════════════════════════════════════════
 
@@ -120,6 +194,12 @@ struct IdentClassification {
 // Key: "line:col" → classification
 using IdentMap = std::unordered_map<std::string, IdentClassification>;
 
+struct InactiveRange {
+    uint32_t startLine, startCol, endLine, endCol;
+};
+
+using InactiveRanges = std::vector<InactiveRange>;
+
 static std::string key(antlr4::Token* tok) {
     return std::to_string(tok->getLine() - 1) + ":" +
            std::to_string(tok->getCharPositionInLine());
@@ -129,6 +209,46 @@ static std::string key(antlr4::tree::TerminalNode* node) {
     return key(node->getSymbol());
 }
 
+static void recordInactive(InactiveRanges& ranges, antlr4::Token* start, antlr4::Token* stop) {
+    if (!start) return;
+    InactiveRange r;
+    r.startLine = start->getLine() - 1;
+    r.startCol  = start->getCharPositionInLine();
+    if (stop) {
+        r.endLine = stop->getLine() - 1;
+        // endCol is the column AFTER the last character
+        auto text = stop->getText();
+        r.endCol  = stop->getCharPositionInLine() + static_cast<uint32_t>(text.size());
+        // Handle multi-line tokens (e.g. block comments, strings)
+        for (size_t i = 0; i < text.size(); i++) {
+            if (text[i] == '\n') {
+                r.endLine++;
+                r.endCol = static_cast<uint32_t>(text.size() - i - 1);
+            }
+        }
+    } else {
+        r.endLine = r.startLine;
+        r.endCol  = r.startCol + 1;
+    }
+    ranges.push_back(r);
+}
+
+static antlr4::Token* firstAttrToken(LucisParser::AttributeListContext* attrs) {
+    if (attrs && !attrs->attribute().empty())
+        return attrs->attribute(0)->getStart();
+    return nullptr;
+}
+
+static bool isInactive(const InactiveRanges& ranges, uint32_t line, uint32_t col) {
+    for (auto& r : ranges) {
+        if (line > r.startLine || (line == r.startLine && col >= r.startCol)) {
+            if (line < r.endLine || (line == r.endLine && col < r.endCol))
+                return true;
+        }
+    }
+    return false;
+}
+
 static void classifyIdent(IdentMap& map, antlr4::tree::TerminalNode* node,
                            SemanticTokenType type, uint32_t modifiers = 0) {
     if (!node) return;
@@ -136,7 +256,8 @@ static void classifyIdent(IdentMap& map, antlr4::tree::TerminalNode* node,
 }
 
 // Walk the parse tree to classify IDENTIFIER tokens by their context.
-static void walkTree(IdentMap& map, antlr4::tree::ParseTree* node) {
+static void walkTree(IdentMap& map, InactiveRanges& inactiveRanges,
+                     antlr4::tree::ParseTree* node) {
     if (!node) return;
 
     // ── use ── modulePath identifiers are namespaces
@@ -189,9 +310,16 @@ static void walkTree(IdentMap& map, antlr4::tree::ParseTree* node) {
 
     // ── struct ──
     else if (auto* ctx = dynamic_cast<LucisParser::StructDeclContext*>(node)) {
-        classifyIdent(map, ctx->IDENTIFIER(), SemanticTokenType::Struct,
-                      static_cast<uint32_t>(SemanticTokenMod::Declaration) |
-                      static_cast<uint32_t>(SemanticTokenMod::Definition));
+        uint32_t mods = static_cast<uint32_t>(SemanticTokenMod::Declaration) |
+                        static_cast<uint32_t>(SemanticTokenMod::Definition);
+        if (!declActive(ctx->attributeList())) {
+            mods |= static_cast<uint32_t>(SemanticTokenMod::CfgInactive);
+            auto* attrStart = firstAttrToken(ctx->attributeList());
+            recordInactive(inactiveRanges,
+                attrStart ? attrStart : ctx->getStart(),
+                ctx->getStop());
+        }
+        classifyIdent(map, ctx->IDENTIFIER(), SemanticTokenType::Struct, mods);
         // Type params (T, U, ...) declared in the generic list
         if (ctx->typeParamList()) {
             for (auto* tp : ctx->typeParamList()->typeParam()) {
@@ -209,9 +337,16 @@ static void walkTree(IdentMap& map, antlr4::tree::ParseTree* node) {
 
     // ── union ──
     else if (auto* ctx = dynamic_cast<LucisParser::UnionDeclContext*>(node)) {
-        classifyIdent(map, ctx->IDENTIFIER(), SemanticTokenType::Struct,
-                      static_cast<uint32_t>(SemanticTokenMod::Declaration) |
-                      static_cast<uint32_t>(SemanticTokenMod::Definition));
+        uint32_t mods = static_cast<uint32_t>(SemanticTokenMod::Declaration) |
+                        static_cast<uint32_t>(SemanticTokenMod::Definition);
+        if (!declActive(ctx->attributeList())) {
+            mods |= static_cast<uint32_t>(SemanticTokenMod::CfgInactive);
+            auto* attrStart = firstAttrToken(ctx->attributeList());
+            recordInactive(inactiveRanges,
+                attrStart ? attrStart : ctx->getStart(),
+                ctx->getStop());
+        }
+        classifyIdent(map, ctx->IDENTIFIER(), SemanticTokenType::Struct, mods);
         if (ctx->typeParamList()) {
             for (auto* tp : ctx->typeParamList()->typeParam()) {
                 auto ids = tp->IDENTIFIER();
@@ -229,9 +364,16 @@ static void walkTree(IdentMap& map, antlr4::tree::ParseTree* node) {
     // ── enum ──
     else if (auto* ctx = dynamic_cast<LucisParser::EnumDeclContext*>(node)) {
         if (ctx->IDENTIFIER()) {
-            classifyIdent(map, ctx->IDENTIFIER(), SemanticTokenType::Enum,
-                          static_cast<uint32_t>(SemanticTokenMod::Declaration) |
-                          static_cast<uint32_t>(SemanticTokenMod::Definition));
+            uint32_t mods = static_cast<uint32_t>(SemanticTokenMod::Declaration) |
+                            static_cast<uint32_t>(SemanticTokenMod::Definition);
+            if (!declActive(ctx->attributeList())) {
+                mods |= static_cast<uint32_t>(SemanticTokenMod::CfgInactive);
+                auto* attrStart = firstAttrToken(ctx->attributeList());
+                recordInactive(inactiveRanges,
+                    attrStart ? attrStart : ctx->getStart(),
+                    ctx->getStop());
+            }
+            classifyIdent(map, ctx->IDENTIFIER(), SemanticTokenType::Enum, mods);
             for (auto* variant : ctx->enumVariant()) {
                 if (variant->IDENTIFIER()) {
                     classifyIdent(map, variant->IDENTIFIER(), SemanticTokenType::EnumMember,
@@ -254,6 +396,13 @@ static void walkTree(IdentMap& map, antlr4::tree::ParseTree* node) {
                             static_cast<uint32_t>(SemanticTokenMod::Definition);
             if (ctx->COMPTIME())
                 mods |= static_cast<uint32_t>(SemanticTokenMod::Comptime);
+            if (!declActive(ctx->attributeList())) {
+                mods |= static_cast<uint32_t>(SemanticTokenMod::CfgInactive);
+                auto* attrStart = firstAttrToken(ctx->attributeList());
+                recordInactive(inactiveRanges,
+                    attrStart ? attrStart : ctx->getStart(),
+                    ctx->getStop());
+            }
             classifyIdent(map, ctx->IDENTIFIER(0), SemanticTokenType::Function, mods);
         }
         // Generic type params
@@ -269,13 +418,28 @@ static void walkTree(IdentMap& map, antlr4::tree::ParseTree* node) {
 
     // ── extern decl ──
     else if (auto* ctx = dynamic_cast<LucisParser::ExternDeclContext*>(node)) {
-        classifyIdent(map, ctx->IDENTIFIER(), SemanticTokenType::Function,
-                      static_cast<uint32_t>(SemanticTokenMod::Declaration));
+        uint32_t mods = static_cast<uint32_t>(SemanticTokenMod::Declaration);
+        if (!declActive(ctx->attributeList())) {
+            mods |= static_cast<uint32_t>(SemanticTokenMod::CfgInactive);
+            auto* attrStart = firstAttrToken(ctx->attributeList());
+            recordInactive(inactiveRanges,
+                attrStart ? attrStart : ctx->getStart(),
+                ctx->getStop());
+        }
+        classifyIdent(map, ctx->IDENTIFIER(), SemanticTokenType::Function, mods);
     }
 
     // ── extend block ──
     else if (auto* ctx = dynamic_cast<LucisParser::ExtendDeclContext*>(node)) {
-        classifyIdent(map, ctx->IDENTIFIER(), SemanticTokenType::Struct);
+        uint32_t mods = 0;
+        if (!declActive(ctx->attributeList())) {
+            mods |= static_cast<uint32_t>(SemanticTokenMod::CfgInactive);
+            auto* attrStart = firstAttrToken(ctx->attributeList());
+            recordInactive(inactiveRanges,
+                attrStart ? attrStart : ctx->getStart(),
+                ctx->getStop());
+        }
+        classifyIdent(map, ctx->IDENTIFIER(), SemanticTokenType::Struct, mods);
         // Generic type params
         if (ctx->typeParamList()) {
             for (auto* tp : ctx->typeParamList()->typeParam()) {
@@ -316,19 +480,33 @@ static void walkTree(IdentMap& map, antlr4::tree::ParseTree* node) {
 
     // ── variable declarations ──
     else if (auto* ctx = dynamic_cast<LucisParser::VarDeclStmtContext*>(node)) {
+        uint32_t baseMods = static_cast<uint32_t>(SemanticTokenMod::Declaration);
+        if (!declActive(ctx->attributeList())) {
+            baseMods |= static_cast<uint32_t>(SemanticTokenMod::CfgInactive);
+            auto* attrStart = firstAttrToken(ctx->attributeList());
+            recordInactive(inactiveRanges,
+                attrStart ? attrStart : ctx->getStart(),
+                ctx->getStop());
+        }
         for (auto* id : ctx->IDENTIFIER())
-            classifyIdent(map, id, SemanticTokenType::Variable,
-                          static_cast<uint32_t>(SemanticTokenMod::Declaration));
+            classifyIdent(map, id, SemanticTokenType::Variable, baseMods);
     }
 
     // ── const declarations ──
     else if (auto* ctx = dynamic_cast<LucisParser::ConstDeclStmtContext*>(node)) {
+        uint32_t mods = static_cast<uint32_t>(SemanticTokenMod::Declaration) |
+                        static_cast<uint32_t>(SemanticTokenMod::Readonly);
+        if (!declActive(ctx->attributeList())) {
+            mods |= static_cast<uint32_t>(SemanticTokenMod::CfgInactive);
+            auto* attrStart = firstAttrToken(ctx->attributeList());
+            recordInactive(inactiveRanges,
+                attrStart ? attrStart : ctx->getStart(),
+                ctx->getStop());
+        }
         for (auto* decl : ctx->constDeclarator()) {
             auto* id = decl->IDENTIFIER();
             if (id)
-                classifyIdent(map, id, SemanticTokenType::Variable,
-                              static_cast<uint32_t>(SemanticTokenMod::Declaration) |
-                              static_cast<uint32_t>(SemanticTokenMod::Readonly));
+                classifyIdent(map, id, SemanticTokenType::Variable, mods);
         }
     }
 
@@ -592,9 +770,14 @@ static void walkTree(IdentMap& map, antlr4::tree::ParseTree* node) {
         classifyIdent(map, ctx->IDENTIFIER(), SemanticTokenType::Decorator);
     }
 
+    // ── @cfg(…) ── cfg expression identifier is a decorator
+    else if (auto* ctx = dynamic_cast<LucisParser::CfgExprContext*>(node)) {
+        classifyIdent(map, ctx->IDENTIFIER(), SemanticTokenType::Decorator);
+    }
+
     // Recurse into children
     for (size_t i = 0; i < node->children.size(); ++i) {
-        walkTree(map, node->children[i]);
+        walkTree(map, inactiveRanges, node->children[i]);
     }
 }
 
@@ -1811,7 +1994,8 @@ std::vector<uint32_t> SemanticTokensProvider::tokenize(const std::string& source
 
     // 2. Walk parse tree to classify identifiers by context
     IdentMap identMap;
-    walkTree(identMap, pr.tree);
+    InactiveRanges inactiveRanges;
+    walkTree(identMap, inactiveRanges, pr.tree);
 
     // 3. Walk lexer tokens and emit semantic tokens
     pr.tokens->fill();
@@ -1821,16 +2005,19 @@ std::vector<uint32_t> SemanticTokensProvider::tokenize(const std::string& source
         uint32_t line = static_cast<uint32_t>(tok->getLine()) - 1; // ANTLR is 1-based
         uint32_t col  = static_cast<uint32_t>(tok->getCharPositionInLine());
         uint32_t len  = static_cast<uint32_t>(tok->getText().size());
+
+        uint32_t inact = isInactive(inactiveRanges, line, col)
+            ? static_cast<uint32_t>(SemanticTokenMod::CfgInactive) : 0;
         size_t type   = tok->getType();
 
         // Keywords
         if (isKeyword(type)) {
-            emit(raw, line, col, len, SemanticTokenType::Keyword);
+            emit(raw, line, col, len, SemanticTokenType::Keyword, inact);
         }
         // Primitive types
         else if (isPrimitiveType(type)) {
             emit(raw, line, col, len, SemanticTokenType::Type,
-                 static_cast<uint32_t>(SemanticTokenMod::DefaultLib));
+                 static_cast<uint32_t>(SemanticTokenMod::DefaultLib) | inact);
         }
         // Literals
         else if (type == LucisLexer::INT_LIT || type == LucisLexer::FLOAT_LIT ||
@@ -1844,13 +2031,16 @@ std::vector<uint32_t> SemanticTokensProvider::tokenize(const std::string& source
                  type == LucisLexer::SUFFIXED_DOT_FLOAT ||
                  type == LucisLexer::SUFFIXED_INT_FLOAT ||
                  type == LucisLexer::SUFFIXED_FLOAT_INT) {
-            emit(raw, line, col, len, SemanticTokenType::Number);
+            emit(raw, line, col, len, SemanticTokenType::Number, inact);
         }
         else if (type == LucisLexer::ATTR_OPEN) {
-            emit(raw, line, col, len, SemanticTokenType::Decorator);
+            emit(raw, line, col, len, SemanticTokenType::Decorator, inact);
+        }
+        else if (type == LucisLexer::AT) {
+            emit(raw, line, col, len, SemanticTokenType::Decorator, inact);
         }
         else if (type == LucisLexer::BOOL_LIT) {
-            emit(raw, line, col, len, SemanticTokenType::Keyword);
+            emit(raw, line, col, len, SemanticTokenType::Keyword, inact);
         }
         else if (type == LucisLexer::STR_LIT || type == LucisLexer::C_STR_LIT ||
                  type == LucisLexer::CHAR_LIT ||
@@ -1861,11 +2051,11 @@ std::vector<uint32_t> SemanticTokensProvider::tokenize(const std::string& source
         }
         // Operators
         else if (isOperator(type)) {
-            emit(raw, line, col, len, SemanticTokenType::Operator);
+            emit(raw, line, col, len, SemanticTokenType::Operator, inact);
         }
         // Include directives
         else if (type == LucisLexer::INCLUDE_SYS || type == LucisLexer::INCLUDE_LOCAL) {
-            emit(raw, line, col, len, SemanticTokenType::Macro);
+            emit(raw, line, col, len, SemanticTokenType::Macro, inact);
         }
         // c_macro block — emit semantic sub-tokens for content inside
         else if (type == LucisLexer::C_MACRO_BLOCK) {
@@ -1880,10 +2070,10 @@ std::vector<uint32_t> SemanticTokensProvider::tokenize(const std::string& source
             std::string k = std::to_string(line) + ":" + std::to_string(col);
             auto it = identMap.find(k);
             if (it != identMap.end()) {
-                emit(raw, line, col, len, it->second.type, it->second.modifiers);
+                emit(raw, line, col, len, it->second.type, it->second.modifiers | inact);
             } else {
                 // Unclassified identifier → default to variable
-                emit(raw, line, col, len, SemanticTokenType::Variable);
+                emit(raw, line, col, len, SemanticTokenType::Variable, inact);
             }
         }
     }

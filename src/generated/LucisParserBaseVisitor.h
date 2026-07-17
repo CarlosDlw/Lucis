@@ -451,6 +451,10 @@ public:
     return visitChildren(ctx);
   }
 
+  virtual std::any visitCfgExpr(LucisParser::CfgExprContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
   virtual std::any visitBitAndExpr(LucisParser::BitAndExprContext *ctx) override {
     return visitChildren(ctx);
   }

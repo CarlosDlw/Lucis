@@ -213,6 +213,7 @@ PIPE      : '|';
 CARET     : '^';
 TILDE     : '~';
 QUESTION  : '?';
+AT        : '@';
 
 // Whitespace and comments
 WS        : [ \t\r\n]+ -> skip;
