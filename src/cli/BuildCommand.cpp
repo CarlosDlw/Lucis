@@ -11,6 +11,12 @@
 
 #include "generated/LucisParser.h"
 
+#ifdef LLVM_VERSION_15_OR_NEWER
+#  include <llvm/TargetParser/Host.h>
+#else
+#  include <llvm/Support/Host.h>
+#endif
+
 #include <iostream>
 #include <iomanip>
 #include <fstream>
@@ -615,7 +621,10 @@ int BuildCommand::run(const ArgParser& parser) {
             irGen.setCBindings(pipeline->cBindings.get());
             irGen.setProjectRoot(pipeline->projectRoot);
             irGen.setSemanticDB(pipeline->semanticDB.get());
-            irGen.setTargetTriple(pipeOpts.targetTriple);
+            irGen.setTargetTriple(
+                pipeOpts.targetTriple.empty()
+                    ? llvm::sys::getDefaultTargetTriple()
+                    : pipeOpts.targetTriple);
             irGen.setNoStd(pipeOpts.noStd);
             irGen.setEmitDebugInfo(pipeOpts.emitDebugInfo);
             irGen.setComptimeEngine(&comptimeEngine);

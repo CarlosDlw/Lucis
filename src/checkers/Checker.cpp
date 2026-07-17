@@ -1659,6 +1659,7 @@ bool Checker::check(LucisParser::ProgramContext* tree) {
     // Pass 4.6: pre-register all top-level const names (for forward references)
     for (auto* decl : tree->topLevelDecl()) {
         if (auto* cd = decl->constDeclStmt()) {
+            if (!isDeclActive(cd->attributeList())) continue;
             auto decls = cd->constDeclarator();
             for (auto* d : decls) {
                 auto name = d->IDENTIFIER()->getText();

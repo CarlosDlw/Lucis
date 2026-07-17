@@ -1,5 +1,6 @@
 #include "cli/LucisPipeline.h"
 #include "parser/Parser.h"
+#include "attributes/TargetInfo.h"
 
 #ifdef LLVM_VERSION_15_OR_NEWER
 #  include <llvm/TargetParser/Host.h>
@@ -292,9 +293,13 @@ std::unique_ptr<PipelineResult> LucisPipeline::run(const Options& opts) {
 
     // ── Step 3: module registry ──────────────────────────────────────────
     progress(3, 5, "building module registry");
+    TargetInfo pipelineTarget(
+        opts.targetTriple.empty() ? llvm::sys::getDefaultTargetTriple() : opts.targetTriple,
+        opts.emitDebugInfo);
     result->registry = std::make_unique<ModuleRegistry>();
     for (auto& unit : result->units)
-        result->registry->registerFile(unit.modulePath, unit.filePath, unit.parseResult->tree, unit.parseResult, unit.isStdlib);
+        result->registry->registerFile(unit.modulePath, unit.filePath, unit.parseResult->tree,
+                                       unit.parseResult, unit.isStdlib, &pipelineTarget);
     auto dupErrors = result->registry->validate();
     if (!dupErrors.empty()) {
         for (auto& err : dupErrors) printErrorLine(err);

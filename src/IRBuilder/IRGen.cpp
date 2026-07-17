@@ -106,9 +106,11 @@ static CfgPredicate irParseCfgFromAttribute(const Attribute& attr) {
     return allPred;
 }
 
-static bool irDeclActive(LucisParser::AttributeListContext* attrs) {
+static bool irDeclActive(LucisParser::AttributeListContext* attrs,
+                          const std::string& targetTriple,
+                          bool debugOutput) {
     if (!attrs) return true;
-    TargetInfo target(llvm::sys::getDefaultTargetTriple());
+    TargetInfo target(targetTriple, debugOutput);
     for (auto* a : attrs->attribute()) {
         if (!a->IDENTIFIER() || a->IDENTIFIER()->getText() != "cfg") continue;
         Attribute attr;
@@ -1793,7 +1795,7 @@ IRGen::MethodEntry* IRGen::findMethodEntryInChain(const TypeInfo* ti,
 // ── Forward-declare a user function (signature only, no body) ───────────
 void IRGen::forwardDeclareFunction(LucisParser::FunctionDeclContext* ctx) {
     if (!ctx) return;
-    if (!irDeclActive(ctx->attributeList())) return;
+    if (!irDeclActive(ctx->attributeList(), targetTriple_, debugOutput_)) return;
     // Generic function templates are not forward-declared — only instantiations are
     if (ctx->typeParamList()) {
         if (ctx->IDENTIFIER().empty()) {
@@ -1893,7 +1895,7 @@ void IRGen::forwardDeclareFunction(LucisParser::FunctionDeclContext* ctx) {
 std::any IRGen::visitFunctionDecl(LucisParser::FunctionDeclContext* ctx) {
     // Generic function templates are handled on-demand at call sites
     if (ctx->typeParamList()) return {};
-    if (!irDeclActive(ctx->attributeList())) return {};
+    if (!irDeclActive(ctx->attributeList(), targetTriple_, debugOutput_)) return {};
 
     // Comptime functions are not compiled to runtime code
     if (ctx->COMPTIME()) return {};
@@ -3073,7 +3075,7 @@ llvm::Value* IRGen::ptrToIntIfNeeded(llvm::Value* val) {
 
 // const NAME = VALUE; or const NAME: TYPE = VALUE;
 std::any IRGen::visitConstDeclStmt(LucisParser::ConstDeclStmtContext* ctx) {
-    if (!irDeclActive(ctx->attributeList())) return {};
+    if (!irDeclActive(ctx->attributeList(), targetTriple_, debugOutput_)) return {};
         SET_DBG_LOC(ctx);
     auto decls = ctx->constDeclarator();
     if (decls.empty()) return nullptr;
@@ -3199,7 +3201,7 @@ std::any IRGen::visitConstDeclStmt(LucisParser::ConstDeclStmtContext* ctx) {
 
 // int32 x = 42;   or   []int32 arr = [1, 2, 3];   or   Vec<int32> v = [1, 2, 3];
 std::any IRGen::visitVarDeclStmt(LucisParser::VarDeclStmtContext* ctx) {
-    if (!irDeclActive(ctx->attributeList())) return {};
+    if (!irDeclActive(ctx->attributeList(), targetTriple_, debugOutput_)) return {};
         SET_DBG_LOC(ctx);
     // ── Tuple destructuring: auto (x, y) = expr; ────────────────────
     if (ctx->LPAREN()) {

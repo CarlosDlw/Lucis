@@ -10,6 +10,12 @@
 #include "comptime/ComptimeEngine.h"
 #include "generated/LucisParser.h"
 
+#ifdef LLVM_VERSION_15_OR_NEWER
+#  include <llvm/TargetParser/Host.h>
+#else
+#  include <llvm/Support/Host.h>
+#endif
+
 #include <iostream>
 #include <iomanip>
 #include <filesystem>
@@ -116,6 +122,13 @@ int RunCommand::run(const ArgParser& parser) {
         irGen.setCBindings(pipeline->cBindings.get());
         irGen.setSemanticDB(pipeline->semanticDB.get());
         irGen.setComptimeEngine(&comptimeEngine);
+        irGen.setTargetTriple(
+            pipeOpts.targetTriple.empty()
+                ? llvm::sys::getDefaultTargetTriple()
+                : pipeOpts.targetTriple);
+        irGen.setEmitDebugInfo(pipeOpts.emitDebugInfo);
+        irGen.setNoStd(pipeOpts.noStd);
+        irGen.setProjectRoot(pipeline->projectRoot);
         auto irMod = irGen.generate(unit.parseResult->tree, unit.filePath);
         if (!irMod) {
             std::cerr << "lucis: IR generation failed for '" << unit.filePath << "'\n";

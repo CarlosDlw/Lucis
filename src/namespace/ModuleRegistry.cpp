@@ -1,17 +1,78 @@
 #include "namespace/ModuleRegistry.h"
+#include "attributes/CfgPredicate.h"
 
 #include <algorithm>
 #include <unordered_set>
 #include <sstream>
 
+// ── Helper: check if a top-level decl is active under #[cfg(...)] ──────────
+static bool declIsActiveForTarget(LucisParser::AttributeListContext* attrs,
+                                   const TargetInfo& target) {
+    if (!attrs) return true;
+    for (auto* a : attrs->attribute()) {
+        if (!a->IDENTIFIER() || a->IDENTIFIER()->getText() != "cfg") continue;
+        auto* listCtx = a->attrArgList();
+        if (!listCtx) return false;
+        auto args = listCtx->attrArg();
+        if (args.empty()) return false;
+        // Reuse the canonical parsing from Checker/IRGen logic inline
+        auto parsePred = [&](LucisParser::AttrArgContext* arg, auto& self) -> CfgPredicate {
+            CfgPredicate pred;
+            if (!arg) return pred;
+            if (arg->ASSIGN()) {
+                pred.type = CfgPredicate::KeyValue;
+                if (arg->IDENTIFIER())
+                    pred.name = arg->IDENTIFIER()->getText();
+                if (auto* val = arg->attrArg()) {
+                    if (val->STR_LIT())
+                        pred.stringValue = val->STR_LIT()->getText();
+                    else if (val->IDENTIFIER())
+                        pred.stringValue = val->IDENTIFIER()->getText();
+                }
+            } else if (arg->LPAREN()) {
+                pred.type = CfgPredicate::Call;
+                if (arg->IDENTIFIER())
+                    pred.name = arg->IDENTIFIER()->getText();
+                if (auto* innerList = arg->attrArgList()) {
+                    for (auto* child : innerList->attrArg())
+                        pred.args.push_back(self(child, self));
+                }
+            } else if (arg->IDENTIFIER()) {
+                pred.type = CfgPredicate::Ident;
+                pred.name = arg->IDENTIFIER()->getText();
+            }
+            return pred;
+        };
+        CfgPredicate pred = parsePred(args[0], parsePred);
+        if (!pred.evaluate(target))
+            return false;
+    }
+    return true;
+}
+
 void ModuleRegistry::registerFile(const std::string& modulePath,
                                    const std::string& filePath,
                                    LucisParser::ProgramContext* tree,
                                    std::shared_ptr<ParseResult> anchor,
-                                   bool isStdlib) {
+                                   bool isStdlib,
+                                   const TargetInfo* target) {
     auto& symbols = modules_[modulePath];
 
     for (auto* topLevel : tree->topLevelDecl()) {
+        // Check #[cfg] on the specific declaration type
+        auto getAttrs = [](LucisParser::TopLevelDeclContext* tl) -> LucisParser::AttributeListContext* {
+            if (auto* f = tl->functionDecl())     return f->attributeList();
+            if (auto* s = tl->structDecl())        return s->attributeList();
+            if (auto* u = tl->unionDecl())         return u->attributeList();
+            if (auto* e = tl->enumDecl())          return e->attributeList();
+            if (auto* t = tl->typeAliasDecl())     return t->attributeList();
+            if (auto* x = tl->extendDecl())        return x->attributeList();
+            if (auto* c = tl->constDeclStmt())     return c->attributeList();
+            return nullptr;
+        };
+        auto* attrs = getAttrs(topLevel);
+        if (target && attrs && !declIsActiveForTarget(attrs, *target)) continue;
+
         if (auto* funcDecl = topLevel->functionDecl()) {
             ExportedSymbol sym;
             sym.kind       = ExportedSymbol::Function;

@@ -7,6 +7,7 @@
 
 #include "generated/LucisParser.h"
 #include "parser/Parser.h"
+#include "attributes/TargetInfo.h"
 
 struct ExportedSymbol {
     enum Kind { Function, Struct, Union, Enum, TypeAlias, ExtendBlock, Constant };
@@ -35,7 +36,8 @@ public:
                       const std::string& filePath,
                       LucisParser::ProgramContext* tree,
                       std::shared_ptr<ParseResult> anchor,
-                      bool isStdlib = false);
+                      bool isStdlib = false,
+                      const TargetInfo* target = nullptr);
 
     std::vector<std::string> validate() const;
 
