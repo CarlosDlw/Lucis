@@ -46,6 +46,7 @@ public:
         bool quiet = false;
         bool noStd = false;
         std::string targetTriple;
+        std::string sysroot;
         std::string codeModel;
         std::string entryPoint;
         bool emitDebugInfo = false;

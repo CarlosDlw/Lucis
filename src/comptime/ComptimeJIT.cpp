@@ -39,7 +39,8 @@ std::unique_ptr<llvm::Module>
 ComptimeJIT::compileToIR(void* funcDecl) {
     auto* func = static_cast<LucisParser::FunctionDeclContext*>(funcDecl);
     auto module = std::make_unique<llvm::Module>("comptime_jit", impl_->context);
-    module->setTargetTriple(llvm::Triple(llvm::sys::getDefaultTargetTriple()));
+    auto tripleStr = targetTriple_.empty() ? llvm::sys::getDefaultTargetTriple() : targetTriple_;
+    module->setTargetTriple(llvm::Triple(tripleStr));
 
     ComptimeIRGen irGen(impl_->context, *module);
     auto* fn = irGen.compile(func);

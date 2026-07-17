@@ -27,6 +27,7 @@ struct LucisConfig {
 
     struct BuildSettings {
         std::string target;
+        std::string sysroot;
         std::string optLevel;
         bool noStd;
         bool debug = false;

@@ -328,6 +328,8 @@ std::unique_ptr<PipelineResult> LucisPipeline::run(const Options& opts) {
         // Per-unit C header resolution ──────────────────────────────────
         if (!opts.noStd) {
             std::vector<std::string> cIncludePaths = opts.includePaths;
+            if (!opts.sysroot.empty())
+                cIncludePaths.push_back(opts.sysroot + "/include");
             if (unit.isStdlib) {
                 for (auto& p : ImportResolver::stdlibSearchPaths())
                     cIncludePaths.push_back(p);

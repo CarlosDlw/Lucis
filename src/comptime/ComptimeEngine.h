@@ -20,6 +20,11 @@ public:
     // Whether the JIT engine is ready.
     bool isReady() const { return jit_ && jit_->isReady(); }
 
+    // Set the target triple for cross-compilation comptime evaluation.
+    void setTargetTriple(const std::string& triple) {
+        if (jit_) jit_->setTargetTriple(triple);
+    }
+
     // Access the comptime function registry.
     ComptimeRegistry& registry() { return registry_; }
     const ComptimeRegistry& registry() const { return registry_; }

@@ -24,6 +24,9 @@ public:
     ComptimeValue evaluate(void* funcDecl,
                            const std::vector<ComptimeValue>& args);
 
+    // Set the target triple for cross-compilation comptime evaluation.
+    void setTargetTriple(const std::string& triple) { targetTriple_ = triple; }
+
     // Check if the JIT engine is ready.
     bool isReady() const { return ready_; }
 
@@ -37,6 +40,7 @@ private:
                          const std::vector<ComptimeValue>& args);
 
     bool ready_ = false;
+    std::string targetTriple_;
     struct Impl;
     std::unique_ptr<Impl> impl_;
 };

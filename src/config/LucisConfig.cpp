@@ -108,6 +108,7 @@ std::optional<LucisConfig> LucisConfig::load(const std::string& yamlPath) {
         {
             auto b = root["build"];
             cfg.build.target      = optOrDefault(b, "target", "");
+            cfg.build.sysroot     = optOrDefault(b, "sysroot", "");
             cfg.build.optLevel    = optOrDefault(b, "opt_level", "O0");
             cfg.build.noStd       = boolOrDefault(b, "no_std", false);
             cfg.build.debug       = boolOrDefault(b, "debug", false);
@@ -331,7 +332,7 @@ LucisConfig::validate(const std::string& yamlPath) {
     // build
     if (yamlIsMap(root["build"])) {
         static const std::vector<std::string> buildKeys = {
-            "target", "opt_level", "no_std", "lto", "static", "shared",
+            "target", "sysroot", "opt_level", "no_std", "lto", "static", "shared",
             "fpic", "code_model", "include_paths", "defines",
             // legacy (accepted with warning)
             "entry", "assembler", "assembler_flags"
@@ -339,6 +340,7 @@ LucisConfig::validate(const std::string& yamlPath) {
         checkUnknownKeys(root["build"], "build", buildKeys, msgs);
         checkType(root["build"]["opt_level"], "build.opt_level", "scalar", msgs);
         checkType(root["build"]["target"], "build.target", "scalar", msgs);
+        checkType(root["build"]["sysroot"], "build.sysroot", "scalar", msgs);
         for (auto& k : {"no_std", "lto", "static", "shared", "fpic"})
             checkType(root["build"][k], std::string("build.") + k, "bool", msgs);
         checkType(root["build"]["include_paths"], "build.include_paths", "seq", msgs);
@@ -467,6 +469,7 @@ bool LucisConfig::createDefault(const std::string& dir, const std::string& name)
     cfg.assembly.assembler = "";
     cfg.assembly.flags.clear();
     cfg.build.target      = "";
+    cfg.build.sysroot     = "";
     cfg.build.noStd       = false;
     cfg.build.lto         = false;
     cfg.build.staticLink  = false;
@@ -539,6 +542,7 @@ bool LucisConfig::save(const std::string& yamlPath) const {
 
         // build
         root["build"]["target"]    = build.target;
+        root["build"]["sysroot"]   = build.sysroot;
         root["build"]["opt_level"] = build.optLevel;
         root["build"]["no_std"]    = build.noStd;
         root["build"]["lto"]       = build.lto;

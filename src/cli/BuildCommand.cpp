@@ -41,6 +41,7 @@ void BuildCommand::buildArgs(ArgParser& parser) const {
 
     parser.addSection("Compilation");
     parser.addOption("target", '\0', "TRIPLE", "Target triple (default: host)");
+    parser.addOption("sysroot", '\0', "PATH", "System root for cross-compilation headers/libs");
     parser.addFlag("no-std", '\0', "Build without standard library (freestanding/kernel)");
     parser.addFlag("debug", 'g', "Emit debug info (DWARF)");
     parser.addOption("opt", 'O', "LEVEL", "Optimization level: 0, 1, 2, 3, s, z, fast (default: 0)");
@@ -127,6 +128,9 @@ int BuildCommand::run(const ArgParser& parser) {
     pipeOpts.targetTriple = parser.get("target");
     if (pipeOpts.targetTriple.empty() && useConfig)
         pipeOpts.targetTriple = cfg->build.target;
+    pipeOpts.sysroot = parser.get("sysroot");
+    if (pipeOpts.sysroot.empty() && useConfig)
+        pipeOpts.sysroot = cfg->build.sysroot;
     pipeOpts.codeModel = useConfig ? cfg->build.codeModel : "";
     pipeOpts.printCfg = parser.has("print-cfg");
 
@@ -354,6 +358,8 @@ int BuildCommand::run(const ArgParser& parser) {
     auto libPaths = useConfig ? cfg->linker.libPaths : std::vector<std::string>{};
     auto cliLibPaths = parser.getAll("lib-path");
     libPaths.insert(libPaths.end(), cliLibPaths.begin(), cliLibPaths.end());
+    if (!pipeOpts.sysroot.empty())
+        libPaths.push_back(pipeOpts.sysroot + "/lib");
 
     auto buildFlagHash = [&]() -> std::string {
         std::string buf;
@@ -567,6 +573,8 @@ int BuildCommand::run(const ArgParser& parser) {
         std::vector<std::string> cIncFlags;
         for (auto& ip : pipeOpts.includePaths)
             cIncFlags.push_back("-I" + ip);
+        if (!pipeOpts.sysroot.empty())
+            cIncFlags.push_back("--sysroot=" + pipeOpts.sysroot);
         // Config defines: -DKEY=VAL
         if (useConfig) {
             for (auto& [k, v] : cfg->build.defines)
@@ -597,6 +605,10 @@ int BuildCommand::run(const ArgParser& parser) {
 
         // Set up comptime engine and register all comptime functions
         ComptimeEngine comptimeEngine;
+        comptimeEngine.setTargetTriple(
+            pipeOpts.targetTriple.empty()
+                ? llvm::sys::getDefaultTargetTriple()
+                : pipeOpts.targetTriple);
         for (auto& unit : pipeline->units) {
             if (!unit.parseResult || !unit.parseResult->tree) continue;
             for (auto* tld : unit.parseResult->tree->topLevelDecl()) {
@@ -1132,6 +1144,13 @@ int BuildCommand::run(const ArgParser& parser) {
         } else {
             finalLinkerFlags.push_back("-Wl,-rpath," + rpathDir);
         }
+    }
+
+    if (!pipeOpts.sysroot.empty()) {
+        if (isRawLd)
+            finalLinkerFlags.push_back("--sysroot=" + pipeOpts.sysroot);
+        else
+            finalLinkerFlags.push_back("--sysroot=" + pipeOpts.sysroot);
     }
 
     if (!CodeGen::linkObjectFiles(objectFiles, outputFile,

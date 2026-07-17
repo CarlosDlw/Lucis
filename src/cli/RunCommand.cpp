@@ -40,6 +40,8 @@ namespace fs = std::filesystem;
 void RunCommand::buildArgs(ArgParser& parser) const {
     parser.addPositional("file", "Path to the .lc entrypoint file (auto-resolved from lucis.yaml if omitted)", false);
     parser.addOption("opt", 'O', "LEVEL", "Optimization level: 0, 1, 2, 3, s, z, or fast (default: 0)");
+    parser.addOption("target", '\0', "TRIPLE", "Target triple (default: host)");
+    parser.addOption("sysroot", '\0', "PATH", "System root for cross-compilation headers/libs");
     parser.addFlag("lto", '\0', "Enable Link Time Optimization");
     parser.addFlag("quiet", 'q', "Suppress pipeline logs");
     parser.addFlag("clean", 'c', "Clear cache before compiling");
@@ -72,6 +74,13 @@ int RunCommand::run(const ArgParser& parser) {
 
     pipeOpts.sourcePaths = useConfig ? cfg->sourcePaths : std::vector<std::string>{"src/"};
 
+    pipeOpts.targetTriple = parser.get("target");
+    if (pipeOpts.targetTriple.empty() && useConfig)
+        pipeOpts.targetTriple = cfg->build.target;
+    pipeOpts.sysroot = parser.get("sysroot");
+    if (pipeOpts.sysroot.empty() && useConfig)
+        pipeOpts.sysroot = cfg->build.sysroot;
+
     pipeOpts.userLinkerFlags = parser.getAll("link");
     if (useConfig && pipeOpts.userLinkerFlags.empty())
         pipeOpts.userLinkerFlags = cfg->linker.libs;
@@ -97,6 +106,10 @@ int RunCommand::run(const ArgParser& parser) {
 
     // Set up comptime engine and register all comptime functions
     ComptimeEngine comptimeEngine;
+    comptimeEngine.setTargetTriple(
+        pipeOpts.targetTriple.empty()
+            ? llvm::sys::getDefaultTargetTriple()
+            : pipeOpts.targetTriple);
     for (auto& unit : pipeline->units) {
         if (!unit.parseResult || !unit.parseResult->tree) continue;
         for (auto* tld : unit.parseResult->tree->topLevelDecl()) {
