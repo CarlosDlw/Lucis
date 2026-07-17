@@ -229,6 +229,7 @@ public:
   public:
     UseItemContext(UseDeclContext *ctx);
 
+    AttributeListContext *attributeList();
     antlr4::tree::TerminalNode *USE();
     ModulePathContext *modulePath();
     antlr4::tree::TerminalNode *SCOPE();
@@ -242,6 +243,7 @@ public:
   public:
     UseRootContext(UseDeclContext *ctx);
 
+    AttributeListContext *attributeList();
     antlr4::tree::TerminalNode *USE();
     antlr4::tree::TerminalNode *IDENTIFIER();
     antlr4::tree::TerminalNode *SEMI();
@@ -253,6 +255,7 @@ public:
   public:
     UseGroupContext(UseDeclContext *ctx);
 
+    AttributeListContext *attributeList();
     antlr4::tree::TerminalNode *USE();
     ModulePathContext *modulePath();
     antlr4::tree::TerminalNode *SCOPE();
@@ -271,6 +274,7 @@ public:
   public:
     UseEnumWildcardContext(UseDeclContext *ctx);
 
+    AttributeListContext *attributeList();
     antlr4::tree::TerminalNode *USE();
     TypeSpecContext *typeSpec();
     antlr4::tree::TerminalNode *SCOPE();

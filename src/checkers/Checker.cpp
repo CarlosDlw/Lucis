@@ -6280,6 +6280,14 @@ static bool typeSpecMentionsGenericParam(
 
 void Checker::checkUseDecls(LucisParser::ProgramContext* tree) {
     auto processUse = [&](LucisParser::UseDeclContext* useDecl) {
+        auto* attrs = [&]() -> LucisParser::AttributeListContext* {
+            if (auto* r = dynamic_cast<LucisParser::UseRootContext*>(useDecl)) return r->attributeList();
+            if (auto* i = dynamic_cast<LucisParser::UseItemContext*>(useDecl)) return i->attributeList();
+            if (auto* g = dynamic_cast<LucisParser::UseGroupContext*>(useDecl)) return g->attributeList();
+            if (auto* e = dynamic_cast<LucisParser::UseEnumWildcardContext*>(useDecl)) return e->attributeList();
+            return nullptr;
+        }();
+        if (!isDeclActive(attrs)) return;
         if (auto* root = dynamic_cast<LucisParser::UseRootContext*>(useDecl)) {
             auto rootName = root->IDENTIFIER()->getText();
             if (rootName == "std") {
@@ -7350,6 +7358,14 @@ void Checker::checkStmt(LucisParser::StatementContext* stmt,
                         const TypeInfo* retType,
                         bool& terminated) {
     if (auto* ud = stmt->useDecl()) {
+        auto* attrs = [&]() -> LucisParser::AttributeListContext* {
+            if (auto* r = dynamic_cast<LucisParser::UseRootContext*>(ud)) return r->attributeList();
+            if (auto* i = dynamic_cast<LucisParser::UseItemContext*>(ud)) return i->attributeList();
+            if (auto* g = dynamic_cast<LucisParser::UseGroupContext*>(ud)) return g->attributeList();
+            if (auto* e = dynamic_cast<LucisParser::UseEnumWildcardContext*>(ud)) return e->attributeList();
+            return nullptr;
+        }();
+        if (!isDeclActive(attrs)) return;
         if (auto* ew = dynamic_cast<LucisParser::UseEnumWildcardContext*>(ud)) {
             unsigned arrayDims = 0;
             auto* enumType = resolveTypeSpec(ew->typeSpec(), arrayDims);

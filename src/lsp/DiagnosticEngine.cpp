@@ -5,6 +5,12 @@
 #include "ffi/CBindings.h"
 #include "ffi/CHeaderResolver.h"
 
+#ifdef LLVM_VERSION_15_OR_NEWER
+#  include <llvm/TargetParser/Host.h>
+#else
+#  include <llvm/Support/Host.h>
+#endif
+
 #include <filesystem>
 
 namespace fs = std::filesystem;
@@ -62,6 +68,7 @@ std::vector<Diagnostic> DiagnosticEngine::run(const std::string& source,
     // Step 2: Semantic checking
     if (parsed.tree && !parsed.hasErrors) {
         Checker checker;
+        checker.setTargetTriple(llvm::sys::getDefaultTargetTriple());
 
         // Resolve C header includes so FFI functions are known
         CBindings cBindings;
@@ -119,6 +126,7 @@ std::vector<Diagnostic> DiagnosticEngine::run(const std::string& source,
     // Step 2: Semantic checking with full project context
     if (parsed.tree && !parsed.hasErrors) {
         Checker checker;
+        checker.setTargetTriple(llvm::sys::getDefaultTargetTriple());
 
         // Set module context from the project registry.
         std::string modPath = project->modulePathFor(filePath);

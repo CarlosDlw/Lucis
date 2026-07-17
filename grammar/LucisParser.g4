@@ -18,10 +18,10 @@ preambleDecl
 // use std::log::println;
 // use std::log::{ println, print };
 useDecl
-    : USE IDENTIFIER SEMI                                                            # useRoot
-    | USE modulePath SCOPE IDENTIFIER SEMI                                         # useItem
-    | USE modulePath SCOPE LBRACE IDENTIFIER (COMMA IDENTIFIER)* RBRACE SEMI      # useGroup
-    | USE typeSpec SCOPE STAR SEMI                                                 # useEnumWildcard
+    : attributeList USE IDENTIFIER SEMI                                                      # useRoot
+    | attributeList USE modulePath SCOPE IDENTIFIER SEMI                                     # useItem
+    | attributeList USE modulePath SCOPE LBRACE IDENTIFIER (COMMA IDENTIFIER)* RBRACE SEMI   # useGroup
+    | attributeList USE typeSpec SCOPE STAR SEMI                                             # useEnumWildcard
     ;
 
 // Module path: std::log, std::io, etc.

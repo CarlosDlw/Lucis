@@ -2268,6 +2268,7 @@ std::any IRGen::visitBlock(LucisParser::BlockContext* ctx) {
 // use std::log::println;   →  register in ImportResolver
 std::any IRGen::visitUseRoot(LucisParser::UseRootContext* ctx) {
         SET_DBG_LOC(ctx);
+    if (!irDeclActive(ctx->attributeList(), targetTriple_, debugOutput_)) return {};
     auto rootName = ctx->IDENTIFIER()->getText();
     userImports_[rootName] = rootName;
     return {};
@@ -2276,6 +2277,7 @@ std::any IRGen::visitUseRoot(LucisParser::UseRootContext* ctx) {
 // use std::log::println;   →  register in ImportResolver
 std::any IRGen::visitUseItem(LucisParser::UseItemContext* ctx) {
         SET_DBG_LOC(ctx);
+    if (!irDeclActive(ctx->attributeList(), targetTriple_, debugOutput_)) return {};
     std::string path;
     for (auto* id : ctx->modulePath()->IDENTIFIER()) {
         if (!path.empty()) path += "::";
@@ -2299,6 +2301,7 @@ std::any IRGen::visitUseItem(LucisParser::UseItemContext* ctx) {
 // use std::log::{ println, print };
 std::any IRGen::visitUseGroup(LucisParser::UseGroupContext* ctx) {
         SET_DBG_LOC(ctx);
+    if (!irDeclActive(ctx->attributeList(), targetTriple_, debugOutput_)) return {};
     std::string path;
     for (auto* id : ctx->modulePath()->IDENTIFIER()) {
         if (!path.empty()) path += "::";
@@ -2321,6 +2324,7 @@ std::any IRGen::visitUseGroup(LucisParser::UseGroupContext* ctx) {
 // use Response<int32>::*;
 std::any IRGen::visitUseEnumWildcard(LucisParser::UseEnumWildcardContext* ctx) {
         SET_DBG_LOC(ctx);
+    if (!irDeclActive(ctx->attributeList(), targetTriple_, debugOutput_)) return {};
     auto* ti = resolveTypeInfo(ctx->typeSpec());
     if (!ti || ti->kind != TypeKind::Enum) return {};
     for (const auto& vi : ti->enumVariantInfos) {
@@ -2348,6 +2352,14 @@ void IRGen::registerCrossFileSymbols(LucisParser::ProgramContext* ctx) {
         for (auto* pd : ctx->preambleDecl()) {
             auto* ud = pd->useDecl();
             if (!ud) continue;
+            auto* attrs = [&]() -> LucisParser::AttributeListContext* {
+                if (auto* r = dynamic_cast<LucisParser::UseRootContext*>(ud)) return r->attributeList();
+                if (auto* i = dynamic_cast<LucisParser::UseItemContext*>(ud)) return i->attributeList();
+                if (auto* g = dynamic_cast<LucisParser::UseGroupContext*>(ud)) return g->attributeList();
+                if (auto* e = dynamic_cast<LucisParser::UseEnumWildcardContext*>(ud)) return e->attributeList();
+                return nullptr;
+            }();
+            if (!irDeclActive(attrs, targetTriple_, debugOutput_)) continue;
             // use ModuleName; (useRoot)
             if (auto* root = dynamic_cast<LucisParser::UseRootContext*>(ud)) {
                 userImports_[root->IDENTIFIER()->getText()] = root->IDENTIFIER()->getText();
