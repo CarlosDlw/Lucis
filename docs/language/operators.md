@@ -382,6 +382,81 @@ From highest to lowest precedence:
 | 15 | `? :` (ternary) | Right to left |
 | 16 (lowest) | `try` | Right to left |
 
+## Operator Overloading
+
+User-defined types (structs) can overload most operators by declaring them inside an `extend` block.
+
+### Syntax
+
+```lucis
+extend MyType {
+  fn +(MyType lhs, MyType rhs) MyType { ... }
+  fn ==(MyType lhs, MyType rhs) bool { ... }
+}
+```
+
+Operator overloads are **static functions** with two parameters (lhs, rhs). The operator symbol is used as the function name. The parameter syntax follows standard Lucis: `tipo nome`.
+
+### Overloadable Operators
+
+| Category | Operators |
+|----------|-----------|
+| Arithmetic | `+` `-` `*` `/` `%` |
+| Comparison | `==` `!=` `<` `>` `<=` `>=` |
+| Bitwise | `&` `\|` `^` `<<` `>>` |
+| Logical | `&&` `\|\|` `!` |
+| Unary | `-` `~` `++` `--` |
+
+### Example
+
+```lucis
+use std::test::assertEqual;
+
+struct Vec2 {
+  int32 x;
+  int32 y;
+}
+
+extend Vec2 {
+  fn +(Vec2 lhs, Vec2 rhs) Vec2 {
+    ret Vec2 { lhs.x + rhs.x, lhs.y + rhs.y };
+  }
+  fn -(Vec2 lhs, Vec2 rhs) Vec2 {
+    ret Vec2 { lhs.x - rhs.x, lhs.y - rhs.y };
+  }
+  fn ==(Vec2 lhs, Vec2 rhs) bool {
+    ret lhs.x == rhs.x && lhs.y == rhs.y;
+  }
+}
+
+fn main() int32 {
+  auto a = Vec2 { 1, 2 };
+  auto b = Vec2 { 3, 4 };
+  auto c = a + b;       // calls fn +(Vec2, Vec2)
+  assertEqual(c.x, 4);
+  assertEqual(c.y, 6);
+
+  assertEqual(a == Vec2 { 1, 2 }, true);
+  ret 0;
+}
+```
+
+### Precedence
+
+Operator overloads follow the same precedence as built-in operators. Use parentheses to override:
+
+```lucis
+auto r = a + b * c;       // (b * c) evaluated first
+auto r = (a + b) * c;     // (a + b) evaluated first
+```
+
+### Restrictions
+
+- Only existing operators can be overloaded (you cannot create new operator symbols)
+- The number of parameters is fixed per operator: binary ops take 2, unary ops take 1
+- At least one parameter must be a user-defined struct type
+- `[]`, `()`, `.`, `::`, `??`, `as`, `is`, and assignment operators (`=`, `+=`, etc.) cannot be overloaded
+
 ## See Also
 
 - [Variables](variables.md) — Variable declaration and compound assignment
@@ -389,3 +464,5 @@ From highest to lowest precedence:
 - [Control Flow](control-flow.md) — Comparison operators in conditions
 - [Pointers](pointers.md) — Pointer operators in depth
 - [Operator Precedence](../reference/operator-precedence.md) — Full reference table
+- [Structs](structs.md) — Defining structs and extend blocks
+- [Functions](functions.md) — Function definition syntax
