@@ -1255,8 +1255,11 @@ std::any IRGen::visitStructDecl(LucisParser::StructDeclContext* ctx) {
         }
     }
 
+    // Check for #[repr(packed)] — no padding between fields
+    bool isPacked = hasReprPacked(ctx->attributeList());
+
     // Set the struct body now that all fields are resolved
-    structType->setBody(fieldTypes);
+    structType->setBody(fieldTypes, isPacked);
 
     // Update registry with full type info (fields populated)
     typeRegistry_.registerType(std::move(ti));
@@ -2173,8 +2176,10 @@ std::any IRGen::visitFunctionDecl(LucisParser::FunctionDeclContext* ctx) {
             }
         }
         // #[used] — prevent dead-stripping
-        if (hasAttribute(attrs, "used"))
+        if (hasAttribute(attrs, "used")) {
             func->setVisibility(llvm::GlobalValue::DefaultVisibility);
+            llvm::appendToUsed(*module_, {func});
+        }
     }
 
     currentFunction_ = func;
@@ -3278,8 +3283,10 @@ std::any IRGen::visitConstDeclStmt(LucisParser::ConstDeclStmtContext* ctx) {
                 }
             }
             // #[used]
-            if (hasAttribute(attrs, "used"))
+            if (hasAttribute(attrs, "used")) {
                 global->setVisibility(llvm::GlobalValue::DefaultVisibility);
+                llvm::appendToUsed(*module_, {global});
+            }
 
             TopLevelConst tlc{global, typeInfo, dims};
             topLevelConsts_[name] = tlc;
@@ -27385,6 +27392,21 @@ bool IRGen::hasAttribute(LucisParser::AttributeListContext* attrs, const std::st
     for (auto* a : attrs->attribute()) {
         if (a->IDENTIFIER() && a->IDENTIFIER()->getText() == name)
             return true;
+    }
+    return false;
+}
+
+bool IRGen::hasReprPacked(LucisParser::AttributeListContext* attrs) {
+    if (!attrs) return false;
+    for (auto* a : attrs->attribute()) {
+        if (a->IDENTIFIER() && a->IDENTIFIER()->getText() == "repr") {
+            if (auto* argList = a->attrArgList()) {
+                for (auto* arg : argList->attrArg()) {
+                    if (arg->IDENTIFIER() && arg->IDENTIFIER()->getText() == "packed")
+                        return true;
+                }
+            }
+        }
     }
     return false;
 }
