@@ -450,6 +450,29 @@ static void walkTree(IdentMap& map, InactiveRanges& inactiveRanges,
             }
         }
     }
+    else if (auto* ctx = dynamic_cast<LucisParser::OperatorNameContext*>(node)) {
+        // Classify the operator symbol token (+, -, ==, etc.) as Method
+        auto classifyOpToken = [&](antlr4::tree::TerminalNode* t) {
+            if (t) classifyIdent(map, t, SemanticTokenType::Method,
+                                 static_cast<uint32_t>(SemanticTokenMod::Declaration) |
+                                 static_cast<uint32_t>(SemanticTokenMod::Definition));
+        };
+        classifyOpToken(ctx->PLUS());   classifyOpToken(ctx->MINUS());
+        classifyOpToken(ctx->STAR());   classifyOpToken(ctx->SLASH());
+        classifyOpToken(ctx->PERCENT()); classifyOpToken(ctx->EQ());
+        classifyOpToken(ctx->NEQ());    classifyOpToken(ctx->LT());
+        classifyOpToken(ctx->LTE());    classifyOpToken(ctx->GTE());
+        classifyOpToken(ctx->AMPERSAND()); classifyOpToken(ctx->PIPE());
+        classifyOpToken(ctx->CARET());  classifyOpToken(ctx->LSHIFT());
+        classifyOpToken(ctx->LAND());   classifyOpToken(ctx->LOR());
+        classifyOpToken(ctx->NOT());    classifyOpToken(ctx->TILDE());
+        classifyOpToken(ctx->INCR());   classifyOpToken(ctx->DECR());
+        // [] and () use two tokens — classify only the first
+        classifyOpToken(ctx->LBRACKET());
+        classifyOpToken(ctx->LPAREN());
+        if (ctx->GT().size() == 2) classifyOpToken(ctx->GT(0));
+        else if (ctx->GT().size() == 1) classifyOpToken(ctx->GT(0));
+    }
     else if (auto* ctx = dynamic_cast<LucisParser::ExtendMethodContext*>(node)) {
         auto ids = ctx->IDENTIFIER();
         if (!ids.empty()) {

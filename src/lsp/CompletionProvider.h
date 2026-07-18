@@ -327,6 +327,8 @@ private:
 
     // Format an extend method signature for display.
     static std::string formatMethodSignature(LucisParser::ExtendMethodContext* method);
+    static std::string formatOperatorSignature(LucisParser::OperatorDeclContext* opDecl);
+    static std::string operatorSymbol(LucisParser::OperatorNameContext* opName);
 
     // Format a typeSpec as human-readable string.
     static std::string typeSpecToString(LucisParser::TypeSpecContext* ts);

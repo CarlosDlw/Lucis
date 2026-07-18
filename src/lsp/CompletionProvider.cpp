@@ -4290,6 +4290,34 @@ void CompletionProvider::addExtendMethods(std::vector<CompletionItem> &items,
       }
     }
     for (auto *m : ext->extendMethod()) {
+      // ── Operator overload ──
+      if (auto* opDecl = m->operatorDecl()) {
+        auto* opName = opDecl->operatorName();
+        std::string opSym;
+        if (opName->PLUS())    opSym = "+";    else if (opName->MINUS())   opSym = "-";
+        else if (opName->STAR())    opSym = "*";    else if (opName->SLASH())   opSym = "/";
+        else if (opName->PERCENT()) opSym = "%";    else if (opName->EQ())      opSym = "==";
+        else if (opName->NEQ())     opSym = "!=";   else if (opName->LT())      opSym = "<";
+        else if (opName->GT().size() == 2) opSym = ">>";
+        else if (opName->GT().size() == 1) opSym = ">";
+        else if (opName->LTE())     opSym = "<=";   else if (opName->GTE())     opSym = ">=";
+        else if (opName->AMPERSAND()) opSym = "&";  else if (opName->PIPE())    opSym = "|";
+        else if (opName->CARET())   opSym = "^";    else if (opName->LSHIFT())  opSym = "<<";
+        else if (opName->LAND())    opSym = "&&";   else if (opName->LOR())     opSym = "||";
+        else if (opName->NOT())     opSym = "!";    else if (opName->TILDE())   opSym = "~";
+        else if (opName->INCR())    opSym = "++";   else if (opName->DECR())    opSym = "--";
+        else if (opName->LBRACKET() && opName->RBRACKET()) opSym = "[]";
+        else if (opName->LPAREN()  && opName->RPAREN())    opSym = "()";
+
+        CompletionItem ci;
+        ci.label = opSym;
+        ci.kind = CompletionKind::Operator;
+        ci.detail = substituteTypeParams(formatOperatorSignature(opDecl), subst);
+        ci.documentation = "```lucis\n" + ci.detail + "\n```";
+        items.push_back(std::move(ci));
+        continue;
+      }
+
       // Skip static methods (no &self parameter)
       bool isInstance = (m->AMPERSAND() != nullptr);
       if (!isInstance)
@@ -4339,6 +4367,17 @@ void CompletionProvider::addExtendMethods(std::vector<CompletionItem> &items,
           }
         }
         for (auto *m : ext->extendMethod()) {
+          // ── Operator overload ──
+          if (auto* opDecl = m->operatorDecl()) {
+            CompletionItem ci;
+            ci.label = operatorSymbol(opDecl->operatorName());
+            ci.kind = CompletionKind::Operator;
+            ci.detail = substituteTypeParams(formatOperatorSignature(opDecl), subst);
+            ci.documentation = "```lucis\n" + ci.detail + "\n```";
+            items.push_back(std::move(ci));
+            continue;
+          }
+
           bool isInstance = (m->AMPERSAND() != nullptr);
           if (!isInstance)
             continue;
@@ -6953,6 +6992,44 @@ std::string CompletionProvider::formatMethodSignature(
     }
   }
   sig += ") " + typeSpecToString(method->typeSpec());
+  return sig;
+}
+
+std::string CompletionProvider::operatorSymbol(LucisParser::OperatorNameContext* opName) {
+    if (opName->PLUS())    return "+";    if (opName->MINUS())   return "-";
+    if (opName->STAR())    return "*";    if (opName->SLASH())   return "/";
+    if (opName->PERCENT()) return "%";    if (opName->EQ())      return "==";
+    if (opName->NEQ())     return "!=";   if (opName->LT())      return "<";
+    if (opName->GT().size() == 2) return ">>";
+    if (opName->GT().size() == 1) return ">";
+    if (opName->LTE())     return "<=";   if (opName->GTE())     return ">=";
+    if (opName->AMPERSAND()) return "&";  if (opName->PIPE())    return "|";
+    if (opName->CARET())   return "^";    if (opName->LSHIFT())  return "<<";
+    if (opName->LAND())    return "&&";   if (opName->LOR())     return "||";
+    if (opName->NOT())     return "!";    if (opName->TILDE())   return "~";
+    if (opName->INCR())    return "++";   if (opName->DECR())    return "--";
+    if (opName->LBRACKET() && opName->RBRACKET()) return "[]";
+    if (opName->LPAREN()  && opName->RPAREN())    return "()";
+    return "?";
+}
+
+std::string CompletionProvider::formatOperatorSignature(
+    LucisParser::OperatorDeclContext* opDecl) {
+  std::string sym = operatorSymbol(opDecl->operatorName());
+  std::string sig = "fn " + sym + "(";
+  bool first = true;
+  if (opDecl->AMPERSAND()) {
+    for (auto* p : opDecl->param()) {
+      if (!first) sig += ", "; first = false;
+      sig += typeSpecToString(p->typeSpec()) + " " + safeText(p->IDENTIFIER());
+    }
+  } else if (auto* pl = opDecl->paramList()) {
+    for (auto* p : pl->param()) {
+      if (!first) sig += ", "; first = false;
+      sig += typeSpecToString(p->typeSpec()) + " " + safeText(p->IDENTIFIER());
+    }
+  }
+  sig += ") " + typeSpecToString(opDecl->typeSpec());
   return sig;
 }
 
