@@ -3,6 +3,7 @@
 #include <memory>
 #include <string>
 #include <any>
+#include <vector>
 #include <optional>
 #include <unordered_map>
 #include <unordered_set>
@@ -557,6 +558,12 @@ private:
     // Get a string argument from an attribute (e.g., link_section("mysect"))
     static bool hasReprPacked(LucisParser::AttributeListContext* attrs);
     static std::string getAttributeStringArg(LucisParser::AttributeListContext* attrs, const std::string& name);
+
+    struct InterruptEntry {
+        int vector;
+        llvm::Function* wrapper;
+    };
+    std::vector<InterruptEntry> interruptTable_;
 
     // Phase 2: Sync a type from SemanticDB into the local TypeRegistry.
     // Returns true if the type was successfully registered (or already exists).
