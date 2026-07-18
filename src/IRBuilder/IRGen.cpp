@@ -2286,17 +2286,12 @@ std::any IRGen::visitFunctionDecl(LucisParser::FunctionDeclContext* ctx) {
             builder_->CreateRet(llvm::UndefValue::get(func->getReturnType()));
     }
 
-    // ── #[interrupt] — generate wrapper with save/restore + iretq ──
+    // ── #[interrupt] — generate wrapper with LLVM X86_INTR convention ──
     if (hasAttribute(ctx->attributeList(), "interrupt")) {
         auto innerName = emitName + "_inner";
         func->setName(innerName);
         func->setLinkage(llvm::GlobalValue::InternalLinkage);
-
-        auto* voidTy = llvm::Type::getVoidTy(*context_);
-        auto* wrapperType = llvm::FunctionType::get(voidTy, false);
-        auto* wrapper = llvm::Function::Create(
-            wrapperType, llvm::Function::ExternalLinkage, emitName, module_);
-        wrapper->addFnAttr(llvm::Attribute::Naked);
+        func->setCallingConv(llvm::CallingConv::X86_INTR);
 
         int vectorNum = -1;
         for (auto* a : ctx->attributeList()->attribute()) {
@@ -2308,35 +2303,22 @@ std::any IRGen::visitFunctionDecl(LucisParser::FunctionDeclContext* ctx) {
                 }
             }
         }
-        if (vectorNum >= 0)
-            interruptTable_.push_back({vectorNum, wrapper});
+
+        auto* voidTy = llvm::Type::getVoidTy(*context_);
+        auto* wrapperType = llvm::FunctionType::get(voidTy, false);
+        auto* wrapper = llvm::Function::Create(
+            wrapperType, llvm::Function::ExternalLinkage, emitName, module_);
+        wrapper->setCallingConv(llvm::CallingConv::X86_INTR);
 
         auto* entryBB = llvm::BasicBlock::Create(*context_, "entry", wrapper);
         builder_->SetInsertPoint(entryBB);
-
-        std::string saveAsm, restoreAsm;
-        std::vector<const char*> regs = {
-            "%%rax", "%%rcx", "%%rdx", "%%rbx", "%%rbp",
-            "%%rsi", "%%rdi", "%%r8",  "%%r9",  "%%r10", "%%r11",
-            "%%r12", "%%r13", "%%r14", "%%r15"
-        };
-        saveAsm = "pushfq\n";
-        for (auto* r : regs) saveAsm += std::string("pushq ") + r + "\n";
-        saveAsm += "movq %%rsp, %%rbp\n";
-        saveAsm += "andq $-16, %%rsp\n";
-
-        restoreAsm = "movq %%rbp, %%rsp\n";
-        for (int i = (int)regs.size() - 1; i >= 0; i--)
-            restoreAsm += std::string("popq ") + regs[i] + "\n";
-        restoreAsm += "popfq\n";
-        restoreAsm += "iretq\n";
-
-        auto asmStr = saveAsm + "callq " + innerName + "\n" + restoreAsm;
-        auto* ft = llvm::FunctionType::get(voidTy, false);
-        auto* inlineAsm = llvm::InlineAsm::get(ft, asmStr, "",
-            true, false, llvm::InlineAsm::AD_ATT);
-        builder_->CreateCall(inlineAsm);
+        auto* innerFunc = module_->getFunction(innerName);
+        if (innerFunc)
+            builder_->CreateCall(innerFunc, {});
         builder_->CreateRetVoid();
+
+        if (vectorNum >= 0)
+            interruptTable_.push_back({vectorNum, wrapper});
     }
 
     // Reset debug scope for next function
