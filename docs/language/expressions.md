@@ -263,6 +263,40 @@ See [Concurrency](concurrency.md) for details.
 
 ---
 
+## `@cfg` Expression
+
+`@cfg` evaluates a [cfg predicate](attributes.md#cfg) at compile time and produces a boolean constant:
+
+```
+@cfg(target_os == "linux")      // → true on Linux
+@cfg(target_arch == "x86_64")   // → true on x86_64
+@cfg(all(unix, x86_64))         // → true on Linux x86_64
+@cfg(windows)                  // → false on Linux/macOS
+```
+
+The checker evaluates `@cfg` at compile time. When used as an `if` condition, the false branch is eliminated entirely (dead branch elimination — no IR is generated for it):
+
+```
+if @cfg(target_os == "windows") {
+    // Only compiled on Windows
+} else if @cfg(target_os == "linux") {
+    // Only compiled on Linux
+} else @cfg(target_os == "macos") {
+    // Only compiled on macOS
+}
+```
+
+The predicate syntax uses `==` instead of `=`:
+
+| Attribute form | Expression form |
+|----------------|-----------------|
+| `#[cfg(target_os = "linux")]` | `@cfg(target_os == "linux")` |
+| `#[cfg(all(unix, x86_64))]` | `@cfg(all(unix, x86_64))` |
+
+See [Attributes: `#[cfg]` and `@cfg`](attributes.md#cfg) for the full predicate reference.
+
+---
+
 ## Expression Precedence
 
 See [Operators](operators.md) for the full 16-level precedence table.

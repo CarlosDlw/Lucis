@@ -344,6 +344,97 @@ const CACHE_LINE: int32 = 0;
 
 ---
 
+### `#[cfg(…)]`
+Conditional compilation — the annotated declaration is only compiled when the given predicate evaluates to `true` for the current target.
+
+```lucis
+#[cfg(target_os = "linux")]
+fn linux_only() void { /* … */ }
+
+#[cfg(target_os = "windows")]
+fn windows_only() void { /* … */ }
+
+#[cfg(target_arch = "x86_64")]
+const X86_CACHELINE: int32 = 64;
+```
+
+**Applies to:** Function, struct, enum, union, const, type alias, extern, **use/import**  
+**Arguments:** 1 predicate (see syntax below)
+
+#### Predicate syntax
+
+| Form | Example | Evaluates to true when… |
+|------|---------|------------------------|
+| `key = "value"` | `target_os = "linux"` | Target key matches string |
+| `key` (shorthand) | `unix` | Shorthand key matches target |
+| `all(k, …)` | `all(unix, x86_64)` | All sub-predicates are true |
+| `any(k, …)` | `any(windows, macos)` | Any sub-predicate is true |
+| `not(k)` | `not(windows)` | Sub-predicate is false |
+
+#### Available keys
+
+| Key | Possible values |
+|-----|----------------|
+| `target_os` | `"linux"`, `"windows"`, `"macos"`, `"freebsd"`, `"openbsd"`, `"netbsd"` |
+| `target_arch` | `"x86_64"`, `"aarch64"`, `"x86"`, `"arm"`, `"riscv64"` |
+| `target_endian` | `"little"`, `"big"` |
+| `target_pointer_width` | `"64"`, `"32"` |
+| `target_os_family` | `"unix"`, `"windows"` |
+| `target_triple` | Full triple string, e.g. `"x86_64-unknown-linux-gnu"` |
+| `debug_assertions` | `"true"` / `"false"` (controlled by `-g`) |
+
+#### Shorthand predicates
+
+These are identifiers that expand to common conditions:
+
+| Shorthand | Equivalent to |
+|-----------|---------------|
+| `unix` | `target_os_family = "unix"` |
+| `windows` | `target_os = "windows"` |
+| `x86_64` | `target_arch = "x86_64"` |
+| `aarch64` | `target_arch = "aarch64"` |
+
+#### Examples
+
+```lucis
+#[cfg(target_os = "linux")]
+use std::io::posix::file;
+
+#[cfg(target_os = "windows")]
+use std::io::win32::file;
+
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+fn posix_init() void { /* … */ }
+
+#[cfg(all(unix, x86_64, not(debug_assertions)))]
+fn release_x86_unix() void { /* … */ }
+```
+
+---
+
+### `@cfg(…)` (inline expression)
+
+The `@cfg` expression evaluates a cfg predicate directly, returning a compile-time boolean. Useful for conditional logic inside function bodies.
+
+```lucis
+if @cfg(target_os == "linux") {
+    register_linux_handler();
+} else if @cfg(target_os == "windows") {
+    register_windows_handler();
+}
+```
+
+The checker evaluates `@cfg` at compile time and performs dead-branch elimination — the false branch is not type-checked.
+
+**Syntax:** `@cfg(«predicate»)`, where `«predicate»` uses the same syntax as `#[cfg(…)]` but with `==` instead of `=`:
+
+| `#[cfg]` form | `@cfg` form |
+|---------------|-------------|
+| `#[cfg(target_os = "linux")]` | `@cfg(target_os == "linux")` |
+| `#[cfg(all(unix, x86_64))]` | `@cfg(all(unix, x86_64))` |
+
+---
+
 ## Summary
 
 | Attribute | Applies To | Arguments | IR Effect |
@@ -367,3 +458,5 @@ const CACHE_LINE: int32 = 0;
 | `used` | Function, const | None | `setVisibility()` |
 | `optimize` | Function | 1 ident | `OptimizeForSize`/`optimize-for-speed` |
 | `align` | Const | 1 int | `setAlignment()` |
+| `cfg` | Any declaration, use/import | 1 predicate | Filters decl at compile time |
+| `@cfg` | Inline expression | 1 predicate | Compile-time boolean, dead branch elimination |

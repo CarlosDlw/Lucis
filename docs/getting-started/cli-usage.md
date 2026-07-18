@@ -58,7 +58,8 @@ lucis build [<file>] [flags]
 | Flag | Description |
 |------|-------------|
 | `-O, --opt <LEVEL>` | Optimization: `0`, `1`, `2`, `3`, `s`, `z`, `fast` (default: `0`) |
-| `--target <TRIPLE>` | LLVM target triple (e.g. `x86_64-unknown-none`) |
+| `--target <TRIPLE>` | LLVM target triple (e.g. `x86_64-unknown-none`, `aarch64-linux-gnu`) |
+| `--sysroot <PATH>` | System root for cross-compilation headers and libraries |
 | `--no-std` | Build without standard library (freestanding/kernel) |
 | `--lto` | Enable Link Time Optimization |
 | `--fPIC` | Generate position-independent code |
@@ -151,18 +152,27 @@ lucis build --ignore-config main.lc -o app
 
 # Emit LLVM IR to stdout
 lucis build main.lc --emit-llvm | less
+
+# Cross-compilation for ARM64 Linux (requires aarch64 sysroot)
+lucis build main.lc --target aarch64-linux-gnu --sysroot ~/sysroots/aarch64-linux-gnu
+
+# Cross-compilation for ARM64 with static musl (downloadable from musl.cc)
+lucis build main.lc --target aarch64-linux-musl --sysroot ~/sysroots/aarch64-linux-musl --static
 ```
 
 ## run — Compile and Execute
 
 ```
-lucis run [<file>] [-O <level>] [--lto] [-c] [-l <lib>] [-L <dir>] [-I <dir>]
-          [--ignore-config] [-q] [-- args...]
+lucis run [<file>] [-O <level>] [--target <TRIPLE>] [--sysroot <PATH>]
+           [--lto] [-c] [-l <lib>] [-L <dir>] [-I <dir>]
+           [--ignore-config] [-q] [-- args...]
 ```
 
 | Flag | Description |
 |------|-------------|
 | `-O, --opt <LEVEL>` | Optimization level |
+| `--target <TRIPLE>` | Target triple (default: host) |
+| `--sysroot <PATH>` | System root for cross-compilation headers/libs |
 | `--lto` | Enable Link Time Optimization |
 | `-c, --clean` | Clear run cache before compiling |
 | `-l, --link <LIB>` | Link against a library (repeatable) |
@@ -239,6 +249,7 @@ source:
 # Compiler options
 build:
   target: ""                    # --target
+  sysroot: ""                   # --sysroot
   opt_level: O2                 # -O (default: O0)
   no_std: false                 # --no-std
   lto: false                    # --lto
