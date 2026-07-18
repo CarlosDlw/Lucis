@@ -2522,6 +2522,31 @@ std::optional<HoverResult> HoverProvider::walkExprForHover(
         return std::nullopt;
     }
 
+    // ── Binary expression operator hover: a + b ─────────────────
+    // Handle all binary expression types where the operator token matches
+    auto checkBinaryOp = [&](auto* ctx, antlr4::Token* opToken) -> std::optional<HoverResult> {
+        if (!opToken || opToken != hoveredToken) return std::nullopt;
+        // Simple fallback: show the operator's text
+        return makeResult(hoveredToken, "operator " + tokenText);
+    };
+
+    if (auto* add = dynamic_cast<LucisParser::AddSubExprContext*>(expr)) {
+        auto r = checkBinaryOp(add, add->op);
+        if (r) return r;
+    }
+    if (auto* mul = dynamic_cast<LucisParser::MulExprContext*>(expr)) {
+        auto r = checkBinaryOp(mul, mul->op);
+        if (r) return r;
+    }
+    if (auto* rel = dynamic_cast<LucisParser::RelExprContext*>(expr)) {
+        auto r = checkBinaryOp(rel, rel->op);
+        if (r) return r;
+    }
+    if (auto* eq = dynamic_cast<LucisParser::EqExprContext*>(expr)) {
+        auto r = checkBinaryOp(eq, eq->op);
+        if (r) return r;
+    }
+
     // ── Generic: recurse into children ─────────────────────────────
     for (auto* child : expr->children) {
         if (auto* childExpr = dynamic_cast<LucisParser::ExpressionContext*>(child)) {
@@ -6663,10 +6688,52 @@ std::string HoverProvider::formatTypeInfo(const TypeInfo* ti) {
     return ti->name;
 }
 
+// ── Helper: get operator symbol from operator name context ───────
+static std::string opSym(LucisParser::OperatorNameContext* op) {
+    if (op->PLUS()) return "+";    if (op->MINUS()) return "-";
+    if (op->STAR()) return "*";    if (op->SLASH()) return "/";
+    if (op->PERCENT()) return "%"; if (op->EQ()) return "==";
+    if (op->NEQ()) return "!=";    if (op->LT()) return "<";
+    if (op->GT().size() == 2) return ">>";
+    if (op->GT().size() == 1) return ">";
+    if (op->LTE()) return "<=";    if (op->GTE()) return ">=";
+    if (op->AMPERSAND()) return "&"; if (op->PIPE()) return "|";
+    if (op->CARET()) return "^";   if (op->LSHIFT()) return "<<";
+    if (op->LAND()) return "&&";   if (op->LOR()) return "||";
+    if (op->NOT()) return "!";     if (op->TILDE()) return "~";
+    if (op->INCR()) return "++";   if (op->DECR()) return "--";
+    if (op->LBRACKET() && op->RBRACKET()) return "[]";
+    if (op->LPAREN()  && op->RPAREN())    return "()";
+    return "?";
+}
+
+// ═════════════════════════════════════════════════════════════════
+
 std::string HoverProvider::formatExtendMethods(LucisParser::ExtendDeclContext* ext) {
     std::ostringstream ss;
     ss << "```lucis\nextend " << safeText(ext->IDENTIFIER()) << " {\n";
     for (auto* m : ext->extendMethod()) {
+        // ── Operator overload ──
+        if (auto* opDecl = m->operatorDecl()) {
+            ss << "    fn " << opSym(opDecl->operatorName()) << "(";
+            if (opDecl->AMPERSAND()) {
+                ss << "&self";
+                for (auto* p : opDecl->param())
+                    ss << ", " << typeSpecToString(p->typeSpec())
+                       << " " << safeText(p->IDENTIFIER());
+            } else if (auto* params = opDecl->paramList()) {
+                bool first = true;
+                for (auto* p : params->param()) {
+                    if (!first) ss << ", ";
+                    first = false;
+                    ss << typeSpecToString(p->typeSpec())
+                       << " " << safeText(p->IDENTIFIER());
+                }
+            }
+            ss << ") " << typeSpecToString(opDecl->typeSpec()) << "\n";
+            continue;
+        }
+
         ss << "    fn " << safeIdAt(m, 0) << "(";
 
         // Check if first param is &self
