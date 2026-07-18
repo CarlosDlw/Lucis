@@ -793,8 +793,11 @@ static void walkTree(IdentMap& map, InactiveRanges& inactiveRanges,
         classifyIdent(map, ctx->IDENTIFIER(), SemanticTokenType::Decorator);
     }
 
-    // ── @cfg(…) ── cfg expression identifier is a decorator
+    // ── @cfg(…) / @ptr(…) ── built-in expression identifier is a decorator
     else if (auto* ctx = dynamic_cast<LucisParser::CfgExprContext*>(node)) {
+        classifyIdent(map, ctx->IDENTIFIER(), SemanticTokenType::Decorator);
+    }
+    else if (auto* ctx = dynamic_cast<LucisParser::AtPtrExprContext*>(node)) {
         classifyIdent(map, ctx->IDENTIFIER(), SemanticTokenType::Decorator);
     }
 

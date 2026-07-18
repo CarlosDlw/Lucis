@@ -2166,6 +2166,21 @@ public:
     virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
   };
 
+  class  AtPtrExprContext : public ExpressionContext {
+  public:
+    AtPtrExprContext(ExpressionContext *ctx);
+
+    antlr4::tree::TerminalNode *AT();
+    antlr4::tree::TerminalNode *IDENTIFIER();
+    antlr4::tree::TerminalNode *LPAREN();
+    TypeSpecContext *typeSpec();
+    antlr4::tree::TerminalNode *COMMA();
+    ExpressionContext *expression();
+    antlr4::tree::TerminalNode *RPAREN();
+
+    virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+  };
+
   class  TernaryExprContext : public ExpressionContext {
   public:
     TernaryExprContext(ExpressionContext *ctx);

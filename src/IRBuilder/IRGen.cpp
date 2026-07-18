@@ -9720,6 +9720,29 @@ std::any IRGen::visitCfgExpr(LucisParser::CfgExprContext* ctx) {
     return static_cast<llvm::Value*>(builder_->getInt1(value));
 }
 
+std::any IRGen::visitAtPtrExpr(LucisParser::AtPtrExprContext* ctx) {
+        SET_DBG_LOC(ctx);
+    // @ptr(T, addr) — convert integer address to typed pointer
+    auto* pointeeTI = resolveTypeInfo(ctx->typeSpec());
+    if (!pointeeTI) {
+        std::cerr << "lucis: @ptr: unknown pointee type\n";
+        return static_cast<llvm::Value*>(
+            llvm::UndefValue::get(llvm::PointerType::getUnqual(*context_)));
+    }
+    auto* pointeeTy = pointeeTI->toLLVMType(*context_, module_->getDataLayout());
+    auto* ptrTy = llvm::PointerType::getUnqual(*context_);
+
+    auto* addrVal = castValue(visit(ctx->expression()));
+    if (!addrVal) {
+        std::cerr << "lucis: @ptr: address expression must be an integer\n";
+        return static_cast<llvm::Value*>(
+            llvm::UndefValue::get(ptrTy));
+    }
+    // Cast the integer address to a pointer
+    return static_cast<llvm::Value*>(
+        builder_->CreateIntToPtr(addrVal, ptrTy, "ptr"));
+}
+
 // ── Helper: evaluate @cfg predicate expression ─────────────────────
 bool IRGen::evalCfgPredicate(LucisParser::ExpressionContext* expr) {
     // Bool literals

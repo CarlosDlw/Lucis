@@ -136,6 +136,7 @@ public:
     std::any visitAsmExpr(LucisParser::AsmExprContext* ctx)           override;
     std::any visitIdentExpr(LucisParser::IdentExprContext* ctx)         override;
     std::any visitCfgExpr(LucisParser::CfgExprContext* ctx)             override;
+    std::any visitAtPtrExpr(LucisParser::AtPtrExprContext* ctx)          override;
 
     // ── @cfg(...) compile-time evaluation helpers ─────────────
     bool evalCfgPredicate(LucisParser::ExpressionContext* expr);

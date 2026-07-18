@@ -676,6 +676,7 @@ expression
     | PIPE paramList? PIPE expression                          # lambdaExpr
     | IDENTIFIER                                               # identExpr
     | AT IDENTIFIER LPAREN expression RPAREN                   # cfgExpr
+    | AT IDENTIFIER LPAREN typeSpec COMMA expression RPAREN    # atPtrExpr
     | ASM VOLATILE? INTEL? LPAREN STR_LIT (COMMA STR_LIT)*
         (COLON asmOutputList?
          (COLON asmInputList?

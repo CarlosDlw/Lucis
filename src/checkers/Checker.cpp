@@ -2856,6 +2856,29 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
         return typeRegistry_.lookup("bool");
     }
 
+    // ── @ptr(T, addr) — convert integer address to pointer ────
+    if (auto* ptr = dynamic_cast<LucisParser::AtPtrExprContext*>(expr)) {
+        auto* typeCtx = ptr->typeSpec();
+        unsigned dims = 0;
+        auto* pointeeType = resolveTypeSpec(typeCtx, dims);
+        if (!pointeeType) {
+            error(ptr, "'@ptr' requires a valid pointee type as first argument");
+            return nullptr;
+        }
+        if (dims > 0) {
+            error(ptr, "'@ptr' does not support array types");
+            return nullptr;
+        }
+        auto* addrExpr = ptr->expression();
+        auto* addrType = resolveExprType(addrExpr);
+        if (!addrType) return nullptr;
+        if (!isInteger(addrType)) {
+            error(addrExpr, "'@ptr' address argument must be an integer");
+            return nullptr;
+        }
+        return getPointerType(pointeeType);
+    }
+
     if (dynamic_cast<LucisParser::NullLitExprContext*>(expr))
         return nullptr; // null is compatible with any pointer
 

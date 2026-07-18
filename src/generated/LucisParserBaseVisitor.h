@@ -435,6 +435,10 @@ public:
     return visitChildren(ctx);
   }
 
+  virtual std::any visitAtPtrExpr(LucisParser::AtPtrExprContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
   virtual std::any visitTernaryExpr(LucisParser::TernaryExprContext *ctx) override {
     return visitChildren(ctx);
   }

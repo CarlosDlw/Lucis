@@ -229,6 +229,8 @@ public:
 
     virtual std::any visitPreIncrExpr(LucisParser::PreIncrExprContext *context) = 0;
 
+    virtual std::any visitAtPtrExpr(LucisParser::AtPtrExprContext *context) = 0;
+
     virtual std::any visitTernaryExpr(LucisParser::TernaryExprContext *context) = 0;
 
     virtual std::any visitSuffixedIntFloatExpr(LucisParser::SuffixedIntFloatExprContext *context) = 0;

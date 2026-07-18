@@ -6022,13 +6022,21 @@ void CompletionProvider::addAtCfgCompletions(
   }
 
   if (isBare) {
-    // Suggest just "cfg" when typing after @
+    // Suggest "cfg" and "ptr" when typing after @
     if (matchesPrefix(std::string("cfg"), barePrefix)) {
       CompletionItem ci;
       ci.label = "cfg";
       ci.kind = CompletionKind::Keyword;
       ci.detail = "Conditional compilation — @cfg(…)";
       ci.insertText = "cfg(";
+      items.push_back(std::move(ci));
+    }
+    if (matchesPrefix(std::string("ptr"), barePrefix)) {
+      CompletionItem ci;
+      ci.label = "ptr";
+      ci.kind = CompletionKind::Keyword;
+      ci.detail = "Convert address to pointer — @ptr(type, address)";
+      ci.insertText = "ptr(";
       items.push_back(std::move(ci));
     }
     return;

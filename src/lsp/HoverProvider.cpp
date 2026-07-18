@@ -2553,6 +2553,27 @@ std::optional<HoverResult> HoverProvider::walkExprForHover(
         return std::nullopt;
     }
 
+    // ── @ptr(T, addr) ── convert integer address to typed pointer ────
+    if (auto* pe = dynamic_cast<LucisParser::AtPtrExprContext*>(expr)) {
+        if (pe->IDENTIFIER() && pe->IDENTIFIER()->getSymbol() == hoveredToken) {
+            std::string md = "```lucis\n@ptr(type, address)\n```\n"
+                             "Converts an integer address to a typed pointer. "
+                             "Useful for memory-mapped I/O (MMIO) and bare-metal programming.";
+            return makeResult(hoveredToken, md);
+        }
+        // Recurse into type spec or address expression
+        if (pe->typeSpec()) {
+            auto result = hoverTypeSpec(pe->typeSpec(), hoveredToken,
+                                        tree, bindings, project);
+            if (result) return result;
+        }
+        if (pe->expression()) {
+            return walkExprForHover(pe->expression(), hoveredToken, tokenText,
+                                    tree, bindings, cursorLine, project);
+        }
+        return std::nullopt;
+    }
+
     // ── Binary expression operator hover: a + b ─────────────────
     // Handle all binary expression types where the operator token matches
     auto checkBinaryOp = [&](auto* ctx, antlr4::Token* opToken) -> std::optional<HoverResult> {
