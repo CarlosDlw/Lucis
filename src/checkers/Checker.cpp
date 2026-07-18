@@ -2647,6 +2647,36 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
     };
 
     // ── Helper: true if expr is a plain integer literal (not a variable, call, etc.)
+
+    // ── Helper: check operator overload on struct types ──
+    auto resolveOpOverload = [&](const TypeInfo* lhsTI, const TypeInfo* rhsTI,
+                                  const std::string& opText) -> const TypeInfo* {
+        if (!lhsTI || lhsTI->kind != TypeKind::Struct) return nullptr;
+        // Map operator text to internal name
+        std::string internal;
+        if (opText == "+")       internal = "opAdd";
+        else if (opText == "-")  internal = "opSub";
+        else if (opText == "*")  internal = "opMul";
+        else if (opText == "/")  internal = "opDiv";
+        else if (opText == "%")  internal = "opMod";
+        else if (opText == "==") internal = "opEq";
+        else if (opText == "!=") internal = "opNe";
+        else if (opText == "<")  internal = "opLt";
+        else if (opText == ">")  internal = "opGt";
+        else if (opText == "<=") internal = "opLe";
+        else if (opText == ">=") internal = "opGe";
+        else if (opText == "&")  internal = "opBitAnd";
+        else if (opText == "|")  internal = "opBitOr";
+        else if (opText == "^")  internal = "opBitXor";
+        else if (opText == "<<") internal = "opShl";
+        else if (opText == ">>") internal = "opShr";
+        else if (opText == "&&") internal = "opAnd";
+        else if (opText == "||") internal = "opOr";
+        if (internal.empty()) return nullptr;
+        if (auto* op = findOperatorInChain(lhsTI, internal))
+            return op->returnType;
+        return nullptr;
+    };
     auto isIntLitExpr = [](LucisParser::ExpressionContext* e) -> bool {
         return dynamic_cast<LucisParser::IntLitExprContext*>(e) ||
                dynamic_cast<LucisParser::HexLitExprContext*>(e) ||
@@ -3485,6 +3515,9 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
         auto* rhs = resolveExprType(exprs[1]);
         auto opText = mul->op->getText();
 
+        // ── User-defined operator overload ──
+        if (auto* opRet = resolveOpOverload(lhs, rhs, opText)) return opRet;
+
         if (opText == "%") {
             if (lhs && !isIntegerOrPointer(lhs))
                 error(expr, "operator '%' requires integer operands, got '" +
@@ -3563,6 +3596,13 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
             return typeRegistry_.lookup("string");
         }
 
+        // ── User-defined operator overload ──
+        if (lhs && lhs->kind == TypeKind::Struct) {
+            auto internal = (opText == "+") ? "opAdd" : "opSub";
+            if (auto* op = findOperatorInChain(lhs, internal))
+                return op->returnType;
+        }
+
         bool lhsBad = lhs && !isNumeric(lhs);
         bool rhsBad = rhs && !isNumeric(rhs);
         if (lhsBad || rhsBad) {
@@ -3599,6 +3639,8 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
         auto exprs = shift->expression();
         auto* lhs = resolveExprType(exprs[0]);
         auto* rhs = resolveExprType(exprs[1]);
+        // ── User-defined operator overload ──
+        if (auto* opRet = resolveOpOverload(lhs, rhs, opText)) return opRet;
         if (lhs && !isIntegerOrPointer(lhs))
             error(expr, "operator '" + opText +
                              "' requires integer operands, got '" + lhs->name + "'");
@@ -3618,6 +3660,9 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
         auto* lhs = resolveExprType(exprs[0]);
         auto* rhs = resolveExprType(exprs[1]);
         auto opText = rel->op->getText();
+
+        // ── User-defined operator overload ──
+        if (auto* opRet = resolveOpOverload(lhs, rhs, opText)) return opRet;
 
         if (lhs && !isNumeric(lhs))
             error(expr, "operator '" + opText +
@@ -3650,6 +3695,9 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
         auto* rhs = resolveExprType(exprs[1]);
         auto opText = eq->op->getText();
 
+        // ── User-defined operator overload ──
+        if (auto* opRet = resolveOpOverload(lhs, rhs, opText)) return opRet;
+
         // Keep equality strict for numeric operands to prevent IR-time mismatches
         // such as float-vs-int comparisons reaching LLVM FCmp/ICmp with mixed types.
         if (lhs && rhs && isNumeric(lhs) && isNumeric(rhs) && lhs->kind != rhs->kind) {
@@ -3674,6 +3722,8 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
         auto exprs = ctx->expression();
         auto* lhs = resolveExprType(exprs[0]);
         auto* rhs = resolveExprType(exprs[1]);
+        // ── User-defined operator overload ──
+        if (auto* opRet = resolveOpOverload(lhs, rhs, opText)) return opRet;
         if (lhs && !isIntegerOrPointer(lhs))
             error(expr, "operator '" + opText + "' requires integer operands, got '" +
                              lhs->name + "'");
@@ -3704,15 +3754,19 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
     // ── Logical AND/OR ──────────────────────────────────────────────
     if (auto* la = dynamic_cast<LucisParser::LogicalAndExprContext*>(expr)) {
         auto exprs = la->expression();
-        resolveExprType(exprs[0]);
-        resolveExprType(exprs[1]);
+        auto* lhs = resolveExprType(exprs[0]);
+        auto* rhs = resolveExprType(exprs[1]);
+        // ── User-defined operator overload ──
+        if (auto* opRet = resolveOpOverload(lhs, rhs, "&&")) return opRet;
         return typeRegistry_.lookup("bool");
     }
 
     if (auto* lo = dynamic_cast<LucisParser::LogicalOrExprContext*>(expr)) {
         auto exprs = lo->expression();
-        resolveExprType(exprs[0]);
-        resolveExprType(exprs[1]);
+        auto* lhs = resolveExprType(exprs[0]);
+        auto* rhs = resolveExprType(exprs[1]);
+        // ── User-defined operator overload ──
+        if (auto* opRet = resolveOpOverload(lhs, rhs, "||")) return opRet;
         return typeRegistry_.lookup("bool");
     }
 
@@ -6781,6 +6835,63 @@ void Checker::checkEnumDecl(LucisParser::EnumDeclContext* decl) {
     typeRegistry_.registerType(std::move(ti));
 }
 
+// ── Operator internal name mapping ─────────────────────────────
+static std::string opInternalName(LucisParser::OperatorNameContext* op) {
+    if (op->PLUS())    return "opAdd";
+    if (op->MINUS())   return "opSub";
+    if (op->STAR())    return "opMul";
+    if (op->SLASH())   return "opDiv";
+    if (op->PERCENT()) return "opMod";
+    if (op->EQ())      return "opEq";
+    if (op->NEQ())     return "opNe";
+    if (op->LT())      return "opLt";
+    if (op->GT().size() == 2) return "opShr";
+    if (op->GT().size() == 1) return "opGt";
+    if (op->LTE())     return "opLe";
+    if (op->GTE())     return "opGe";
+    if (op->AMPERSAND()) return "opBitAnd";
+    if (op->PIPE())    return "opBitOr";
+    if (op->CARET())   return "opBitXor";
+    if (op->LSHIFT())  return "opShl";
+    if (op->LAND())    return "opAnd";
+    if (op->LOR())     return "opOr";
+    if (op->NOT())     return "opNot";
+    if (op->TILDE())   return "opBitNot";
+    if (op->INCR())    return "opIncr";
+    if (op->DECR())    return "opDecr";
+    if (op->LBRACKET() && op->RBRACKET()) return "opIndex";
+    if (op->LPAREN()  && op->RPAREN())    return "opCall";
+    return "opUnknown";
+}
+
+static std::string opSymbol(LucisParser::OperatorNameContext* op) {
+    if (op->PLUS())    return "+";
+    if (op->MINUS())   return "-";
+    if (op->STAR())    return "*";
+    if (op->SLASH())   return "/";
+    if (op->PERCENT()) return "%";
+    if (op->EQ())      return "==";
+    if (op->NEQ())     return "!=";
+    if (op->LT())      return "<";
+    if (op->GT().size() == 2) return ">>";
+    if (op->GT().size() == 1) return ">";
+    if (op->LTE())     return "<=";
+    if (op->GTE())     return ">=";
+    if (op->AMPERSAND()) return "&";
+    if (op->PIPE())    return "|";
+    if (op->CARET())   return "^";
+    if (op->LSHIFT())  return "<<";
+    if (op->LAND())    return "&&";
+    if (op->LOR())     return "||";
+    if (op->NOT())     return "!";
+    if (op->TILDE())   return "~";
+    if (op->INCR())    return "++";
+    if (op->DECR())    return "--";
+    if (op->LBRACKET() && op->RBRACKET()) return "[]";
+    if (op->LPAREN()  && op->RPAREN())    return "()";
+    return "?";
+}
+
 void Checker::checkExtendDecl(LucisParser::ExtendDeclContext* decl) {
     if (!isDeclActive(decl->attributeList())) return;
     auto structName = decl->IDENTIFIER()->getText();
@@ -6822,6 +6933,41 @@ void Checker::checkExtendDecl(LucisParser::ExtendDeclContext* decl) {
     }
 
     for (auto* method : decl->extendMethod()) {
+        // ── Operator overload ──
+        if (auto* opDecl = method->operatorDecl()) {
+            auto* opName = opDecl->operatorName();
+            auto internalName = opInternalName(opName);
+            auto sym = opSymbol(opName);
+
+            unsigned retDims = 0;
+            auto* retType = resolveTypeSpec(opDecl->typeSpec(), retDims);
+            if (!retType) continue;
+
+            OperatorInfo info;
+            info.internalName = internalName;
+            info.symbol = sym;
+            info.returnType = retType;
+            info.isInstance = (opDecl->AMPERSAND() != nullptr);
+
+            // Instance ops ([] / ()) have &self + params
+            std::vector<LucisParser::ParamContext*> params;
+            if (info.isInstance) {
+                params = opDecl->param();
+            } else if (auto* pl = opDecl->paramList()) {
+                params = pl->param();
+            }
+
+            for (auto* param : params) {
+                unsigned pDims = 0;
+                auto* pType = resolveTypeSpec(param->typeSpec(), pDims);
+                if (!pType) continue;
+                info.paramTypes.push_back(pType);
+            }
+
+            operatorMethods_[structName].push_back(std::move(info));
+            continue;
+        }
+
         auto methodName = method->IDENTIFIER(0)->getText();
 
         unsigned retDims = 0;
@@ -6872,6 +7018,18 @@ const Checker::StructMethodInfo* Checker::findMethodInChain(
     return nullptr;
 }
 
+const Checker::OperatorInfo* Checker::findOperatorInChain(
+    const TypeInfo* ti, const std::string& internalName) const {
+    for (auto* t = ti; t; t = t->parentType) {
+        auto it = operatorMethods_.find(t->name);
+        if (it == operatorMethods_.end()) continue;
+        for (auto& op : it->second) {
+            if (op.internalName == internalName) return &op;
+        }
+    }
+    return nullptr;
+}
+
 std::vector<const Checker::StructMethodInfo*> Checker::collectMethodsInChain(
     const TypeInfo* ti) const {
     std::vector<const StructMethodInfo*> result;
@@ -6893,6 +7051,64 @@ void Checker::checkExtendMethodBodies(LucisParser::ExtendDeclContext* decl) {
     if (!structTI || structTI->kind != TypeKind::Struct) return;
 
     for (auto* method : decl->extendMethod()) {
+        // ── Operator overload body ──
+        if (auto* opDecl = method->operatorDecl()) {
+            locals_.clear();
+            for (auto& [name, vi] : globalVars_)
+                locals_[name] = vi;
+
+            unsigned retDims = 0;
+            auto* retType = resolveTypeSpec(opDecl->typeSpec(), retDims);
+            if (!retType) retType = typeRegistry_.lookup("void");
+
+            bool isInstance = (opDecl->AMPERSAND() != nullptr);
+
+            // Register 'self' for instance operators ([] / ())
+            if (isInstance) {
+                auto* ptrType = getPointerType(structTI);
+                locals_["self"] = {ptrType, 0, {}, true, true, nullptr};
+            }
+
+            // Register parameters
+            std::vector<LucisParser::ParamContext*> params;
+            if (isInstance) {
+                params = opDecl->param();
+            } else if (auto* pl = opDecl->paramList()) {
+                params = pl->param();
+            }
+
+            for (auto* param : params) {
+                auto paramName = param->IDENTIFIER()->getText();
+                unsigned pDims = 0;
+                auto* pType = resolveTypeSpec(param->typeSpec(), pDims);
+                if (!pType) continue;
+                if (locals_.count(paramName)) {
+                    error(param, "duplicate parameter name '" + paramName + "'");
+                    continue;
+                }
+                if (param->SPREAD())
+                    locals_[paramName] = {pType, 1, {}, true, true, nullptr};
+                else
+                    locals_[paramName] = {pType, pDims, {}, true, true, nullptr};
+            }
+
+            auto* prevRet = currentReturnType_;
+            currentReturnType_ = retType;
+            checkBlock(opDecl->block(), retType);
+            currentReturnType_ = prevRet;
+
+            auto opName = opSymbol(opDecl->operatorName());
+            if (retType->kind != TypeKind::Void) {
+                if (!blockAlwaysReturns(opDecl->block())) {
+                    error(opDecl, "operator '" + opName +
+                                  "' must return a value of type '" + retType->name +
+                                  "' on all code paths");
+                }
+            }
+            warnUnusedLocals(opDecl);
+            continue;
+        }
+
         locals_.clear();
         for (auto& [name, vi] : globalVars_)
             locals_[name] = vi;
@@ -10628,6 +10844,38 @@ const TypeInfo* Checker::instantiateGenericStruct(
     if (extendIt != genericExtendTemplates_.end()) {
         auto& extTmpl = extendIt->second;
         for (auto* method : extTmpl.decl->extendMethod()) {
+            // ── Operator overload in generic extend ──
+            if (auto* opDecl = method->operatorDecl()) {
+                auto internalName = opInternalName(opDecl->operatorName());
+
+                unsigned retDims = 0;
+                auto* retType = resolveTypeSpecWithSubst(opDecl->typeSpec(), subst, retDims);
+                if (!retType) continue;
+
+                OperatorInfo info;
+                info.internalName = internalName;
+                info.symbol = opSymbol(opDecl->operatorName());
+                info.returnType = retType;
+                info.isInstance = (opDecl->AMPERSAND() != nullptr);
+
+                std::vector<LucisParser::ParamContext*> params;
+                if (info.isInstance) {
+                    params = opDecl->param();
+                } else if (auto* pl = opDecl->paramList()) {
+                    params = pl->param();
+                }
+
+                for (auto* param : params) {
+                    unsigned pDims = 0;
+                    auto* pType = resolveTypeSpecWithSubst(param->typeSpec(), subst, pDims);
+                    if (!pType) continue;
+                    info.paramTypes.push_back(pType);
+                }
+
+                operatorMethods_[mangledName].push_back(std::move(info));
+                continue;
+            }
+
             auto methodName = method->IDENTIFIER(0)->getText();
 
             unsigned retDims = 0;

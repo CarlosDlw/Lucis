@@ -77,6 +77,10 @@ public:
 
     virtual std::any visitExtendMethod(LucisParser::ExtendMethodContext *context) = 0;
 
+    virtual std::any visitOperatorDecl(LucisParser::OperatorDeclContext *context) = 0;
+
+    virtual std::any visitOperatorName(LucisParser::OperatorNameContext *context) = 0;
+
     virtual std::any visitParamList(LucisParser::ParamListContext *context) = 0;
 
     virtual std::any visitParam(LucisParser::ParamContext *context) = 0;

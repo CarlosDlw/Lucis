@@ -168,9 +168,22 @@ private:
     };
     std::unordered_map<std::string, std::vector<StructMethodInfo>> structMethods_;
 
+    // Operator methods registered via `extend` blocks (fn +(A, B) R)
+    struct OperatorInfo {
+        std::string internalName;   // "opAdd", "opEq", "opIndex"
+        std::string symbol;         // "+", "==", "[]"
+        const TypeInfo* returnType = nullptr;
+        std::vector<const TypeInfo*> paramTypes;
+        bool isInstance = false;    // [] and () use &self
+    };
+    std::unordered_map<std::string, std::vector<OperatorInfo>> operatorMethods_;
+
     // Walk parent chain to find a method (struct inheritance)
     const StructMethodInfo* findMethodInChain(const TypeInfo* ti,
                                                const std::string& name) const;
+    // Walk parent chain to find an operator overload
+    const OperatorInfo* findOperatorInChain(const TypeInfo* ti,
+                                             const std::string& internalName) const;
     // Collect ALL methods from parent chain (for completions)
     std::vector<const StructMethodInfo*> collectMethodsInChain(
         const TypeInfo* ti) const;

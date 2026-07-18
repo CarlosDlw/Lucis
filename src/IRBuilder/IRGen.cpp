@@ -1401,6 +1401,60 @@ std::any IRGen::visitEnumDecl(LucisParser::EnumDeclContext* ctx) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
+//  Operator internal name helpers
+// ═══════════════════════════════════════════════════════════════════════
+
+static std::string opInternalName(LucisParser::OperatorNameContext* op) {
+    if (op->PLUS())    return "opAdd";
+    if (op->MINUS())   return "opSub";
+    if (op->STAR())    return "opMul";
+    if (op->SLASH())   return "opDiv";
+    if (op->PERCENT()) return "opMod";
+    if (op->EQ())      return "opEq";
+    if (op->NEQ())     return "opNe";
+    if (op->GT().size() == 2) return "opShr";
+    if (op->GT().size() == 1) return "opGt";
+    if (op->LT())      return "opLt";
+    if (op->LTE())     return "opLe";
+    if (op->GTE())     return "opGe";
+    if (op->AMPERSAND()) return "opBitAnd";
+    if (op->PIPE())    return "opBitOr";
+    if (op->CARET())   return "opBitXor";
+    if (op->LSHIFT())  return "opShl";
+    if (op->LAND())    return "opAnd";
+    if (op->LOR())     return "opOr";
+    if (op->NOT())     return "opNot";
+    if (op->TILDE())   return "opBitNot";
+    if (op->INCR())    return "opIncr";
+    if (op->DECR())    return "opDecr";
+    if (op->LBRACKET() && op->RBRACKET()) return "opIndex";
+    if (op->LPAREN()  && op->RPAREN())    return "opCall";
+    return "opUnknown";
+}
+
+static std::string opTextToInternal(const std::string& text) {
+    if (text == "+")   return "opAdd";
+    if (text == "-")   return "opSub";
+    if (text == "*")   return "opMul";
+    if (text == "/")   return "opDiv";
+    if (text == "%")   return "opMod";
+    if (text == "==")  return "opEq";
+    if (text == "!=")  return "opNe";
+    if (text == "<")   return "opLt";
+    if (text == ">")   return "opGt";
+    if (text == "<=")  return "opLe";
+    if (text == ">=")  return "opGe";
+    if (text == "&")   return "opBitAnd";
+    if (text == "|")   return "opBitOr";
+    if (text == "^")   return "opBitXor";
+    if (text == "<<")  return "opShl";
+    if (text == ">>")  return "opShr";
+    if (text == "&&")  return "opAnd";
+    if (text == "||")  return "opOr";
+    return "";
+}
+
+// ═══════════════════════════════════════════════════════════════════════
 //  extend StructName { methods... }
 // ═══════════════════════════════════════════════════════════════════════
 
@@ -1429,7 +1483,9 @@ std::any IRGen::visitExtendDecl(LucisParser::ExtendDeclContext* ctx) {
 
     struct ExtendMethodLoweringInfo {
         LucisParser::ExtendMethodContext* method;
+        LucisParser::BlockContext* block;   // body to lower (may differ from method->block() for operators)
         bool isStatic;
+        std::string methodName;             // for diagnostics
         std::vector<LucisParser::ParamContext*> params;
         std::vector<const TypeInfo*> paramTIs;
         std::vector<llvm::Type*> paramLLTypes;
@@ -1443,6 +1499,59 @@ std::any IRGen::visitExtendDecl(LucisParser::ExtendDeclContext* ctx) {
     // Pass 1: declare every method before lowering any body.
     // This allows forward calls between methods inside the same extend block.
     for (auto* method : ctx->extendMethod()) {
+        // ── Operator overload ──
+        if (auto* opDecl = method->operatorDecl()) {
+            auto internalName = opInternalName(opDecl->operatorName());
+            auto* retTI = resolveTypeInfo(opDecl->typeSpec());
+            if (!retTI) return {};
+            auto* retLLTy = retTI->toLLVMType(*context_, module_->getDataLayout());
+
+            bool isInstance = (opDecl->AMPERSAND() != nullptr);
+
+            std::vector<llvm::Type*> paramLLTypes;
+            std::vector<const TypeInfo*> paramTIs;
+
+            if (isInstance)
+                paramLLTypes.push_back(ptrTy);
+
+            std::vector<LucisParser::ParamContext*> params;
+            if (isInstance) {
+                params = opDecl->param();
+            } else if (auto* pl = opDecl->paramList()) {
+                params = pl->param();
+            }
+
+            for (auto* param : params) {
+                auto* pTI = resolveTypeInfo(param->typeSpec());
+                if (!pTI) continue;
+                paramTIs.push_back(pTI);
+                paramLLTypes.push_back(pTI->toLLVMType(*context_, module_->getDataLayout()));
+            }
+
+            auto funcName = structName + "__" + internalName; // MyStruct__opAdd
+            auto* fnType = llvm::FunctionType::get(retLLTy, paramLLTypes, false);
+            auto* fn = module_->getFunction(funcName);
+            if (!fn) {
+                fn = llvm::Function::Create(
+                    fnType, llvm::Function::ExternalLinkage, funcName, module_);
+            }
+
+            operatorMethods_[structName][internalName] = { fn, retTI };
+
+            loweringInfos.push_back(ExtendMethodLoweringInfo{
+                method,
+                opDecl->block(),      // body
+                !isInstance,          // isStatic
+                internalName,         // methodName
+                std::move(params),
+                std::move(paramTIs),
+                std::move(paramLLTypes),
+                retLLTy,
+                fn
+            });
+            continue;
+        }
+
         auto methodName = method->IDENTIFIER(0)->getText();
         auto* retTI = resolveTypeInfo(method->typeSpec());
         if (!retTI) return {};
@@ -1491,7 +1600,9 @@ std::any IRGen::visitExtendDecl(LucisParser::ExtendDeclContext* ctx) {
 
         loweringInfos.push_back(ExtendMethodLoweringInfo{
             method,
+            method->block(),
             isStatic,
+            methodName,
             std::move(params),
             std::move(paramTIs),
             std::move(paramLLTypes),
@@ -1553,8 +1664,11 @@ std::any IRGen::visitExtendDecl(LucisParser::ExtendDeclContext* ctx) {
         }
 
         // Visit the method body statements directly
-        for (auto* stmt : method->block()->statement()) {
-            visit(stmt);
+        auto* body = info.block ? info.block : method->block();
+        if (body) {
+            for (auto* stmt : body->statement()) {
+                visit(stmt);
+            }
         }
 
         // If no terminator, add implicit return
@@ -1786,6 +1900,18 @@ IRGen::MethodEntry* IRGen::findMethodEntryInChain(const TypeInfo* ti,
         auto smIt = structMethods_.find(t->name);
         if (smIt == structMethods_.end()) continue;
         auto mIt = smIt->second.find(name);
+        if (mIt != smIt->second.end())
+            return &mIt->second;
+    }
+    return nullptr;
+}
+
+IRGen::MethodEntry* IRGen::findOperatorEntryInChain(const TypeInfo* ti,
+                                                      const std::string& internalName) {
+    for (auto* t = ti; t; t = t->parentType) {
+        auto smIt = operatorMethods_.find(t->name);
+        if (smIt == operatorMethods_.end()) continue;
+        auto mIt = smIt->second.find(internalName);
         if (mIt != smIt->second.end())
             return &mIt->second;
     }
@@ -16831,9 +16957,21 @@ std::any IRGen::visitMulExpr(LucisParser::MulExprContext* ctx) {
         SET_DBG_LOC(ctx);
     auto* lhs = castValue(visit(ctx->expression(0)));
     auto* rhs = castValue(visit(ctx->expression(1)));
+    auto* lhsTI = resolveExprTypeInfo(ctx->expression(0));
+
+    // ── User-defined operator overload ──
+    if (lhsTI && lhsTI->kind == TypeKind::Struct) {
+        auto opName = opTextToInternal(ctx->op->getText());
+        if (!opName.empty()) {
+            if (auto* entry = findOperatorEntryInChain(lhsTI, opName)) {
+                auto* result = builder_->CreateCall(entry->fn, {lhs, rhs}, opName);
+                return static_cast<llvm::Value*>(result);
+            }
+        }
+    }
+
     auto [l, r] = promoteArithmetic(lhs, rhs);
     bool isFloat = l->getType()->isFloatingPointTy();
-    auto* lhsTI = resolveExprTypeInfo(ctx->expression(0));
 
     // Division by zero check for integer / and %
     if (!isFloat && (ctx->op->getType() == LucisLexer::SLASH ||
@@ -16936,6 +17074,20 @@ std::any IRGen::visitAddSubExpr(LucisParser::AddSubExprContext* ctx) {
         }
     }
 
+    // ── User-defined operator overload ──
+    {
+        auto* lhsTI = resolveExprTypeInfo(ctx->expression(0));
+        if (lhsTI && lhsTI->kind == TypeKind::Struct) {
+            auto opName = opTextToInternal(ctx->op->getText());
+            if (!opName.empty()) {
+                if (auto* entry = findOperatorEntryInChain(lhsTI, opName)) {
+                    auto* result = builder_->CreateCall(entry->fn, {lhs, rhs}, opName);
+                    return static_cast<llvm::Value*>(result);
+                }
+            }
+        }
+    }
+
     // ── Normal arithmetic ───────────────────────────────────────────
     auto [l, r] = promoteArithmetic(lhs, rhs);
     bool isFloat = l->getType()->isFloatingPointTy();
@@ -17022,6 +17174,15 @@ std::any IRGen::visitLshiftExpr(LucisParser::LshiftExprContext* ctx) {
         SET_DBG_LOC(ctx);
     auto* lhs = castValue(visit(ctx->expression(0)));
     auto* rhs = castValue(visit(ctx->expression(1)));
+    {
+        auto* lhsTI = resolveExprTypeInfo(ctx->expression(0));
+        if (lhsTI && lhsTI->kind == TypeKind::Struct) {
+            if (auto* entry = findOperatorEntryInChain(lhsTI, "opShl")) {
+                auto* result = builder_->CreateCall(entry->fn, {lhs, rhs}, "opShl");
+                return static_cast<llvm::Value*>(result);
+            }
+        }
+    }
     lhs = ptrToIntIfNeeded(lhs);
     rhs = ptrToIntIfNeeded(rhs);
     auto [l, r] = promoteArithmetic(lhs, rhs);
@@ -17032,6 +17193,15 @@ std::any IRGen::visitRshiftExpr(LucisParser::RshiftExprContext* ctx) {
         SET_DBG_LOC(ctx);
     auto* lhs = castValue(visit(ctx->expression(0)));
     auto* rhs = castValue(visit(ctx->expression(1)));
+    {
+        auto* lhsTI = resolveExprTypeInfo(ctx->expression(0));
+        if (lhsTI && lhsTI->kind == TypeKind::Struct) {
+            if (auto* entry = findOperatorEntryInChain(lhsTI, "opShr")) {
+                auto* result = builder_->CreateCall(entry->fn, {lhs, rhs}, "opShr");
+                return static_cast<llvm::Value*>(result);
+            }
+        }
+    }
     lhs = ptrToIntIfNeeded(lhs);
     rhs = ptrToIntIfNeeded(rhs);
     auto [l, r] = promoteArithmetic(lhs, rhs);
@@ -17980,6 +18150,18 @@ std::any IRGen::visitRelExpr(LucisParser::RelExprContext* ctx) {
     auto* rhs = castValue(visit(ctx->expression(1)));
     auto* lhsTI = resolveExprTypeInfo(ctx->expression(0));
     auto* rhsTI = resolveExprTypeInfo(ctx->expression(1));
+
+    // ── User-defined operator overload ──
+    if (lhsTI && lhsTI->kind == TypeKind::Struct) {
+        auto opName = opTextToInternal(ctx->op->getText());
+        if (!opName.empty()) {
+            if (auto* entry = findOperatorEntryInChain(lhsTI, opName)) {
+                auto* result = builder_->CreateCall(entry->fn, {lhs, rhs}, opName);
+                return static_cast<llvm::Value*>(result);
+            }
+        }
+    }
+
     auto [l, r] = promoteArithmetic(lhs, rhs);
     bool isFloat = l->getType()->isFloatingPointTy();
     bool useSignedIntCmp = true;
@@ -18030,6 +18212,17 @@ std::any IRGen::visitEqExpr(LucisParser::EqExprContext* ctx) {
     auto* rhs = castValue(visit(ctx->expression(1)));
     auto* lhsTI = resolveExprTypeInfo(ctx->expression(0));
     auto* rhsTI = resolveExprTypeInfo(ctx->expression(1));
+
+    // ── User-defined operator overload ──
+    if (lhsTI && lhsTI->kind == TypeKind::Struct) {
+        auto opName = opTextToInternal(ctx->op->getText());
+        if (!opName.empty()) {
+            if (auto* entry = findOperatorEntryInChain(lhsTI, opName)) {
+                auto* result = builder_->CreateCall(entry->fn, {lhs, rhs}, opName);
+                return static_cast<llvm::Value*>(result);
+            }
+        }
+    }
 
     // String comparison: delegate to lucis_compareTo(ptr,len,ptr,len)
     if (lhsTI && rhsTI && lhsTI->kind == TypeKind::String && rhsTI->kind == TypeKind::String) {
@@ -25946,6 +26139,101 @@ const TypeInfo* IRGen::instantiateGenericStruct(
         auto* ptrTy = llvm::PointerType::getUnqual(*context_);
 
         for (auto* method : extTmpl.decl->extendMethod()) {
+            // ── Operator overload in generic extend ──
+            if (auto* opDecl = method->operatorDecl()) {
+                auto internalName = opInternalName(opDecl->operatorName());
+                auto* retTI = resolveTypeInfoWithSubst(opDecl->typeSpec(), subst);
+                if (!retTI) continue;
+                auto* retLLTy = retTI->toLLVMType(*context_, module_->getDataLayout());
+
+                bool isInstance = (opDecl->AMPERSAND() != nullptr);
+
+                std::vector<llvm::Type*> paramLLTypes;
+                std::vector<const TypeInfo*> paramTIs;
+                if (isInstance) paramLLTypes.push_back(ptrTy);
+
+                std::vector<LucisParser::ParamContext*> params;
+                if (isInstance) {
+                    params = opDecl->param();
+                } else if (auto* pl = opDecl->paramList()) {
+                    params = pl->param();
+                }
+
+                for (auto* param : params) {
+                    auto* pTI = resolveTypeInfoWithSubst(param->typeSpec(), subst);
+                    if (!pTI) pTI = typeRegistry_.lookup("int32");
+                    paramTIs.push_back(pTI);
+                    paramLLTypes.push_back(pTI->toLLVMType(*context_, module_->getDataLayout()));
+                }
+
+                auto funcName = mangledName + "__" + internalName;
+                auto* fnType = llvm::FunctionType::get(retLLTy, paramLLTypes, false);
+                auto* fn = module_->getFunction(funcName);
+                if (!fn) {
+                    fn = llvm::Function::Create(
+                        fnType, llvm::Function::ExternalLinkage, funcName, module_);
+                }
+                operatorMethods_[mangledName][internalName] = { fn, retTI };
+
+                // ── Emit operator body ──
+                auto* savedFunc = currentFunction_;
+                auto  savedLocals = locals_;
+                auto* savedBB = builder_->GetInsertBlock();
+                auto  savedSubst = currentGenericSubst_;
+                currentGenericSubst_ = subst;
+                currentFunction_ = fn;
+                locals_.clear();
+
+                auto* entry = llvm::BasicBlock::Create(*context_, "entry", fn);
+                builder_->SetInsertPoint(entry);
+
+                if (isInstance) {
+                    auto* selfArg = fn->getArg(0);
+                    selfArg->setName("self");
+                    auto* selfAlloca = builder_->CreateAlloca(ptrTy, nullptr, "self");
+                    builder_->CreateStore(selfArg, selfAlloca);
+                    auto ptrTIName = "*" + mangledName;
+                    if (!typeRegistry_.lookup(ptrTIName)) {
+                        TypeInfo ptrTI;
+                        ptrTI.name = ptrTIName;
+                        ptrTI.kind = TypeKind::Pointer;
+                        ptrTI.pointeeType = const_cast<TypeInfo*>(result);
+                        typeRegistry_.registerType(std::move(ptrTI));
+                    }
+                    locals_["self"] = { selfAlloca, typeRegistry_.lookup(ptrTIName), 0 };
+                }
+
+                size_t argOff = isInstance ? 1 : 0;
+                for (size_t pi = 0; pi < params.size(); pi++) {
+                    auto paramName = params[pi]->IDENTIFIER()->getText();
+                    auto* arg = fn->getArg(pi + argOff);
+                    arg->setName(paramName);
+                    auto* alloca = builder_->CreateAlloca(paramLLTypes[pi + argOff], nullptr, paramName);
+                    builder_->CreateStore(arg, alloca);
+                    locals_[paramName] = { alloca, paramTIs[pi], 0, true };
+                }
+
+                if (opDecl->block()) {
+                    for (auto* stmt : opDecl->block()->statement())
+                        visit(stmt);
+                }
+
+                if (!builder_->GetInsertBlock()->getTerminator()) {
+                    if (retLLTy->isVoidTy())
+                        builder_->CreateRetVoid();
+                    else
+                        builder_->CreateRet(llvm::UndefValue::get(retLLTy));
+                }
+
+                currentFunction_ = savedFunc;
+                locals_ = savedLocals;
+                currentGenericSubst_ = savedSubst;
+                if (savedBB)
+                    builder_->SetInsertPoint(savedBB);
+
+                continue;
+            }
+
             auto methodName = method->IDENTIFIER(0)->getText();
             auto* retTI = resolveTypeInfoWithSubst(method->typeSpec(), subst);
             auto* retLLTy = retTI->toLLVMType(*context_, module_->getDataLayout());

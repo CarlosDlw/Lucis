@@ -337,11 +337,19 @@ private:
     std::unordered_map<std::string,
         std::unordered_map<std::string, MethodEntry>> staticStructMethods_;
 
+    // Operator overloads registered via `extend` blocks
+    // structName → { internalName → MethodEntry }
+    std::unordered_map<std::string,
+        std::unordered_map<std::string, MethodEntry>> operatorMethods_;
+
     // walk parent chain for method lookup
     const TypeInfo* findMethodReturnInChain(const TypeInfo* ti,
                                              const std::string& name) const;
     MethodEntry* findMethodEntryInChain(const TypeInfo* ti,
-                                         const std::string& name);
+                                          const std::string& name);
+    // walk parent chain for operator lookup
+    MethodEntry* findOperatorEntryInChain(const TypeInfo* ti,
+                                           const std::string& internalName);
 
     // Module context for cross-file resolution
     const ModuleRegistry* moduleRegistry_ = nullptr;

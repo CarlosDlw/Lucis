@@ -1,0 +1,94 @@
+use std::test::{ assertEqual };
+
+struct OpInt {
+  int32 val;
+}
+
+extend OpInt {
+  fn +(OpInt l, OpInt r) OpInt { ret OpInt { l.val + r.val }; }
+  fn -(OpInt l, OpInt r) OpInt { ret OpInt { l.val - r.val }; }
+  fn *(OpInt l, OpInt r) OpInt { ret OpInt { l.val * r.val }; }
+  fn /(OpInt l, OpInt r) OpInt { ret OpInt { l.val / r.val }; }
+  fn %(OpInt l, OpInt r) OpInt { ret OpInt { l.val % r.val }; }
+  fn ==(OpInt l, OpInt r) bool { ret l.val == r.val; }
+  fn !=(OpInt l, OpInt r) bool { ret l.val != r.val; }
+  fn <(OpInt l, OpInt r) bool  { ret l.val < r.val; }
+  fn >(OpInt l, OpInt r) bool  { ret l.val > r.val; }
+  fn <=(OpInt l, OpInt r) bool { ret l.val <= r.val; }
+  fn >=(OpInt l, OpInt r) bool { ret l.val >= r.val; }
+}
+
+struct OpVec2 {
+  int32 x;
+  int32 y;
+}
+
+extend OpVec2 {
+  fn +(OpVec2 l, OpVec2 r) OpVec2 { ret OpVec2 { l.x + r.x, l.y + r.y }; }
+  fn -(OpVec2 l, OpVec2 r) OpVec2 { ret OpVec2 { l.x - r.x, l.y - r.y }; }
+  fn ==(OpVec2 l, OpVec2 r) bool { ret l.x == r.x && l.y == r.y; }
+}
+
+struct Pair<T: Integer> {
+  T x;
+  T y;
+}
+
+extend Pair<T: Integer> {
+  fn +(Pair<T> l, Pair<T> r) Pair<T> {
+    Pair<T> res;
+    res.x = l.x + r.x;
+    res.y = l.y + r.y;
+    ret res;
+  }
+  fn ==(Pair<T> l, Pair<T> r) bool {
+    ret l.x == r.x && l.y == r.y;
+  }
+}
+
+fn testOperatorOverload() int32 {
+  // ── OpInt: all operators ──
+  OpInt a = OpInt { 10 };
+  OpInt b = OpInt { 3 };
+
+  assertEqual((a + b).val, 13);
+  assertEqual((a - b).val, 7);
+  assertEqual((a * b).val, 30);
+  assertEqual((a / b).val, 3);
+  assertEqual((a % b).val, 1);
+
+  assertEqual(a == OpInt { 10 }, true);
+  assertEqual(a != b, true);
+  assertEqual(a > b, true);
+  assertEqual(b < a, true);
+  assertEqual(a >= OpInt { 10 }, true);
+  assertEqual(b <= OpInt { 3 }, true);
+  assertEqual(a == b, false);
+  assertEqual(a < b, false);
+
+  // ── OpVec2: struct with multiple fields ──
+  OpVec2 v1 = OpVec2 { 1, 2 };
+  OpVec2 v2 = OpVec2 { 3, 4 };
+  OpVec2 vsum = v1 + v2;
+  assertEqual(vsum.x, 4);
+  assertEqual(vsum.y, 6);
+  OpVec2 vdiff = v2 - v1;
+  assertEqual(vdiff.x, 2);
+  assertEqual(vdiff.y, 2);
+
+  // ── Generic Pair<T> ──
+  Pair<int32> p1 = Pair<int32> { 1, 2 };
+  Pair<int32> p2 = Pair<int32> { 3, 4 };
+  Pair<int32> psum = p1 + p2;
+  assertEqual(psum.x, 4);
+  assertEqual(psum.y, 6);
+
+  // ── Chaining with precedence ──
+  OpInt x = OpInt { 2 };
+  OpInt y = OpInt { 3 };
+  OpInt z = OpInt { 4 };
+  assertEqual((x + y * z).val, 14);
+  assertEqual(((x + y) * z).val, 20);
+
+  ret 0;
+}

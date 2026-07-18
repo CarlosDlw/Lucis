@@ -30,6 +30,7 @@ use tests::inline_asm_intel::testInlineAsmIntel;
 use tests::integer_literal_formats::testIntegerLiteralFormats;
 use tests::int_methods_extra::testIntMethodsExtra;
 use tests::int_types::testIntTypes;
+use tests::operator_overload::testOperatorOverload;
 use tests::operators_full::testOperatorsFull;
 use tests::propagate_operator::testPropagateOperator;
 use tests::ranges_full::testRangesFull;
@@ -108,6 +109,7 @@ fn main() int32 {
     testGenericsUserTypes();
     testGenericsTaskAndConstraints();
     testInlineAsmIntel();
+    testOperatorOverload();
     testOperatorsFull();
     testRangesFull();
     testUnionsFull();

@@ -161,6 +161,39 @@ typeParam
 extendMethod
     : FN IDENTIFIER LPAREN AMPERSAND IDENTIFIER (COMMA param)* RPAREN typeSpec block
     | FN IDENTIFIER LPAREN paramList? RPAREN typeSpec block
+    | operatorDecl
+    ;
+
+operatorDecl
+    : FN operatorName LPAREN paramList RPAREN typeSpec block
+    | FN operatorName LPAREN AMPERSAND IDENTIFIER (COMMA param)* RPAREN typeSpec block
+    ;
+
+operatorName
+    : PLUS
+    | MINUS
+    | STAR
+    | SLASH
+    | PERCENT
+    | EQ
+    | NEQ
+    | LT
+    | GT
+    | GT GT
+    | LTE
+    | GTE
+    | AMPERSAND
+    | PIPE
+    | CARET
+    | LSHIFT
+    | LAND
+    | LOR
+    | NOT
+    | TILDE
+    | INCR
+    | DECR
+    | LBRACKET RBRACKET
+    | LPAREN RPAREN
     ;
 
 paramList

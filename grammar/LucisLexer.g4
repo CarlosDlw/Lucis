@@ -33,6 +33,7 @@ SPAWN     : 'spawn';
 AWAIT     : 'await';
 LOCK      : 'lock';
 EXTEND    : 'extend';
+OPERATOR  : 'operator';
 TRY       : 'try';
 CATCH     : 'catch';
 FINALLY   : 'finally';

@@ -131,6 +131,14 @@ public:
     return visitChildren(ctx);
   }
 
+  virtual std::any visitOperatorDecl(LucisParser::OperatorDeclContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual std::any visitOperatorName(LucisParser::OperatorNameContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
   virtual std::any visitParamList(LucisParser::ParamListContext *ctx) override {
     return visitChildren(ctx);
   }
