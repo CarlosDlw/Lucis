@@ -96,11 +96,23 @@ llvm::Type* TypeInfo::toLLVMType(llvm::LLVMContext& ctx,
             dl.getIntPtrType(ctx)
         });
 
-    case TypeKind::Struct:
-        return llvm::StructType::getTypeByName(ctx, name);
+    case TypeKind::Struct: {
+        // Volatile qualifier does not change the LLVM type
+        auto lookupName = name;
+        if (lookupName.rfind("volatile ", 0) == 0)
+            lookupName = lookupName.substr(9);
+        auto* st = llvm::StructType::getTypeByName(ctx, lookupName);
+        return st;
+    }
 
-    case TypeKind::Union:
-        return llvm::StructType::getTypeByName(ctx, name);
+    case TypeKind::Union: {
+        // Volatile qualifier does not change the LLVM type
+        auto lookupName = name;
+        if (lookupName.rfind("volatile ", 0) == 0)
+            lookupName = lookupName.substr(9);
+        auto* st = llvm::StructType::getTypeByName(ctx, lookupName);
+        return st;
+    }
 
     case TypeKind::Enum: {
         if (!enumHasPayload(*this))

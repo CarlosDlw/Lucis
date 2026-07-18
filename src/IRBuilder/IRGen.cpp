@@ -4261,9 +4261,11 @@ std::any IRGen::visitFieldAssignStmt(LucisParser::FieldAssignStmtContext* ctx) {
     auto* structTI = it->second.typeInfo;
     auto* structTy = alloca->getAllocatedType();
 
+    bool isVolatileAccess = false;
     if (structTI && structTI->kind == TypeKind::Pointer && structTI->pointeeType &&
         (structTI->pointeeType->kind == TypeKind::Struct ||
          structTI->pointeeType->kind == TypeKind::Union)) {
+        isVolatileAccess = structTI->pointeeType->isVolatile;
         auto* ptrTy = llvm::PointerType::getUnqual(*context_);
         auto* basePtr = builder_->CreateLoad(ptrTy, alloca, varName + "_selfptr");
         alloca = static_cast<llvm::AllocaInst*>(nullptr);
@@ -4321,7 +4323,10 @@ std::any IRGen::visitFieldAssignStmt(LucisParser::FieldAssignStmtContext* ctx) {
             }
         }
 
-        builder_->CreateStore(val, currentPtr);
+        if (isVolatileAccess)
+            builder_->CreateStore(val, currentPtr, true);
+        else
+            builder_->CreateStore(val, currentPtr);
         return {};
     }
 
@@ -4394,7 +4399,10 @@ std::any IRGen::visitFieldAssignStmt(LucisParser::FieldAssignStmtContext* ctx) {
         }
     }
 
-    builder_->CreateStore(val, currentPtr);
+    if (isVolatileAccess)
+        builder_->CreateStore(val, currentPtr, true);
+    else
+        builder_->CreateStore(val, currentPtr);
     return {};
 }
 
@@ -18460,6 +18468,21 @@ const TypeInfo* IRGen::resolveTypeInfo(LucisParser::TypeSpecContext* ctx) {
     if (!ctx) {
         std::cerr << "lucis: internal error: null type context\n";
         return typeRegistry_.lookup("int32");
+    }
+
+    // Check for volatile qualifier: volatile T
+    if (ctx->VOLATILE()) {
+        if (ctx->typeSpec().empty()) return typeRegistry_.lookup("int32");
+        auto* innerTI = resolveTypeInfo(ctx->typeSpec(0));
+        if (!innerTI) return typeRegistry_.lookup("int32");
+        auto volName = "volatile " + innerTI->name;
+        if (auto* existing = typeRegistry_.lookup(volName))
+            return existing;
+        TypeInfo ti = *innerTI;
+        ti.name = volName;
+        ti.isVolatile = true;
+        typeRegistry_.registerType(std::move(ti));
+        return typeRegistry_.lookup(volName);
     }
 
     // Check for pointer type: *T

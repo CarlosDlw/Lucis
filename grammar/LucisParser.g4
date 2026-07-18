@@ -686,7 +686,8 @@ expression
 
 // Type specifiers (recursive for array types: []int32, [10]int32, [][]char)
 typeSpec
-    : STAR typeSpec                    // Pointer type: *int32, *[]char
+    : VOLATILE typeSpec                // Volatile qualifier: volatile int32, volatile *Uart
+    | STAR typeSpec                    // Pointer type: *int32, *[]char
     | typeSpec STAR                    // Error: C-style pointer (int32*)
     | LBRACKET (INT_LIT | IDENTIFIER) RBRACKET typeSpec  // Fixed-size array: [10]int32, [SOME_CONST]float64
     | LBRACKET RBRACKET typeSpec       // Array type: []int32, [][]char

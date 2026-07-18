@@ -1790,6 +1790,29 @@ const TypeInfo* Checker::resolveTypeSpec(LucisParser::TypeSpecContext* ctx,
         cur = cur->typeSpec().empty() ? nullptr : cur->typeSpec(0);
     }
 
+    // Volatile qualifier: volatile T
+    if (cur && cur->VOLATILE()) {
+        unsigned innerDims = 0;
+        auto* inner = resolveTypeSpec(cur->typeSpec(0), innerDims);
+        if (!inner) return nullptr;
+        arrayDims = innerDims;
+        // Return or create volatile-qualified version
+        auto volName = "volatile " + inner->name;
+        for (auto& dt : dynamicTypes_) {
+            if (dt->name == volName && dt->isVolatile &&
+                dt->kind == inner->kind &&
+                dt->bitWidth == inner->bitWidth &&
+                dt->isSigned == inner->isSigned)
+                return dt.get();
+        }
+        auto ti = std::make_unique<TypeInfo>(*inner);
+        ti->name = volName;
+        ti->isVolatile = true;
+        const TypeInfo* raw = ti.get();
+        dynamicTypes_.push_back(std::move(ti));
+        return raw;
+    }
+
     // Pointer type: *T
     if (cur && cur->STAR()) {
         auto* childTS = cur->typeSpec(0);

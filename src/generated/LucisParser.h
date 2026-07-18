@@ -3152,9 +3152,10 @@ public:
   public:
     TypeSpecContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
-    antlr4::tree::TerminalNode *STAR();
+    antlr4::tree::TerminalNode *VOLATILE();
     std::vector<TypeSpecContext *> typeSpec();
     TypeSpecContext* typeSpec(size_t i);
+    antlr4::tree::TerminalNode *STAR();
     antlr4::tree::TerminalNode *LBRACKET();
     antlr4::tree::TerminalNode *RBRACKET();
     antlr4::tree::TerminalNode *INT_LIT();
