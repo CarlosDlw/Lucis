@@ -1330,6 +1330,36 @@ static std::optional<std::string> resolveImportedModuleAliasPath(
                 return modulePath;
             }
         }
+
+        if (auto* group = dynamic_cast<LucisParser::UseGroupContext*>(useDecl)) {
+            if (!group->modulePath() || group->IDENTIFIER().empty()) continue;
+            // Check if the name matches any of the imported symbols in the group
+            for (auto* id : group->IDENTIFIER()) {
+                if (id->getText() == name) {
+                    std::string modulePath;
+                    for (auto* pid : group->modulePath()->IDENTIFIER()) {
+                        if (!modulePath.empty()) modulePath += "::";
+                        modulePath += pid->getText();
+                    }
+                    modulePath += "::";
+                    modulePath += name;
+                    return modulePath;
+                }
+            }
+            // Check if the name matches the last segment of the module path
+            auto pathIds = group->modulePath()->IDENTIFIER();
+            if (!pathIds.empty()) {
+                auto* aliasId = pathIds.back();
+                if (aliasId->getText() == name) {
+                    std::string modulePath;
+                    for (auto* id : pathIds) {
+                        if (!modulePath.empty()) modulePath += "::";
+                        modulePath += id->getText();
+                    }
+                    return modulePath;
+                }
+            }
+        }
     }
     return std::nullopt;
 }
@@ -1682,18 +1712,19 @@ std::optional<HoverResult> HoverProvider::walkExprForHover(
                 }
 
                 // Type/module: resolve only the first segment as type symbol.
-                // Try hoverIdent first (handles structs, enums, etc. via registry),
-                // then fall back to module alias resolution.
+                // Check module alias first: for `use std::log; log::println(...)`,
+                // hovering on `log` should show `(module) std::log`, not the
+                // `log` builtin function.
                 if (i == 0) {
                     std::string typeName = ids[0]->getText();
-                    auto identResult = hoverIdent(typeName, hoveredToken, tree,
-                                                   bindings, cursorLine, project);
-                    if (identResult) return identResult;
                     if (auto modulePath = resolveImportedModuleAliasPath(hoveredToken, tree)) {
                         return makeResult(hoveredToken,
                             "```lucis\n(module) " + *modulePath + "\n```"
                         );
                     }
+                    auto identResult = hoverIdent(typeName, hoveredToken, tree,
+                                                   bindings, cursorLine, project);
+                    if (identResult) return identResult;
                 }
             }
         }
@@ -2006,14 +2037,14 @@ std::optional<HoverResult> HoverProvider::walkExprForHover(
         auto ids = gsmc->IDENTIFIER();
         if (ids.size() >= 1 && ids[0]->getSymbol() == hoveredToken) {
             std::string typeName = ids[0]->getText();
-            auto identResult = hoverIdent(typeName, hoveredToken, tree,
-                                           bindings, cursorLine, project);
-            if (identResult) return identResult;
             if (auto modulePath = resolveImportedModuleAliasPath(hoveredToken, tree)) {
                 return makeResult(hoveredToken,
                     "```lucis\n(module) " + *modulePath + "\n```"
                 );
             }
+            auto identResult = hoverIdent(typeName, hoveredToken, tree,
+                                           bindings, cursorLine, project);
+            if (identResult) return identResult;
         }
         if (ids.size() >= 2 && ids[1]->getSymbol() == hoveredToken) {
             // Show the generic struct template name + method info

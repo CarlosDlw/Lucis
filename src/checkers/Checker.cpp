@@ -6379,7 +6379,7 @@ void Checker::checkUseDecls(LucisParser::ProgramContext* tree) {
                     error(item, "unknown module '" + path + "'");
                 }
             } else if (ImportResolver::isStdModule(path + "::" + symbolName)) {
-                userImports_[symbolName] = modPath;
+                userImports_[symbolName] = ModuleRegistry::usePathToModulePath(path + "::" + symbolName);
             } else if (moduleRegistry_ && moduleRegistry_->hasModule(modPath)) {
                 auto* sym = moduleRegistry_->findSymbol(modPath, symbolName);
                 if (!sym) {
