@@ -2180,6 +2180,12 @@ std::any IRGen::visitFunctionDecl(LucisParser::FunctionDeclContext* ctx) {
             func->setVisibility(llvm::GlobalValue::DefaultVisibility);
             llvm::appendToUsed(*module_, {func});
         }
+        // #[naked] — no prologue/epilogue
+        if (hasAttribute(attrs, "naked"))
+            func->addFnAttr(llvm::Attribute::Naked);
+        // #[no_stack_probe] — disable stack probing
+        if (hasAttribute(attrs, "no_stack_probe"))
+            func->addFnAttr("probe-stack", "0");
     }
 
     currentFunction_ = func;

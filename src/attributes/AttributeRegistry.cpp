@@ -183,4 +183,53 @@ void registerBuiltinAttributes(AttributeRegistry& reg) {
             return true; // structural validation done in Checker
         }
     });
+
+    // ── naked: function without prologue/epilogue ────────────────────
+    reg.registerAttribute("naked", AttributeHandler{
+        .validate = [](const Attribute& attr, const TypeInfo*, std::vector<std::string>&) -> bool {
+            return attr.args.empty();
+        }
+    });
+
+    // ── no_stack_probe: disable stack probing ────────────────────────
+    reg.registerAttribute("no_stack_probe", AttributeHandler{
+        .validate = [](const Attribute& attr, const TypeInfo*, std::vector<std::string>&) -> bool {
+            return attr.args.empty();
+        }
+    });
+
+    // ── interrupt: interrupt service routine ─────────────────────────
+    // #[interrupt] or #[interrupt(vector = N)]
+    reg.registerAttribute("interrupt", AttributeHandler{
+        .validate = [](const Attribute& attr, const TypeInfo*, std::vector<std::string>&) -> bool {
+            if (attr.args.empty()) return true;
+            if (attr.args.size() == 1) return false; // single arg must be key=value
+            if (attr.args.size() != 2) return false; // vector = N
+            if (attr.args[0].kind != AttributeArg::Ident) return false;
+            if (attr.args[0].identValue != "vector") return false;
+            if (attr.args[1].kind != AttributeArg::Int) return false;
+            int64_t n = attr.args[1].intValue;
+            return n >= 0 && n <= 255;
+        }
+    });
+
+    // ── vector_table: auto-generate interrupt vector table ───────────
+    // #[vector_table] or #[vector_table(base = addr)]
+    reg.registerAttribute("vector_table", AttributeHandler{
+        .validate = [](const Attribute& attr, const TypeInfo*, std::vector<std::string>&) -> bool {
+            if (attr.args.empty()) return true;
+            if (attr.args.size() != 2) return false;
+            if (attr.args[0].kind != AttributeArg::Ident) return false;
+            if (attr.args[0].identValue != "base") return false;
+            if (attr.args[1].kind != AttributeArg::Int) return false;
+            return attr.args[1].intValue >= 0;
+        }
+    });
+
+    // ── entry: mark function as program entry point ──────────────────
+    reg.registerAttribute("entry", AttributeHandler{
+        .validate = [](const Attribute& attr, const TypeInfo*, std::vector<std::string>&) -> bool {
+            return attr.args.empty();
+        }
+    });
 }
