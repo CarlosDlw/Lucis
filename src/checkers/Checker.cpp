@@ -9978,9 +9978,13 @@ void Checker::checkCallStmt(LucisParser::CallStmtContext* stmt) {
     {
         auto declIt = functionDecls_.find(name);
         if (declIt != functionDecls_.end() &&
-            declIt->second->attributeList() &&
-            hasAttribute(declIt->second->attributeList(), "deprecated"))
-            warning(stmt, "call to deprecated function '" + name + "'");
+            declIt->second->attributeList()) {
+            if (hasAttribute(declIt->second->attributeList(), "deprecated"))
+                warning(stmt, "call to deprecated function '" + name + "'");
+            if (hasAttribute(declIt->second->attributeList(), "must_use"))
+                warning(stmt, "unused return value: '" + name +
+                        "' is marked #[must_use]");
+        }
     }
 
     // Resolve all argument types
