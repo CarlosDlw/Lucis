@@ -2316,16 +2316,16 @@ std::any IRGen::visitFunctionDecl(LucisParser::FunctionDeclContext* ctx) {
 
         std::string saveAsm, restoreAsm;
         std::vector<const char*> regs = {
-            "%rax", "%rcx", "%rdx", "%rbx", "%rbp",
-            "%rsi", "%rdi", "%r8",  "%r9",  "%r10", "%r11",
-            "%r12", "%r13", "%r14", "%r15"
+            "%%rax", "%%rcx", "%%rdx", "%%rbx", "%%rbp",
+            "%%rsi", "%%rdi", "%%r8",  "%%r9",  "%%r10", "%%r11",
+            "%%r12", "%%r13", "%%r14", "%%r15"
         };
         saveAsm = "pushfq\n";
         for (auto* r : regs) saveAsm += std::string("pushq ") + r + "\n";
-        saveAsm += "movq %rsp, %rbp\n";
-        saveAsm += "andq $-16, %rsp\n";
+        saveAsm += "movq %%rsp, %%rbp\n";
+        saveAsm += "andq $-16, %%rsp\n";
 
-        restoreAsm = "movq %rbp, %rsp\n";
+        restoreAsm = "movq %%rbp, %%rsp\n";
         for (int i = (int)regs.size() - 1; i >= 0; i--)
             restoreAsm += std::string("popq ") + regs[i] + "\n";
         restoreAsm += "popfq\n";
