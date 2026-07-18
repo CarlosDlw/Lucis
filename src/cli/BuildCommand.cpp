@@ -134,14 +134,11 @@ int BuildCommand::run(const ArgParser& parser) {
     pipeOpts.codeModel = useConfig ? cfg->build.codeModel : "";
     pipeOpts.printCfg = parser.has("print-cfg");
 
-    // Linker entry: CLI (--linker-entry / --entry) > config.linker.entry
-    std::string linkerEntry = parser.has("linker-entry") ? parser.get("linker-entry") :
-                              parser.get("entry");
-    if (linkerEntry.empty() && useConfig && !cfg->linker.entry.empty())
-        linkerEntry = cfg->linker.entry;
+    // Linker entry: CLI > #[entry] attribute > config > default
+    pipeOpts.entryPoint = parser.has("linker-entry") ? parser.get("linker-entry") :
+                          parser.get("entry");
     if (parser.has("entry") && !parser.has("linker-entry"))
         std::cerr << "lucis: warning: --entry is deprecated, use --linker-entry\n";
-    pipeOpts.entryPoint = linkerEntry;
 
     pipeOpts.userLinkerFlags = parser.getAll("link");
     if (useConfig && pipeOpts.userLinkerFlags.empty())
@@ -646,6 +643,9 @@ int BuildCommand::run(const ArgParser& parser) {
                 anyIRError = true;
                 continue;
             }
+            // Use #[entry] from IRGen if no explicit entry point was set
+            if (pipeOpts.entryPoint.empty() && !irGen.getEntryPoint().empty())
+                pipeOpts.entryPoint = irGen.getEntryPoint();
             // Collect inline assembly files from this module
             for (auto& asmFile : irGen.inlineAssemblyFiles())
                 assemblySources.push_back(asmFile.filePath);
@@ -654,6 +654,10 @@ int BuildCommand::run(const ArgParser& parser) {
             unitIRs.push_back({unit.filePath, std::move(irMod)});
         }
         if (anyIRError) return 1;
+
+        // Fallback to config entry point if no CLI or #[entry] specified
+        if (pipeOpts.entryPoint.empty() && useConfig && !cfg->linker.entry.empty())
+            pipeOpts.entryPoint = cfg->linker.entry;
 
         auto mainPath = fs::canonical(fs::path(pipeOpts.inputFile)).string();
         llvm::Module* mainMod = nullptr;

@@ -2106,8 +2106,10 @@ std::any IRGen::visitFunctionDecl(LucisParser::FunctionDeclContext* ctx) {
 
     // If main has args, emit the user's code under a different name
     std::string emitName = funcName;
-    bool noMangle = hasAttribute(ctx->attributeList(), "no_mangle");
-    bool isExport = hasAttribute(ctx->attributeList(), "export");
+    bool isEntry = hasAttribute(ctx->attributeList(), "entry");
+    bool noMangle = hasAttribute(ctx->attributeList(), "no_mangle") || isEntry;
+    bool isExport = hasAttribute(ctx->attributeList(), "export") || isEntry;
+    if (isEntry) entryPoint_ = funcName;
     if (isMainWithArgs) {
         emitName = "lucis_user_main";
     } else if (funcName != "main" && !noMangle) {

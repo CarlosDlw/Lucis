@@ -653,6 +653,10 @@ public:
         std::string filePath;
     };
     const std::vector<InlineAsmFile>& inlineAssemblyFiles() const { return inlineAssemblyFiles_; }
+    const std::string& getEntryPoint() const { return entryPoint_; }
+
+private:
+    std::string entryPoint_;
 
 private:
     std::vector<InlineAsmFile> inlineAssemblyFiles_;
