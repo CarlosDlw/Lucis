@@ -1106,6 +1106,10 @@ std::any IRGen::visitProgram(LucisParser::ProgramContext* ctx) {
         generateConstInitFunction();
     }
     
+    // ── #[vector_table] — generate interrupt vector table ──────────
+    if (!interruptTable_.empty())
+        emitVectorTable();
+    
     return {};
 }
 
@@ -1155,6 +1159,28 @@ void IRGen::generateConstInitFunction() {
 
     // Register with global constructors using appendToGlobalCtors
     llvm::appendToGlobalCtors(*module_, initFunc, 0);
+}
+
+void IRGen::emitVectorTable() {
+    auto* voidTy = llvm::Type::getVoidTy(*context_);
+    auto* fnTy = llvm::FunctionType::get(voidTy, false);
+    auto* ptrTy = llvm::PointerType::getUnqual(*context_);
+    auto* arrTy = llvm::ArrayType::get(ptrTy, 256);
+
+    std::vector<llvm::Constant*> entries(256,
+        llvm::ConstantPointerNull::get(ptrTy));
+
+    for (auto& entry : interruptTable_) {
+        if (entry.vector >= 0 && entry.vector < 256 && entry.wrapper)
+            entries[entry.vector] = llvm::ConstantExpr::getBitCast(
+                entry.wrapper, ptrTy);
+    }
+
+    auto* init = llvm::ConstantArray::get(arrTy, entries);
+    auto* gv = new llvm::GlobalVariable(*module_, arrTy, true,
+        llvm::GlobalValue::ExternalLinkage, init, "vector_table");
+    gv->setSection(".isr_vector");
+    gv->setAlignment(llvm::MaybeAlign(16));
 }
 
 std::any IRGen::visitStructDecl(LucisParser::StructDeclContext* ctx) {
@@ -2297,9 +2323,12 @@ std::any IRGen::visitFunctionDecl(LucisParser::FunctionDeclContext* ctx) {
         for (auto* a : ctx->attributeList()->attribute()) {
             if (a->IDENTIFIER() && a->IDENTIFIER()->getText() == "interrupt") {
                 if (auto* argList = a->attrArgList()) {
-                    auto args = argList->attrArg();
-                    if (args.size() >= 2 && args[1]->INT_LIT())
-                        vectorNum = static_cast<int>(std::stol(args[1]->getText()));
+                    for (auto* arg : argList->attrArg()) {
+                        if (arg->IDENTIFIER() && arg->IDENTIFIER()->getText() == "vector" &&
+                            arg->attrArg() && arg->attrArg()->INT_LIT())
+                            vectorNum = static_cast<int>(
+                                std::stol(arg->attrArg()->INT_LIT()->getText()));
+                    }
                 }
             }
         }

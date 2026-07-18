@@ -564,6 +564,7 @@ private:
         llvm::Function* wrapper;
     };
     std::vector<InterruptEntry> interruptTable_;
+    void emitVectorTable();
 
     // Phase 2: Sync a type from SemanticDB into the local TypeRegistry.
     // Returns true if the type was successfully registered (or already exists).
