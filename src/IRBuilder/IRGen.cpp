@@ -4277,6 +4277,25 @@ std::any IRGen::visitCompoundAssignStmt(LucisParser::CompoundAssignStmtContext* 
         return {};
     }
 
+    // ── String concatenation: str += str ─────────────────────────
+    if (ctx->op->getType() == LucisLexer::PLUS_ASSIGN &&
+        elemTI && elemTI->kind == TypeKind::String) {
+        auto* ptrTy   = llvm::PointerType::getUnqual(*context_);
+        auto* usizeTy = module_->getDataLayout().getIntPtrType(*context_);
+        auto* strTy   = varTy;
+
+        auto* lhsPtr = builder_->CreateExtractValue(cur, {0}, "lhs.ptr");
+        auto* lhsLen = builder_->CreateExtractValue(cur, {1}, "lhs.len");
+        auto* rhsPtr = builder_->CreateExtractValue(rhs, {0}, "rhs.ptr");
+        auto* rhsLen = builder_->CreateExtractValue(rhs, {1}, "rhs.len");
+
+        auto callee = declareBuiltin("lucis_concat", strTy,
+                                    {ptrTy, usizeTy, ptrTy, usizeTy});
+        result = builder_->CreateCall(callee, {lhsPtr, lhsLen, rhsPtr, rhsLen}, "strcat");
+        builder_->CreateStore(result, alloca);
+        return {};
+    }
+
     // Division by zero guard for /= and %=
     if (!isFloat && (ctx->op->getType() == LucisLexer::SLASH_ASSIGN ||
                      ctx->op->getType() == LucisLexer::PERCENT_ASSIGN)) {

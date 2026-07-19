@@ -9300,6 +9300,13 @@ void Checker::checkCompoundAssignStmt(LucisParser::CompoundAssignStmtContext* st
         return;
     }
 
+    // string += string → string concatenation
+    if (opText == "+=" && varType && varType->kind == TypeKind::String) {
+        if (rhsType && rhsType->kind != TypeKind::String)
+            error(stmt, "cannot concatenate 'string' with '" + rhsType->name + "' using '+='");
+        return;
+    }
+
     bool isPtrArith = varType && varType->kind == TypeKind::Pointer &&
                       (opText == "+=" || opText == "-=");
 
