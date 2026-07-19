@@ -65,6 +65,7 @@ void TypeRegistry::registerBuiltins() {
     registerType({ "bool",    TypeKind::Bool,   1,  true, "bool" });
     registerType({ "char",    TypeKind::Char,   8,  true, "char" });
     registerType({ "void",    TypeKind::Void,   0,  true, ""     });
+    registerType({ "*void",   TypeKind::Pointer, 0,  true, "ptr"  });
     registerType({ "string",  TypeKind::String, 0,  true, "str"  });
 
     // ── Concurrency types ───────────────────────────────────────────────

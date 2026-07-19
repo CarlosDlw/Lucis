@@ -18957,6 +18957,8 @@ const TypeInfo* IRGen::resolveExprTypeInfo(LucisParser::ExpressionContext* ctx) 
     if (cacheIt != exprTypeCache_.end())
         return cacheIt->second;
 
+
+
     // ── Suffixed literals ────────────────────────────────────────────
     static const std::unordered_map<std::string, std::string> kSufMap = {
         {"i8", "int8"}, {"i16", "int16"}, {"i32", "int32"}, {"i64", "int64"},
@@ -19873,6 +19875,29 @@ const TypeInfo* IRGen::resolveExprTypeInfo(LucisParser::ExpressionContext* ctx) 
             auto mIt = smIt->second.find(methodName);
             if (mIt != smIt->second.end())
                 return mIt->second.returnType;
+        }
+        return nullptr;
+    }
+
+    // ── Generic qualified function call: ns::func<T>(args) ─────────
+    if (auto* gqc = dynamic_cast<LucisParser::GenericQualifiedFnCallExprContext*>(ctx)) {
+        std::vector<std::string> idTexts;
+        for (auto* id : gqc->IDENTIFIER())
+            idTexts.push_back(id->getText());
+        if (idTexts.size() >= 2 && IntrinsicRegistry::isIntrinsicPrefix(idTexts[0])) {
+            std::string ns, funcName;
+            IntrinsicRegistry::parseIntrinsicPath(idTexts, ns, funcName);
+            auto* intrinsic = intrinsicRegistry_.lookup(ns, funcName);
+            if (intrinsic) {
+                if (intrinsic->returnType != "_any" && intrinsic->returnType != "_self")
+                    return typeRegistry_.lookup(intrinsic->returnType);
+                // Generic intrinsic with _any return: resolve from type args.
+                auto typeSpecs = gqc->typeSpec();
+                if (!typeSpecs.empty()) {
+                    auto* argTI = resolveTypeInfo(typeSpecs[0]);
+                    if (argTI) return argTI;
+                }
+            }
         }
         return nullptr;
     }
@@ -21148,7 +21173,9 @@ IRGen::visitMethodCallExpr(LucisParser::MethodCallExprContext* ctx) {
         recvArrayDims = resolveExprArrayDims(baseExpr);
 
     // Auto-dereference: ptr.method() → pointee.method()
-    if (receiverTI && receiverTI->kind == TypeKind::Pointer && receiverTI->pointeeType)
+    // Exclude *void (no meaningful pointee methods).
+    if (receiverTI && receiverTI->kind == TypeKind::Pointer && receiverTI->pointeeType
+        && receiverTI->pointeeType->kind != TypeKind::Void)
         receiverTI = receiverTI->pointeeType;
 
     // ── Variadic parameter method dispatch ───────────────────────────
