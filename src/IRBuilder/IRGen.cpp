@@ -24721,7 +24721,6 @@ IRGen::visitMethodCallExpr(LucisParser::MethodCallExprContext* ctx) {
                 builder_->CreateZExt(receiverVal, i32Ty, "toint"));
         }
         if (tag == "bool.toString") {
-            // Select between "true" and "false" string constants
             auto* trueStr  = builder_->CreateGlobalString("true", ".str.true", 0, module_);
             auto* falseStr = builder_->CreateGlobalString("false", ".str.false", 0, module_);
             auto* trueLen  = llvm::ConstantInt::get(usizeTy, 4);
@@ -24732,6 +24731,13 @@ IRGen::visitMethodCallExpr(LucisParser::MethodCallExprContext* ctx) {
             s = builder_->CreateInsertValue(s, ptr, 0);
             s = builder_->CreateInsertValue(s, len, 1);
             return static_cast<llvm::Value*>(s);
+        }
+        if (tag == "ptr.toString") {
+            // Convert pointer to i64 and format as decimal string via lucis_utoa.
+            auto* intVal = builder_->CreatePtrToInt(receiverVal, i64Ty, "ptr2int");
+            auto callee = declareBuiltin("lucis_utoa", strTy, {i64Ty});
+            return static_cast<llvm::Value*>(
+                builder_->CreateCall(callee, {intVal}, "ptrtostr"));
         }
     }
 

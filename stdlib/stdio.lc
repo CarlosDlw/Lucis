@@ -121,3 +121,95 @@ fn printf(string format, ...) void {
     vprintf(format, va);
     lucis::unsafe::va_end(va);
 }
+
+/**
+ * Formats a string using a va_list and returns the result.
+ * Same format specifiers as printf().
+ * 
+ * @param format The format string
+ * @param va The variadic argument list
+ * @return The formatted string
+ */
+fn vsprintf(string format, va_list va) string {
+    string result = "";
+    usize i = 0usize;
+    while i < format.len() {
+        char c = format[i];
+
+        if c == '{' && i + 1usize < format.len() && format[i + 1usize] == '{' {
+            result += "{";
+            i += 2usize;
+            continue;
+        }
+
+        if c == '{' {
+            i++;
+            if i >= format.len() break;
+
+            char spec = format[i];
+
+            switch spec {
+                case 's' { result += lucis::unsafe::va_arg_string(va); }
+                case 'd' { result += lucis::unsafe::va_arg_int32(va).toString(); }
+                case 'l' { result += lucis::unsafe::va_arg_int64(va).toString(); }
+                case 'u' { result += lucis::unsafe::va_arg<uint32>(va).toString(); }
+                case 'U' { result += lucis::unsafe::va_arg<uint64>(va).toString(); }
+                case 'c' { result += (lucis::unsafe::va_arg_int32(va) as char).toString(); }
+                case 'f' {
+                    uint32 precision = 6u32;
+                    if i + 1usize < format.len() && format[i + 1usize] == ':' {
+                        i += 2usize;
+                        precision = 0u32;
+                        while i < format.len() && format[i].isDigit() {
+                            precision = precision * 10 + format[i].digitToInt() as uint64;
+                            i++;
+                        }
+                        i--;
+                    }
+                    result += lucis::unsafe::va_arg_float64(va).toStringPrecision(precision);
+                }
+                case 'b' { result += lucis::unsafe::va_arg_bool(va) ? "true" : "false"; }
+                case 'p' { result += lucis::unsafe::va_arg_ptr(va).toString(); }
+                case 'x' {
+                    uint64 v = lucis::unsafe::va_arg<uint64>(va);
+                    result += toHex(v);
+                }
+                case 'X' {
+                    uint64 v = lucis::unsafe::va_arg<uint64>(va);
+                    result += toHex(v).toUpper();
+                }
+                case 't' {
+                    uint64 v = lucis::unsafe::va_arg<uint64>(va);
+                    result += toBinary(v);
+                }
+                case 'o' {
+                    uint64 v = lucis::unsafe::va_arg<uint64>(va);
+                    result += toOctal(v);
+                }
+            }
+
+            while i < format.len() && format[i] != '}' { i++; }
+        } else {
+            result += c.toString();
+        }
+
+        i++;
+    }
+    return result;
+}
+
+/**
+ * Formats a string and returns it.
+ * Supports the same placeholders as printf().
+ * 
+ * @param format The format string
+ * @param ... Variadic arguments for the placeholders
+ * @return The formatted string
+ */
+fn sprintf(string format, ...) string {
+    va_list va = lucis::unsafe::va_list();
+    lucis::unsafe::va_start(va);
+    string result = vsprintf(format, va);
+    lucis::unsafe::va_end(va);
+    return result;
+}
