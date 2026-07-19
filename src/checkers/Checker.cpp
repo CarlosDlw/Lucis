@@ -1831,6 +1831,13 @@ const TypeInfo* Checker::resolveTypeSpec(LucisParser::TypeSpecContext* ctx,
     // Pointer type: *T
     if (cur && cur->STAR()) {
         auto* childTS = cur->typeSpec(0);
+        // auto should not be combined with * in any position:
+        //   *auto  → use just 'auto' (auto already infers pointer types)
+        //   auto*  → use just 'auto'
+        if (childTS && childTS->AUTO()) {
+            error(cur, "invalid use of '*' with 'auto': use 'auto' instead (auto infers pointer types automatically)");
+            return nullptr;
+        }
         if (childTS) {
             auto starIdx = cur->STAR()->getSymbol()->getTokenIndex();
             auto childIdx = childTS->getStart()->getTokenIndex();

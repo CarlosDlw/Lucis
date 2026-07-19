@@ -560,7 +560,7 @@ extend Queue<T> {
      */
     fn grow(&self) void {
         usize new_cap = self.cap == 0 ? 4 : self.cap * 2;
-        auto* new_data = alloc(new_cap * sizeof(T)) as *T;
+        auto new_data = alloc(new_cap * sizeof(T)) as *T;
         for usize i in 0..self.len {
             new_data[i] = self.data[(self.head + i) % self.cap];
         }
