@@ -24760,11 +24760,26 @@ IRGen::visitMethodCallExpr(LucisParser::MethodCallExprContext* ctx) {
             return static_cast<llvm::Value*>(s);
         }
         if (tag == "ptr.toString") {
-            // Convert pointer to i64 and format as decimal string via lucis_utoa.
+            // Format pointer as hex with 0x prefix (matching printf output).
             auto* intVal = builder_->CreatePtrToInt(receiverVal, i64Ty, "ptr2int");
-            auto callee = declareBuiltin("lucis_utoa", strTy, {i64Ty});
+            auto radix16 = llvm::ConstantInt::get(i32Ty, 16);
+            auto hexCallee = declareBuiltin("lucis_itoaRadix", strTy, {i64Ty, i32Ty});
+            auto* hexStr = builder_->CreateCall(hexCallee, {intVal, radix16}, "ptrhex");
+            // Create "0x" prefix
+            auto* prefixStr = builder_->CreateGlobalString("0x", ".str.0x", 0, module_);
+            auto prefixLen = llvm::ConstantInt::get(usizeTy, 2);
+            llvm::Value* prefix = llvm::UndefValue::get(strTy);
+            prefix = builder_->CreateInsertValue(prefix, prefixStr, 0);
+            prefix = builder_->CreateInsertValue(prefix, prefixLen, 1);
+            // Concat "0x" + hex
+            auto* lhsPtr = builder_->CreateExtractValue(prefix, {0}, "pfx.ptr");
+            auto* lhsLen = builder_->CreateExtractValue(prefix, {1}, "pfx.len");
+            auto* rhsPtr = builder_->CreateExtractValue(hexStr, {0}, "hex.ptr");
+            auto* rhsLen = builder_->CreateExtractValue(hexStr, {1}, "hex.len");
+            auto concatCallee = declareBuiltin("lucis_concat", strTy,
+                                               {ptrTy, usizeTy, ptrTy, usizeTy});
             return static_cast<llvm::Value*>(
-                builder_->CreateCall(callee, {intVal}, "ptrtostr"));
+                builder_->CreateCall(concatCallee, {lhsPtr, lhsLen, rhsPtr, rhsLen}, "ptrstr"));
         }
     }
 
