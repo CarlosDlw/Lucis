@@ -4399,7 +4399,10 @@ std::any IRGen::visitFieldAssignStmt(LucisParser::FieldAssignStmtContext* ctx) {
         auto* ptrTy = llvm::PointerType::getUnqual(*context_);
         auto* basePtr = builder_->CreateLoad(ptrTy, alloca, varName + "_selfptr");
         alloca = static_cast<llvm::AllocaInst*>(nullptr);
+        const TypeInfo* before = structTI;
         structTI = structTI->pointeeType;
+        if (structTI && structTI->kind == TypeKind::Struct && structTI->fields.size() == 0)
+            std::cerr << "DBG: pointeeType of '" << before->name << "' has 0 fields (name=" << structTI->name << ")\n";
         structTy = structTI->toLLVMType(*context_, module_->getDataLayout());
 
         // Walk field chain on pointer base.
@@ -4424,7 +4427,9 @@ std::any IRGen::visitFieldAssignStmt(LucisParser::FieldAssignStmtContext* ctx) {
             }
             if (fieldIdx < 0) {
                 std::cerr << "lucis: '" << currentTI->name
-                          << "' has no field '" << fieldName << "'\n";
+                          << "' has no field '" << fieldName << "'";
+                if (currentTI) std::cerr << " (fields=" << currentTI->fields.size() << " kind=" << (int)currentTI->kind << ")";
+                std::cerr << "\n";
                 return {};
             }
 
@@ -18822,45 +18827,60 @@ const TypeInfo* IRGen::resolveTypeInfo(LucisParser::TypeSpecContext* ctx) {
             }
         }
 
-        // Built-in extended generics (Task, etc.)
+        // Check for user-defined generic type that was just loaded
+        // (the lazy load above may have populated the template map)
+        if (auto sIt = genericStructTemplates_.find(baseName); sIt != genericStructTemplates_.end())
+            return instantiateGenericStruct(baseName, sIt->second, resolvedArgs);
+        if (auto uIt = genericUnionTemplates_.find(baseName); uIt != genericUnionTemplates_.end())
+            return instantiateGenericUnion(baseName, uIt->second, resolvedArgs);
+        if (auto eIt = genericEnumTemplates_.find(baseName); eIt != genericEnumTemplates_.end())
+            return instantiateGenericEnum(baseName, eIt->second, resolvedArgs);
+
+        // Built-in extended generics (Task<T>, Result<T>, Option<T>)
         if (resolvedArgs.size() == 1) {
             auto* elemTI = resolvedArgs[0];
             if (!elemTI) return typeRegistry_.lookup("int32");
             auto fullName = baseName + "<" + elemTI->name + ">";
-            if (auto* existing = typeRegistry_.lookup(fullName))
-                return existing;
-
-            TypeInfo ti;
-            ti.name = fullName;
-            ti.kind = TypeKind::Extended;
-            ti.bitWidth = 0;
-            ti.isSigned = false;
-            ti.builtinSuffix = elemTI->builtinSuffix.empty() ? "raw" : elemTI->builtinSuffix;
-            ti.elementType = elemTI;
-            ti.extendedKind = baseName;
-            typeRegistry_.registerType(std::move(ti));
-            return typeRegistry_.lookup(fullName);
+            // Only create Extended types for known built-in base names, not for
+            // unknown user types (which would have been caught by the checks above)
+            auto* extDesc = extTypeRegistry_.lookup(baseName);
+            if (extDesc && extDesc->genericArity == 1) {
+                if (auto* existing = typeRegistry_.lookup(fullName))
+                    return existing;
+                TypeInfo ti;
+                ti.name = fullName;
+                ti.kind = TypeKind::Extended;
+                ti.bitWidth = 0;
+                ti.isSigned = false;
+                ti.builtinSuffix = elemTI->builtinSuffix.empty() ? "raw" : elemTI->builtinSuffix;
+                ti.elementType = elemTI;
+                ti.extendedKind = baseName;
+                typeRegistry_.registerType(std::move(ti));
+                return typeRegistry_.lookup(fullName);
+            }
         } else if (resolvedArgs.size() == 2) {
             auto* keyTI = resolvedArgs[0];
             auto* valTI = resolvedArgs[1];
             if (!keyTI || !valTI) return typeRegistry_.lookup("int32");
-            auto fullName = baseName + "<" + keyTI->name + ", " + valTI->name + ">";
-            if (auto* existing = typeRegistry_.lookup(fullName))
-                return existing;
-
-            TypeInfo ti;
-            ti.name = fullName;
-            ti.kind = TypeKind::Extended;
-            ti.bitWidth = 0;
-            ti.isSigned = false;
-            ti.builtinSuffix = keyTI->builtinSuffix + "_" + valTI->builtinSuffix;
-            ti.keyType = keyTI;
-            ti.valueType = valTI;
-            ti.extendedKind = baseName;
-            typeRegistry_.registerType(std::move(ti));
-            return typeRegistry_.lookup(fullName);
+            auto* extDesc = extTypeRegistry_.lookup(baseName);
+            if (extDesc && extDesc->genericArity == 2) {
+                auto fullName = baseName + "<" + keyTI->name + ", " + valTI->name + ">";
+                if (auto* existing = typeRegistry_.lookup(fullName))
+                    return existing;
+                TypeInfo ti;
+                ti.name = fullName;
+                ti.kind = TypeKind::Extended;
+                ti.bitWidth = 0;
+                ti.isSigned = false;
+                ti.builtinSuffix = keyTI->builtinSuffix + "_" + valTI->builtinSuffix;
+                ti.keyType = keyTI;
+                ti.valueType = valTI;
+                ti.extendedKind = baseName;
+                typeRegistry_.registerType(std::move(ti));
+                return typeRegistry_.lookup(fullName);
+            }
         }
-        std::cerr << "lucis: invalid type parameters for '" << baseName << "'\n";
+        std::cerr << "lucis: unknown generic type '" << baseName << "'\n";
         return typeRegistry_.lookup("int32");
     }
 
@@ -26206,43 +26226,45 @@ const TypeInfo* IRGen::resolveTypeInfoWithSubst(
             return instantiateGenericEnum(innerBaseName, enumIt->second, resolvedArgs);
         }
 
-        // Built-in collection types: Vec<T>, Map<K,V>, Set<T>
-        if (resolvedArgs.size() == 1) {
-            auto* elemTI = resolvedArgs[0];
-            if (!elemTI) elemTI = typeRegistry_.lookup("int32");
-            auto fullName = innerBaseName + "<" + elemTI->name + ">";
-            if (auto* existing = typeRegistry_.lookup(fullName))
-                return existing;
-            TypeInfo ti;
-            ti.name = fullName;
-            ti.kind = TypeKind::Extended;
-            ti.bitWidth = 0;
-            ti.isSigned = false;
-            ti.builtinSuffix = elemTI->builtinSuffix.empty() ? "raw" : elemTI->builtinSuffix;
-            ti.elementType = elemTI;
-            ti.extendedKind = innerBaseName;
-            typeRegistry_.registerType(std::move(ti));
-            return typeRegistry_.lookup(fullName);
-        } else if (resolvedArgs.size() == 2) {
-            auto* keyTI = resolvedArgs[0];
-            auto* valTI = resolvedArgs[1];
-            if (!keyTI) keyTI = typeRegistry_.lookup("int32");
-            if (!valTI) valTI = typeRegistry_.lookup("int32");
-            auto fullName = innerBaseName + "<" + keyTI->name + ", " + valTI->name + ">";
-            if (auto* existing = typeRegistry_.lookup(fullName))
-                return existing;
-            TypeInfo ti;
-            ti.name = fullName;
-            ti.kind = TypeKind::Extended;
-            ti.bitWidth = 0;
-            ti.isSigned = false;
-            auto valSuffix = valTI->builtinSuffix.empty() ? "raw" : valTI->builtinSuffix;
-            ti.builtinSuffix = keyTI->builtinSuffix + "_" + valSuffix;
-            ti.keyType = keyTI;
-            ti.valueType = valTI;
-            ti.extendedKind = innerBaseName;
-            typeRegistry_.registerType(std::move(ti));
-            return typeRegistry_.lookup(fullName);
+        // Only create Extended types for known built-in names
+        if (auto* extDesc = extTypeRegistry_.lookup(innerBaseName)) {
+            if (resolvedArgs.size() == 1 && extDesc->genericArity == 1) {
+                auto* elemTI = resolvedArgs[0];
+                if (!elemTI) elemTI = typeRegistry_.lookup("int32");
+                auto fullName = innerBaseName + "<" + elemTI->name + ">";
+                if (auto* existing = typeRegistry_.lookup(fullName))
+                    return existing;
+                TypeInfo ti;
+                ti.name = fullName;
+                ti.kind = TypeKind::Extended;
+                ti.bitWidth = 0;
+                ti.isSigned = false;
+                ti.builtinSuffix = elemTI->builtinSuffix.empty() ? "raw" : elemTI->builtinSuffix;
+                ti.elementType = elemTI;
+                ti.extendedKind = innerBaseName;
+                typeRegistry_.registerType(std::move(ti));
+                return typeRegistry_.lookup(fullName);
+            } else if (resolvedArgs.size() == 2 && extDesc->genericArity == 2) {
+                auto* keyTI = resolvedArgs[0];
+                auto* valTI = resolvedArgs[1];
+                if (!keyTI) keyTI = typeRegistry_.lookup("int32");
+                if (!valTI) valTI = typeRegistry_.lookup("int32");
+                auto fullName = innerBaseName + "<" + keyTI->name + ", " + valTI->name + ">";
+                if (auto* existing = typeRegistry_.lookup(fullName))
+                    return existing;
+                TypeInfo ti;
+                ti.name = fullName;
+                ti.kind = TypeKind::Extended;
+                ti.bitWidth = 0;
+                ti.isSigned = false;
+                auto valSuffix = valTI->builtinSuffix.empty() ? "raw" : valTI->builtinSuffix;
+                ti.builtinSuffix = keyTI->builtinSuffix + "_" + valSuffix;
+                ti.keyType = keyTI;
+                ti.valueType = valTI;
+                ti.extendedKind = innerBaseName;
+                typeRegistry_.registerType(std::move(ti));
+                return typeRegistry_.lookup(fullName);
+            }
         }
     }
 
