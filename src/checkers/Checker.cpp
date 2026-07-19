@@ -2957,20 +2957,30 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
             if (moduleRegistry_) {
                 auto* sym = moduleRegistry_->findSymbol(modPath, name);
                 if (sym && sym->kind == ExportedSymbol::Constant) {
-                    // If const has explicit type spec, resolve it; otherwise infer from expression
                     if (auto* cd = dynamic_cast<LucisParser::ConstDeclaratorContext*>(sym->decl)) {
                         if (cd->typeSpec()) {
                             unsigned dims = 0;
                             auto* ti = resolveTypeSpec(cd->typeSpec(), dims);
                             if (ti) return ti;
                         }
-                        // Infer type from initializer expression
                         if (cd->expression()) {
                             auto* ti = resolveExprType(cd->expression());
                             if (ti) return ti;
                         }
                     }
                     return typeRegistry_.lookup("int32");
+                }
+                // Imported symbol is a type (struct, union, enum) used as value — error.
+                if (sym && (sym->kind == ExportedSymbol::Struct ||
+                            sym->kind == ExportedSymbol::Union ||
+                            sym->kind == ExportedSymbol::Enum)) {
+                    const char* kindStr = sym->kind == ExportedSymbol::Struct ? "struct" :
+                                          sym->kind == ExportedSymbol::Union  ? "union" : "enum";
+                    std::string msg = std::string(kindStr) + " '" + name + "' cannot be used as a value";
+                    if (sym->kind == ExportedSymbol::Struct || sym->kind == ExportedSymbol::Union)
+                        msg += ", did you mean '" + name + " {}'?";
+                    error(expr, msg);
+                    return nullptr;
                 }
             }
             return nullptr;
@@ -2989,6 +2999,21 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
 
         if (name == "it" && unwrapCatchItDepth_ == 0) {
             error(expr, "'it' is only available inside 'expr catch { ... }' unwrap blocks");
+            return nullptr;
+        }
+
+        // Check if name matches a known type — struct, enum, union or alias.
+        // Using a type name as an expression is an error; suggest {} for structs.
+        auto* ti = typeRegistry_.lookup(name);
+        if (ti) {
+            if (ti->kind == TypeKind::Struct)
+                error(expr, "struct '" + name + "' cannot be used as a value, did you mean '" + name + " {}'?");
+            else if (ti->kind == TypeKind::Union)
+                error(expr, "union '" + name + "' cannot be used as a value, did you mean '" + name + " {}'?");
+            else if (ti->kind == TypeKind::Enum)
+                error(expr, "enum '" + name + "' cannot be used as a value");
+            else
+                error(expr, "type '" + name + "' cannot be used as a value");
             return nullptr;
         }
 
