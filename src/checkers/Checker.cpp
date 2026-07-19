@@ -2246,15 +2246,15 @@ static std::string formatParamTypes(const std::vector<std::string>& types) {
 }
 
 bool Checker::isNumeric(const TypeInfo* ti) {
-    return ti && (ti->kind == TypeKind::Integer || ti->kind == TypeKind::Float);
+    return ti && (ti->kind == TypeKind::Integer || ti->kind == TypeKind::Float || ti->kind == TypeKind::Char);
 }
 
 bool Checker::isInteger(const TypeInfo* ti) {
-    return ti && ti->kind == TypeKind::Integer;
+    return ti && (ti->kind == TypeKind::Integer || ti->kind == TypeKind::Char);
 }
 
 bool Checker::isIntegerOrPointer(const TypeInfo* ti) {
-    return ti && (ti->kind == TypeKind::Integer || ti->kind == TypeKind::Pointer);
+    return ti && (ti->kind == TypeKind::Integer || ti->kind == TypeKind::Char || ti->kind == TypeKind::Pointer);
 }
 
 bool Checker::isConditionType(const TypeInfo* ti) {
@@ -2285,6 +2285,11 @@ bool Checker::isAssignable(const TypeInfo* lhs, const TypeInfo* rhs) {
     if (lhs->kind == TypeKind::Integer && rhs->kind == TypeKind::Enum)
         return true;
     if (lhs->kind == TypeKind::Enum && rhs->kind == TypeKind::Enum)
+        return true;
+
+    // Char ↔ integer (C char promotes to int)
+    if ((lhs->kind == TypeKind::Char && rhs->kind == TypeKind::Integer) ||
+        (lhs->kind == TypeKind::Integer && rhs->kind == TypeKind::Char))
         return true;
 
     // Float ↔ float
@@ -3581,12 +3586,16 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
             }
 
             if (!lhsBad && !rhsBad && lhs && rhs) {
-                bool kindMismatch = lhs->kind != rhs->kind;
-                bool signMismatch = lhs->kind == TypeKind::Integer &&
-                                    rhs->kind == TypeKind::Integer &&
-                                    lhs->isSigned != rhs->isSigned &&
-                                    !isIntLitExpr(exprs[0]) &&
-                                    !isIntLitExpr(exprs[1]);
+            bool kindMismatch = lhs->kind != rhs->kind;
+            // Char promotes to integer like C (char + int → int)
+            if (kindMismatch && ((lhs->kind == TypeKind::Char && rhs->kind == TypeKind::Integer) ||
+                                (lhs->kind == TypeKind::Integer && rhs->kind == TypeKind::Char)))
+                kindMismatch = false;
+            bool signMismatch = lhs->kind == TypeKind::Integer &&
+                                rhs->kind == TypeKind::Integer &&
+                                lhs->isSigned != rhs->isSigned &&
+                                !isIntLitExpr(exprs[0]) &&
+                                !isIntLitExpr(exprs[1]);
                 if (kindMismatch || signMismatch) {
                     error(expr, "operator '" + opText +
                                      "' does not allow mixed numeric kinds ('" +
@@ -3659,6 +3668,9 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
 
         if (!lhsBad && !rhsBad && lhs && rhs) {
             bool kindMismatch = lhs->kind != rhs->kind;
+            if (kindMismatch && ((lhs->kind == TypeKind::Char && rhs->kind == TypeKind::Integer) ||
+                                (lhs->kind == TypeKind::Integer && rhs->kind == TypeKind::Char)))
+                kindMismatch = false;
             bool signMismatch = lhs->kind == TypeKind::Integer &&
                                 rhs->kind == TypeKind::Integer &&
                                 lhs->isSigned != rhs->isSigned &&
@@ -3672,7 +3684,9 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
             }
         }
 
-        if (lhs && rhs && lhs->kind == rhs->kind) {
+        if (lhs && rhs && (lhs->kind == rhs->kind ||
+            (lhs->kind == TypeKind::Char && rhs->kind == TypeKind::Integer) ||
+            (lhs->kind == TypeKind::Integer && rhs->kind == TypeKind::Char))) {
             unsigned lhsBW = lhs->bitWidth == 0 ? 64 : lhs->bitWidth;
             unsigned rhsBW = rhs->bitWidth == 0 ? 64 : rhs->bitWidth;
             return lhsBW >= rhsBW ? lhs : rhs;
@@ -3719,6 +3733,9 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
 
         if (lhs && rhs && isNumeric(lhs) && isNumeric(rhs)) {
             bool kindMismatch = lhs->kind != rhs->kind;
+            if (kindMismatch && ((lhs->kind == TypeKind::Char && rhs->kind == TypeKind::Integer) ||
+                                (lhs->kind == TypeKind::Integer && rhs->kind == TypeKind::Char)))
+                kindMismatch = false;
             bool signMismatch = lhs->kind == TypeKind::Integer &&
                                 rhs->kind == TypeKind::Integer &&
                                 lhs->isSigned != rhs->isSigned &&
@@ -3746,7 +3763,12 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
 
         // Keep equality strict for numeric operands to prevent IR-time mismatches
         // such as float-vs-int comparisons reaching LLVM FCmp/ICmp with mixed types.
-        if (lhs && rhs && isNumeric(lhs) && isNumeric(rhs) && lhs->kind != rhs->kind) {
+        bool eqKindMatch = (lhs && rhs) ? (lhs->kind == rhs->kind) : false;
+        if (!eqKindMatch && lhs && rhs &&
+            ((lhs->kind == TypeKind::Char && rhs->kind == TypeKind::Integer) ||
+             (lhs->kind == TypeKind::Integer && rhs->kind == TypeKind::Char)))
+            eqKindMatch = true;
+        if (lhs && rhs && isNumeric(lhs) && isNumeric(rhs) && !eqKindMatch) {
             error(expr, "operator '" + opText +
                              "' does not allow mixed numeric kinds ('" +
                              lhs->name + "' and '" + rhs->name +
