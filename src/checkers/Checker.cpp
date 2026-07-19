@@ -10945,6 +10945,16 @@ const TypeInfo* Checker::instantiateGenericStruct(
                 }
 
                 operatorMethods_[mangledName].push_back(std::move(info));
+
+                // ── Check operator body return paths ──
+                if (retType->kind != TypeKind::Void) {
+                    if (!blockAlwaysReturns(opDecl->block())) {
+                        auto opName = opSymbol(opDecl->operatorName());
+                        error(opDecl, "operator '" + opName +
+                                      "' must return a value of type '" + retType->name +
+                                      "' on all code paths");
+                    }
+                }
                 continue;
             }
 
@@ -10975,6 +10985,15 @@ const TypeInfo* Checker::instantiateGenericStruct(
             }
 
             structMethods_[mangledName].push_back(std::move(info));
+
+            // ── Check method body return paths ──
+            if (retType->kind != TypeKind::Void) {
+                if (!blockAlwaysReturns(method->block())) {
+                    error(method, "method '" + baseName + "." + methodName +
+                                  "' must return a value of type '" + retType->name +
+                                  "' on all code paths");
+                }
+            }
         }
     }
 
