@@ -8344,8 +8344,6 @@ std::any IRGen::visitForInStmt(LucisParser::ForInStmtContext* ctx) {
                          (it->second.typeInfo->kind == TypeKind::Pointer &&
                           it->second.typeInfo->pointeeType &&
                           it->second.typeInfo->pointeeType->kind == TypeKind::Struct))) {
-                        std::cerr << "DEBUG for-in: base=" << baseName
-                                  << " kind=" << (int)it->second.typeInfo->kind << "\n";
                         auto* structTI = (it->second.typeInfo->kind == TypeKind::Pointer)
                             ? it->second.typeInfo->pointeeType
                             : it->second.typeInfo;
