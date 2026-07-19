@@ -87,7 +87,7 @@ struct Header {
 **Applies to:** Struct, union, enum  
 **Arguments:** 1+ ident arguments (`C`, `packed`, `transparent`)  
 **Checker effect:** Validated  
-**IR effect:** None currently (layout for `repr(C)` and `repr(packed)` is not yet implemented in IRGen)
+**IR effect:** `repr(packed)`: `StructType::setBody(..., isPacked=true)`. `repr(C)` is the default. `repr(transparent)`: not yet implemented.
 
 ---
 
@@ -137,16 +137,20 @@ const CACHE_TABLE: int32 = 0;
 ---
 
 ### `#[must_use]`
-Warns if the return value of a function is discarded. Reserved for future use.
+Warns if the return value of a function is discarded when called as a statement.
 
 ```lucis
 #[must_use]
 fn compute() int32 {}
+
+fn demo() void {
+    compute();  // warning: unused return value
+}
 ```
 
 **Applies to:** Function  
 **Arguments:** None  
-**Checker effect:** Validated but not yet enforced  
+**Checker effect:** Emits warning on discarded return value  
 **IR effect:** None
 
 ---
@@ -302,7 +306,7 @@ const KEEP_ME: float64 = 3.14;
 
 **Applies to:** Function, global const  
 **Arguments:** None  
-**IR effect:** Sets visibility to `Default` (intended but incomplete — does not yet set the `llvm.used` metadata)
+**IR effect:** Sets visibility to `Default` and appends to `@llvm.used`
 
 ---
 
@@ -341,6 +345,87 @@ const CACHE_LINE: int32 = 0;
 **Applies to:** Global const  
 **Arguments:** 1 integer argument (power of two)  
 **IR effect:** `llvm::GlobalVariable::setAlignment(Align(n))`
+
+---
+
+### `#[naked]`
+Removes function prologue and epilogue. The function body must consist solely of inline asm.
+
+```lucis
+#[naked]
+fn handler() void {
+    asm volatile("iretq");
+}
+```
+
+**Applies to:** Function  
+**Arguments:** None  
+**IR effect:** Sets LLVM `naked` attribute
+
+---
+
+### `#[no_stack_probe]`
+Disables stack probing for the function (useful in kernels without a guard page).
+
+```lucis
+#[no_stack_probe]
+fn kernel_entry() void { /* … */ }
+```
+
+**Applies to:** Function  
+**Arguments:** None  
+**IR effect:** Sets LLVM attribute `"probe-stack"="0"`
+
+---
+
+### `#[interrupt]` / `#[interrupt(vector = N)]`
+Marks a function as an interrupt service routine. LLVM saves/restores all registers and emits `iretq` on return (calling convention `X86_INTR`).
+
+```lucis
+#[interrupt(vector = 15)]
+fn irq_handler() void { }
+
+#[interrupt]  // without vector entry
+fn timer() void { }
+```
+
+**Applies to:** Function  
+**Arguments:** Optional `vector = N` (0–255)  
+**IR effect:** Wrapper function with `X86_INTR` calling convention; entries recorded for `#[vector_table]`
+
+---
+
+### `#[vector_table]`
+Generates a 256-entry interrupt vector table (IVT) in the `.isr_vector` ELF section, populated from all `#[interrupt(vector = N)]` handlers in the module.
+
+```lucis
+// Vector table is emitted automatically when any #[interrupt] exists
+```
+
+The table is a constant array of function pointers. Non-specified vectors are initialized to null.
+
+**Applies to:** Module-level (auto-emitted)  
+**Arguments:** None  
+**IR effect:** Emits `@vector_table = constant [256 x ptr]` in section `.isr_vector`
+
+---
+
+### `#[entry]`
+Marks a function as the program entry point. Equivalent to `#[export]` + `#[no_mangle]` + `--linker-entry <name>`. The function name is passed to the linker via `-e`.
+
+```lucis
+#[entry]
+fn _start() void {
+    lucis::sys::outb(0x3F8u16, 'H' as uint8);
+    loop {}
+}
+```
+
+Priority: `--linker-entry` (CLI) > `#[entry]` > `lucis.yaml → linker.entry`.
+
+**Applies to:** Function  
+**Arguments:** None  
+**IR effect:** External linkage, no mangling, entry point stored for linker
 
 ---
 
@@ -441,11 +526,11 @@ The checker evaluates `@cfg` at compile time and performs dead-branch eliminatio
 |-----------|-----------|-----------|-----------|
 | `error` | Enum variant | None | Semantic marker only |
 | `deprecated` | Any | 0–2 strings | None |
-| `repr` | Struct, union, enum | 1+ idents | None |
+| `repr` | Struct, union, enum | 1+ idents | `repr(packed)`: `setBody(packed)` |
 | `no_mangle` | Function, const | None | Preserves symbol name |
-| `export` | Function, const | None | No-op (planned) |
+| `export` | Function, const | None | No-op (always ExternalLinkage) |
 | `link_section` | Function, const | 1 string | `setSection()` |
-| `must_use` | Function | None | None |
+| `must_use` | Function | None | Checker warning on discarded return |
 | `noreturn` | Function | None | `NoReturn` |
 | `non_exhaustive` | Enum | None | None |
 | `inline` | Function | 0–1 ident | `AlwaysInline`/`NoInline` |
@@ -455,8 +540,13 @@ The checker evaluates `@cfg` at compile time and performs dead-branch eliminatio
 | `deny` | Any | 1+ args | None |
 | `doc` | Any | 1 string | None |
 | `thread_local` | Const | None | `setThreadLocal()` |
-| `used` | Function, const | None | `setVisibility()` |
+| `used` | Function, const | None | `setVisibility()` + `appendToUsed` |
 | `optimize` | Function | 1 ident | `OptimizeForSize`/`optimize-for-speed` |
 | `align` | Const | 1 int | `setAlignment()` |
+| `naked` | Function | None | `Naked` attribute |
+| `no_stack_probe` | Function | None | `"probe-stack"="0"` |
+| `interrupt` | Function | `vector = N` | `X86_INTR` calling convention |
+| `vector_table` | Auto | None | `[256 x ptr]` in `.isr_vector` |
+| `entry` | Function | None | External linkage, sets `-e` |
 | `cfg` | Any declaration, use/import | 1 predicate | Filters decl at compile time |
 | `@cfg` | Inline expression | 1 predicate | Compile-time boolean, dead branch elimination |
