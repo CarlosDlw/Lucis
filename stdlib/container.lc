@@ -514,3 +514,129 @@ extend Stack<T> {
         }
     }
 }
+
+// ═══════════════════════════════════════════════════════════════
+//  Queue<T>
+// ═══════════════════════════════════════════════════════════════
+
+/**
+ * FIFO queue backed by a growable ring buffer.
+ *
+ * Enqueue and dequeue are amortized O(1).  The buffer grows
+ * geometrically (×2) when full, repositioning elements so that
+ * the head starts at index 0 after growth.
+ *
+ * @module container
+ */
+
+/**
+ * FIFO queue of {@code T}.
+ *
+ * @field data Raw pointer to the heap-allocated ring buffer
+ * @field head Index of the first element (dequeue target)
+ * @field len  Number of elements currently stored
+ * @field cap  Allocated capacity (number of elements)
+ */
+struct Queue<T> {
+    *T data;
+    usize head;
+    usize len;
+    usize cap;
+}
+
+extend Queue<T> {
+    /**
+     * Creates a new, empty Queue with zero capacity.
+     * No heap allocation is performed until the first enqueue.
+     * @return A new empty Queue
+     */
+    fn new() Queue<T> {
+        return Queue<T> { null, 0, 0, 0 };
+    }
+
+    /**
+     * Grows the ring buffer to hold at least {@code 2 × cap} elements.
+     * Elements are repositioned so that the head starts at index 0.
+     */
+    fn grow(&self) void {
+        usize new_cap = self.cap == 0 ? 4 : self.cap * 2;
+        auto* new_data = alloc(new_cap * sizeof(T)) as *T;
+        for usize i in 0..self.len {
+            new_data[i] = self.data[(self.head + i) % self.cap];
+        }
+        if self.data != null {
+            free(self.data);
+        }
+        self.data = new_data;
+        self.head = 0;
+        self.cap = new_cap;
+    }
+
+    /**
+     * Adds a value to the back of the queue.
+     * Automatically grows the buffer if capacity is exhausted.
+     * @param value The element to enqueue
+     */
+    fn enqueue(&self, T value) void {
+        if self.len >= self.cap {
+            self.grow();
+        }
+        self.data[(self.head + self.len) % self.cap] = value;
+        self.len++;
+    }
+
+    /**
+     * Removes and returns the front element.
+     * Calling dequeue on an empty queue is undefined behaviour.
+     * @return The front element
+     */
+    fn dequeue(&self) T {
+        T val = self.data[self.head];
+        self.head = (self.head + 1) % self.cap;
+        self.len--;
+        return val;
+    }
+
+    /**
+     * Returns the front element without removing it.
+     * Calling peek on an empty queue is undefined behaviour.
+     * @return The front element
+     */
+    fn peek(&self) T {
+        return self.data[self.head];
+    }
+
+    /**
+     * Returns the current number of elements.
+     * @return The queue size
+     */
+    fn len(&self) usize {
+        return self.len;
+    }
+
+    /**
+     * Returns true when the queue contains no elements.
+     * @return true if len == 0
+     */
+    fn isEmpty(&self) bool {
+        return self.len == 0;
+    }
+
+    /**
+     * Removes all elements without freeing the backing buffer.
+     * Capacity and head position are preserved.
+     */
+    fn clear(&self) void {
+        self.len = 0;
+    }
+
+    /**
+     * Frees the backing buffer.  Called automatically when the
+     * Queue goes out of scope via the drop trait.
+     */
+    fn drop(&self) void {
+        if self.data != null {
+            free(self.data);
+        }
+    }
+}
