@@ -408,3 +408,109 @@ extend LinkedList<T> {
         }
     }
 }
+
+// ═══════════════════════════════════════════════════════════════
+//  Stack<T>
+// ═══════════════════════════════════════════════════════════════
+
+/**
+ * LIFO stack backed by a growable dynamic array.
+ *
+ * Push and pop are amortized O(1).  Peek returns the top element
+ * without removing it.
+ *
+ * @module container
+ */
+
+/**
+ * LIFO stack of {@code T}.
+ *
+ * @field data Raw pointer to the heap-allocated element buffer
+ * @field len  Number of elements currently stored
+ * @field cap  Allocated capacity (number of elements)
+ */
+struct Stack<T> {
+    *T data;
+    usize len;
+    usize cap;
+}
+
+extend Stack<T> {
+    /**
+     * Creates a new, empty Stack with zero capacity.
+     * No heap allocation is performed until the first push.
+     * @return A new empty Stack
+     */
+    fn new() Stack<T> {
+        return Stack<T> { null, 0, 0 };
+    }
+
+    /**
+     * Pushes a value onto the top of the stack.
+     * Automatically grows the buffer if capacity is exhausted.
+     * @param value The element to push
+     */
+    fn push(&self, T value) void {
+        if self.len >= self.cap {
+            usize new_cap = self.cap == 0 ? 4 : self.cap * 2;
+            usize size = new_cap * sizeof(T);
+            self.data = realloc(self.data, size);
+            self.cap = new_cap;
+        }
+        self.data[self.len] = value;
+        self.len++;
+    }
+
+    /**
+     * Removes and returns the top element.
+     * Calling pop on an empty stack is undefined behaviour.
+     * @return The top element
+     */
+    fn pop(&self) T {
+        self.len--;
+        return self.data[self.len];
+    }
+
+    /**
+     * Returns the top element without removing it.
+     * Calling peek on an empty stack is undefined behaviour.
+     * @return The top element
+     */
+    fn peek(&self) T {
+        return self.data[self.len - 1];
+    }
+
+    /**
+     * Returns the current number of elements.
+     * @return The stack size
+     */
+    fn len(&self) usize {
+        return self.len;
+    }
+
+    /**
+     * Returns true when the stack contains no elements.
+     * @return true if len == 0
+     */
+    fn isEmpty(&self) bool {
+        return self.len == 0;
+    }
+
+    /**
+     * Removes all elements without freeing the backing buffer.
+     * Capacity is preserved for reuse.
+     */
+    fn clear(&self) void {
+        self.len = 0;
+    }
+
+    /**
+     * Frees the backing buffer.  Called automatically when the
+     * Stack goes out of scope via the drop trait.
+     */
+    fn drop(&self) void {
+        if self.data != null {
+            free(self.data);
+        }
+    }
+}
