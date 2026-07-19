@@ -2668,6 +2668,40 @@ void IRGen::registerCrossFileSymbols(LucisParser::ProgramContext* ctx) {
             if (!llvm::StructType::getTypeByName(*context_, name))
                 llvm::StructType::create(*context_, name);
         }
+        // Discover transitive struct dependencies from field types
+        // (e.g. LinkedListNode<T> referenced by LinkedList<T>'s fields)
+        {
+            std::vector<std::pair<std::string, Pending>> newPendings;
+            std::function<void(LucisParser::TypeSpecContext*, const std::string&)> addFieldDeps;
+            addFieldDeps = [&](LucisParser::TypeSpecContext* ts, const std::string& ns) {
+                if (!ts) return;
+                for (auto* inner : ts->typeSpec())
+                    addFieldDeps(inner, ns);
+                if (!ts->IDENTIFIER()) return;
+                auto depName = ts->IDENTIFIER()->getText();
+                if (pending.count(depName) || genericStructTemplates_.count(depName))
+                    return;
+                auto* sym = moduleRegistry_->findSymbol(ns, depName);
+                if (!sym || sym->kind != ExportedSymbol::Struct) return;
+                newPendings.push_back({depName, {static_cast<LucisParser::StructDeclContext*>(sym->decl), ns}});
+            };
+            // Collect field deps without modifying pending during iteration
+            for (auto& [name, p] : pending)
+                for (auto* field : p.decl->structField())
+                    addFieldDeps(field->typeSpec(), p.ns);
+            // Add newly discovered deps and register skeletons
+            for (auto& [depName, dep] : newPendings) {
+                if (pending.count(depName) || genericStructTemplates_.count(depName))
+                    continue;
+                pending[depName] = std::move(dep);
+                if (!typeRegistry_.lookup(depName)) {
+                    TypeInfo sk;
+                    sk.name = depName;
+                    sk.kind = TypeKind::Struct;
+                    typeRegistry_.registerType(std::move(sk));
+                }
+            }
+        }
         // Process in dependency order
         std::unordered_set<std::string> done;
         bool madeProgress = true;
@@ -26242,6 +26276,7 @@ const TypeInfo* IRGen::instantiateGenericStruct(
     const std::vector<const TypeInfo*>& typeArgs) {
 
     auto mangledName = mangleGenericName(baseName, typeArgs);
+    const TypeInfo* result = nullptr;
 
     // Cycle detection — struct references itself via pointer (e.g. LinkedListNode<T> → *LinkedListNode<T>)
     if (instantiatedGenerics_.count(mangledName)) {
@@ -26250,70 +26285,91 @@ const TypeInfo* IRGen::instantiateGenericStruct(
         return typeRegistry_.lookup("int32");
     }
 
-    // Already instantiated and finalized?
-    if (auto* existing = typeRegistry_.lookup(mangledName)) {
-        ensureGenericStructType(mangledName, existing);
-        return existing;
-    }
-    instantiatedGenerics_.insert(mangledName);
-
-    // Build substitution map: T → int32, etc.
+    // Build substitution map: T → int32, etc. (needed for both first-time and extend methods)
     std::unordered_map<std::string, const TypeInfo*> subst;
     for (size_t i = 0; i < tmpl.typeParams.size() && i < typeArgs.size(); i++)
         subst[tmpl.typeParams[i]] = typeArgs[i];
 
-    // Register skeleton for self-referencing fields
-    TypeInfo skeleton;
-    skeleton.name = mangledName;
-    skeleton.kind = TypeKind::Struct;
-    skeleton.bitWidth = 0;
-    skeleton.isSigned = false;
-    skeleton.isGenericInstance = true;
-    skeleton.genericBaseName = baseName;
-    skeleton.typeParamNames = tmpl.typeParams;
-    skeleton.typeArgs = typeArgs;
-    skeleton.genericStructDecl = static_cast<antlr4::ParserRuleContext*>(tmpl.decl);
-    typeRegistry_.registerType(skeleton);
+    // Check if already instantiated and finalized (skip empty skeletons from Checker)
+    auto* existing = typeRegistry_.lookup(mangledName);
+    if (existing) {
+        bool isSkeleton = existing->kind == TypeKind::Struct &&
+                          existing->fields.empty() && existing->bitWidth == 0 &&
+                          existing->isGenericInstance;
+        if (!isSkeleton) {
+                ensureGenericStructType(mangledName, existing);
+                result = existing;
+            }
+    }
 
-    // Create opaque LLVM struct first (enables self-referencing pointer fields)
-    auto* structLLTy = llvm::StructType::create(*context_, mangledName);
+    if (!result) {
+        // First-time instantiation
+        instantiatedGenerics_.insert(mangledName);
 
-    // Instantiate fields
-    TypeInfo ti = skeleton;
-    std::vector<llvm::Type*> fieldTypes;
-    for (auto* field : tmpl.decl->structField()) {
-        auto* fieldTI = resolveTypeInfoWithSubst(field->typeSpec(), subst);
-        if (!fieldTI) fieldTI = typeRegistry_.lookup("int32");
-        // Extract array dims/sizes from the typeSpec
-        unsigned fieldDims = 0;
-        std::vector<unsigned> fieldSizes;
+        // Register skeleton for self-referencing fields
+        TypeInfo skeleton;
+        skeleton.name = mangledName;
+        skeleton.kind = TypeKind::Struct;
+        skeleton.bitWidth = 0;
+        skeleton.isSigned = false;
+        skeleton.isGenericInstance = true;
+        skeleton.genericBaseName = baseName;
+        skeleton.typeParamNames = tmpl.typeParams;
+        skeleton.typeArgs = typeArgs;
+        skeleton.genericStructDecl = static_cast<antlr4::ParserRuleContext*>(tmpl.decl);
+        typeRegistry_.registerType(skeleton);
+
+        // Create opaque LLVM struct first (enables self-referencing pointer fields)
+        auto* structLLTy = llvm::StructType::create(*context_, mangledName);
+
+        // Instantiate fields
+        TypeInfo ti = skeleton;
+        std::vector<llvm::Type*> fieldTypes;
+        for (auto* field : tmpl.decl->structField()) {
+            auto* fieldTI = resolveTypeInfoWithSubst(field->typeSpec(), subst);
+            if (!fieldTI) fieldTI = typeRegistry_.lookup("int32");
+            unsigned fieldDims = 0;
+            std::vector<unsigned> fieldSizes;
+            {
+                auto* spec = field->typeSpec();
+                while (spec && spec->LBRACKET()) {
+                    fieldDims++;
+                    if (spec->INT_LIT())
+                        fieldSizes.push_back(static_cast<unsigned>(
+                            std::stoul(spec->INT_LIT()->getText())));
+                    spec = spec->typeSpec(0);
+                }
+            }
+            llvm::Type* fieldLLTy = fieldTI->toLLVMType(*context_, module_->getDataLayout());
+            if (fieldDims > 0 && !fieldSizes.empty()) {
+                for (auto it = fieldSizes.rbegin(); it != fieldSizes.rend(); ++it)
+                    fieldLLTy = llvm::ArrayType::get(fieldLLTy, *it);
+            } else if (fieldDims > 0 && fieldSizes.empty()) {
+                auto* ptrTy = llvm::PointerType::getUnqual(*context_);
+                auto* i64Ty = llvm::Type::getInt64Ty(*context_);
+                fieldLLTy = llvm::StructType::get(*context_, {ptrTy, i64Ty});
+            }
+            fieldTypes.push_back(fieldLLTy);
+            ti.fields.push_back({ field->IDENTIFIER()->getText(), fieldTI, fieldDims, fieldSizes });
+        }
+        structLLTy->setBody(fieldTypes);
+
+        // Update registry with full type info
+        typeRegistry_.registerType(std::move(ti));
+        result = typeRegistry_.lookup(mangledName);
+
+        // Update self-referencing pointer type to point to the now-complete struct
         {
-            auto* spec = field->typeSpec();
-            while (spec && spec->LBRACKET()) {
-                fieldDims++;
-                if (spec->INT_LIT())
-                    fieldSizes.push_back(static_cast<unsigned>(
-                        std::stoul(spec->INT_LIT()->getText())));
-                spec = spec->typeSpec(0);
+            auto ptrName = "*" + mangledName;
+            if (auto* existingPtr = typeRegistry_.lookup(ptrName)) {
+                if (existingPtr->kind == TypeKind::Pointer && existingPtr->pointeeType != result) {
+                    TypeInfo updatedPtr = *existingPtr;
+                    updatedPtr.pointeeType = result;
+                    typeRegistry_.registerType(std::move(updatedPtr));
+                }
             }
         }
-        llvm::Type* fieldLLTy = fieldTI->toLLVMType(*context_, module_->getDataLayout());
-        if (fieldDims > 0 && !fieldSizes.empty()) {
-            for (auto it = fieldSizes.rbegin(); it != fieldSizes.rend(); ++it)
-                fieldLLTy = llvm::ArrayType::get(fieldLLTy, *it);
-        } else if (fieldDims > 0 && fieldSizes.empty()) {
-            auto* ptrTy = llvm::PointerType::getUnqual(*context_);
-            auto* i64Ty = llvm::Type::getInt64Ty(*context_);
-            fieldLLTy = llvm::StructType::get(*context_, {ptrTy, i64Ty});
-        }
-        fieldTypes.push_back(fieldLLTy);
-        ti.fields.push_back({ field->IDENTIFIER()->getText(), fieldTI, fieldDims, fieldSizes });
     }
-    structLLTy->setBody(fieldTypes);
-
-    // Update registry with full type info
-    typeRegistry_.registerType(std::move(ti));
-    const TypeInfo* result = typeRegistry_.lookup(mangledName);
 
     // Instantiate extend methods for this struct, if any
     auto extendIt = genericExtendTemplates_.find(baseName);

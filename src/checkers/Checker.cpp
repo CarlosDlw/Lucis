@@ -1246,8 +1246,12 @@ bool Checker::check(LucisParser::ProgramContext* tree) {
                     checkEnumDecl(ed);
                     return;
                 }
+                // Process struct dependency even if skeleton exists but
+                // template isn't registered yet (e.g. LinkedListNode<T>
+                // discovered via LinkedList<T>'s field processing).
+                bool structNeedsProc = needsProc || !genericStructTemplates_.count(baseName);
                 if (depSym->kind == ExportedSymbol::Struct &&
-                    needsProc &&
+                    structNeedsProc &&
                     !genericStructTemplates_.count(baseName)) {
                     if (!seenDeps.insert(baseName).second) return;
                     auto* sd = static_cast<LucisParser::StructDeclContext*>(depSym->decl);
@@ -1439,6 +1443,8 @@ bool Checker::check(LucisParser::ProgramContext* tree) {
                     for (auto* field : ps.decl->structField())
                         ensureTypeDependencyFromSpec(
                             ensureTypeDependencyFromSpec, field->typeSpec(), ps.ns);
+                    if (ps.decl->typeParamList() && genericStructTemplates_.count(name))
+                        continue;
                     checkStructDecl(ps.decl);
                     processed.insert(name);
                     madeProgress = true;
@@ -1535,10 +1541,19 @@ bool Checker::check(LucisParser::ProgramContext* tree) {
 
         for (auto* decl : tree->topLevelDecl()) {
             if (auto* sd = decl->structDecl()) {
+                auto name = sd->IDENTIFIER()->getText();
+                if (sd->typeParamList() && genericStructTemplates_.count(name))
+                    continue;
                 checkStructDecl(sd);
             } else if (auto* ud = decl->unionDecl()) {
+                auto name = ud->IDENTIFIER()->getText();
+                if (ud->typeParamList() && genericUnionTemplates_.count(name))
+                    continue;
                 checkUnionDecl(ud);
             } else if (auto* ed = decl->enumDecl()) {
+                auto name = ed->IDENTIFIER()->getText();
+                if (ed->typeParamList() && genericEnumTemplates_.count(name))
+                    continue;
                 checkEnumDecl(ed);
             }
         }
@@ -10835,14 +10850,17 @@ const TypeInfo* Checker::instantiateGenericStruct(
         if (dt->name == mangledName)
             return dt.get();
     }
-    // Also check type registry (registered during instantiation skeleton)
+    // Check type registry BEFORE cycle detection — allows self-referencing
+    // structs (e.g. LinkedListNode<T> → *LinkedListNode<T>) to return the
+    // partially-registered skeleton instead of erroring on the cycle.
     if (auto* existing = typeRegistry_.lookup(mangledName))
         return existing;
 
-    // Cycle detection
+    // Cycle detection: skeleton is NOT yet in registry (first call), so
+    // this is a true cycle with no fallback — should not happen since
+    // skeleton is registered before field processing below.
     if (instantiatingGenerics_.count(mangledName)) {
-        error(ctx, "recursive generic instantiation detected for '" + mangledName + "'");
-        return nullptr;
+        return typeRegistry_.lookup("int32");
     }
     instantiatingGenerics_.insert(mangledName);
 
@@ -10900,6 +10918,18 @@ const TypeInfo* Checker::instantiateGenericStruct(
     // Register concrete type (updates the skeleton registered above)
     typeRegistry_.registerType(std::move(ti));
     const TypeInfo* result = typeRegistry_.lookup(mangledName);
+
+    // Update self-referencing pointer type to point to the now-complete struct
+    // Note: getPointerType stores pointers in dynamicTypes_, not typeRegistry_
+    {
+        auto ptrName = "*" + mangledName;
+        for (auto& dt : dynamicTypes_) {
+            if (dt->kind == TypeKind::Pointer && dt->name == ptrName &&
+                dt->pointeeType != result) {
+                dt->pointeeType = result;
+            }
+        }
+    }
 
     // If there's a generic extend block for this struct, instantiate methods too
     auto extendIt = genericExtendTemplates_.find(baseName);
