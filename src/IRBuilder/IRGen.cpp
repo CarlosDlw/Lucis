@@ -4360,9 +4360,7 @@ std::any IRGen::visitFieldAssignStmt(LucisParser::FieldAssignStmtContext* ctx) {
     auto* structTy = alloca->getAllocatedType();
 
     bool isVolatileAccess = false;
-    if (structTI && structTI->kind == TypeKind::Pointer && structTI->pointeeType &&
-        (structTI->pointeeType->kind == TypeKind::Struct ||
-         structTI->pointeeType->kind == TypeKind::Union)) {
+    if (structTI && structTI->kind == TypeKind::Pointer && structTI->pointeeType) {
         isVolatileAccess = structTI->pointeeType->isVolatile;
         auto* ptrTy = llvm::PointerType::getUnqual(*context_);
         auto* basePtr = builder_->CreateLoad(ptrTy, alloca, varName + "_selfptr");
@@ -4377,9 +4375,7 @@ std::any IRGen::visitFieldAssignStmt(LucisParser::FieldAssignStmtContext* ctx) {
         for (size_t i = 1; i < identifiers.size(); i++) {
             auto fieldName = identifiers[i]->getText();
     // Auto-deref pointer for chained field access
-    if (currentTI && currentTI->kind == TypeKind::Pointer && currentTI->pointeeType &&
-        (currentTI->pointeeType->kind == TypeKind::Struct ||
-         currentTI->pointeeType->kind == TypeKind::Union)) {
+    if (currentTI && currentTI->kind == TypeKind::Pointer && currentTI->pointeeType) {
         auto* derefPtrTy = llvm::PointerType::getUnqual(*context_);
         currentPtr = builder_->CreateLoad(derefPtrTy, currentPtr, "chain_deref");
         currentTI = currentTI->pointeeType;
@@ -4437,9 +4433,7 @@ std::any IRGen::visitFieldAssignStmt(LucisParser::FieldAssignStmtContext* ctx) {
     for (size_t i = 1; i < identifiers.size(); i++) {
         auto fieldName = identifiers[i]->getText();
     // Auto-deref pointer for chained field access
-    if (currentTI && currentTI->kind == TypeKind::Pointer && currentTI->pointeeType &&
-        (currentTI->pointeeType->kind == TypeKind::Struct ||
-         currentTI->pointeeType->kind == TypeKind::Union)) {
+    if (currentTI && currentTI->kind == TypeKind::Pointer && currentTI->pointeeType) {
         auto* derefPtrTy = llvm::PointerType::getUnqual(*context_);
         currentPtr = builder_->CreateLoad(derefPtrTy, currentPtr, "chain_deref");
         currentTI = currentTI->pointeeType;
@@ -4521,9 +4515,7 @@ std::any IRGen::visitFieldCompoundAssignStmt(
     auto* structTI = it->second.typeInfo;
     auto* structTy = alloca->getAllocatedType();
 
-    if (structTI && structTI->kind == TypeKind::Pointer && structTI->pointeeType &&
-        (structTI->pointeeType->kind == TypeKind::Struct ||
-         structTI->pointeeType->kind == TypeKind::Union)) {
+    if (structTI && structTI->kind == TypeKind::Pointer && structTI->pointeeType) {
         auto* ptrTy = llvm::PointerType::getUnqual(*context_);
         auto* basePtr = builder_->CreateLoad(ptrTy, alloca, varName + "_selfptr");
         structTI = structTI->pointeeType;
@@ -4536,9 +4528,7 @@ std::any IRGen::visitFieldCompoundAssignStmt(
         for (size_t i = 1; i < identifiers.size(); i++) {
             auto fieldName = identifiers[i]->getText();
     // Auto-deref pointer for chained field access
-    if (currentTI && currentTI->kind == TypeKind::Pointer && currentTI->pointeeType &&
-        (currentTI->pointeeType->kind == TypeKind::Struct ||
-         currentTI->pointeeType->kind == TypeKind::Union)) {
+    if (currentTI && currentTI->kind == TypeKind::Pointer && currentTI->pointeeType) {
         auto* derefPtrTy = llvm::PointerType::getUnqual(*context_);
         currentPtr = builder_->CreateLoad(derefPtrTy, currentPtr, "chain_deref");
         currentTI = currentTI->pointeeType;
@@ -4665,9 +4655,7 @@ std::any IRGen::visitFieldCompoundAssignStmt(
     for (size_t i = 1; i < identifiers.size(); i++) {
         auto fieldName = identifiers[i]->getText();
     // Auto-deref pointer for chained field access
-    if (currentTI && currentTI->kind == TypeKind::Pointer && currentTI->pointeeType &&
-        (currentTI->pointeeType->kind == TypeKind::Struct ||
-         currentTI->pointeeType->kind == TypeKind::Union)) {
+    if (currentTI && currentTI->kind == TypeKind::Pointer && currentTI->pointeeType) {
         auto* derefPtrTy = llvm::PointerType::getUnqual(*context_);
         currentPtr = builder_->CreateLoad(derefPtrTy, currentPtr, "chain_deref");
         currentTI = currentTI->pointeeType;
@@ -4887,9 +4875,7 @@ std::any IRGen::visitIndexFieldAssignStmt(
     llvm::Type*  currentTy  = elemTy;
 
     if (currentTI && currentTI->kind == TypeKind::Pointer &&
-        currentTI->pointeeType &&
-        (currentTI->pointeeType->kind == TypeKind::Struct ||
-         currentTI->pointeeType->kind == TypeKind::Union)) {
+        currentTI->pointeeType) {
         auto* ptrTy = llvm::PointerType::getUnqual(*context_);
         currentPtr = builder_->CreateLoad(ptrTy, currentPtr, varName + "_elem_load");
         currentTI = currentTI->pointeeType;
@@ -4899,9 +4885,7 @@ std::any IRGen::visitIndexFieldAssignStmt(
     for (size_t i = 1; i < identifiers.size(); i++) {
         auto fieldName = identifiers[i]->getText();
     // Auto-deref pointer for chained field access
-    if (currentTI && currentTI->kind == TypeKind::Pointer && currentTI->pointeeType &&
-        (currentTI->pointeeType->kind == TypeKind::Struct ||
-         currentTI->pointeeType->kind == TypeKind::Union)) {
+    if (currentTI && currentTI->kind == TypeKind::Pointer && currentTI->pointeeType) {
         auto* derefPtrTy = llvm::PointerType::getUnqual(*context_);
         currentPtr = builder_->CreateLoad(derefPtrTy, currentPtr, "chain_deref");
         currentTI = currentTI->pointeeType;
@@ -11485,9 +11469,7 @@ std::any IRGen::visitFieldAccessExpr(LucisParser::FieldAccessExprContext* ctx) {
         }
 
         // Auto-dereference: if variable is a pointer to struct, load it first
-        if (structTI && structTI->kind == TypeKind::Pointer && structTI->pointeeType &&
-            (structTI->pointeeType->kind == TypeKind::Struct ||
-             structTI->pointeeType->kind == TypeKind::Union)) {
+        if (structTI && structTI->kind == TypeKind::Pointer && structTI->pointeeType) {
             auto* ptrVal = builder_->CreateLoad(
                 llvm::PointerType::getUnqual(*context_), alloca, "selfptr");
             auto* pointeeTI = structTI->pointeeType;
@@ -11789,9 +11771,7 @@ std::any IRGen::visitFieldAccessExpr(LucisParser::FieldAccessExprContext* ctx) {
         // Pointer to struct: e.g. a.field which is *Struct → access field through pointer
         if (baseVal->getType()->isPointerTy()) {
             auto* baseTI = resolveExprTypeInfo(baseExpr);
-            if (baseTI && baseTI->kind == TypeKind::Pointer && baseTI->pointeeType &&
-                (baseTI->pointeeType->kind == TypeKind::Struct ||
-                 baseTI->pointeeType->kind == TypeKind::Union)) {
+            if (baseTI && baseTI->kind == TypeKind::Pointer && baseTI->pointeeType) {
                 auto* structTI = baseTI->pointeeType;
                 int fieldIdx = -1;
                 const TypeInfo* fieldTI = nullptr;
@@ -13287,9 +13267,7 @@ std::any IRGen::visitAddrOfExpr(LucisParser::AddrOfExprContext* ctx) {
         auto* base = arrow->expression();
         auto* ptrVal = castValue(visit(base));
         auto* exprTI = resolveExprTypeInfo(base);
-        if (exprTI && exprTI->kind == TypeKind::Pointer && exprTI->pointeeType &&
-            (exprTI->pointeeType->kind == TypeKind::Struct ||
-             exprTI->pointeeType->kind == TypeKind::Union)) {
+        if (exprTI && exprTI->kind == TypeKind::Pointer && exprTI->pointeeType) {
             auto* structTI = exprTI->pointeeType;
             int fieldIdx = -1;
             for (size_t i = 0; i < structTI->fields.size(); i++) {
@@ -17418,9 +17396,7 @@ IRGen::resolveIncrDecrTarget(LucisParser::ExpressionContext* expr) {
         auto* structTI = it->second.typeInfo;
 
         // Auto-dereference pointer-to-struct/union for &self in extend methods
-        if (structTI && structTI->kind == TypeKind::Pointer && structTI->pointeeType &&
-            (structTI->pointeeType->kind == TypeKind::Struct ||
-             structTI->pointeeType->kind == TypeKind::Union)) {
+        if (structTI && structTI->kind == TypeKind::Pointer && structTI->pointeeType) {
             auto* ptrVal = builder_->CreateLoad(
                 llvm::PointerType::getUnqual(*context_), alloca, "selfptr");
             auto* pointeeTI = structTI->pointeeType;
@@ -19197,9 +19173,7 @@ const TypeInfo* IRGen::resolveExprTypeInfo(LucisParser::ExpressionContext* ctx) 
     // ── Dot access: resolve base struct/union, find field type ───────
     if (auto* dot = dynamic_cast<LucisParser::FieldAccessExprContext*>(ctx)) {
         auto* baseTI = resolveExprTypeInfo(dot->expression());
-        if (baseTI && baseTI->kind == TypeKind::Pointer && baseTI->pointeeType &&
-            (baseTI->pointeeType->kind == TypeKind::Struct ||
-             baseTI->pointeeType->kind == TypeKind::Union)) {
+        if (baseTI && baseTI->kind == TypeKind::Pointer && baseTI->pointeeType) {
             baseTI = baseTI->pointeeType;
         }
         if (!baseTI || (baseTI->kind != TypeKind::Struct && baseTI->kind != TypeKind::Union)) return nullptr;
@@ -19247,6 +19221,13 @@ const TypeInfo* IRGen::resolveExprTypeInfo(LucisParser::ExpressionContext* ctx) 
         if (baseTI && baseTI->kind == TypeKind::Pointer && baseTI->pointeeType)
             return baseTI->pointeeType;
         return nullptr;
+    }
+
+    // ── Cast: expr as TypeSpec → destination type ─────────────────────
+    if (auto* cast = dynamic_cast<LucisParser::CastExprContext*>(ctx)) {
+        if (!currentGenericSubst_.empty())
+            return resolveTypeInfoWithSubst(cast->typeSpec(), currentGenericSubst_);
+        return resolveTypeInfo(cast->typeSpec());
     }
 
     // ── Negation: -expr → same type ─────────────────────────────────
@@ -20238,9 +20219,7 @@ unsigned IRGen::resolveExprArrayDims(LucisParser::ExpressionContext* ctx) {
 
     if (auto* arrow = dynamic_cast<LucisParser::ArrowAccessExprContext*>(ctx)) {
         auto* baseTI = resolveExprTypeInfo(arrow->expression());
-        if (baseTI && baseTI->kind == TypeKind::Pointer && baseTI->pointeeType &&
-            (baseTI->pointeeType->kind == TypeKind::Struct ||
-             baseTI->pointeeType->kind == TypeKind::Union)) {
+        if (baseTI && baseTI->kind == TypeKind::Pointer && baseTI->pointeeType) {
             auto* structTI = baseTI->pointeeType;
             auto fieldName = arrow->IDENTIFIER()->getText();
             for (size_t f = 0; f < structTI->fields.size(); f++) {
@@ -26264,16 +26243,17 @@ const TypeInfo* IRGen::instantiateGenericStruct(
 
     auto mangledName = mangleGenericName(baseName, typeArgs);
 
-    // Already instantiated?
+    // Cycle detection — struct references itself via pointer (e.g. LinkedListNode<T> → *LinkedListNode<T>)
+    if (instantiatedGenerics_.count(mangledName)) {
+        if (auto* existing = typeRegistry_.lookup(mangledName))
+            return existing;
+        return typeRegistry_.lookup("int32");
+    }
+
+    // Already instantiated and finalized?
     if (auto* existing = typeRegistry_.lookup(mangledName)) {
         ensureGenericStructType(mangledName, existing);
         return existing;
-    }
-
-    // Cycle detection
-    if (instantiatedGenerics_.count(mangledName)) {
-        std::cerr << "lucis: recursive generic instantiation: " << mangledName << "\n";
-        return typeRegistry_.lookup("int32");
     }
     instantiatedGenerics_.insert(mangledName);
 

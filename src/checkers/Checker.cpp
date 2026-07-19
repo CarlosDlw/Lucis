@@ -4067,8 +4067,8 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
             return nullptr;
         }
         auto* pointee = baseType ? baseType->pointeeType : nullptr;
-        if (pointee && pointee->kind != TypeKind::Struct) {
-            error(expr, "'->' requires pointer to struct, got pointer to '" +
+        if (pointee && pointee->kind != TypeKind::Struct && pointee->kind != TypeKind::Union) {
+            error(expr, "'->' requires pointer to struct or union, got pointer to '" +
                              pointee->name + "'");
             return nullptr;
         }
@@ -4077,7 +4077,7 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
                 if (field.name == fieldName)
                     return field.typeInfo;
             }
-            error(expr, "struct '" + pointee->name +
+            error(expr, "'" + pointee->name +
                              "' has no field '" + fieldName + "'");
         }
         return nullptr;
@@ -4781,14 +4781,9 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
                 return typeRegistry_.lookup("usize");
         }
 
-        if (baseType && baseType->kind == TypeKind::Pointer) {
-            if (baseType->pointeeType && (baseType->pointeeType->kind == TypeKind::Struct ||
-                baseType->pointeeType->kind == TypeKind::Union)) {
-                baseType = baseType->pointeeType;
-            } else if (auto* pointeeTI = typeRegistry_.lookup(baseType->name.substr(1))) {
-                baseType = pointeeTI;
-            }
-        }
+        // Auto-dereference: ptr.field → pointee.field
+        if (baseType && baseType->kind == TypeKind::Pointer && baseType->pointeeType)
+            baseType = baseType->pointeeType;
 
         if (baseType && (baseType->kind == TypeKind::Struct || baseType->kind == TypeKind::Union)) {
             for (auto& field : baseType->fields) {
@@ -9367,12 +9362,8 @@ void Checker::checkFieldAssignStmt(LucisParser::FieldAssignStmtContext* stmt) {
     for (size_t i = 1; i < identifiers.size(); i++) {
         auto fieldName = identifiers[i]->getText();
 
-        if (currentType && currentType->kind == TypeKind::Pointer &&
-            currentType->pointeeType &&
-            (currentType->pointeeType->kind == TypeKind::Struct ||
-             currentType->pointeeType->kind == TypeKind::Union)) {
+        if (currentType && currentType->kind == TypeKind::Pointer && currentType->pointeeType)
             currentType = currentType->pointeeType;
-        }
 
         if (!currentType || (currentType->kind != TypeKind::Struct && currentType->kind != TypeKind::Union)) {
             error(stmt, "'" +
@@ -9418,12 +9409,8 @@ void Checker::checkFieldCompoundAssignStmt(LucisParser::FieldCompoundAssignStmtC
     for (size_t i = 1; i < identifiers.size(); i++) {
         auto fieldName = identifiers[i]->getText();
 
-        if (currentType && currentType->kind == TypeKind::Pointer &&
-            currentType->pointeeType &&
-            (currentType->pointeeType->kind == TypeKind::Struct ||
-             currentType->pointeeType->kind == TypeKind::Union)) {
+        if (currentType && currentType->kind == TypeKind::Pointer && currentType->pointeeType)
             currentType = currentType->pointeeType;
-        }
 
         if (!currentType || (currentType->kind != TypeKind::Struct && currentType->kind != TypeKind::Union)) {
             error(stmt, "'" +
@@ -9638,8 +9625,9 @@ void Checker::checkArrowCompoundAssignStmt(LucisParser::ArrowCompoundAssignStmtC
         }
     }
 
-    if (!pointerBase || !currentType || currentType->kind != TypeKind::Struct) {
-        error(stmt, "'->' requires pointer to struct");
+    if (!pointerBase || !currentType ||
+        (currentType->kind != TypeKind::Struct && currentType->kind != TypeKind::Union)) {
+        error(stmt, "'->' requires pointer to struct or union");
         return;
     }
 
@@ -10444,6 +10432,8 @@ unsigned Checker::resolveExprArrayDims(LucisParser::ExpressionContext* expr) {
     }
     if (auto* fa = dynamic_cast<LucisParser::FieldAccessExprContext*>(expr)) {
         auto* baseType = resolveExprType(fa->expression());
+        if (baseType && baseType->kind == TypeKind::Pointer && baseType->pointeeType)
+            baseType = baseType->pointeeType;
         if (baseType && (baseType->kind == TypeKind::Struct || baseType->kind == TypeKind::Union)) {
             auto fieldName = fa->IDENTIFIER()->getText();
             for (auto& field : baseType->fields) {

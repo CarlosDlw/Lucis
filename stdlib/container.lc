@@ -1,5 +1,24 @@
+/**
+ * Dynamic array (vector) for Lucis.
+ *
+ * Provides a generic contiguous-grow buffer backed by the C realloc
+ * family.  Elements are stored inline (not boxed).  Capacity grows
+ * geometrically (×2) on push.
+ *
+ * The type parameter {@code T} is the element type.
+ *
+ * @module container
+ */
+
 use std::mem::{ alloc, free, realloc };
 
+/**
+ * Contiguous dynamic array of {@code T}.
+ *
+ * @field data  Raw pointer to the heap-allocated element buffer
+ * @field len   Number of elements currently stored
+ * @field cap   Allocated capacity (number of elements)
+ */
 struct ArrayList<T> {
     *T data;
     usize len;
@@ -7,17 +26,31 @@ struct ArrayList<T> {
 }
 
 extend ArrayList<T> {
+    /**
+     * Creates a new, empty ArrayList with zero capacity.
+     * No heap allocation is performed until the first push.
+     * @return A new empty ArrayList
+     */
     fn new() ArrayList<T> {
         return ArrayList<T> { null, 0, 0 };
     }
 
+    /**
+     * Grows the internal buffer to hold at least {@code 2 × cap} elements.
+     * The initial capacity is 4 when the buffer is null.
+     */
     fn grow(&self) void {
         usize new_cap = self.cap == 0 ? 4 : self.cap * 2;
         usize size = new_cap * sizeof(T);
         self.data = realloc(self.data, size);
         self.cap = new_cap;
     }
-    
+
+    /**
+     * Appends a value to the end of the list.
+     * Automatically grows the buffer if capacity is exhausted.
+     * @param value The element to append
+     */
     fn push(&self, T value) void {
         if self.len >= self.cap {
             self.grow();
@@ -26,50 +59,97 @@ extend ArrayList<T> {
         self.data[self.len] = value;
         self.len++;
     }
-    
+
+    /**
+     * Removes and returns the last element.
+     * Calling pop on an empty list is undefined behaviour.
+     * @return The removed element
+     */
     fn pop(&self) T {
         self.len--;
         return self.data[self.len];
     }
-    
+
+    /**
+     * Returns a reference to the element at the given index.
+     * Out-of-bounds access is undefined behaviour.
+     * @param index Zero-based element index
+     * @return The element at {@code index}
+     */
     fn get(&self, usize index) T {
         return self.data[index];
     }
-    
+
+    /**
+     * Returns the current number of elements.
+     * @return The length of the list
+     */
     fn len(&self) usize {
         return self.len;
     }
-    
+
+    /**
+     * Returns the current allocated capacity.
+     * @return The capacity in elements
+     */
     fn cap(&self) usize {
         return self.cap;
     }
-    
+
+    /**
+     * Returns a new Vec containing a copy of every element.
+     * @return A vec<T> with the same elements in order
+     */
     fn iter(&self) vec<T> {
         vec<T> result = [];
 
         for int32 i in 0..self.len {
             result.push(self.data[i] as T);
         }
-        
+
         return result;
     }
-    
+
+    /**
+     * Returns true when the list contains no elements.
+     * @return true if len == 0
+     */
     fn isEmpty(&self) bool {
         return self.len == 0;
     }
 
+    /**
+     * Removes all elements without freeing the backing buffer.
+     * Capacity is preserved for reuse.
+     */
     fn clear(&self) void {
         self.len = 0;
     }
 
+    /**
+     * Returns the first element.
+     * Calling first on an empty list is undefined behaviour.
+     * @return The element at index 0
+     */
     fn first(&self) T {
         return self.data[0];
     }
 
+    /**
+     * Returns the last element.
+     * Calling last on an empty list is undefined behaviour.
+     * @return The element at index len - 1
+     */
     fn last(&self) T {
         return self.data[self.len - 1];
     }
 
+    /**
+     * Returns true when the given value is present in the list.
+     * Linear scan using {@code ==} on each element.
+     * @param value The value to search for
+     * @return true if the value was found
+     */
     fn contains(&self, T value) bool {
         for int32 i in 0..self.len {
             if self.data[i] == value {
@@ -79,6 +159,12 @@ extend ArrayList<T> {
         return false;
     }
 
+    /**
+     * Inserts a value at the given index, shifting subsequent
+     * elements to the right by one position.
+     * @param index Zero-based insertion position
+     * @param value The element to insert
+     */
     fn insert(&self, usize index, T value) void {
         if self.len >= self.cap {
             self.grow();
@@ -92,6 +178,11 @@ extend ArrayList<T> {
         self.len++;
     }
 
+    /**
+     * Removes the element at the given index, shifting subsequent
+     * elements to the left by one position.
+     * @param index Zero-based index of the element to remove
+     */
     fn removeAt(&self, usize index) void {
         usize i = index;
         while i + 1 < self.len {
@@ -101,6 +192,10 @@ extend ArrayList<T> {
         self.len--;
     }
 
+    /**
+     * Reallocates the buffer to exactly fit the current length.
+     * Has no effect when cap == len.
+     */
     fn shrinkToFit(&self) void {
         if self.cap > self.len {
             usize size = self.len * sizeof(T);
@@ -114,9 +209,202 @@ extend ArrayList<T> {
         }
     }
 
+    /**
+     * Frees the backing buffer.  Called automatically when the
+     * ArrayList goes out of scope via the drop trait.
+     */
     fn drop(&self) void {
         if self.data != null {
             free(self.data);
+        }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  LinkedList<T>
+// ═══════════════════════════════════════════════════════════════
+
+/**
+ * Doubly-linked list.
+ *
+ * Each element is individually heap-allocated.  Insertion and
+ * removal at either end is O(1).  Removal of an arbitrary node
+ * is O(n) without a direct reference to the node.
+ *
+ * @module container
+ */
+
+/**
+ * Internal node of a LinkedList.
+ *
+ * @field value The stored element
+ * @field prev  Pointer to the previous node (null for head)
+ * @field next  Pointer to the next node (null for tail)
+ */
+struct LinkedListNode<T> {
+    T value;
+    *LinkedListNode<T> prev;
+    *LinkedListNode<T> next;
+}
+
+/**
+ * Doubly-linked list of {@code T}.
+ *
+ * @field head Pointer to the first node (null if empty)
+ * @field tail Pointer to the last node (null if empty)
+ * @field len  Number of elements currently stored
+ */
+struct LinkedList<T> {
+    *LinkedListNode<T> head;
+    *LinkedListNode<T> tail;
+    usize len;
+}
+
+extend LinkedList<T> {
+    /**
+     * Creates a new, empty LinkedList.
+     * @return A new empty LinkedList
+     */
+    fn new() LinkedList<T> {
+        return LinkedList<T> { null, null, 0 };
+    }
+
+    /**
+     * Inserts a value at the front of the list.
+     * @param value The element to insert
+     */
+    fn pushFront(&self, T value) void {
+        usize size = sizeof(LinkedListNode<T>);
+        auto node = alloc(sizeof(LinkedListNode<T>)) as *LinkedListNode<T>;
+        node.value = value;
+        node.prev = null;
+        node.next = self.head;
+
+        if self.head != null {
+            self.head.prev = node;
+        } else {
+            self.tail = node;
+        }
+        self.head = node;
+        self.len++;
+    }
+
+    /**
+     * Inserts a value at the back of the list.
+     * @param value The element to insert
+     */
+    fn pushBack(&self, T value) void {
+        auto node = alloc(sizeof(LinkedListNode<T>)) as *LinkedListNode<T>;
+        node.value = value;
+        node.prev = self.tail;
+        node.next = null;
+
+        if self.tail != null {
+            self.tail.next = node;
+        } else {
+            self.head = node;
+        }
+        self.tail = node;
+        self.len++;
+    }
+
+    /**
+     * Removes and returns the first element.
+     * Calling popFront on an empty list is undefined behaviour.
+     * @return The removed element
+     */
+    fn popFront(&self) T {
+        auto node = self.head;
+        self.head = node.next;
+        if self.head != null {
+            self.head.prev = null;
+        } else {
+            self.tail = null;
+        }
+        self.len--;
+        T val = node.value;
+        free(node);
+        return val;
+    }
+
+    /**
+     * Removes and returns the last element.
+     * Calling popBack on an empty list is undefined behaviour.
+     * @return The removed element
+     */
+    fn popBack(&self) T {
+        auto node = self.tail;
+        self.tail = node.prev;
+        if self.tail != null {
+            self.tail.next = null;
+        } else {
+            self.head = null;
+        }
+        self.len--;
+        T val = node.value;
+        free(node);
+        return val;
+    }
+
+    /**
+     * Returns the first element without removing it.
+     * Calling first on an empty list is undefined behaviour.
+     * @return The element at the front
+     */
+    fn first(&self) T {
+        return self.head.value;
+    }
+
+    /**
+     * Returns the last element without removing it.
+     * Calling last on an empty list is undefined behaviour.
+     * @return The element at the back
+     */
+    fn last(&self) T {
+        return self.tail.value;
+    }
+
+    /**
+     * Returns the current number of elements.
+     * @return The length of the list
+     */
+    fn len(&self) usize {
+        return self.len;
+    }
+
+    /**
+     * Returns true when the list contains no elements.
+     * @return true if len == 0
+     */
+    fn isEmpty(&self) bool {
+        return self.len == 0;
+    }
+
+    /**
+     * Removes all elements and frees every node.
+     */
+    fn clear(&self) void {
+        auto cur = self.head;
+        while cur != null {
+            auto next = cur.next;
+            free(cur);
+            cur = next;
+        }
+        self.head = null;
+        self.tail = null;
+        self.len = 0;
+    }
+
+    /**
+     * Frees all nodes.  Called automatically when the
+     * LinkedList goes out of scope via the drop trait.
+     */
+    fn drop(&self) void {
+        auto cur = self.head;
+        while cur != null {
+            auto next = cur.next;
+            free(cur);
+            cur = next;
         }
     }
 }
