@@ -1868,16 +1868,16 @@ void registerSysNamespace(IntrinsicRegistry& reg, TypeRegistry& typeReg) {
                 triple.find("i686") != 0)
                 return llvm::UndefValue::get(llvm::Type::getVoidTy(context));
 
-            auto* retTy = llvm::Type::getIntNTy(context, bits);
-            // First arg = DX port (uint16), second arg = value
-            // out{b,w,l}: port in DX, value in {AL,AX,EAX}
-            std::string constraints = "0,{dx},~{dirflag},~{fpsr},~{flags}";
-            auto* ft = llvm::FunctionType::get(retTy,
-                {retTy, llvm::Type::getInt16Ty(context)}, false);
+            auto* valTy = llvm::Type::getIntNTy(context, bits);
+            auto* ptrTy = llvm::Type::getInt16Ty(context);
+            // out{b,w,l}: value in {AL,AX,EAX}, port in DX
+            std::string constraints = "{ax},{dx},~{dirflag},~{fpsr},~{flags}";
+            auto* ft = llvm::FunctionType::get(llvm::Type::getVoidTy(context),
+                {valTy, ptrTy}, false);
             auto* asmFn = llvm::InlineAsm::get(ft, asmInsn, constraints,
                 true, false, llvm::InlineAsm::AD_ATT);
-            auto* zext = builder.CreateZExt(args[1], retTy);
-            builder.CreateCall(asmFn, {zext, args[0]});
+            auto* val = builder.CreateZExt(args[1], valTy);
+            builder.CreateCall(asmFn, {val, args[0]});
             return llvm::UndefValue::get(llvm::Type::getVoidTy(context));
         };
         return fn;
