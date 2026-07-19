@@ -54,6 +54,66 @@ extend ArrayList<T> {
         return result;
     }
     
+    fn isEmpty(&self) bool {
+        return self.len == 0;
+    }
+
+    fn clear(&self) void {
+        self.len = 0;
+    }
+
+    fn first(&self) T {
+        return self.data[0];
+    }
+
+    fn last(&self) T {
+        return self.data[self.len - 1];
+    }
+
+    fn contains(&self, T value) bool {
+        for int32 i in 0..self.len {
+            if self.data[i] == value {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    fn insert(&self, usize index, T value) void {
+        if self.len >= self.cap {
+            self.grow();
+        }
+        usize i = self.len;
+        while i > index {
+            self.data[i] = self.data[i - 1];
+            i--;
+        }
+        self.data[index] = value;
+        self.len++;
+    }
+
+    fn removeAt(&self, usize index) void {
+        usize i = index;
+        while i + 1 < self.len {
+            self.data[i] = self.data[i + 1];
+            i++;
+        }
+        self.len--;
+    }
+
+    fn shrinkToFit(&self) void {
+        if self.cap > self.len {
+            usize size = self.len * sizeof(T);
+            if size == 0 {
+                free(self.data);
+                self.data = null;
+            } else {
+                self.data = realloc(self.data, size);
+            }
+            self.cap = self.len;
+        }
+    }
+
     fn drop(&self) void {
         if self.data != null {
             free(self.data);
