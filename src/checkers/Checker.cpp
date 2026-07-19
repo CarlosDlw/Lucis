@@ -4849,15 +4849,7 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
                                  std::to_string(fieldCount));
             }
         } else {
-            size_t requiredFields = 0;
-            for (auto& sf : typeInfo->fields) {
-                if (!sf.autoFill) requiredFields++;
-            }
-            if (fieldCount < requiredFields) {
-                error(expr, "struct '" + typeName + "' requires at least " +
-                                 std::to_string(requiredFields) +
-                                 " fields, got " + std::to_string(fieldCount));
-            } else if (fieldCount > typeInfo->fields.size()) {
+            if (fieldCount > typeInfo->fields.size()) {
                 error(expr, "struct '" + typeName + "' has " +
                                  std::to_string(typeInfo->fields.size()) +
                                  " fields, got " + std::to_string(fieldCount));
@@ -4916,15 +4908,7 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
                              std::to_string(fieldExprs.size()));
             }
         } else {
-            size_t requiredFields = 0;
-            for (auto& sf : typeInfo->fields) {
-                if (!sf.autoFill) requiredFields++;
-            }
-            if (fieldExprs.size() < requiredFields) {
-                error(expr, "struct '" + typeName + "' requires at least " +
-                             std::to_string(requiredFields) +
-                             " fields, got " + std::to_string(fieldExprs.size()));
-            } else if (fieldExprs.size() > typeInfo->fields.size()) {
+            if (fieldExprs.size() > typeInfo->fields.size()) {
                 error(expr, "struct '" + typeName + "' has " +
                              std::to_string(typeInfo->fields.size()) +
                              " fields, got " + std::to_string(fieldExprs.size()));
@@ -4977,15 +4961,7 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
                              std::to_string(fieldExprs.size()));
             }
         } else {
-            size_t requiredFields = 0;
-            for (auto& sf : typeInfo->fields) {
-                if (!sf.autoFill) requiredFields++;
-            }
-            if (fieldExprs.size() < requiredFields) {
-                error(expr, "struct '" + first + "::" + second + "' requires at least " +
-                             std::to_string(requiredFields) +
-                             " fields, got " + std::to_string(fieldExprs.size()));
-            } else if (fieldExprs.size() > typeInfo->fields.size()) {
+            if (fieldExprs.size() > typeInfo->fields.size()) {
                 error(expr, "struct '" + first + "::" + second + "' has " +
                              std::to_string(typeInfo->fields.size()) +
                              " fields, got " + std::to_string(fieldExprs.size()));
@@ -5032,15 +5008,7 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
                              "' literal must initialize exactly 1 field");
             }
         } else {
-            size_t requiredFields = 0;
-            for (auto& sf : typeInfo->fields) {
-                if (!sf.autoFill) requiredFields++;
-            }
-            if (fieldCount < requiredFields) {
-                error(expr, "struct '" + first + "::" + second + "' requires at least " +
-                             std::to_string(requiredFields) +
-                             " fields, got " + std::to_string(fieldCount));
-            } else if (fieldCount > typeInfo->fields.size()) {
+            if (fieldCount > typeInfo->fields.size()) {
                 error(expr, "struct '" + first + "::" + second + "' has " +
                              std::to_string(typeInfo->fields.size()) +
                              " fields, got " + std::to_string(fieldCount));

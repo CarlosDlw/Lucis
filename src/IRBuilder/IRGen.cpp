@@ -8340,15 +8340,28 @@ std::any IRGen::visitForInStmt(LucisParser::ForInStmtContext* ctx) {
                     auto baseName = baseIdent->IDENTIFIER()->getText();
                     auto it = locals_.find(baseName);
                     if (it != locals_.end() && it->second.typeInfo &&
-                        it->second.typeInfo->kind == TypeKind::Struct) {
-                        auto* structTI = it->second.typeInfo;
+                        (it->second.typeInfo->kind == TypeKind::Struct ||
+                         (it->second.typeInfo->kind == TypeKind::Pointer &&
+                          it->second.typeInfo->pointeeType &&
+                          it->second.typeInfo->pointeeType->kind == TypeKind::Struct))) {
+                        std::cerr << "DEBUG for-in: base=" << baseName
+                                  << " kind=" << (int)it->second.typeInfo->kind << "\n";
+                        auto* structTI = (it->second.typeInfo->kind == TypeKind::Pointer)
+                            ? it->second.typeInfo->pointeeType
+                            : it->second.typeInfo;
                         auto fieldName = fieldAccess->IDENTIFIER()->getText();
                         for (size_t i = 0; i < structTI->fields.size(); i++) {
                             if (structTI->fields[i].name == fieldName) {
                                 auto* structLLTy = llvm::cast<llvm::StructType>(
                                     structTI->toLLVMType(*context_, module_->getDataLayout()));
+                                llvm::Value* basePtr = it->second.alloca;
+                                if (it->second.typeInfo->kind == TypeKind::Pointer) {
+                                    auto* ptrTy = llvm::PointerType::getUnqual(*context_);
+                                    basePtr = builder_->CreateLoad(ptrTy, basePtr,
+                                        baseName + "_selfptr");
+                                }
                                 auto* gep = builder_->CreateStructGEP(
-                                    structLLTy, it->second.alloca,
+                                    structLLTy, basePtr,
                                     static_cast<unsigned>(i), fieldName + "_iter");
                                 vecAlloca = reinterpret_cast<llvm::AllocaInst*>(gep);
                                 iterableTI = structTI->fields[i].typeInfo;
