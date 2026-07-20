@@ -3011,6 +3011,7 @@ void IRGen::registerCrossFileSymbols(LucisParser::ProgramContext* ctx) {
                 auto* retTI = resolveTypeInfo(method->typeSpec());
                 if (!retTI) continue;
                 auto* retLLTy = retTI->toLLVMType(*context_, module_->getDataLayout());
+                if (!retLLTy) continue;
 
                 bool isStatic = (method->AMPERSAND() == nullptr);
 
@@ -3044,6 +3045,7 @@ void IRGen::registerCrossFileSymbols(LucisParser::ProgramContext* ctx) {
 
                 auto* fnType = llvm::FunctionType::get(
                     retLLTy, paramLLTypes, isVarArg);
+                if (!fnType) continue;
                 auto* fn = llvm::Function::Create(
                     fnType, llvm::Function::ExternalLinkage,
                     funcName, module_);
@@ -3058,13 +3060,6 @@ void IRGen::registerCrossFileSymbols(LucisParser::ProgramContext* ctx) {
 
     // Extend blocks from same namespace
     declareExtendMethods(currentModulePath_);
-
-    // Extend blocks from imported namespaces
-    std::unordered_set<std::string> processedNs;
-    for (auto& [symbolName, sourceNs] : userImports_) {
-        if (processedNs.insert(sourceNs).second)
-            declareExtendMethods(sourceNs);
-    }
 
     // ── Phase 2: Declare extern functions from same namespace ──────────
     for (auto* sym : sameNsSymbols) {
