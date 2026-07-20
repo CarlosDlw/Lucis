@@ -26315,6 +26315,9 @@ const TypeInfo* IRGen::instantiateGenericStruct(
             return existing;
         return typeRegistry_.lookup("int32");
     }
+    // Always insert before "already existed" check so cycle detection
+    // works even for recursive calls during extend method processing.
+    instantiatedGenerics_.insert(mangledName);
 
     // Build substitution map: T → int32, etc. (needed for both first-time and extend methods)
     std::unordered_map<std::string, const TypeInfo*> subst;
@@ -26335,7 +26338,6 @@ const TypeInfo* IRGen::instantiateGenericStruct(
 
     if (!result) {
         // First-time instantiation
-        instantiatedGenerics_.insert(mangledName);
 
         // Register skeleton for self-referencing fields
         TypeInfo skeleton;
