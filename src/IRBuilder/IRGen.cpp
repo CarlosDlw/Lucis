@@ -2797,7 +2797,10 @@ void IRGen::registerCrossFileSymbols(LucisParser::ProgramContext* ctx) {
                 visitEnumDecl(ed);
                 return;
             }
-            if (depSym->kind == ExportedSymbol::Struct && !typeRegistry_.lookup(baseName)) {
+            auto* existingTI = typeRegistry_.lookup(baseName);
+            bool needsVisit = !existingTI ||
+                !llvm::StructType::getTypeByName(*context_, baseName);
+            if (depSym->kind == ExportedSymbol::Struct && needsVisit) {
                 auto* sd = static_cast<LucisParser::StructDeclContext*>(depSym->decl);
                 // Register a skeleton first to break self-referential cycles
                 {
@@ -2816,7 +2819,9 @@ void IRGen::registerCrossFileSymbols(LucisParser::ProgramContext* ctx) {
                 visitStructDecl(sd);
                 return;
             }
-            if (depSym->kind == ExportedSymbol::Union && !typeRegistry_.lookup(baseName)) {
+            bool needsUnionVisit = !existingTI ||
+                !llvm::StructType::getTypeByName(*context_, baseName);
+            if (depSym->kind == ExportedSymbol::Union && needsUnionVisit) {
                 auto* ud = static_cast<LucisParser::UnionDeclContext*>(depSym->decl);
                 // Register a skeleton first to break self-referential cycles
                 {
@@ -3060,6 +3065,13 @@ void IRGen::registerCrossFileSymbols(LucisParser::ProgramContext* ctx) {
 
     // Extend blocks from same namespace
     declareExtendMethods(currentModulePath_);
+
+    // Extend blocks from imported namespaces
+    std::unordered_set<std::string> processedNs;
+    for (auto& [symbolName, sourceNs] : userImports_) {
+        if (processedNs.insert(sourceNs).second)
+            declareExtendMethods(sourceNs);
+    }
 
     // ── Phase 2: Declare extern functions from same namespace ──────────
     for (auto* sym : sameNsSymbols) {
