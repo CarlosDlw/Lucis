@@ -1544,15 +1544,27 @@ bool Checker::check(LucisParser::ProgramContext* tree) {
                 auto name = sd->IDENTIFIER()->getText();
                 if (sd->typeParamList() && genericStructTemplates_.count(name))
                     continue;
+                auto* existing = typeRegistry_.lookup(name);
+                if (existing && existing->kind == TypeKind::Struct &&
+                    !existing->fields.empty())
+                    continue;
                 checkStructDecl(sd);
             } else if (auto* ud = decl->unionDecl()) {
                 auto name = ud->IDENTIFIER()->getText();
                 if (ud->typeParamList() && genericUnionTemplates_.count(name))
                     continue;
+                auto* existing = typeRegistry_.lookup(name);
+                if (existing && existing->kind == TypeKind::Union &&
+                    !existing->fields.empty())
+                    continue;
                 checkUnionDecl(ud);
             } else if (auto* ed = decl->enumDecl()) {
                 auto name = ed->IDENTIFIER()->getText();
                 if (ed->typeParamList() && genericEnumTemplates_.count(name))
+                    continue;
+                auto* existing = typeRegistry_.lookup(name);
+                if (existing && existing->kind == TypeKind::Enum &&
+                    !existing->enumVariantInfos.empty())
                     continue;
                 checkEnumDecl(ed);
             }
@@ -1568,10 +1580,18 @@ bool Checker::check(LucisParser::ProgramContext* tree) {
                 auto name = sd->IDENTIFIER()->getText();
                 if (sd->typeParamList() && genericStructTemplates_.count(name))
                     continue;
+                auto* existing = typeRegistry_.lookup(name);
+                if (existing && existing->kind == TypeKind::Struct &&
+                    !existing->fields.empty())
+                    continue;
                 checkStructDecl(sd);
             } else if (auto* ud = decl->unionDecl()) {
                 auto name = ud->IDENTIFIER()->getText();
                 if (ud->typeParamList() && genericUnionTemplates_.count(name))
+                    continue;
+                auto* existing = typeRegistry_.lookup(name);
+                if (existing && existing->kind == TypeKind::Union &&
+                    !existing->fields.empty())
                     continue;
                 checkUnionDecl(ud);
             }

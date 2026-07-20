@@ -1,0 +1,51 @@
+enum FlagKind {
+  BOOLEAN,
+  STRING,
+  INTEGER
+}
+
+struct CliApp {
+  string          name;
+  string          description;
+  string          version;
+  vec<CliFlag>    globalFlags;
+  vec<CliCommand> commands;
+  vec<CliArg>     args;
+}
+
+struct CliFlag {
+  string    long;
+  string    short;
+  string    description;
+  FlagKind  kind;
+  bool      required;
+  string    defaultValue;
+}
+
+struct CliCommand {
+  string        name;
+  string        description;
+  vec<CliFlag>  flags;
+}
+
+struct CliArg {
+  string  name;
+  string  description;
+  bool    required;
+}
+
+extend CliApp {
+  fn new(string name, string description, string version) CliApp {
+    return CliApp { name, description, version };
+  }
+
+  fn addFlag(&self, CliFlag flag) void {
+    self.globalFlags.push(flag);
+  }
+
+  fn addCommand(&self, CliCommand command) void {
+    self.commands.push(command);
+  }
+
+  fn run(&self, vec<string> args) void {}
+}
