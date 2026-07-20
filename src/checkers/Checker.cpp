@@ -1249,9 +1249,8 @@ bool Checker::check(LucisParser::ProgramContext* tree) {
                 // Process struct dependency even if skeleton exists but
                 // template isn't registered yet (e.g. LinkedListNode<T>
                 // discovered via LinkedList<T>'s field processing).
-                bool structNeedsProc = needsProc || !genericStructTemplates_.count(baseName);
                 if (depSym->kind == ExportedSymbol::Struct &&
-                    structNeedsProc &&
+                    needsProc &&
                     !genericStructTemplates_.count(baseName)) {
                     if (!seenDeps.insert(baseName).second) return;
                     auto* sd = static_cast<LucisParser::StructDeclContext*>(depSym->decl);

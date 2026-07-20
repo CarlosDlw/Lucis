@@ -1552,7 +1552,7 @@ std::any IRGen::visitExtendDecl(LucisParser::ExtendDeclContext* ctx) {
 
             for (auto* param : params) {
                 auto* pTI = resolveTypeInfo(param->typeSpec());
-                if (!pTI) continue;
+                if (!pTI) pTI = typeRegistry_.lookup("int32");
                 paramTIs.push_back(pTI);
                 paramLLTypes.push_back(pTI->toLLVMType(*context_, module_->getDataLayout()));
             }
@@ -1604,7 +1604,7 @@ std::any IRGen::visitExtendDecl(LucisParser::ExtendDeclContext* ctx) {
 
         for (auto* param : params) {
             auto* pTI = resolveTypeInfo(param->typeSpec());
-            if (!pTI) continue;
+            if (!pTI) pTI = typeRegistry_.lookup("int32");
             paramTIs.push_back(pTI);
             paramLLTypes.push_back(pTI->toLLVMType(*context_, module_->getDataLayout()));
         }
@@ -1840,7 +1840,7 @@ std::any IRGen::visitExternDecl(LucisParser::ExternDeclContext* ctx) {
     if (auto* paramList = ctx->externParamList()) {
         for (auto* param : paramList->externParam()) {
             auto* pTI   = resolveTypeInfo(param->typeSpec());
-            if (!pTI) continue;
+            if (!pTI) pTI = typeRegistry_.lookup("int32");
             auto* pLLTy = pTI->toLLVMType(*context_, module_->getDataLayout());
             paramTypes.push_back(pLLTy);
         }
@@ -2978,7 +2978,9 @@ void IRGen::registerCrossFileSymbols(LucisParser::ProgramContext* ctx) {
             }
 
             auto* structTI = typeRegistry_.lookup(sym->name);
-            if (!structTI || structTI->kind != TypeKind::Struct) continue;
+            if (!structTI || (structTI->kind != TypeKind::Struct &&
+                              structTI->kind != TypeKind::Union)) continue;
+            if (structTI->kind == TypeKind::Struct && structTI->fields.empty()) continue;
 
             auto* extCtx = dynamic_cast<LucisParser::ExtendDeclContext*>(sym->decl);
             if (!extCtx) continue;
