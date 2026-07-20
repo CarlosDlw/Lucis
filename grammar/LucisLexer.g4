@@ -158,7 +158,7 @@ fragment CHAR_ESC : '\\' ('n' | 'r' | 't' | '\\' | '\'' | '"' | 'a' | 'b' | 'f' 
                   | '\\' [0-7] [0-7]
                   | '\\' [0-7]
                   ;
-CHAR_LIT  : '\'' ( CHAR_ESC | ~['\\r\n] ) '\'';
+CHAR_LIT  : '\'' ( CHAR_ESC | ~['\\\r\n] ) '\'';
 
 // Attribute start: #[
 ATTR_OPEN : '#[' ;
