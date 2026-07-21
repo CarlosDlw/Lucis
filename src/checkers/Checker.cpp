@@ -2404,7 +2404,22 @@ bool Checker::isAssignable(const TypeInfo* lhs, const TypeInfo* rhs) {
         return true;
 
     // Same kind
-    if (lhs->kind == rhs->kind) return true;
+    if (lhs->kind == rhs->kind) {
+        // Extended types (Vec, Map, Set) must also match element/key/value types
+        if (lhs->kind == TypeKind::Extended) {
+            if (lhs->extendedKind != rhs->extendedKind) return false;
+            if (lhs->elementType && rhs->elementType &&
+                !isAssignable(lhs->elementType, rhs->elementType))
+                return false;
+            if (lhs->keyType && rhs->keyType &&
+                !isAssignable(lhs->keyType, rhs->keyType))
+                return false;
+            if (lhs->valueType && rhs->valueType &&
+                !isAssignable(lhs->valueType, rhs->valueType))
+                return false;
+        }
+        return true;
+    }
 
     // Struct inheritance: Child is-assignable-to Parent
     if (lhs->kind == TypeKind::Struct && rhs->kind == TypeKind::Struct) {
@@ -6228,6 +6243,140 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
         if (operand && operand->pointeeType)
             return operand->pointeeType;
         return nullptr;
+    }
+
+    // ── Bang-init: vec!{ 1, 2, 3 }, map!{ "a": 1 }, set!{ 1, 2, 3 } ─
+    if (auto* bi = dynamic_cast<LucisParser::BangInitExprContext*>(expr)) {
+        // Determine the base type name
+        std::string baseName;
+        if (bi->VEC())       baseName = "Vec";
+        else if (bi->MAP())  baseName = "Map";
+        else if (bi->SET())  baseName = "Set";
+        else if (bi->IDENTIFIER()) baseName = bi->IDENTIFIER()->getText();
+
+        if (baseName.empty()) {
+            error(expr, "bang-initializer requires a type name before '!'");
+            recursionDepth_--;
+            return nullptr;
+        }
+
+        // Look up the extended type descriptor
+        auto* extDesc = extTypeRegistry_.lookup(baseName);
+        if (!extDesc) {
+            error(expr, "type '" + baseName + "' does not support bang-initialization");
+            recursionDepth_--;
+            return nullptr;
+        }
+
+        auto entries = bi->bangEntry();
+
+        if (extDesc->genericArity == 1) {
+            // Vec<T> or Set<T> — each entry is a value
+            const TypeInfo* elemType = nullptr;
+
+            if (!entries.empty()) {
+                auto* firstEntry = entries[0];
+                if (firstEntry->COLON()) {
+                    error(firstEntry, "'" + baseName + "' initializer does not accept key:value pairs");
+                    recursionDepth_--;
+                    return nullptr;
+                }
+                elemType = resolveExprType(firstEntry->expression(0));
+                if (!elemType) { recursionDepth_--; return nullptr; }
+
+                for (size_t i = 1; i < entries.size(); i++) {
+                    auto* entry = entries[i];
+                    if (entry->COLON()) {
+                        error(entry, "'" + baseName + "' initializer does not accept key:value pairs");
+                        recursionDepth_--;
+                        return nullptr;
+                    }
+                    auto* et = resolveExprType(entry->expression(0));
+                    if (et && !isAssignable(elemType, et))
+                        error(entry, "element type mismatch: expected '" +
+                                     elemType->name + "', got '" + et->name + "'");
+                }
+            }
+
+            if (!elemType) {
+                // Empty initializer or unresolvable — cannot infer type
+                recursionDepth_--;
+                return nullptr;
+            }
+
+            std::string fullName = baseName + "<" + elemType->name + ">";
+            for (auto& dt : dynamicTypes_) {
+                if (dt->name == fullName) { recursionDepth_--; return dt.get(); }
+            }
+            auto ti = std::make_unique<TypeInfo>();
+            ti->name = fullName;
+            ti->kind = TypeKind::Extended;
+            ti->bitWidth = 0;
+            ti->isSigned = false;
+            ti->builtinSuffix = elemType->builtinSuffix;
+            ti->elementType = elemType;
+            ti->extendedKind = baseName;
+            const TypeInfo* raw = ti.get();
+            dynamicTypes_.push_back(std::move(ti));
+            recursionDepth_--;
+            return raw;
+
+        } else if (extDesc->genericArity == 2) {
+            // Map<K,V> — each entry is a key:value pair
+            const TypeInfo* keyType = nullptr;
+            const TypeInfo* valType = nullptr;
+
+            for (size_t i = 0; i < entries.size(); i++) {
+                auto* entry = entries[i];
+                if (!entry->COLON()) {
+                    error(entry, "'" + baseName + "' initializer requires key:value pairs");
+                    recursionDepth_--;
+                    return nullptr;
+                }
+                auto* kt = resolveExprType(entry->expression(0));
+                auto* vt = resolveExprType(entry->expression(1));
+                if (!kt || !vt) { recursionDepth_--; return nullptr; }
+
+                if (i == 0) {
+                    keyType = kt;
+                    valType = vt;
+                } else {
+                    if (!isAssignable(keyType, kt))
+                        error(entry, "key type mismatch: expected '" +
+                                     keyType->name + "', got '" + kt->name + "'");
+                    if (!isAssignable(valType, vt))
+                        error(entry, "value type mismatch: expected '" +
+                                     valType->name + "', got '" + vt->name + "'");
+                }
+            }
+
+            if (!keyType || !valType) {
+                recursionDepth_--;
+                return nullptr;
+            }
+
+            std::string fullName = baseName + "<" + keyType->name + ", " + valType->name + ">";
+            for (auto& dt : dynamicTypes_) {
+                if (dt->name == fullName) { recursionDepth_--; return dt.get(); }
+            }
+            auto ti = std::make_unique<TypeInfo>();
+            ti->name = fullName;
+            ti->kind = TypeKind::Extended;
+            ti->bitWidth = 0;
+            ti->isSigned = false;
+            ti->builtinSuffix = keyType->builtinSuffix + "_" + valType->builtinSuffix;
+            ti->keyType = keyType;
+            ti->valueType = valType;
+            ti->extendedKind = baseName;
+            const TypeInfo* raw = ti.get();
+            dynamicTypes_.push_back(std::move(ti));
+            recursionDepth_--;
+            return raw;
+        } else {
+            error(expr, "type '" + baseName + "' is not a recognized collection type");
+            recursionDepth_--;
+            return nullptr;
+        }
     }
 
     // ── Array literal: [expr, expr, ...] ────────────────────────────

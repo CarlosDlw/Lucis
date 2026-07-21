@@ -683,6 +683,10 @@ public:
     return visitChildren(ctx);
   }
 
+  virtual std::any visitBangInitExpr(LucisParser::BangInitExprContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
   virtual std::any visitStrLitExpr(LucisParser::StrLitExprContext *ctx) override {
     return visitChildren(ctx);
   }
@@ -760,6 +764,10 @@ public:
   }
 
   virtual std::any visitTypeSpec(LucisParser::TypeSpecContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual std::any visitBangEntry(LucisParser::BangEntryContext *ctx) override {
     return visitChildren(ctx);
   }
 

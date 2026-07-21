@@ -582,6 +582,10 @@ expression
     | IDENTIFIER LT typeSpec (COMMA typeSpec)* GT LBRACE expression (COMMA expression)* RBRACE  # genericStructPosInitExpr
     // Named generic struct/union init
     | IDENTIFIER LT typeSpec (COMMA typeSpec)* GT LBRACE (IDENTIFIER COLON expression (COMMA IDENTIFIER COLON expression)*)? RBRACE  # genericStructLitExpr
+    // Collection bang-init: vec!{ 1, 2, 3 }, map!{ "a": 1 }, set!{ 1, 2, 3 }
+    | (IDENTIFIER | VEC | MAP | SET) NOT LBRACE
+        (bangEntry (COMMA bangEntry)*)?
+      RBRACE  # bangInitExpr
     | IDENTIFIER (SCOPE IDENTIFIER)+ LPAREN argList? RPAREN     # staticMethodCallExpr
     | IDENTIFIER LT typeSpec (COMMA typeSpec)* GT SCOPE IDENTIFIER  # genericEnumAccessExpr
     // Positional generic enum variant init
@@ -701,6 +705,11 @@ typeSpec
     | AUTO                             // Type inference: auto x = 42;
     | IDENTIFIER                       // User-defined type: Point, Color, etc.
     | SELF                             // Self: current extend type
+    ;
+
+// Entry in a bang-initializer: value or key : value
+bangEntry
+    : expression (COLON expression)?
     ;
 
 // fn(int32, int32) -> int32

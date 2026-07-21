@@ -37,12 +37,17 @@ static int eq_key_i32(const void* a, const void* b) {
     return *(const int32_t*)a == *(const int32_t*)b;
 }
 
+static uint64_t hash_key_u32(const void* key) {
+    return *(const uint32_t*)key;
+}
 static uint64_t hash_key_i64(const void* key) {
-    int64_t k = *(const int64_t*)key;
-    return splitmix64((uint64_t)k);
+    return *(const int64_t*)key;
 }
 static int eq_key_i64(const void* a, const void* b) {
     return *(const int64_t*)a == *(const int64_t*)b;
+}
+static int eq_key_u32(const void* a, const void* b) {
+    return *(const uint32_t*)a == *(const uint32_t*)b;
 }
 
 static uint64_t hash_key_u64(const void* key) {
@@ -811,10 +816,6 @@ LUCIS_MAP_IMPL_INT(int64_t, i64, uint8_t, i1, hash_key_i64, eq_key_i64)
 // ── Uint64 key × u1/i1 values ───────────────────────────────────────────
 LUCIS_MAP_IMPL_INT(uint64_t, u64, uint8_t, u1, hash_key_u64, eq_key_u64)
 LUCIS_MAP_IMPL_INT(uint64_t, u64, uint8_t, i1, hash_key_u64, eq_key_u64)
-
-// ── String key × u1/i1 values ───────────────────────────────────────────
-LUCIS_MAP_IMPL_STR(uint8_t, u1)
-LUCIS_MAP_IMPL_STR(uint8_t, i1)
 
 // ── Uint1 key × uint128/int128 values ───────────────────────────────────
 LUCIS_MAP_IMPL_INT(uint8_t, u1, __uint128_t, u128, hash_key_u1, eq_key_u1)

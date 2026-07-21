@@ -3686,6 +3686,14 @@ std::any IRGen::visitVarDeclStmt(LucisParser::VarDeclStmtContext* ctx) {
                         llvm::Type::getVoidTy(*context_), { ptrTy });
                     builder_->CreateCall(initFn, { alloca });
                 }
+                // Fallback: bang-init (skip empty) or other expression initializer
+                if (d->expression()) {
+                    auto* bangInit = dynamic_cast<LucisParser::BangInitExprContext*>(d->expression());
+                    if (!bangInit || !bangInit->bangEntry().empty()) {
+                        auto* initVal = castValue(visit(d->expression()));
+                        builder_->CreateStore(initVal, alloca);
+                    }
+                }
                 continue;
             }
 
@@ -3738,6 +3746,13 @@ std::any IRGen::visitVarDeclStmt(LucisParser::VarDeclStmtContext* ctx) {
                                 consumeExprIfOwnedLocal(e);
                             }
                         }
+                    } else {
+                        // Fallback: bang-init (skip empty) or other expression initializer
+                        auto* bangInit = dynamic_cast<LucisParser::BangInitExprContext*>(d->expression());
+                        if (!bangInit || !bangInit->bangEntry().empty()) {
+                            auto* initVal = castValue(visit(d->expression()));
+                            builder_->CreateStore(initVal, alloca);
+                        }
                     }
                 }
                 continue;
@@ -3755,10 +3770,12 @@ std::any IRGen::visitVarDeclStmt(LucisParser::VarDeclStmtContext* ctx) {
             locals_[name] = { alloca, ti, 0 };
             emitDbgDeclare(alloca, name, ti, d->IDENTIFIER()->getSymbol() ? d->IDENTIFIER()->getSymbol()->getLine() : 0);
 
+            // Always init the vec first (empty init by default)
+            auto initFn = declareBuiltin("lucis_vec_init_" + suffix,
+                llvm::Type::getVoidTy(*context_), { ptrTy });
+            builder_->CreateCall(initFn, { alloca });
+
             if (!d->expression()) {
-                auto initFn = declareBuiltin("lucis_vec_init_" + suffix,
-                    llvm::Type::getVoidTy(*context_), { ptrTy });
-                builder_->CreateCall(initFn, { alloca });
                 continue;
             }
 
@@ -3773,11 +3790,7 @@ std::any IRGen::visitVarDeclStmt(LucisParser::VarDeclStmtContext* ctx) {
 
                 auto* elemLLTy = ti->elementType->toLLVMType(*context_, module_->getDataLayout());
 
-                if (vals.empty()) {
-                    auto initFn = declareBuiltin("lucis_vec_init_" + suffix,
-                        llvm::Type::getVoidTy(*context_), { ptrTy });
-                    builder_->CreateCall(initFn, { alloca });
-                } else {
+                if (!vals.empty()) {
                     if (suffix == "raw") {
                         auto& dl       = module_->getDataLayout();
                         auto  elemSz   = dl.getTypeAllocSize(elemLLTy);
@@ -3812,6 +3825,13 @@ std::any IRGen::visitVarDeclStmt(LucisParser::VarDeclStmtContext* ctx) {
                         }
                     }
                 }
+            } else if (auto* bangInit = dynamic_cast<LucisParser::BangInitExprContext*>(d->expression())) {
+                if (!bangInit->bangEntry().empty()) {
+                    auto initVal2 = visit(d->expression());
+                    auto* val2 = castValue(initVal2);
+                    builder_->CreateStore(val2, alloca);
+                }
+                // Empty bang-init: skip — alloca already initialized above
             } else {
                 auto initVal2 = visit(d->expression());
                 auto* val2 = castValue(initVal2);
@@ -10293,6 +10313,152 @@ std::any IRGen::visitArrayLitExpr(LucisParser::ArrayLitExprContext* ctx) {
         agg = builder_->CreateInsertValue(agg, vals[i], {static_cast<unsigned>(i)});
 
     return static_cast<llvm::Value*>(agg);
+}
+
+std::any IRGen::visitBangInitExpr(LucisParser::BangInitExprContext* ctx) {
+        SET_DBG_LOC(ctx);
+    std::string baseName;
+    if (ctx->VEC())       baseName = "Vec";
+    else if (ctx->MAP())  baseName = "Map";
+    else if (ctx->SET())  baseName = "Set";
+    else if (ctx->IDENTIFIER()) baseName = ctx->IDENTIFIER()->getText();
+    else {
+        std::cerr << "lucis: bang-initializer requires a type name before '!'\n";
+        return static_cast<llvm::Value*>(llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
+    }
+
+    auto* ptrTy   = llvm::PointerType::getUnqual(*context_);
+    auto* usizeTy = module_->getDataLayout().getIntPtrType(*context_);
+    auto* voidTy  = llvm::Type::getVoidTy(*context_);
+    auto entries  = ctx->bangEntry();
+
+    // ── Vec<T> / Set<T> ──────────────────────────────────────────────
+    if (baseName == "Vec" || baseName == "Set") {
+        auto* collTy = (baseName == "Vec")
+            ? getOrCreateVecStructType() : getOrCreateSetStructType();
+
+        // Empty initializer: return undef — caller initializes with correct type
+        if (entries.empty()) {
+            return static_cast<llvm::Value*>(llvm::UndefValue::get(collTy));
+        }
+
+        auto* alloca = builder_->CreateAlloca(collTy, nullptr, baseName + "_bang");
+        auto* elemTI = resolveExprTypeInfo(entries[0]->expression(0));
+        if (!elemTI) {
+            std::cerr << "lucis: cannot determine element type\n";
+            return static_cast<llvm::Value*>(llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
+        }
+        auto suffix  = getVecSuffix(elemTI);
+        auto* elemLLTy = elemTI->toLLVMType(*context_, module_->getDataLayout());
+        auto& dl = module_->getDataLayout();
+        auto elemSz = dl.getTypeAllocSize(elemLLTy);
+        bool isRaw = (suffix == "raw");
+
+        // Init (Vec supports init_cap for efficiency; Set only has plain init)
+        if (isRaw) {
+            auto initFn = declareBuiltin("lucis_vec_init_cap_raw", voidTy, {ptrTy, usizeTy, usizeTy});
+            builder_->CreateCall(initFn, {alloca,
+                llvm::ConstantInt::get(usizeTy, entries.size()),
+                llvm::ConstantInt::get(usizeTy, elemSz)});
+        } else if (baseName == "Vec") {
+            auto initFn = declareBuiltin("lucis_vec_init_cap_" + suffix, voidTy, {ptrTy, usizeTy});
+            builder_->CreateCall(initFn, {alloca,
+                llvm::ConstantInt::get(usizeTy, entries.size())});
+        } else {
+            // Set has no init_cap variant — use plain init
+            auto initFn = declareBuiltin("lucis_set_init_" + suffix, voidTy, {ptrTy});
+            builder_->CreateCall(initFn, {alloca});
+        }
+
+        // Push/add each element
+        for (auto* entry : entries) {
+            auto* val = castValue(visit(entry->expression(0)));
+            if (isRaw) {
+                auto pushName = (baseName == "Vec" ? "lucis_vec_push_raw" : "lucis_set_add_raw");
+                auto* tmp = builder_->CreateAlloca(elemLLTy);
+                builder_->CreateStore(val, tmp);
+                if (baseName == "Vec") {
+                    auto fn = declareBuiltin(pushName, voidTy, {ptrTy, ptrTy, usizeTy});
+                    builder_->CreateCall(fn, {alloca, tmp, llvm::ConstantInt::get(usizeTy, elemSz)});
+                } else {
+                    auto fn = declareBuiltin(pushName, llvm::Type::getInt32Ty(*context_), {ptrTy, ptrTy});
+                    builder_->CreateCall(fn, {alloca, tmp});
+                }
+            } else {
+                auto pushName = (baseName == "Vec" ? "lucis_vec_push_" : "lucis_set_add_") + suffix;
+                auto fn = declareBuiltin(pushName, voidTy, {ptrTy, elemLLTy});
+                if (val->getType() != elemLLTy) {
+                    if (val->getType()->isIntegerTy() && elemLLTy->isIntegerTy())
+                        val = builder_->CreateIntCast(val, elemLLTy, elemTI->isSigned);
+                    else if (val->getType()->isFloatingPointTy() && elemLLTy->isFloatingPointTy())
+                        val = builder_->CreateFPCast(val, elemLLTy);
+                }
+                builder_->CreateCall(fn, {alloca, val});
+            }
+            consumeExprIfOwnedLocal(entry->expression(0));
+        }
+        return static_cast<llvm::Value*>(
+            builder_->CreateLoad(collTy, alloca, baseName + "_val"));
+    }
+
+    // ── Map<K,V> ─────────────────────────────────────────────────────
+    if (baseName == "Map") {
+        if (entries.empty()) {
+            auto* mapTy = getOrCreateMapStructType();
+            return static_cast<llvm::Value*>(llvm::UndefValue::get(mapTy));
+        }
+        // Resolve key/value types from first entry
+        auto* keyTI = resolveExprTypeInfo(entries[0]->expression(0));
+        auto* valTI = resolveExprTypeInfo(entries[0]->expression(1));
+        if (!keyTI || !valTI) {
+            std::cerr << "lucis: cannot determine Map key/value types\n";
+            return static_cast<llvm::Value*>(llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
+        }
+        auto valSuffix = valTI->builtinSuffix.empty() ? "raw" : valTI->builtinSuffix;
+        auto suffix = keyTI->builtinSuffix + "_" + valSuffix;
+
+        auto* mapTy  = getOrCreateMapStructType();
+        auto* alloca = builder_->CreateAlloca(mapTy, nullptr, "Map_bang");
+        bool isRaw = (valSuffix == "raw");
+        auto& dlMap = module_->getDataLayout();
+
+        if (isRaw) {
+            auto* valLLTy = valTI->toLLVMType(*context_, dlMap);
+            auto valSz = dlMap.getTypeAllocSize(valLLTy);
+            auto initFn = declareBuiltin("lucis_map_init_" + suffix, voidTy, {ptrTy, usizeTy});
+            builder_->CreateCall(initFn, {alloca, llvm::ConstantInt::get(usizeTy, valSz)});
+        } else {
+            auto initFn = declareBuiltin("lucis_map_init_" + suffix, voidTy, {ptrTy});
+            builder_->CreateCall(initFn, {alloca});
+        }
+
+        auto* keyLLTy = keyTI->toLLVMType(*context_, module_->getDataLayout());
+        auto* valLLTy = valTI->toLLVMType(*context_, module_->getDataLayout());
+        auto insertName = "lucis_map_set_" + suffix;
+
+        for (auto* entry : entries) {
+            auto* key = castValue(visit(entry->expression(0)));
+            auto* val = castValue(visit(entry->expression(1)));
+            if (isRaw) {
+                auto* kTmp = builder_->CreateAlloca(key->getType());
+                builder_->CreateStore(key, kTmp);
+                auto* vTmp = builder_->CreateAlloca(val->getType());
+                builder_->CreateStore(val, vTmp);
+                auto fn = declareBuiltin(insertName, voidTy, {ptrTy, ptrTy, ptrTy});
+                builder_->CreateCall(fn, {alloca, kTmp, vTmp});
+            } else {
+                auto fn = declareBuiltin(insertName, voidTy, {ptrTy, keyLLTy, valLLTy});
+                builder_->CreateCall(fn, {alloca, key, val});
+            }
+            consumeExprIfOwnedLocal(entry->expression(0));
+            consumeExprIfOwnedLocal(entry->expression(1));
+        }
+        return static_cast<llvm::Value*>(
+            builder_->CreateLoad(mapTy, alloca, "Map_val"));
+    }
+
+    std::cerr << "lucis: unsupported bang-initializer type '" << baseName << "'\n";
+    return static_cast<llvm::Value*>(llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
 }
 
 std::any IRGen::visitListCompExpr(LucisParser::ListCompExprContext* ctx) {
@@ -19557,6 +19723,35 @@ const TypeInfo* IRGen::resolveExprTypeInfo(LucisParser::ExpressionContext* ctx) 
         }
 
         return nullptr;
+    }
+
+    // ── Bang-init: vec!{...}, map!{...}, set!{...} ───────────────────
+    if (auto* bi = dynamic_cast<LucisParser::BangInitExprContext*>(ctx)) {
+        std::string baseName;
+        if (bi->VEC())       baseName = "Vec";
+        else if (bi->MAP())  baseName = "Map";
+        else if (bi->SET())  baseName = "Set";
+        else if (bi->IDENTIFIER()) baseName = bi->IDENTIFIER()->getText();
+        if (baseName.empty()) return nullptr;
+
+        auto entries = bi->bangEntry();
+        if (entries.empty()) return nullptr;
+
+        if (baseName == "Vec" || baseName == "Set") {
+            auto* elemTI = resolveExprTypeInfo(entries[0]->expression(0));
+            if (!elemTI) return nullptr;
+            std::string fullName = baseName + "<" + elemTI->name + ">";
+            if (auto* existing = typeRegistry_.lookup(fullName)) return existing;
+            return typeRegistry_.lookup(elemTI->name); // partial fallback
+        } else if (baseName == "Map") {
+            auto* keyTI = resolveExprTypeInfo(entries[0]->expression(0));
+            auto* valTI = resolveExprTypeInfo(entries[0]->expression(1));
+            if (!keyTI || !valTI) return nullptr;
+            std::string fullName = baseName + "<" + keyTI->name + ", " + valTI->name + ">";
+            if (auto* existing = typeRegistry_.lookup(fullName)) return existing;
+            return typeRegistry_.lookup(keyTI->name); // partial fallback
+        }
+        return typeRegistry_.lookup(baseName);
     }
 
     // ── Array literal: [expr, ...] → element type ───────────────────

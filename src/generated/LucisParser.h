@@ -70,8 +70,8 @@ public:
     RuleLockStmt = 76, RuleTryCatchStmt = 77, RuleCatchClause = 78, RuleFinallyClause = 79, 
     RuleThrowStmt = 80, RuleSwitchStmt = 81, RuleCaseClause = 82, RuleDefaultClause = 83, 
     RuleMatchArm = 84, RulePattern = 85, RuleLiteralPattern = 86, RuleExpression = 87, 
-    RuleTypeSpec = 88, RuleFnTypeSpec = 89, RulePrimitiveType = 90, RuleCMacroBlock = 91, 
-    RuleAsmBBlock = 92
+    RuleTypeSpec = 88, RuleBangEntry = 89, RuleFnTypeSpec = 90, RulePrimitiveType = 91, 
+    RuleCMacroBlock = 92, RuleAsmBBlock = 93
   };
 
   explicit LucisParser(antlr4::TokenStream *input);
@@ -180,6 +180,7 @@ public:
   class LiteralPatternContext;
   class ExpressionContext;
   class TypeSpecContext;
+  class BangEntryContext;
   class FnTypeSpecContext;
   class PrimitiveTypeContext;
   class CMacroBlockContext;
@@ -2930,6 +2931,25 @@ public:
     virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
   };
 
+  class  BangInitExprContext : public ExpressionContext {
+  public:
+    BangInitExprContext(ExpressionContext *ctx);
+
+    antlr4::tree::TerminalNode *NOT();
+    antlr4::tree::TerminalNode *LBRACE();
+    antlr4::tree::TerminalNode *RBRACE();
+    antlr4::tree::TerminalNode *IDENTIFIER();
+    antlr4::tree::TerminalNode *VEC();
+    antlr4::tree::TerminalNode *MAP();
+    antlr4::tree::TerminalNode *SET();
+    std::vector<BangEntryContext *> bangEntry();
+    BangEntryContext* bangEntry(size_t i);
+    std::vector<antlr4::tree::TerminalNode *> COMMA();
+    antlr4::tree::TerminalNode* COMMA(size_t i);
+
+    virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+  };
+
   class  StrLitExprContext : public ExpressionContext {
   public:
     StrLitExprContext(ExpressionContext *ctx);
@@ -3180,6 +3200,21 @@ public:
 
   TypeSpecContext* typeSpec();
   TypeSpecContext* typeSpec(int precedence);
+  class  BangEntryContext : public antlr4::ParserRuleContext {
+  public:
+    BangEntryContext(antlr4::ParserRuleContext *parent, size_t invokingState);
+    virtual size_t getRuleIndex() const override;
+    std::vector<ExpressionContext *> expression();
+    ExpressionContext* expression(size_t i);
+    antlr4::tree::TerminalNode *COLON();
+
+
+    virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+   
+  };
+
+  BangEntryContext* bangEntry();
+
   class  FnTypeSpecContext : public antlr4::ParserRuleContext {
   public:
     FnTypeSpecContext(antlr4::ParserRuleContext *parent, size_t invokingState);

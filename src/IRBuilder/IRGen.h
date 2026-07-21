@@ -147,6 +147,7 @@ public:
     std::optional<std::string> getCfgTargetString(const std::string& name);
     std::optional<int64_t> getCfgTargetInt(const std::string& name);
     std::any visitArrayLitExpr(LucisParser::ArrayLitExprContext* ctx)   override;
+    std::any visitBangInitExpr(LucisParser::BangInitExprContext* ctx)   override;
     std::any visitListCompExpr(LucisParser::ListCompExprContext* ctx)   override;
     std::any visitIndexExpr(LucisParser::IndexExprContext* ctx)         override;
     std::any visitStructLitExpr(LucisParser::StructLitExprContext* ctx) override;

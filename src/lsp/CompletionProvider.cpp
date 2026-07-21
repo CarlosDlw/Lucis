@@ -5601,16 +5601,33 @@ void CompletionProvider::addKeywords(std::vector<CompletionItem> &items,
        "throw",  "spawn",  "await",     "lock",   "defer",    "as",
        "match",  "or",     "is",     "in",     "sizeof",    "typeof", "alignof",  "offsetof", "true",     "false",
        "null",   "return", "asm", "asm_b", "c_macro", "volatile",
-        "goto",   "intel", "comptime", "const", "Self"};
-
-  for (auto *kw : keywords) {
-    if (!matchesPrefix(kw, prefix))
-      continue;
-    CompletionItem ci;
-    ci.label = kw;
-    ci.kind = CompletionKind::Keyword;
-    items.push_back(std::move(ci));
-  }
+        "goto",   "intel", "comptime", "const", "Self",
+        "vec",    "map",   "set"};
+ 
+   for (auto *kw : keywords) {
+     if (!matchesPrefix(kw, prefix))
+       continue;
+     CompletionItem ci;
+     ci.label = kw;
+     ci.kind = CompletionKind::Keyword;
+     items.push_back(std::move(ci));
+   }
+ 
+   // Bang-init snippets: vec!{}, map!{}, set!{}
+   auto tryBangInit = [&](const std::string& name) {
+     std::string bang = name + "!";
+     if (matchesPrefix(bang, prefix) || matchesPrefix(name, prefix + "!")) {
+       CompletionItem ci;
+       ci.label = name + "!{}";
+       ci.kind = CompletionKind::Snippet;
+       ci.detail = name + " collection initializer";
+       ci.insertText = name + "!{}";
+       items.push_back(std::move(ci));
+     }
+   };
+   tryBangInit("vec");
+   tryBangInit("map");
+   tryBangInit("set");
 
   // #include directive (matches on "include" or "#include")
   bool matchHash = !prefix.empty() && prefix[0] == '#' &&

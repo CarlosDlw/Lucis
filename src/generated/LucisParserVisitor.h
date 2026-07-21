@@ -353,6 +353,8 @@ public:
 
     virtual std::any visitQualifiedStructPosInitExpr(LucisParser::QualifiedStructPosInitExprContext *context) = 0;
 
+    virtual std::any visitBangInitExpr(LucisParser::BangInitExprContext *context) = 0;
+
     virtual std::any visitStrLitExpr(LucisParser::StrLitExprContext *context) = 0;
 
     virtual std::any visitAwaitExpr(LucisParser::AwaitExprContext *context) = 0;
@@ -392,6 +394,8 @@ public:
     virtual std::any visitRangeExpr(LucisParser::RangeExprContext *context) = 0;
 
     virtual std::any visitTypeSpec(LucisParser::TypeSpecContext *context) = 0;
+
+    virtual std::any visitBangEntry(LucisParser::BangEntryContext *context) = 0;
 
     virtual std::any visitFnTypeSpec(LucisParser::FnTypeSpecContext *context) = 0;
 
