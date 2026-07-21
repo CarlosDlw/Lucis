@@ -188,6 +188,13 @@ static const TypeInfo* singlePayloadType(const EnumVariantInfo& variant) {
     return variant.payloadFields[0].typeInfo;
 }
 
+// Check if type is or inherits from a type with the given name
+static bool isOrInheritsFrom(const TypeInfo* ti, const std::string& name) {
+    for (auto* t = ti; t; t = t->parentType)
+        if (t->name == name) return true;
+    return false;
+}
+
 static bool classifyUnwrapCatchEnum(const TypeInfo* enumType,
                                     UnwrapCatchPatternInfo& out,
                                     std::string& reason) {
@@ -209,7 +216,7 @@ static bool classifyUnwrapCatchEnum(const TypeInfo* enumType,
             || variant.isError
             || (variant.payloadFields.size() == 1
                 && variant.payloadFields[0].typeInfo
-                && variant.payloadFields[0].typeInfo->name == "Error");
+                && isOrInheritsFrom(variant.payloadFields[0].typeInfo, "Error"));
 
         if (looksLikeErr) {
             if (out.errVariant) {
@@ -3531,7 +3538,7 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
                     || v.isError
                     || (v.payloadFields.size() == 1
                         && v.payloadFields[0].typeInfo
-                        && v.payloadFields[0].typeInfo->name == "Error");
+                        && isOrInheritsFrom(v.payloadFields[0].typeInfo, "Error"));
                 if (isErr) { pattern.errVariant = &v; break; }
             }
             if (!pattern.errVariant) {
