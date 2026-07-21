@@ -7091,6 +7091,36 @@ void Checker::checkExtendDecl(LucisParser::ExtendDeclContext* decl) {
                 info.paramTypes.push_back(pType);
             }
 
+            // ── Operator arity validation ──────────────────────────
+            if (internalName != "opIndex" && internalName != "opCall") {
+                int numOperands = -1; // expected number of operands
+                if (internalName == "opNot" || internalName == "opBitNot")
+                    numOperands = 1;
+                else if (internalName == "opIncr" || internalName == "opDecr")
+                    numOperands = 1;
+                else if (internalName == "opSub")
+                    numOperands = -1; // both unary (-x) and binary (x - y) allowed
+                else if (internalName != "opUnknown")
+                    numOperands = 2;
+
+                if (numOperands > 0) {
+                    size_t paramCount = info.paramTypes.size();
+                    size_t expected = info.isInstance ? (numOperands - 1) : numOperands;
+                    if (paramCount != expected) {
+                        std::string msg = "operator '" + sym + "' expects " +
+                                          std::to_string(expected) + " parameter(s)";
+                        if (info.isInstance) {
+                            msg += " after &self";
+                        } else if (paramCount < expected && paramCount > 0) {
+                            msg += "; missing left-hand side operand or add '&self'";
+                        }
+                        msg += ", got " + std::to_string(paramCount);
+                        error(opDecl, msg);
+                    }
+                }
+            }
+            // ── End arity validation ───────────────────────────────
+
             operatorMethods_[structName].push_back(std::move(info));
             continue;
         }

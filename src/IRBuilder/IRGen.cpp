@@ -17130,8 +17130,11 @@ std::any IRGen::visitMulExpr(LucisParser::MulExprContext* ctx) {
         auto opName = opTextToInternal(ctx->op->getText());
         if (!opName.empty()) {
             if (auto* entry = findOperatorEntryInChain(lhsTI, opName)) {
-                auto* result = builder_->CreateCall(entry->fn, {lhs, rhs}, opName);
-                return static_cast<llvm::Value*>(result);
+                auto* fn = entry->fn;
+                auto* call = fn->getReturnType()->isVoidTy()
+                    ? builder_->CreateCall(fn, {lhs, rhs})
+                    : builder_->CreateCall(fn, {lhs, rhs}, opName);
+                return static_cast<llvm::Value*>(call);
             }
         }
     }
@@ -17247,7 +17250,10 @@ std::any IRGen::visitAddSubExpr(LucisParser::AddSubExprContext* ctx) {
             auto opName = opTextToInternal(ctx->op->getText());
             if (!opName.empty()) {
                 if (auto* entry = findOperatorEntryInChain(lhsTI, opName)) {
-                    auto* result = builder_->CreateCall(entry->fn, {lhs, rhs}, opName);
+                    auto* call = builder_->CreateCall(entry->fn, {lhs, rhs});
+                    if (!call->getType()->isVoidTy())
+                        call->setName(opName);
+                    auto* result = call;
                     return static_cast<llvm::Value*>(result);
                 }
             }
@@ -17344,7 +17350,10 @@ std::any IRGen::visitLshiftExpr(LucisParser::LshiftExprContext* ctx) {
         auto* lhsTI = resolveExprTypeInfo(ctx->expression(0));
         if (lhsTI && lhsTI->kind == TypeKind::Struct) {
             if (auto* entry = findOperatorEntryInChain(lhsTI, "opShl")) {
-                auto* result = builder_->CreateCall(entry->fn, {lhs, rhs}, "opShl");
+                auto* call = builder_->CreateCall(entry->fn, {lhs, rhs});
+                    if (!call->getType()->isVoidTy())
+                        call->setName("opShl");
+                    auto* result = call;
                 return static_cast<llvm::Value*>(result);
             }
         }
@@ -17363,7 +17372,10 @@ std::any IRGen::visitRshiftExpr(LucisParser::RshiftExprContext* ctx) {
         auto* lhsTI = resolveExprTypeInfo(ctx->expression(0));
         if (lhsTI && lhsTI->kind == TypeKind::Struct) {
             if (auto* entry = findOperatorEntryInChain(lhsTI, "opShr")) {
-                auto* result = builder_->CreateCall(entry->fn, {lhs, rhs}, "opShr");
+                auto* call = builder_->CreateCall(entry->fn, {lhs, rhs});
+                    if (!call->getType()->isVoidTy())
+                        call->setName("opShr");
+                    auto* result = call;
                 return static_cast<llvm::Value*>(result);
             }
         }
@@ -18320,7 +18332,10 @@ std::any IRGen::visitRelExpr(LucisParser::RelExprContext* ctx) {
         auto opName = opTextToInternal(ctx->op->getText());
         if (!opName.empty()) {
             if (auto* entry = findOperatorEntryInChain(lhsTI, opName)) {
-                auto* result = builder_->CreateCall(entry->fn, {lhs, rhs}, opName);
+                auto* call = builder_->CreateCall(entry->fn, {lhs, rhs});
+                    if (!call->getType()->isVoidTy())
+                        call->setName(opName);
+                    auto* result = call;
                 return static_cast<llvm::Value*>(result);
             }
         }
@@ -18382,7 +18397,10 @@ std::any IRGen::visitEqExpr(LucisParser::EqExprContext* ctx) {
         auto opName = opTextToInternal(ctx->op->getText());
         if (!opName.empty()) {
             if (auto* entry = findOperatorEntryInChain(lhsTI, opName)) {
-                auto* result = builder_->CreateCall(entry->fn, {lhs, rhs}, opName);
+                auto* call = builder_->CreateCall(entry->fn, {lhs, rhs});
+                    if (!call->getType()->isVoidTy())
+                        call->setName(opName);
+                    auto* result = call;
                 return static_cast<llvm::Value*>(result);
             }
         }

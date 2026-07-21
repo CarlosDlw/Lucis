@@ -175,6 +175,8 @@ def main():
     ))
 
     # Cross-file via project: Stack<int32>.push on indexed array element
+    # Create temp file in ztests/ so project context discovers stdlib
+    test2_src_file = os.path.join(ZTEST_DIR, "src", "_lsp_test_stack.lc")
     src2 = (
         "use container::Stack;\n"
         "\n"
@@ -184,7 +186,9 @@ def main():
         "  return 0;\n"
         "}\n"
     )
-    test2_uri = "file://" + os.path.join(ZTEST_DIR, "src", "main.lc")
+    with open(test2_src_file, "w") as f:
+        f.write(src2)
+    test2_uri = "file://" + test2_src_file
     test2_root = "file://" + ZTEST_DIR
     tests.append((
         "Stack<int32>.push shows Stack's push only (not ArrayList/Vec)",
@@ -196,6 +200,14 @@ def main():
     print(f"Running {len(tests)} signature help test(s) …\n")
     for args in tests:
         test(*args)
+
+    # Cleanup temp files
+    for fname in ["_lsp_test_stack.lc"]:
+        fpath = os.path.join(ZTEST_DIR, "src", fname)
+        try:
+            os.remove(fpath)
+        except OSError:
+            pass
 
     print(f"\n{'='*50}")
     print(f"  {passed} passed, {failed} failed out of {len(tests)}")
