@@ -5702,11 +5702,20 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
             return nullptr;
         }
 
-        // Validate argument types before instantiation
-        if (auto* argList = gfc->argList()) {
-            auto args = argList->expression();
-            if (auto* pl = funcIt->second.decl->paramList()) {
-                auto params = pl->param();
+        // Validate argument count and types before instantiation
+        if (auto* pl = funcIt->second.decl->paramList()) {
+            auto params = pl->param();
+            size_t argCount = gfc->argList() ? gfc->argList()->expression().size() : 0;
+            if (argCount != params.size()) {
+                error(expr, "'" + funcName + "' expects " +
+                       std::to_string(params.size()) + " argument(s), got " +
+                       std::to_string(argCount));
+                // Still resolve arg types to avoid cascading errors
+                if (auto* al = gfc->argList())
+                    for (auto* a : al->expression()) resolveExprType(a);
+                return instantiateGenericFunc(funcName, funcIt->second, typeArgs, expr);
+            }
+            auto args = gfc->argList()->expression();
                 for (size_t i = 0; i < args.size() && i < params.size(); i++) {
                     auto* argType = resolveExprType(args[i]);
                     if (!argType) continue;
@@ -5721,7 +5730,6 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
                                        "', got '" + argType->name + "'");
                 }
             }
-        }
 
         // Instantiate (type-check the body with concrete types)
         return instantiateGenericFunc(funcName, funcIt->second, typeArgs, expr);
