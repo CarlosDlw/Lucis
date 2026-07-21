@@ -18,4 +18,6 @@ LucisOs
 notes.md
 map.md
 bugs.md
+*.log
+lsp_stderr.log
 
