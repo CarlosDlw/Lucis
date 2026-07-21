@@ -5702,6 +5702,27 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
             return nullptr;
         }
 
+        // Validate argument types before instantiation
+        if (auto* argList = gfc->argList()) {
+            auto args = argList->expression();
+            if (auto* pl = funcIt->second.decl->paramList()) {
+                auto params = pl->param();
+                for (size_t i = 0; i < args.size() && i < params.size(); i++) {
+                    auto* argType = resolveExprType(args[i]);
+                    if (!argType) continue;
+                    unsigned pDims = 0;
+                    // Build substitution map for parameter type resolution
+                    std::unordered_map<std::string, const TypeInfo*> subst;
+                    for (size_t j = 0; j < funcIt->second.typeParams.size() && j < typeArgs.size(); j++)
+                        subst[funcIt->second.typeParams[j]] = typeArgs[j];
+                    auto* paramType = resolveTypeSpecWithSubst(params[i]->typeSpec(), subst, pDims);
+                    if (paramType && !isAssignable(paramType, argType))
+                        error(args[i], "type mismatch: expected '" + paramType->name +
+                                       "', got '" + argType->name + "'");
+                }
+            }
+        }
+
         // Instantiate (type-check the body with concrete types)
         return instantiateGenericFunc(funcName, funcIt->second, typeArgs, expr);
     }
@@ -6299,9 +6320,17 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
             }
 
             if (!elemType) {
-                // Empty initializer or unresolvable — cannot infer type
+                // Empty initializer — return base type for error detection
+                auto ti = std::make_unique<TypeInfo>();
+                ti->name = baseName;
+                ti->kind = TypeKind::Extended;
+                ti->bitWidth = 0;
+                ti->isSigned = false;
+                ti->extendedKind = baseName;
+                const TypeInfo* raw = ti.get();
+                dynamicTypes_.push_back(std::move(ti));
                 recursionDepth_--;
-                return nullptr;
+                return raw;
             }
 
             std::string fullName = baseName + "<" + elemType->name + ">";
@@ -6351,8 +6380,17 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
             }
 
             if (!keyType || !valType) {
+                // Empty Map — return base type for error detection
+                auto ti = std::make_unique<TypeInfo>();
+                ti->name = baseName;
+                ti->kind = TypeKind::Extended;
+                ti->bitWidth = 0;
+                ti->isSigned = false;
+                ti->extendedKind = baseName;
+                const TypeInfo* raw = ti.get();
+                dynamicTypes_.push_back(std::move(ti));
                 recursionDepth_--;
-                return nullptr;
+                return raw;
             }
 
             std::string fullName = baseName + "<" + keyType->name + ", " + valType->name + ">";

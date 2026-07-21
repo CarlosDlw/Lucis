@@ -10337,9 +10337,9 @@ std::any IRGen::visitBangInitExpr(LucisParser::BangInitExprContext* ctx) {
         auto* collTy = (baseName == "Vec")
             ? getOrCreateVecStructType() : getOrCreateSetStructType();
 
-        // Empty initializer: return undef — caller initializes with correct type
+        // Empty initializer: return zero-initialized collection (null ptr, 0 len/cap)
         if (entries.empty()) {
-            return static_cast<llvm::Value*>(llvm::UndefValue::get(collTy));
+            return static_cast<llvm::Value*>(llvm::ConstantAggregateZero::get(collTy));
         }
 
         auto* alloca = builder_->CreateAlloca(collTy, nullptr, baseName + "_bang");
@@ -10405,7 +10405,7 @@ std::any IRGen::visitBangInitExpr(LucisParser::BangInitExprContext* ctx) {
     if (baseName == "Map") {
         if (entries.empty()) {
             auto* mapTy = getOrCreateMapStructType();
-            return static_cast<llvm::Value*>(llvm::UndefValue::get(mapTy));
+            return static_cast<llvm::Value*>(llvm::ConstantAggregateZero::get(mapTy));
         }
         // Resolve key/value types from first entry
         auto* keyTI = resolveExprTypeInfo(entries[0]->expression(0));
