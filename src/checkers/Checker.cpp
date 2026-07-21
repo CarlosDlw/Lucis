@@ -203,19 +203,15 @@ static bool classifyUnwrapCatchEnum(const TypeInfo* enumType,
     }
 
     for (const auto& variant : enumType->enumVariantInfos) {
-        auto* payloadTI = singlePayloadType(variant);
-        if (!payloadTI) {
-            reason = "unwrap-catch requires each variant in enum '" + enumType->name +
-                     "' to have exactly one payload field";
-            return false;
-        }
+        // Error variant: 0 payload fields (e.g. Option<T>::Nothing),
+        // or #[error] attribute, or payload type is Error.
+        bool looksLikeErr = variant.payloadFields.empty()
+            || variant.isError
+            || (variant.payloadFields.size() == 1
+                && variant.payloadFields[0].typeInfo
+                && variant.payloadFields[0].typeInfo->name == "Error");
 
-        // "error" variant: #[error] attribute or naming convention
-        bool isErrName = variant.isError ||
-                         variant.name == "Err" || variant.name == "Error" ||
-                         variant.name == "Failure" || variant.name == "Fail" ||
-                         variant.name == "None";
-        if (isErrName || payloadTI->name == "Error") {
+        if (looksLikeErr) {
             if (out.errVariant) {
                 reason = "unwrap-catch requires exactly one error variant in enum '" +
                          enumType->name + "'";
@@ -223,6 +219,12 @@ static bool classifyUnwrapCatchEnum(const TypeInfo* enumType,
             }
             out.errVariant = &variant;
         } else {
+            // Success variant must have exactly one payload field
+            if (variant.payloadFields.size() != 1) {
+                reason = "unwrap-catch requires success variant in enum '" +
+                         enumType->name + "' to have exactly one payload field";
+                return false;
+            }
             if (out.okVariant) {
                 reason = "unwrap-catch requires exactly one success variant in enum '" +
                          enumType->name + "'";
@@ -3525,14 +3527,11 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
                 return nullptr;
             }
             for (const auto& v : sourceType->enumVariantInfos) {
-                bool isErr = v.isError ||
-                             v.name == "Err" || v.name == "Error" ||
-                             v.name == "Failure" || v.name == "Fail" ||
-                             v.name == "None";
-                if (!isErr && v.payloadFields.size() == 1 &&
-                    v.payloadFields[0].typeInfo &&
-                    v.payloadFields[0].typeInfo->name == "Error")
-                    isErr = true;
+                bool isErr = v.payloadFields.empty()
+                    || v.isError
+                    || (v.payloadFields.size() == 1
+                        && v.payloadFields[0].typeInfo
+                        && v.payloadFields[0].typeInfo->name == "Error");
                 if (isErr) { pattern.errVariant = &v; break; }
             }
             if (!pattern.errVariant) {
@@ -3587,21 +3586,27 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
 
         auto* errPayloadTI = pattern.errVariant
             ? singlePayloadType(*pattern.errVariant) : nullptr;
-        if (!errPayloadTI) errPayloadTI = typeRegistry_.lookup("Error");
-        auto saved = locals_.find("it");
-        bool hadSaved = saved != locals_.end();
-        VarInfo savedInfo;
-        if (hadSaved) savedInfo = saved->second;
 
-        locals_["it"] = {errPayloadTI, 0, {}, true, true, nullptr};
+        if (errPayloadTI) {
+            auto saved = locals_.find("it");
+            bool hadSaved = saved != locals_.end();
+            VarInfo savedInfo;
+            if (hadSaved) savedInfo = saved->second;
 
-        ++unwrapCatchItDepth_;
-        auto* retCtx = currentReturnType_ ? currentReturnType_ : typeRegistry_.lookup("void");
-        checkBlock(cu->block(), retCtx);
-        --unwrapCatchItDepth_;
+            locals_["it"] = {errPayloadTI, 0, {}, true, true, nullptr};
 
-        if (hadSaved) locals_["it"] = savedInfo;
-        else locals_.erase("it");
+            ++unwrapCatchItDepth_;
+            auto* retCtx = currentReturnType_ ? currentReturnType_ : typeRegistry_.lookup("void");
+            checkBlock(cu->block(), retCtx);
+            --unwrapCatchItDepth_;
+
+            if (hadSaved) locals_["it"] = savedInfo;
+            else locals_.erase("it");
+        } else {
+            // No payload in error variant (e.g. Option<T>::Nothing)
+            auto* retCtx = currentReturnType_ ? currentReturnType_ : typeRegistry_.lookup("void");
+            checkBlock(cu->block(), retCtx);
+        }
 
         return singlePayloadType(*pattern.okVariant);
     }

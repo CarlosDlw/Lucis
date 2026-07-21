@@ -30,8 +30,8 @@ enum Result<T> {
  * Use for cases where a value may or may not be present.
  * Prefer `Result<T>` when the absence is an error condition.
  *
- * Note: `Nothing` has no payload, so `Option<T>` is not compatible
- * with `?`/`catch` in value-returning functions. Use explicit `is` matching.
+ * `Option<T>` works with `?` (propagate operator). `Nothing` is
+ * treated as the error variant and propagates as `Nothing`.
  *
  * @example
  * fn find(int32[] arr, int32 target) Option<int32> {

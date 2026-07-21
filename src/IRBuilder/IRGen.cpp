@@ -250,18 +250,13 @@ static bool classifyUnwrapCatchEnum(const TypeInfo* enumType,
     }
 
     for (const auto& variant : enumType->enumVariantInfos) {
-        auto* payloadTI = singlePayloadType(variant);
-        if (!payloadTI) {
-            reason = "unwrap-catch requires each variant in enum '" + enumType->name +
-                     "' to have exactly one payload field";
-            return false;
-        }
+        bool looksLikeErr = variant.payloadFields.empty()
+            || variant.isError
+            || (variant.payloadFields.size() == 1
+                && variant.payloadFields[0].typeInfo
+                && variant.payloadFields[0].typeInfo->name == "Error");
 
-        bool isErrName = variant.isError ||
-                         variant.name == "Err" || variant.name == "Error" ||
-                         variant.name == "Failure" || variant.name == "Fail" ||
-                         variant.name == "None";
-        if (isErrName || payloadTI->name == "Error") {
+        if (looksLikeErr) {
             if (out.errVariant) {
                 reason = "unwrap-catch requires exactly one error variant in enum '" +
                          enumType->name + "'";
@@ -269,6 +264,11 @@ static bool classifyUnwrapCatchEnum(const TypeInfo* enumType,
             }
             out.errVariant = &variant;
         } else {
+            if (variant.payloadFields.size() != 1) {
+                reason = "unwrap-catch requires success variant in enum '" +
+                         enumType->name + "' to have exactly one payload field";
+                return false;
+            }
             if (out.okVariant) {
                 reason = "unwrap-catch requires exactly one success variant in enum '" +
                          enumType->name + "'";
@@ -25563,7 +25563,7 @@ std::any IRGen::visitCatchUnwrapExpr(LucisParser::CatchUnwrapExprContext* ctx) {
     auto* enumLLTy = sourceTI->toLLVMType(*context_, module_->getDataLayout());
     auto* okPayloadTy = getEnumVariantPayloadType(*pattern.okVariant);
     auto* errPayloadTy = getEnumVariantPayloadType(*pattern.errVariant);
-    if (!okPayloadTy || !errPayloadTy) {
+    if (!okPayloadTy) {
         std::cerr << "lucis: invalid unwrap-catch enum payload layout\n";
         return static_cast<llvm::Value*>(llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
     }
@@ -25594,33 +25594,40 @@ std::any IRGen::visitCatchUnwrapExpr(LucisParser::CatchUnwrapExprContext* ctx) {
     builder_->CreateBr(mergeBB);
     auto* okEndBB = builder_->GetInsertBlock();
 
-    // Error path: bind implicit `it` and run catch block.
+    // Error path: bind implicit `it` (if err has payload) and run catch block.
     builder_->SetInsertPoint(errBB);
-    auto* rawErrPayloadPtr = builder_->CreateStructGEP(enumLLTy, tempAlloca, 1, "unwrap.err.payload.ptr");
-    auto* errPayloadPtr = builder_->CreateBitCast(
-        rawErrPayloadPtr,
-        llvm::PointerType::getUnqual(errPayloadTy),
-        "unwrap.err.payload.cast");
-    auto* errPayloadVal = builder_->CreateLoad(errPayloadTy, errPayloadPtr, "unwrap.err.payload");
+    if (errPayloadTy) {
+        auto* rawErrPayloadPtr = builder_->CreateStructGEP(enumLLTy, tempAlloca, 1, "unwrap.err.payload.ptr");
+        auto* errPayloadPtr = builder_->CreateBitCast(
+            rawErrPayloadPtr,
+            llvm::PointerType::getUnqual(errPayloadTy),
+            "unwrap.err.payload.cast");
+        auto* errPayloadVal = builder_->CreateLoad(errPayloadTy, errPayloadPtr, "unwrap.err.payload");
 
-    auto itSaved = locals_.find("it");
-    bool hadIt = itSaved != locals_.end();
-    VarInfo savedInfo;
-    if (hadIt) savedInfo = itSaved->second;
+        auto itSaved = locals_.find("it");
+        bool hadIt = itSaved != locals_.end();
+        VarInfo savedInfo;
+        if (hadIt) savedInfo = itSaved->second;
 
-    auto* itAlloca = builder_->CreateAlloca(errPayloadTy, nullptr, "it");
-    builder_->CreateStore(errPayloadVal, itAlloca);
-    unsigned itDims = 0;
-    if (pattern.errVariant && !pattern.errVariant->payloadFields.empty())
-        itDims = pattern.errVariant->payloadFields[0].arrayDims;
-    locals_["it"] = {itAlloca, singlePayloadType(*pattern.errVariant), itDims};
+        auto* itAlloca = builder_->CreateAlloca(errPayloadTy, nullptr, "it");
+        builder_->CreateStore(errPayloadVal, itAlloca);
+        unsigned itDims = 0;
+        if (!pattern.errVariant->payloadFields.empty())
+            itDims = pattern.errVariant->payloadFields[0].arrayDims;
+        locals_["it"] = {itAlloca, singlePayloadType(*pattern.errVariant), itDims};
 
-    for (auto* stmt : ctx->block()->statement()) {
-        visit(stmt);
+        for (auto* stmt : ctx->block()->statement()) {
+            visit(stmt);
+        }
+
+        if (hadIt) locals_["it"] = savedInfo;
+        else locals_.erase("it");
+    } else {
+        // No payload in error variant (e.g. Option<T>::Nothing) — no `it` binding
+        for (auto* stmt : ctx->block()->statement()) {
+            visit(stmt);
+        }
     }
-
-    if (hadIt) locals_["it"] = savedInfo;
-    else locals_.erase("it");
 
     bool errFallsThrough = !builder_->GetInsertBlock()->getTerminator();
     llvm::Value* errFallback = nullptr;
@@ -25662,14 +25669,12 @@ std::any IRGen::visitPropagateExpr(LucisParser::PropagateExprContext* ctx) {
             return {};
         }
         for (const auto& v : sourceTI->enumVariantInfos) {
-            bool isErr = v.isError ||
-                         v.name == "Err" || v.name == "Error" ||
-                         v.name == "Failure" || v.name == "Fail" ||
-                         v.name == "None";
-            if (!isErr && v.payloadFields.size() == 1 &&
-                v.payloadFields[0].typeInfo &&
-                v.payloadFields[0].typeInfo->name == "Error")
-                isErr = true;
+            // Error variant: 0 payload fields, #[error], or payload is Error
+            bool isErr = v.payloadFields.empty()
+                || v.isError
+                || (v.payloadFields.size() == 1
+                    && v.payloadFields[0].typeInfo
+                    && v.payloadFields[0].typeInfo->name == "Error");
             if (isErr) { pattern.errVariant = &v; break; }
         }
         if (!pattern.errVariant) {
@@ -25701,7 +25706,7 @@ std::any IRGen::visitPropagateExpr(LucisParser::PropagateExprContext* ctx) {
     auto* okPayloadTy = isVoidReturn ? nullptr
                         : getEnumVariantPayloadType(*pattern.okVariant);
     auto* errPayloadTy = getEnumVariantPayloadType(*pattern.errVariant);
-    if (!errPayloadTy || (!isVoidReturn && !okPayloadTy)) {
+    if (!isVoidReturn && !okPayloadTy) {
         std::cerr << "lucis: invalid propagate enum payload layout\n";
         return static_cast<llvm::Value*>(llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
     }
@@ -25736,16 +25741,20 @@ std::any IRGen::visitPropagateExpr(LucisParser::PropagateExprContext* ctx) {
         emitAllCleanups();
         builder_->CreateRetVoid();
     } else {
-        auto* rawErrPayloadPtr = builder_->CreateStructGEP(enumLLTy, tempAlloca, 1, "prop.err.payload.ptr");
-        auto* errPayloadPtr = builder_->CreateBitCast(
-            rawErrPayloadPtr,
-            llvm::PointerType::getUnqual(*context_),
-            "prop.err.payload.cast");
-        auto* errPayloadVal = builder_->CreateLoad(errPayloadTy, errPayloadPtr, "prop.err.payload");
-
-        // Build the full enum value from the error variant tag + payload
-        std::vector<llvm::Value*> payloads = {errPayloadVal};
-        auto* errEnumVal = buildEnumVariantValue(retEnumTI, *retPattern->errVariant, payloads);
+        llvm::Value* errEnumVal;
+        if (errPayloadTy) {
+            auto* rawErrPayloadPtr = builder_->CreateStructGEP(enumLLTy, tempAlloca, 1, "prop.err.payload.ptr");
+            auto* errPayloadPtr = builder_->CreateBitCast(
+                rawErrPayloadPtr,
+                llvm::PointerType::getUnqual(*context_),
+                "prop.err.payload.cast");
+            auto* errPayloadVal = builder_->CreateLoad(errPayloadTy, errPayloadPtr, "prop.err.payload");
+            std::vector<llvm::Value*> payloads = {errPayloadVal};
+            errEnumVal = buildEnumVariantValue(retEnumTI, *retPattern->errVariant, payloads);
+        } else {
+            // No payload in error variant (e.g. Option<T>::Nothing)
+            errEnumVal = buildEnumVariantValue(retEnumTI, *retPattern->errVariant, {});
+        }
         emitAllCleanups();
         builder_->CreateRet(errEnumVal);
     }
