@@ -907,10 +907,11 @@ std::any IRGen::visitProgram(LucisParser::ProgramContext* ctx) {
         auto* ptrTy   = llvm::PointerType::getUnqual(*context_);
         auto* usizeTy = module_->getDataLayout().getIntPtrType(*context_);
         auto* i32Ty   = llvm::Type::getInt32Ty(*context_);
+        auto* i64Ty   = llvm::Type::getInt64Ty(*context_);
         auto* strTy   = llvm::StructType::get(*context_, { ptrTy, usizeTy });
         auto* errorTy = llvm::StructType::create(
             *context_,
-            { strTy, strTy, i32Ty, i32Ty },
+            { strTy, strTy, i32Ty, i32Ty, i64Ty, i64Ty },
             "Error");
         (void)errorTy;
     }
@@ -25275,7 +25276,7 @@ std::any IRGen::visitTryCatchStmt(LucisParser::TryCatchStmtContext* ctx) {
         builder_->CreateBr(finallyBB);
     }
 
-    // ── catch block(s) ──────────────────────────────────────────────────
+    // ── catch block(s) with type dispatch ───────────────────────────────
     builder_->SetInsertPoint(catchBB);
 
     // Pop handler before running catch body
@@ -25286,30 +25287,100 @@ std::any IRGen::visitTryCatchStmt(LucisParser::TryCatchStmtContext* ctx) {
     auto* errorPtr = builder_->CreateCall(getErrFn, {framePtr}, "error_ptr");
     auto* errorVal = builder_->CreateLoad(errorTy, errorPtr, "caught_error");
 
-    // For each catch clause, introduce the error variable
-    for (auto* catchCtx : ctx->catchClause()) {
-        auto varName = catchCtx->IDENTIFIER()->getText();
+    // Read type discriminator fields from the caught error
+    auto* i64Ty = llvm::Type::getInt64Ty(*context_);
+    auto* thrownTypeId = builder_->CreateExtractValue(errorVal, {4}, "thrown_type_id");
+    auto* thrownParentId = builder_->CreateExtractValue(errorVal, {5}, "thrown_parent_id");
 
+    // FNV-1a hash for comparing type names
+    auto fnvHash = [](const std::string& s) -> uint64_t {
+        uint64_t h = 14695981039346656037ULL;
+        for (char c : s) { h ^= static_cast<uint8_t>(c); h *= 1099511628211ULL; }
+        return h;
+    };
+
+    // Build a chain of catch clauses with type checking.
+    // Clause 0 check is at catchBB; subsequent checks are at noMatch chain.
+    // After matching and executing a body, branch to finallyBB.
+
+    llvm::BasicBlock* prevNoMatch = nullptr;
+
+    auto emitCatchCheck = [&](llvm::BasicBlock* insertAt,
+                               size_t ci,
+                               llvm::BasicBlock*& outNoMatch) {
+        auto* catchCtx = ctx->catchClause()[ci];
+        auto varName = catchCtx->IDENTIFIER()->getText();
+        auto* catchTS = catchCtx->typeSpec();
+        auto* catchTI = catchTS ? resolveTypeInfo(catchTS)
+                                : typeRegistry_.lookup("Error");
+        uint64_t catchHash = fnvHash(catchTI ? catchTI->name : "Error");
+        uint64_t catchParentHash = 0;
+        if (catchTI && catchTI->parentType)
+            catchParentHash = fnvHash(catchTI->parentType->name);
+
+        builder_->SetInsertPoint(insertAt);
+        auto* matchExact = builder_->CreateICmpEQ(thrownTypeId,
+            llvm::ConstantInt::get(i64Ty, catchHash), "catch.match_exact");
+        auto* matchAsChild = builder_->CreateICmpEQ(thrownParentId,
+            llvm::ConstantInt::get(i64Ty, catchHash), "catch.match_child");
+        auto* matches = builder_->CreateOr(matchExact, matchAsChild, "catch.matches");
+
+        auto* bodyBB = llvm::BasicBlock::Create(*context_,
+            "catch.body." + std::to_string(ci), fn);
+        outNoMatch = llvm::BasicBlock::Create(*context_,
+            "catch.nomatch." + std::to_string(ci), fn);
+        builder_->CreateCondBr(matches, bodyBB, outNoMatch);
+
+        // Catch body
+        builder_->SetInsertPoint(bodyBB);
         auto* errAlloca = builder_->CreateAlloca(errorTy, nullptr, varName);
         builder_->CreateStore(errorVal, errAlloca);
-
         auto* errTI = typeRegistry_.lookup("Error");
         auto saved = locals_[varName];
         locals_[varName] = { errAlloca, errTI, 0 };
-
-        for (auto* stmt : catchCtx->block()->statement()) {
+        for (auto* stmt : catchCtx->block()->statement())
             visit(stmt);
-        }
-
-        // Restore previous binding if there was one
         if (saved.alloca)
             locals_[varName] = saved;
         else
             locals_.erase(varName);
+        if (!builder_->GetInsertBlock()->getTerminator())
+            builder_->CreateBr(finallyBB);
+    };
+
+    for (size_t ci = 0; ci < ctx->catchClause().size(); ci++) {
+        llvm::BasicBlock* noMatchBB = nullptr;
+        if (ci == 0) {
+            emitCatchCheck(catchBB, ci, noMatchBB);
+        } else if (ci + 1 < ctx->catchClause().size()) {
+            // Middle clause: check falls through from previous noMatch
+            emitCatchCheck(prevNoMatch, ci, noMatchBB);
+            prevNoMatch = noMatchBB;
+        } else {
+            // Last clause: noMatch goes to rethrow
+            emitCatchCheck(prevNoMatch, ci, noMatchBB);
+            // No match for last clause: re-throw
+            builder_->SetInsertPoint(noMatchBB);
+            builder_->CreateCall(pushFn, {framePtr});
+            auto* rethrowPtr = builder_->CreateCall(getErrFn, {framePtr}, "rethrow_ptr");
+            builder_->CreateStore(errorVal, rethrowPtr);
+            auto throwFn2 = declareBuiltin("lucis_eh_throw", voidTy, {ptrTy});
+            builder_->CreateCall(throwFn2, {rethrowPtr});
+            builder_->CreateUnreachable();
+        }
+        if (ci == 0) prevNoMatch = noMatchBB;
     }
 
-    if (!builder_->GetInsertBlock()->getTerminator())
-        builder_->CreateBr(finallyBB);
+    // Single clause: noMatch -> rethrow
+    if (ctx->catchClause().size() == 1) {
+        builder_->SetInsertPoint(prevNoMatch);
+        builder_->CreateCall(pushFn, {framePtr});
+        auto* rethrowPtr = builder_->CreateCall(getErrFn, {framePtr}, "rethrow_ptr");
+        builder_->CreateStore(errorVal, rethrowPtr);
+        auto throwFn2 = declareBuiltin("lucis_eh_throw", voidTy, {ptrTy});
+        builder_->CreateCall(throwFn2, {rethrowPtr});
+        builder_->CreateUnreachable();
+    }
 
     // ── finally block ───────────────────────────────────────────────────
     builder_->SetInsertPoint(finallyBB);
@@ -25350,8 +25421,35 @@ std::any IRGen::visitThrowStmt(LucisParser::ThrowStmtContext* ctx) {
     // Evaluate the expression (expected to be Error struct literal)
     auto* errorVal = castValue(visit(ctx->expression()));
 
-    // Error struct layout: { {ptr,usize} message, {ptr,usize} file, i32 line, i32 column }
+    // Error struct layout: { {ptr,usize} message, {ptr,usize} file, i32 line, i32 column,
+    //                        i64 type_id, i64 parent_type_id }
     //                        field 0               field 1           field 2    field 3
+    //                        field 4        field 5
+
+    // Compute FNV-1a hash for type identification
+    auto fnvHash = [](const std::string& s) -> uint64_t {
+        uint64_t h = 14695981039346656037ULL;
+        for (char c : s) { h ^= static_cast<uint8_t>(c); h *= 1099511628211ULL; }
+        return h;
+    };
+
+    // Set type_id and parent_type_id from the thrown value's LLVM struct type name
+    {
+        auto* i64Ty = llvm::Type::getInt64Ty(*context_);
+        std::string thrownTypeName = "Error";
+        uint64_t parentHash = 0;
+        if (auto* stTy = llvm::dyn_cast<llvm::StructType>(errorVal->getType())) {
+            thrownTypeName = stTy->getName().str();
+            // Look up parent type if this type inherits from another
+            auto* thrownTI = typeRegistry_.lookup(thrownTypeName);
+            if (thrownTI && thrownTI->parentType)
+                parentHash = fnvHash(thrownTI->parentType->name);
+        }
+        errorVal = builder_->CreateInsertValue(errorVal,
+            llvm::ConstantInt::get(i64Ty, fnvHash(thrownTypeName)), {4});
+        errorVal = builder_->CreateInsertValue(errorVal,
+            llvm::ConstantInt::get(i64Ty, parentHash), {5});
+    }
 
     // Auto-fill file if empty (len == 0)
     auto* fileLen = builder_->CreateExtractValue(errorVal, {1, 1}, "file_len");

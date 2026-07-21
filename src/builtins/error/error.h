@@ -4,7 +4,7 @@
 #include <stddef.h>
 #include <setjmp.h>
 
-// Error struct layout — must match LLVM struct { {ptr,usize}, {ptr,usize}, i32, i32 }
+// Error struct layout — must match LLVM struct { {ptr,usize}, {ptr,usize}, i32, i32, i64, i64 }
 typedef struct {
     const char* message_ptr;
     size_t      message_len;
@@ -12,6 +12,8 @@ typedef struct {
     size_t      file_len;
     int32_t     line;
     int32_t     column;
+    uint64_t    type_id;
+    uint64_t    parent_type_id;
 } lucis_error;
 
 // Exception handler stack frame

@@ -88,10 +88,13 @@ void TypeRegistry::registerBuiltins() {
 
     const TypeInfo* strTI  = lookup("string");
     const TypeInfo* i32TI  = lookup("int32");
+    const TypeInfo* i64TI  = lookup("int64");
 
     errorTI.fields.push_back({ "message", strTI, 0, {}, false });
     errorTI.fields.push_back({ "file",    strTI, 0, {}, true  });
     errorTI.fields.push_back({ "line",    i32TI, 0, {}, true  });
     errorTI.fields.push_back({ "column",  i32TI, 0, {}, true  });
+    errorTI.fields.push_back({ "type_id", i64TI, 0, {}, false });
+    errorTI.fields.push_back({ "parent_type_id", i64TI, 0, {}, false });
     registerType(std::move(errorTI));
 }
