@@ -18921,6 +18921,19 @@ const TypeInfo* IRGen::resolveTypeInfo(LucisParser::TypeSpecContext* ctx) {
 
     auto name = inner->getText();
 
+    // Self resolves to the enclosing extend block's struct type
+    if (inner->SELF()) {
+        for (auto* p = inner->parent; p; p = p->parent) {
+            if (auto* ext = dynamic_cast<LucisParser::ExtendDeclContext*>(p)) {
+                auto* ti = typeRegistry_.lookup(ext->IDENTIFIER()->getText());
+                if (ti) return ti;
+                break;
+            }
+        }
+        std::cerr << "lucis: 'Self' used outside of an 'extend' block\n";
+        return typeRegistry_.lookup("int32");
+    }
+
     // cstring is a built-in alias for *char
     if (name == "cstring") {
         auto ptrName = "*char";

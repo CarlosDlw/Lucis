@@ -2187,6 +2187,19 @@ const TypeInfo* Checker::resolveTypeSpec(LucisParser::TypeSpecContext* ctx,
     // Primitive or named type
     auto name = cur->getText();
 
+    // Self resolves to the enclosing extend block's struct type
+    if (cur->SELF()) {
+        for (auto* p = cur->parent; p; p = p->parent) {
+            if (auto* ext = dynamic_cast<LucisParser::ExtendDeclContext*>(p)) {
+                auto* ti = typeRegistry_.lookup(ext->IDENTIFIER()->getText());
+                if (ti) return ti;
+                break;
+            }
+        }
+        error(cur, "'Self' used outside of an 'extend' block");
+        return nullptr;
+    }
+
     // cstring is a built-in alias for *char
     if (name == "cstring")
         return getPointerType(typeRegistry_.lookup("char"));
@@ -11004,6 +11017,9 @@ const TypeInfo* Checker::instantiateGenericStruct(
     // Register concrete type (updates the skeleton registered above)
     typeRegistry_.registerType(std::move(ti));
     const TypeInfo* result = typeRegistry_.lookup(mangledName);
+
+    // Self resolves to the concrete generic type in extend blocks
+    subst["Self"] = result;
 
     // Update self-referencing pointer type to point to the now-complete struct
     // Note: getPointerType stores pointers in dynamicTypes_, not typeRegistry_

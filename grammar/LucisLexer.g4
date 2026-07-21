@@ -47,6 +47,7 @@ VOLATILE  : 'volatile';
 GOTO      : 'goto';
 INTEL     : 'intel';
 AUTO      : 'auto';
+SELF      : 'Self';
 VEC       : 'vec';
 MAP       : 'map';
 SET       : 'set';

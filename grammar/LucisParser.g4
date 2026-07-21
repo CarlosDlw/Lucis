@@ -700,6 +700,7 @@ typeSpec
     | primitiveType                    // int32, float64, bool, etc.
     | AUTO                             // Type inference: auto x = 42;
     | IDENTIFIER                       // User-defined type: Point, Color, etc.
+    | SELF                             // Self: current extend type
     ;
 
 // fn(int32, int32) -> int32
