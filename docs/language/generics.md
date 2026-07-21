@@ -92,7 +92,7 @@ A growable, heap-allocated array. Initialized from an array literal, empty `[]`,
 vec<int32> v = [10, 20, 30];           // array literal
 vec<int32> v2 = vec!{ 1, 2, 3 };       // bang-initializer
 vec<int32> v3 = vec!{};                // empty
-```
+
 println(v.len());      // 3
 println(v.first());    // 10
 println(v.last());     // 30
