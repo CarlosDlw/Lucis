@@ -334,7 +334,11 @@ fn main() int32 {
 
 ## The `?` Propagate Operator
 
-The `?` (propagate) operator is a shorthand for "unwrap the success payload or return the error variant early from the current function". It works with any two-variant enum that follows the same convention as `expr catch`.
+The `?` (propagate) operator is a shorthand for "unwrap the success payload or return the error variant early from the current function". It works with any two-variant enum, including `Result<T>`, `Option<T>`, or custom user-defined enums.
+
+For `Option<T>`:
+- `Some(val)` → unwraps to `val`
+- `Nothing` → propagates as `Nothing` (no payload error variant)
 
 ### Syntax
 
