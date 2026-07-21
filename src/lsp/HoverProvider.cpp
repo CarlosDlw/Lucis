@@ -554,7 +554,10 @@ std::optional<HoverResult> HoverProvider::hover(const std::string& source,
                 if (method->IDENTIFIER(0) && method->IDENTIFIER(0)->getSymbol() == hoveredToken) {
                     std::string structName = ext->IDENTIFIER() ? safeText(ext->IDENTIFIER()) : "?";
                     bool isStatic = (method->AMPERSAND() == nullptr);
-                    std::string retType = typeSpecToString(method->typeSpec());
+                    auto resolveSelf = [&](const std::string& t) -> std::string {
+                        return (t == "Self") ? structName : t;
+                    };
+                    std::string retType = resolveSelf(typeSpecToString(method->typeSpec()));
                     std::string md = "```lucis\n(" + std::string(isStatic ? "static method" : "method")
                         + ") " + retType + " " + structName + "::" + tokenText + "(";
                     std::vector<LucisParser::ParamContext*> params;
@@ -569,7 +572,7 @@ std::optional<HoverResult> HoverProvider::hover(const std::string& source,
                     for (auto* p : params) {
                         if (!first) md += ", ";
                         first = false;
-                        md += typeSpecToString(p->typeSpec()) + " "
+                        md += resolveSelf(typeSpecToString(p->typeSpec())) + " "
                             + (p->IDENTIFIER() ? safeText(p->IDENTIFIER()) : "?");
                     }
                     md += ")\n```";
@@ -4124,16 +4127,26 @@ std::optional<HoverResult> HoverProvider::hoverMethodCall(
                 }
             }
         }
+        auto substOrSelf = [&](const std::string& t) -> std::string {
+            auto r = substituteTypeParams(t, subst);
+            if (r == "Self") {
+                auto base = receiverTypeName;
+                auto lt = base.find('<');
+                if (lt != std::string::npos) base = base.substr(0, lt);
+                return base;
+            }
+            return r;
+        };
         std::ostringstream ss;
         ss << "```lucis\n(" << safeText(ext->IDENTIFIER())
-           << " method) " << substituteTypeParams(typeSpecToString(m->typeSpec()), subst)
+           << " method) " << substOrSelf(typeSpecToString(m->typeSpec()))
            << " " << methodName << "(";
         bool first = true;
         if (m->AMPERSAND()) {
             for (auto* p : m->param()) {
                 if (!first) ss << ", ";
                 first = false;
-                ss << substituteTypeParams(typeSpecToString(p->typeSpec()), subst)
+                ss << substOrSelf(typeSpecToString(p->typeSpec()))
                    << " " << safeText(p->IDENTIFIER());
             }
         } else {
@@ -4141,7 +4154,7 @@ std::optional<HoverResult> HoverProvider::hoverMethodCall(
                 for (auto* p : params->param()) {
                     if (!first) ss << ", ";
                     first = false;
-                    ss << substituteTypeParams(typeSpecToString(p->typeSpec()), subst)
+                    ss << substOrSelf(typeSpecToString(p->typeSpec()))
                        << " " << safeText(p->IDENTIFIER());
                 }
             }
@@ -4518,15 +4531,18 @@ std::optional<HoverResult> HoverProvider::hoverStaticMethodCall(
         if (safeText(ext->IDENTIFIER()) != typeName) continue;
         for (auto* m : ext->extendMethod()) {
             if (safeIdAt(m, 0) == methodName) {
+                auto resolveSelf = [&](const std::string& t) -> std::string {
+                    return (t == "Self") ? typeName : t;
+                };
                 std::ostringstream ss;
-                ss << "```lucis\n(static method) " << typeSpecToString(m->typeSpec())
+                ss << "```lucis\n(static method) " << resolveSelf(typeSpecToString(m->typeSpec()))
                    << " " << typeName << "::" << methodName << "(";
                 if (auto* params = m->paramList()) {
                     bool first = true;
                     for (auto* p : params->param()) {
                         if (!first) ss << ", ";
                         first = false;
-                        ss << typeSpecToString(p->typeSpec())
+                        ss << resolveSelf(typeSpecToString(p->typeSpec()))
                            << " " << safeText(p->IDENTIFIER());
                     }
                 }
@@ -5276,8 +5292,12 @@ static std::string inferExprTypeName(
                     for (auto* m : ext->extendMethod()) {
                         if (safeIdAt(m, 0) != methodName) continue;
 
+                        auto resolve = [&](const std::string& t) -> std::string {
+                            return (t == "Self") ? typeName : t;
+                        };
+
                         if (!ext->typeParamList())
-                            return safeText(m->typeSpec());
+                            return resolve(safeText(m->typeSpec()));
 
                         std::unordered_set<std::string> tps;
                         for (auto* tp : ext->typeParamList()->typeParam()) {
@@ -5294,7 +5314,7 @@ static std::string inferExprTypeName(
                         std::vector<LucisParser::ParamContext*> formalParams;
                         if (auto* pl = m->paramList()) formalParams = pl->param();
                         if (actualArgTypes.size() != formalParams.size())
-                            return safeText(m->typeSpec());
+                            return resolve(safeText(m->typeSpec()));
 
                         std::unordered_map<std::string, std::string> inferred;
                         bool ok = true;
@@ -5312,8 +5332,8 @@ static std::string inferExprTypeName(
                         }
 
                         if (ok)
-                            return substituteTypeParams(safeText(m->typeSpec()), inferred);
-                        return safeText(m->typeSpec());
+                            return resolve(substituteTypeParams(safeText(m->typeSpec()), inferred));
+                        return resolve(safeText(m->typeSpec()));
                     }
                 }
             }
@@ -5327,8 +5347,10 @@ static std::string inferExprTypeName(
                         auto* ext = dynamic_cast<LucisParser::ExtendDeclContext*>(sym->decl);
                         if (!ext || safeText(ext->IDENTIFIER()) != typeName) continue;
                         for (auto* m : ext->extendMethod()) {
-                            if (safeIdAt(m, 0) == methodName)
-                                return safeText(m->typeSpec());
+                            if (safeIdAt(m, 0) == methodName) {
+                                auto ret = safeText(m->typeSpec());
+                                return (ret == "Self") ? typeName : ret;
+                            }
                         }
                     }
                 }
@@ -5379,8 +5401,10 @@ static std::string inferExprTypeName(
                     if (!ext) continue;
                     if (safeText(ext->IDENTIFIER()) != receiverType) continue;
                     for (auto* m : ext->extendMethod()) {
-                        if (safeIdAt(m, 0) == methodName)
-                            return safeText(m->typeSpec());
+                        if (safeIdAt(m, 0) == methodName) {
+                            auto ret = safeText(m->typeSpec());
+                            return (ret == "Self") ? receiverType : ret;
+                        }
                     }
                 }
             }
@@ -5394,8 +5418,10 @@ static std::string inferExprTypeName(
                         auto* ext = dynamic_cast<LucisParser::ExtendDeclContext*>(sym->decl);
                         if (!ext || safeText(ext->IDENTIFIER()) != receiverType) continue;
                         for (auto* m : ext->extendMethod()) {
-                            if (safeIdAt(m, 0) == methodName)
-                                return safeText(m->typeSpec());
+                            if (safeIdAt(m, 0) == methodName) {
+                                auto ret = safeText(m->typeSpec());
+                                return (ret == "Self") ? receiverType : ret;
+                            }
                         }
                     }
                 }
