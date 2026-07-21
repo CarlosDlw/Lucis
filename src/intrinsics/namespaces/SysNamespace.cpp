@@ -1635,7 +1635,7 @@ void registerSysNamespace(IntrinsicRegistry& reg, TypeRegistry& typeReg) {
         sys.functions.push_back(std::move(fn));
     }
 
-    // ── TLS base access (x86-64 FSGSBASE) ────────────────────────
+    // ── TLS base access (cross-platform) ────────────────────────
     auto makeFSBaseOp = [](const std::string& name,
                             bool isRead,
                             const std::string& desc) {
@@ -1657,13 +1657,25 @@ void registerSysNamespace(IntrinsicRegistry& reg, TypeRegistry& typeReg) {
             auto* usizeTy = llvm::Type::getIntNTy(context,
                 module->getDataLayout().getPointerSizeInBits());
 
-            if (tripleStr.find("x86_64") != 0) {
-                // Unsupported target
+            std::string asmStr;
+            std::string constraints;
+            bool isX86 = tripleStr.find("x86_64") == 0;
+            bool isARM = tripleStr.find("aarch64") == 0 || tripleStr.find("arm64") == 0;
+            bool isRISCV = tripleStr.find("riscv64") == 0;
+
+            if (isX86) {
+                asmStr = isRead ? "rdfsbase $0" : "wrfsbase $0";
+                constraints = isRead ? "=r,~{memory}" : "r,~{memory}";
+            } else if (isARM) {
+                asmStr = isRead ? "mrs $0, TPIDR_EL0" : "msr TPIDR_EL0, $0";
+                constraints = isRead ? "=r" : "r";
+            } else if (isRISCV) {
+                asmStr = isRead ? "mv $0, tp" : "mv tp, $0";
+                constraints = isRead ? "=r" : "r";
+            } else {
                 return llvm::ConstantInt::get(usizeTy, 0);
             }
 
-            std::string asmStr = isRead ? "rdfsbase $0" : "wrfsbase $0";
-            std::string constraints = isRead ? "=r,~{memory}" : "r,~{memory}";
             auto* retTy = isRead ? usizeTy : llvm::Type::getVoidTy(context);
             auto* ft = llvm::FunctionType::get(retTy,
                 isRead ? llvm::ArrayRef<llvm::Type*>() :
@@ -1684,8 +1696,8 @@ void registerSysNamespace(IntrinsicRegistry& reg, TypeRegistry& typeReg) {
 
     sys.functions.push_back(makeFSBaseOp("read_fs_base",
         true,
-        "Reads the x86-64 FS segment base register (TLS pointer on Linux).\n"
-        "Requires FSGSBASE CPU feature (Ivy Bridge+).\n"
+        "Reads the thread-local storage base pointer.\n"
+        "x86-64: FS base (FSGSBASE); ARM: TPIDR_EL0; RISC-V: tp.\n"
         "Returns 0 on unsupported targets.\n\n"
         "```lucis\n"
         "usize tls = lucis::sys::read_fs_base();\n"
@@ -1698,8 +1710,9 @@ void registerSysNamespace(IntrinsicRegistry& reg, TypeRegistry& typeReg) {
         fn.returnType = "void";
         fn.params.push_back({"usize", false});
         fn.description =
-            "Writes the x86-64 FS segment base register.\n"
-            "Requires FSGSBASE CPU feature (Ivy Bridge+) and kernel support.\n"
+            "Writes the thread-local storage base pointer.\n"
+            "x86-64: FS base (FSGSBASE); ARM: TPIDR_EL0; RISC-V: tp.\n"
+            "⚠ Requires kernel privileges.\n"
             "No-op on unsupported targets.\n\n"
             "```lucis\n"
             "lucis::sys::write_fs_base(new_tls);\n"
@@ -1715,14 +1728,27 @@ void registerSysNamespace(IntrinsicRegistry& reg, TypeRegistry& typeReg) {
             const std::vector<const TypeInfo*>& typeArgs) -> llvm::Value* {
 
             const auto tripleStr = module->getTargetTriple().str();
-            if (tripleStr.find("x86_64") != 0)
-                return llvm::UndefValue::get(llvm::Type::getVoidTy(context));
-
             auto* usizeTy = args[0]->getType();
+
+            std::string asmStr;
+            std::string constraints;
+            if (tripleStr.find("x86_64") == 0) {
+                asmStr = "wrfsbase $0";
+                constraints = "r,~{memory}";
+            } else if (tripleStr.find("aarch64") == 0 || tripleStr.find("arm64") == 0) {
+                asmStr = "msr TPIDR_EL0, $0";
+                constraints = "r";
+            } else if (tripleStr.find("riscv64") == 0) {
+                asmStr = "mv tp, $0";
+                constraints = "r";
+            } else {
+                return llvm::UndefValue::get(llvm::Type::getVoidTy(context));
+            }
+
             auto* ft = llvm::FunctionType::get(llvm::Type::getVoidTy(context),
                 {usizeTy}, false);
-            auto* asmFn = llvm::InlineAsm::get(ft, "wrfsbase $0",
-                "r,~{memory}", true, false, llvm::InlineAsm::AD_ATT);
+            auto* asmFn = llvm::InlineAsm::get(ft, asmStr,
+                constraints, true, false, llvm::InlineAsm::AD_ATT);
             builder.CreateCall(asmFn, {args[0]});
             return llvm::UndefValue::get(llvm::Type::getVoidTy(context));
         };
@@ -1892,6 +1918,7 @@ void registerSysNamespace(IntrinsicRegistry& reg, TypeRegistry& typeReg) {
 
     // ── Interrupt control ───────────────────────────────────────
     auto makeIntrOp = [&](const std::string& name, const std::string& asmInsn,
+                           const std::string& asmArm, const std::string& asmRiscv,
                            const std::string& desc) {
         IntrinsicFunction fn;
         fn.name = name;
@@ -1899,33 +1926,46 @@ void registerSysNamespace(IntrinsicRegistry& reg, TypeRegistry& typeReg) {
         fn.description = desc;
 
         fn.lowering.kind = IntrinsicFunction::Lowering::InlineIR;
-        fn.lowering.emitIR = [name, asmInsn](
+        fn.lowering.emitIR = [name, asmInsn, asmArm, asmRiscv](
             llvm::IRBuilder<>& builder, llvm::Module* module,
             llvm::LLVMContext& context, const TypeRegistry&,
             const std::vector<llvm::Value*>&,
             const std::vector<const TypeInfo*>&) -> llvm::Value* {
 
             auto triple = module->getTargetTriple().str();
-            if (triple.find("x86_64") != 0 && triple.find("i386") != 0 &&
-                triple.find("i686") != 0)
+            std::string finalAsm;
+            if (triple.find("x86_64") == 0 || triple.find("i386") == 0 ||
+                triple.find("i686") == 0)
+                finalAsm = asmInsn;
+            else if (triple.find("aarch64") == 0 || triple.find("arm64") == 0) {
+                if (asmArm.empty()) return llvm::UndefValue::get(llvm::Type::getVoidTy(context));
+                finalAsm = asmArm;
+            }
+            else if (triple.find("riscv64") == 0) {
+                if (asmRiscv.empty()) return llvm::UndefValue::get(llvm::Type::getVoidTy(context));
+                finalAsm = asmRiscv;
+            }
+            else
                 return llvm::UndefValue::get(llvm::Type::getVoidTy(context));
 
             auto* ft = llvm::FunctionType::get(llvm::Type::getVoidTy(context), false);
-            auto* asmFn = llvm::InlineAsm::get(ft, asmInsn,
-                "~{dirflag},~{fpsr},~{flags}", true, false,
-                llvm::InlineAsm::AD_ATT);
+            auto* asmFn = llvm::InlineAsm::get(ft, finalAsm,
+                finalAsm == asmInsn ? "~{dirflag},~{fpsr},~{flags}" : "",
+                true, false, llvm::InlineAsm::AD_ATT);
             builder.CreateCall(asmFn);
             return llvm::UndefValue::get(llvm::Type::getVoidTy(context));
         };
         return fn;
     };
 
-    sys.functions.push_back(makeIntrOp("cli", "cli",
-        "Disables maskable interrupts on x86 (clear interrupt flag).\n"
+    sys.functions.push_back(makeIntrOp("cli", "cli", "cpsid i", "",
+        "Disables maskable interrupts.\n"
+        "x86: clear interrupt flag; ARM: cpsid i.\n"
         "No-op on unsupported targets.\n\n"
         "```lucis\nlucis::sys::cli();\n```"));
-    sys.functions.push_back(makeIntrOp("sti", "sti",
-        "Enables maskable interrupts on x86 (set interrupt flag).\n"
+    sys.functions.push_back(makeIntrOp("sti", "sti", "cpsie i", "",
+        "Enables maskable interrupts.\n"
+        "x86: set interrupt flag; ARM: cpsie i.\n"
         "No-op on unsupported targets.\n\n"
         "```lucis\nlucis::sys::sti();\n```"));
 
@@ -1998,6 +2038,21 @@ void registerSysNamespace(IntrinsicRegistry& reg, TypeRegistry& typeReg) {
         "⚠ Requires kernel privileges (ring 0) for most MSRs."));
 
     // ── Control registers ───────────────────────────────────────
+    // Maps: x86 cr0 → ARM SCTLR_EL1, x86 cr2 → ARM FAR_EL1,
+    //       x86 cr3 → ARM TTBR0_EL1, RISC-V satp
+    auto armRegFor = [](const std::string& xreg) -> std::string {
+        if (xreg == "cr0") return "SCTLR_EL1";
+        if (xreg == "cr2") return "FAR_EL1";
+        if (xreg == "cr3") return "TTBR0_EL1";
+        return "";
+    };
+    auto riscvRegFor = [](const std::string& xreg) -> std::string {
+        if (xreg == "cr0") return "mstatus";
+        if (xreg == "cr2") return "stval";
+        if (xreg == "cr3") return "satp";
+        return "";
+    };
+
     auto makeCROp = [&](const std::string& name, const std::string& reg,
                          bool isRead, const std::string& desc) {
         IntrinsicFunction fn;
@@ -2012,7 +2067,7 @@ void registerSysNamespace(IntrinsicRegistry& reg, TypeRegistry& typeReg) {
         }
 
         fn.lowering.kind = IntrinsicFunction::Lowering::InlineIR;
-        fn.lowering.emitIR = [name, reg, isRead](
+        fn.lowering.emitIR = [name, reg, isRead, armRegFor, riscvRegFor](
             llvm::IRBuilder<>& builder, llvm::Module* module,
             llvm::LLVMContext& context, const TypeRegistry&,
             const std::vector<llvm::Value*>& args,
@@ -2022,16 +2077,38 @@ void registerSysNamespace(IntrinsicRegistry& reg, TypeRegistry& typeReg) {
             auto bits = module->getDataLayout().getPointerSizeInBits();
             auto* usizeTy = llvm::Type::getIntNTy(context, bits);
 
-            if (triple.find("x86_64") != 0)
-            return isRead ? static_cast<llvm::Value*>(llvm::ConstantInt::get(usizeTy, 0))
-                          : static_cast<llvm::Value*>(llvm::UndefValue::get(llvm::Type::getVoidTy(context)));
+            bool isX86   = triple.find("x86_64") == 0;
+            bool isARM   = triple.find("aarch64") == 0 || triple.find("arm64") == 0;
+            bool isRISCV = triple.find("riscv64") == 0;
 
-            std::string asmInsn = isRead ? ("mov %" + reg + ", $0")
-                                         : ("mov $0, %" + reg);
-            std::string constraints = isRead ? "=r,~{dirflag},~{fpsr},~{flags}"
-                                             : "r,~{dirflag},~{fpsr},~{flags}";
-            auto* retTy = isRead ? usizeTy
-                                 : llvm::Type::getVoidTy(context);
+            if (!isX86 && !isARM && !isRISCV)
+                return isRead ? static_cast<llvm::Value*>(llvm::ConstantInt::get(usizeTy, 0))
+                              : static_cast<llvm::Value*>(llvm::UndefValue::get(llvm::Type::getVoidTy(context)));
+
+            std::string asmInsn;
+            std::string constraints;
+
+            if (isX86) {
+                asmInsn = isRead ? ("mov %" + reg + ", $0")
+                                 : ("mov $0, %" + reg);
+                constraints = isRead ? "=r,~{dirflag},~{fpsr},~{flags}"
+                                     : "r,~{dirflag},~{fpsr},~{flags}";
+            } else if (isARM) {
+                auto armReg = armRegFor(reg);
+                if (armReg.empty())
+                    return isRead ? static_cast<llvm::Value*>(llvm::ConstantInt::get(usizeTy, 0))
+                                  : static_cast<llvm::Value*>(llvm::UndefValue::get(llvm::Type::getVoidTy(context)));
+                asmInsn = isRead ? ("mrs $0, " + armReg) : ("msr " + armReg + ", $0");
+                constraints = isRead ? "=r" : "r";
+            } else if (isRISCV) {
+                auto riscvReg = riscvRegFor(reg);
+                if (riscvReg.empty()) return isRead ? static_cast<llvm::Value*>(llvm::ConstantInt::get(usizeTy, 0))
+                                                    : static_cast<llvm::Value*>(llvm::UndefValue::get(llvm::Type::getVoidTy(context)));
+                asmInsn = isRead ? ("csrr $0, " + riscvReg) : ("csrw " + riscvReg + ", $0");
+                constraints = isRead ? "=r" : "r";
+            }
+
+            auto* retTy = isRead ? usizeTy : llvm::Type::getVoidTy(context);
             auto* ft = llvm::FunctionType::get(retTy,
                 isRead ? llvm::ArrayRef<llvm::Type*>()
                        : llvm::ArrayRef<llvm::Type*>({usizeTy}),
@@ -2076,9 +2153,10 @@ void registerSysNamespace(IntrinsicRegistry& reg, TypeRegistry& typeReg) {
         "```lucis\nlucis::sys::write_cr4(val);\n```"));
 
     // ── hlt: halt CPU until next interrupt ─────────────────
-    sys.functions.push_back(makeIntrOp("hlt", "hlt",
+    sys.functions.push_back(makeIntrOp("hlt", "hlt", "wfi", "wfi",
         "Halts the CPU until the next interrupt arrives.\n"
-        "⚠ Requires kernel privileges (ring 0).\n\n"
+        "x86: hlt; ARM/RISC-V: wfi.\n"
+        "⚠ Requires kernel privileges.\n\n"
         "```lucis\nlucis::sys::hlt();\n```"));
 
     // ── lgdt / lidt / invlpg: table/MMU operations ─────────
@@ -2098,18 +2176,45 @@ void registerSysNamespace(IntrinsicRegistry& reg, TypeRegistry& typeReg) {
             const std::vector<const TypeInfo*>&) -> llvm::Value* {
 
             auto triple = module->getTargetTriple().str();
-            if (triple.find("x86_64") != 0 && triple.find("i386") != 0 &&
-                triple.find("i686") != 0)
+            bool isX86 = triple.find("x86_64") == 0 || triple.find("i386") == 0 ||
+                         triple.find("i686") == 0;
+            bool isARM = triple.find("aarch64") == 0 || triple.find("arm64") == 0;
+            bool isRISCV = triple.find("riscv64") == 0;
+
+            if (!isX86 && !isARM && !isRISCV)
                 return llvm::UndefValue::get(llvm::Type::getVoidTy(context));
 
             auto* voidTy = llvm::Type::getVoidTy(context);
             auto* ptrTy = llvm::PointerType::getUnqual(context);
-            auto* ft = llvm::FunctionType::get(voidTy, {ptrTy}, false);
-            auto* asmFn = llvm::InlineAsm::get(ft,
-                asmInsn + " ($0)",
-                "r,~{memory}",
-                true, false, llvm::InlineAsm::AD_ATT);
-            builder.CreateCall(asmFn, {args[0]});
+
+            if (isX86) {
+                auto* ft = llvm::FunctionType::get(voidTy, {ptrTy}, false);
+                auto* asmFn = llvm::InlineAsm::get(ft,
+                    asmInsn + " ($0)",
+                    "r,~{memory}",
+                    true, false, llvm::InlineAsm::AD_ATT);
+                builder.CreateCall(asmFn, {args[0]});
+            } else if (isARM) {
+                // ARM: tlbi + address register
+                auto* i64Ty = llvm::Type::getInt64Ty(context);
+                auto* addrAsInt = builder.CreatePtrToInt(args[0], i64Ty, "tlbi.addr");
+                auto* ft = llvm::FunctionType::get(voidTy, {i64Ty}, false);
+                auto* asmFn = llvm::InlineAsm::get(ft,
+                    "tlbi vae1is, x0",
+                    "{x0}",
+                    true, false, llvm::InlineAsm::AD_ATT);
+                builder.CreateCall(asmFn, {addrAsInt});
+            } else if (isRISCV) {
+                // RISC-V: sfence.vma with address register
+                auto* i64Ty = llvm::Type::getInt64Ty(context);
+                auto* addrAsInt = builder.CreatePtrToInt(args[0], i64Ty, "sfence.addr");
+                auto* ft = llvm::FunctionType::get(voidTy, {i64Ty}, false);
+                auto* asmFn = llvm::InlineAsm::get(ft,
+                    "sfence.vma x0, $0",
+                    "{x10}",
+                    true, false, llvm::InlineAsm::AD_ATT);
+                builder.CreateCall(asmFn, {addrAsInt});
+            }
             return llvm::UndefValue::get(voidTy);
         };
         return fn;
@@ -2117,7 +2222,7 @@ void registerSysNamespace(IntrinsicRegistry& reg, TypeRegistry& typeReg) {
 
     sys.functions.push_back(makeTableOp("lgdt", "lgdt",
         R"(Loads the Global Descriptor Table Register (GDTR) on x86-64.
-⚠ Requires kernel privileges (ring 0).
+⚠ Requires kernel privileges (ring 0). No-op on non-x86 targets.
 
 ```lucis
 lucis::sys::lgdt(&descriptor);
@@ -2125,15 +2230,16 @@ lucis::sys::lgdt(&descriptor);
 
     sys.functions.push_back(makeTableOp("lidt", "lidt",
         R"(Loads the Interrupt Descriptor Table Register (IDTR) on x86-64.
-⚠ Requires kernel privileges (ring 0).
+⚠ Requires kernel privileges (ring 0). No-op on non-x86 targets.
 
 ```lucis
 lucis::sys::lidt(&descriptor);
 ```)"));
 
     sys.functions.push_back(makeTableOp("invlpg", "invlpg",
-        R"(Invalidates the TLB entry for the given virtual address on x86-64.
-⚠ Requires kernel privileges (ring 0).
+        R"(Invalidates the TLB entry for the given virtual address.
+x86: invlpg; ARM: tlbi; RISC-V: sfence.vma.
+⚠ Requires kernel privileges.
 
 ```lucis
 lucis::sys::invlpg(&address);
