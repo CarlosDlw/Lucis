@@ -1082,11 +1082,13 @@ bool Checker::check(LucisParser::ProgramContext* tree) {
     // from same module and user imports, so type resolution works.
     // Process in dependency order: struct/union skeletons first, then enums/typeAliases.
     if (moduleRegistry_) {
-        // First pass: register struct/union skeletons so enum payloads can reference them
+        // First pass: register struct/union skeletons so enum payloads can reference them.
+        // Skip generic types (they have typeParamList) to prevent opaque skeletons
+        // from masking missing type arguments.
         for (auto* decl : tree->topLevelDecl()) {
             if (auto* sd = decl->structDecl()) {
                 auto name = sd->IDENTIFIER()->getText();
-                if (!typeRegistry_.lookup(name) && !genericStructTemplates_.count(name)) {
+                if (!typeRegistry_.lookup(name) && !genericStructTemplates_.count(name) && !sd->typeParamList()) {
                     TypeInfo skeleton;
                     skeleton.name = name;
                     skeleton.kind = TypeKind::Struct;
@@ -1096,7 +1098,7 @@ bool Checker::check(LucisParser::ProgramContext* tree) {
                 }
             } else if (auto* ud = decl->unionDecl()) {
                 auto name = ud->IDENTIFIER()->getText();
-                if (!typeRegistry_.lookup(name) && !genericUnionTemplates_.count(name)) {
+                if (!typeRegistry_.lookup(name) && !genericUnionTemplates_.count(name) && !ud->typeParamList()) {
                     TypeInfo skeleton;
                     skeleton.name = name;
                     skeleton.kind = TypeKind::Union;
@@ -1135,10 +1137,17 @@ bool Checker::check(LucisParser::ProgramContext* tree) {
 
         // Pre-register skeletons for external structs and unions so recursive
         // dependencies do not trigger duplicate full type registration.
+        // Skip generic types to prevent opaque skeletons from masking missing
+        // type arguments at the use site.
         for (auto* sym : extSyms) {
             if (sym->kind == ExportedSymbol::Struct &&
                 !typeRegistry_.lookup(sym->name) &&
                 !genericStructTemplates_.count(sym->name)) {
+                // Check if the struct is generic (has type parameters)
+                if (auto* sd = dynamic_cast<LucisParser::StructDeclContext*>(sym->decl)) {
+                    if (sd->typeParamList())
+                        continue;
+                }
                 TypeInfo skeleton;
                 skeleton.name = sym->name;
                 skeleton.kind = TypeKind::Struct;
@@ -1153,6 +1162,11 @@ bool Checker::check(LucisParser::ProgramContext* tree) {
             } else if (sym->kind == ExportedSymbol::Union &&
                        !typeRegistry_.lookup(sym->name) &&
                        !genericUnionTemplates_.count(sym->name)) {
+                // Check if the union is generic (has type parameters)
+                if (auto* ud = dynamic_cast<LucisParser::UnionDeclContext*>(sym->decl)) {
+                    if (ud->typeParamList())
+                        continue;
+                }
                 TypeInfo skeleton;
                 skeleton.name = sym->name;
                 skeleton.kind = TypeKind::Union;
@@ -1172,6 +1186,11 @@ bool Checker::check(LucisParser::ProgramContext* tree) {
             if (sym->kind == ExportedSymbol::Struct &&
                 !typeRegistry_.lookup(sym->name) &&
                 !genericStructTemplates_.count(sym->name)) {
+                // Check if the struct is generic (has type parameters)
+                if (auto* sd = dynamic_cast<LucisParser::StructDeclContext*>(sym->decl)) {
+                    if (sd->typeParamList())
+                        continue;
+                }
                 TypeInfo skeleton;
                 skeleton.name = sym->name;
                 skeleton.kind = TypeKind::Struct;
@@ -1181,6 +1200,11 @@ bool Checker::check(LucisParser::ProgramContext* tree) {
             } else if (sym->kind == ExportedSymbol::Union &&
                        !typeRegistry_.lookup(sym->name) &&
                        !genericUnionTemplates_.count(sym->name)) {
+                // Check if the union is generic (has type parameters)
+                if (auto* ud = dynamic_cast<LucisParser::UnionDeclContext*>(sym->decl)) {
+                    if (ud->typeParamList())
+                        continue;
+                }
                 TypeInfo skeleton;
                 skeleton.name = sym->name;
                 skeleton.kind = TypeKind::Union;
@@ -2169,7 +2193,13 @@ const TypeInfo* Checker::resolveTypeSpec(LucisParser::TypeSpecContext* ctx,
 
     auto* ti = typeRegistry_.lookup(name);
     if (!ti) {
-        error(cur, "unknown type '" + name + "'");
+        if (genericStructTemplates_.count(name) ||
+            genericUnionTemplates_.count(name) ||
+            genericEnumTemplates_.count(name)) {
+            error(cur, "generic type '" + name + "' requires type parameters");
+        } else {
+            error(cur, "unknown type '" + name + "'");
+        }
     }
     return ti;
 }
