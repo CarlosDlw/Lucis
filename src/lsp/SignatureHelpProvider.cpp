@@ -224,6 +224,35 @@ SignatureHelpProvider::analyzeCallSite(const std::string& source,
     // Check for method call: obj.method(...)
     else if (checkPos > 0 && source[checkPos - 1] == '.') {
         site.isMethodCall = true;
+        // Extract receiver expression text (everything before the '.')
+        size_t exprEnd = checkPos - 1;
+        while (exprEnd > 0 && source[exprEnd - 1] == ' ') exprEnd--;
+        // Walk backwards over the receiver expression (identifiers, brackets, parens, etc.)
+        int parenDepth = 0;
+        int bracketDepth = 0;
+        size_t exprStart = exprEnd;
+        while (exprStart > 0) {
+            char c = source[exprStart - 1];
+            if (std::isalnum(static_cast<unsigned char>(c)) || c == '_' || c == '>' || c == ')' || c == ']') {
+                if (c == ')') parenDepth++;
+                else if (c == ']') bracketDepth++;
+                exprStart--;
+            } else if (c == '(') {
+                if (parenDepth == 0) break;
+                parenDepth--;
+                exprStart--;
+            } else if (c == '[') {
+                if (bracketDepth == 0) break;
+                bracketDepth--;
+                exprStart--;
+            } else if ((c == '>' || c == '.' || c == '-' || c == ':') && (parenDepth > 0 || bracketDepth > 0)) {
+                exprStart--;
+            } else {
+                break;
+            }
+        }
+        if (exprStart < exprEnd)
+            site.receiverExpr = source.substr(exprStart, exprEnd - exprStart);
     }
 
     return site;
@@ -547,6 +576,45 @@ findEnclosingFunction(LucisParser::ProgramContext* tree, size_t line);
 static std::optional<std::vector<std::pair<std::string, std::string>>>
 extractLambdaParams(LucisParser::ExpressionContext* expr);
 
+// Resolve the type string of a receiver variable from the source text.
+static std::string resolveReceiverType(const std::string& receiverExpr,
+                                        const std::string& source) {
+    std::string varName = receiverExpr;
+    {
+        auto bracket = varName.find('[');
+        if (bracket != std::string::npos)
+            varName = varName.substr(0, bracket);
+        auto dot = varName.find('.');
+        if (dot != std::string::npos)
+            varName = varName.substr(0, dot);
+    }
+    if (varName.empty()) return {};
+
+    // Find declaration: "varName;" pattern (not the method call usage)
+    auto declPos = source.find(varName + ";");
+    if (declPos == std::string::npos || declPos == 0) return {};
+
+    size_t start = declPos;
+    while (start > 0) {
+        --start;
+        char c = source[start];
+        if (c == '\n' || c == '{' || c == ';') {
+            ++start;
+            break;
+        }
+    }
+
+    if (start >= declPos) return {};
+
+    auto trim = [](std::string s) -> std::string {
+        auto f = s.find_first_not_of(" \t\r\n");
+        if (f == std::string::npos) return {};
+        auto l = s.find_last_not_of(" \t\r\n");
+        return s.substr(f, l - f + 1);
+    };
+    return trim(source.substr(start, declPos - start));
+}
+
 std::optional<SignatureHelpResult>
 SignatureHelpProvider::signatureHelp(
         const std::string& source, size_t line, size_t col,
@@ -598,11 +666,27 @@ SignatureHelpProvider::signatureHelp(
 
     // ── Method calls (obj.method(...)) ──────────────────────────────
     if (site->isMethodCall) {
-        // 1) Extend methods in current file
+        // Resolve the receiver type for filtering.
+        std::string recvType = resolveReceiverType(
+            site->receiverExpr, source);
+        // Strip array prefix: [N]T → T (the method is on the element type)
+        while (recvType.size() > 2 && recvType.front() == '[') {
+            auto close = recvType.find(']');
+            if (close == std::string::npos) break;
+            recvType = recvType.substr(close + 1);
+        }
+        // Extract the base type name (without generic params) for matching.
+        std::string recvBase = recvType;
+        auto ltPos = recvType.find('<');
+        if (ltPos != std::string::npos)
+            recvBase = recvType.substr(0, ltPos);
+
+        // 1) Extend methods in current file (filtered by receiver type)
         for (auto* tld : parsed.tree->topLevelDecl()) {
             auto* ext = tld->extendDecl();
             if (!ext || !ext->IDENTIFIER()) continue;
             std::string structName = safeText(ext->IDENTIFIER());
+            if (!recvBase.empty() && structName != recvBase && structName != recvType) continue;
             for (auto* method : ext->extendMethod()) {
                 if (method->IDENTIFIER().empty()) continue;
                 if (safeIdAt(method, 0) == name) {
@@ -613,52 +697,61 @@ SignatureHelpProvider::signatureHelp(
             }
         }
 
-        // 2) Extended type methods (Vec, Map, Set)
-        // Try all extended types since we don't resolve the receiver statically.
-        for (auto& baseName : extTypeRegistry_.allTypes()) {
-            auto* desc = extTypeRegistry_.lookup(baseName);
-            if (!desc) continue;
-            for (auto& md : desc->methods) {
-                if (md.name == name) {
-                    // Build with a generic receiver for display.
-                    std::string receiver;
-                    if (desc->genericArity == 1) receiver = baseName + "<T>";
-                    else if (desc->genericArity == 2) receiver = baseName + "<K, V>";
-                    else receiver = baseName;
+        // 2) Extended type methods (Vec, Map, Set) — filtered by receiver type
+        if (!recvBase.empty()) {
+            auto* desc = extTypeRegistry_.lookup(recvBase);
+            if (desc) {
+                for (auto& md : desc->methods) {
+                    if (md.name == name) {
+                        std::string receiver;
+                        if (desc->genericArity == 1) receiver = recvType.empty() ? (recvBase + "<T>") : recvType;
+                        else if (desc->genericArity == 2) receiver = recvType.empty() ? (recvBase + "<K, V>") : recvType;
+                        else receiver = recvBase;
+                        auto sig = buildFromExtMethod(md, receiver);
+                        sig.activeParameter = site->activeParam;
+                        result.signatures.push_back(std::move(sig));
+                    }
+                }
+            }
+        }
 
-                    auto sig = buildFromExtMethod(md, receiver);
+        // 3) MethodRegistry (primitive type methods) — filtered by receiver type
+        if (!recvBase.empty()) {
+            // Map receiver base type to a TypeKind for primitive type lookup.
+            auto kindForType = [](const std::string& t) -> std::optional<TypeKind> {
+                if (t == "int8" || t == "int16" || t == "int32" || t == "int64" ||
+                    t == "uint8" || t == "uint16" || t == "uint32" || t == "uint64" ||
+                    t == "usize" || t == "isize")
+                    return TypeKind::Integer;
+                if (t == "float32" || t == "float64") return TypeKind::Float;
+                if (t == "bool")  return TypeKind::Bool;
+                if (t == "char")  return TypeKind::Char;
+                if (t == "string") return TypeKind::String;
+                return std::nullopt;
+            };
+            auto recvKind = kindForType(recvBase);
+            if (recvKind) {
+                auto* md = methodRegistry_.lookup(*recvKind, name);
+                if (md) {
+                    auto sig = buildFromExtMethod(*md, recvBase);
                     sig.activeParameter = site->activeParam;
                     result.signatures.push_back(std::move(sig));
                 }
             }
         }
 
-        // 3) MethodRegistry (primitive type methods)
-        // Check all type kinds for a matching method.
-        static const TypeKind allKinds[] = {
-            TypeKind::Integer, TypeKind::Float,
-            TypeKind::Bool, TypeKind::Char, TypeKind::String
-        };
-        bool foundPrimitive = false;
-        for (auto kind : allKinds) {
-            auto* md = methodRegistry_.lookup(kind, name);
-            if (md && !foundPrimitive) {
-                auto sig = buildFromExtMethod(*md, md->emitTag.substr(0, md->emitTag.find('.')));
+        // 3b) Array methods — only when receiver is an array type
+        bool isArrayType = !recvType.empty() && recvType.front() == '[';
+        if (isArrayType || recvBase.empty()) {
+            auto* arrMd = methodRegistry_.lookupArrayMethod(name);
+            if (arrMd) {
+                auto sig = buildFromExtMethod(*arrMd, "[]T");
                 sig.activeParameter = site->activeParam;
                 result.signatures.push_back(std::move(sig));
-                foundPrimitive = true;
             }
         }
 
-        // 3b) Array methods
-        auto* arrMd = methodRegistry_.lookupArrayMethod(name);
-        if (arrMd) {
-            auto sig = buildFromExtMethod(*arrMd, "[]T");
-            sig.activeParameter = site->activeParam;
-            result.signatures.push_back(std::move(sig));
-        }
-
-        // 4) Cross-file extend methods
+        // 4) Cross-file extend methods (filtered by receiver type)
         if (project && project->isValid()) {
             for (auto& ns : project->registry().allModules()) {
                 auto syms = project->registry().getModuleSymbols(ns);
@@ -667,6 +760,7 @@ SignatureHelpProvider::signatureHelp(
                     auto* ext = dynamic_cast<LucisParser::ExtendDeclContext*>(sym->decl);
                     if (!ext || !ext->IDENTIFIER()) continue;
                     std::string structName = safeText(ext->IDENTIFIER());
+                    if (!recvBase.empty() && structName != recvBase && structName != recvType) continue;
                     for (auto* method : ext->extendMethod()) {
                         if (method->IDENTIFIER().empty()) continue;
                         if (safeIdAt(method, 0) == name) {

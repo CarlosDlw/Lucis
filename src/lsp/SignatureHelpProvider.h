@@ -57,7 +57,7 @@ private:
 
     struct CallSite {
         std::string functionName;  // "printf", "add", or method name "push"
-        std::string receiverType;  // non-empty for method calls
+        std::string receiverExpr;  // receiver expression text for method calls (e.g. "stackList")
         std::string staticTypeName; // non-empty for static calls: "Point" in Point::create
         size_t      activeParam;   // which param the cursor is on (0-based)
         bool        isMethodCall;
