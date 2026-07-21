@@ -27667,10 +27667,19 @@ std::string IRGen::getAttributeStringArg(LucisParser::AttributeListContext* attr
         if (a->IDENTIFIER() && a->IDENTIFIER()->getText() == name) {
             if (auto* argList = a->attrArgList()) {
                 for (auto* arg : argList->attrArg()) {
-                    if (arg->STR_LIT())
-                        return arg->STR_LIT()->getText();
-                    if (arg->C_STR_LIT())
-                        return arg->C_STR_LIT()->getText();
+                    if (arg->STR_LIT()) {
+                        auto raw = arg->STR_LIT()->getText();
+                        // Strip surrounding quotes
+                        if (raw.size() >= 2 && raw.front() == '"' && raw.back() == '"')
+                            return raw.substr(1, raw.size() - 2);
+                        return raw;
+                    }
+                    if (arg->C_STR_LIT()) {
+                        auto raw = arg->C_STR_LIT()->getText();
+                        if (raw.size() >= 3 && raw.front() == 'c' && raw[1] == '"' && raw.back() == '"')
+                            return raw.substr(2, raw.size() - 3);
+                        return raw;
+                    }
                 }
             }
         }
