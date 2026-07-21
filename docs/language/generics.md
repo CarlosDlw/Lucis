@@ -86,10 +86,13 @@ fn main() int32 {
 
 ## vec\<T\> — Dynamic Array
 
-A growable, heap-allocated array. Initialized from an array literal or empty `[]`:
+A growable, heap-allocated array. Initialized from an array literal, empty `[]`, or bang-initializer:
 
+```lucis
+vec<int32> v = [10, 20, 30];           // array literal
+vec<int32> v2 = vec!{ 1, 2, 3 };       // bang-initializer
+vec<int32> v3 = vec!{};                // empty
 ```
-vec<int32> v = [10, 20, 30];
 println(v.len());      // 3
 println(v.first());    // 10
 println(v.last());     // 30
@@ -164,10 +167,10 @@ names.free();
 
 ## map\<K, V\> — Hash Map
 
-A key-value store using open-addressing hashing:
+A key-value store using open-addressing hashing. Initialize with key:value pairs:
 
-```
-map<string, int64> ages;
+```lucis
+map<string, int64> ages = map!{ "alice": 30, "bob": 25 };
 
 ages.insert("alice", 30);
 ages.insert("bob", 25);
@@ -218,10 +221,11 @@ scores.free();
 
 ## set\<T\> — Hash Set
 
-A collection of unique elements using open-addressing hashing:
+A collection of unique elements using open-addressing hashing. Initialize with elements or empty:
 
-```
-set<int32> s = [];
+```lucis
+set<int32> s = set!{ 10, 20, 30 };
+set<int32> s2 = set!{};
 
 s.add(10);
 s.add(20);
