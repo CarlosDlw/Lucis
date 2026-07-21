@@ -292,7 +292,8 @@ private:
 
     // Collect locals from an extend method body.
     std::unordered_map<std::string, LocalVar>
-    collectLocalsFromMethod(LucisParser::ExtendMethodContext* method, size_t beforeLine);
+    collectLocalsFromMethod(LucisParser::ExtendMethodContext* method, size_t beforeLine,
+                            LucisParser::ProgramContext* tree = nullptr);
 
     // Find enclosing function at a line.
     LucisParser::FunctionDeclContext*

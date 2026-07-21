@@ -1560,6 +1560,24 @@ static void collectLocalsFromStmts(
       if (vd->typeSpec())
         typeName = safeText(vd->typeSpec());
 
+      // Resolve Self to the enclosing extend's struct name
+      if (typeName == "Self" && flc && flc->tree) {
+        for (auto* tld : flc->tree->topLevelDecl()) {
+          auto* ext = tld->extendDecl();
+          if (!ext) continue;
+          for (auto* m : ext->extendMethod()) {
+            if (m->getStart() && stmt->getStart() &&
+                m->getStart()->getLine() <= stmt->getStart()->getLine() &&
+                m->getStop() && stmt->getStart()->getLine() <= m->getStop()->getLine()) {
+              // This statement is inside this extend method
+              typeName = safeText(ext->IDENTIFIER());
+              break;
+            }
+          }
+          if (typeName != "Self") break;
+        }
+      }
+
       if (vd->LPAREN()) {
         for (auto* id : vd->IDENTIFIER()) {
           std::string varName = id->getText();
@@ -3136,7 +3154,7 @@ void CompletionProvider::addLocals(std::vector<CompletionItem> &items,
   // Check if inside an extend method
   auto *method = findEnclosingMethod(tree, cursorLine);
   if (method) {
-    auto locals = collectLocalsFromMethod(method, cursorLine);
+    auto locals = collectLocalsFromMethod(method, cursorLine, tree);
     for (auto &[name, var] : locals) {
       if (!matchesPrefix(name, prefix))
         continue;
@@ -5583,7 +5601,7 @@ void CompletionProvider::addKeywords(std::vector<CompletionItem> &items,
        "throw",  "spawn",  "await",     "lock",   "defer",    "as",
        "match",  "or",     "is",     "in",     "sizeof",    "typeof", "alignof",  "offsetof", "true",     "false",
        "null",   "return", "asm", "asm_b", "c_macro", "volatile",
-       "goto",   "intel", "comptime", "const"};
+        "goto",   "intel", "comptime", "const", "Self"};
 
   for (auto *kw : keywords) {
     if (!matchesPrefix(kw, prefix))
@@ -6809,16 +6827,26 @@ CompletionProvider::collectLocals(LucisParser::FunctionDeclContext *func,
 
 std::unordered_map<std::string, CompletionProvider::LocalVar>
 CompletionProvider::collectLocalsFromMethod(
-    LucisParser::ExtendMethodContext *method, size_t beforeLine) {
+    LucisParser::ExtendMethodContext *method, size_t beforeLine,
+    LucisParser::ProgramContext *tree) {
   std::unordered_map<std::string, LocalVar> result;
+
+  // Resolve Self to the enclosing extend struct name
+  std::string selfType;
+  for (auto* p = method->parent; p; p = p->parent) {
+    if (auto* ext = dynamic_cast<LucisParser::ExtendDeclContext*>(p)) {
+      selfType = safeText(ext->IDENTIFIER());
+      break;
+    }
+  }
 
   bool isInstance = (method->AMPERSAND() != nullptr);
   if (isInstance) {
-    // &self param
     result[safeIdAt(method, 1)] = {"&self", 0};
-    // Extra params
     for (auto *p : method->param()) {
-      result[safeText(p->IDENTIFIER())] = {safeText(p->typeSpec()), 0};
+      auto pType = safeText(p->typeSpec());
+      if (pType == "Self") pType = selfType;
+      result[safeText(p->IDENTIFIER())] = {pType, 0};
     }
   } else {
     if (auto *pl = method->paramList()) {
@@ -6828,7 +6856,9 @@ CompletionProvider::collectLocalsFromMethod(
     }
   }
 
-  collectLocalsFromBlock(method->block(), beforeLine, result);
+  FuncLookupCtx flc;
+  flc.tree = tree;
+  collectLocalsFromBlock(method->block(), beforeLine, result, &flc);
   return result;
 }
 
@@ -6932,7 +6962,7 @@ std::string CompletionProvider::inferVarType(const std::string &varName,
   // Check extend method locals
   auto *method = findEnclosingMethod(tree, cursorLine);
   if (method) {
-    auto locals = collectLocalsFromMethod(method, cursorLine);
+    auto locals = collectLocalsFromMethod(method, cursorLine, tree);
     auto it = locals.find(varName);
     if (it != locals.end()) {
       // In instance methods, self is tracked as "&self" placeholder.
