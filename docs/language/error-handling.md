@@ -4,6 +4,29 @@ Lucis provides structured error handling with `try`/`catch`/`finally`, `throw`, 
 
 ---
 
+## Custom Error Types
+
+Custom error types can be created by inheriting from `Error`:
+
+```lucis
+struct AppError : Error {
+    int32 code;
+}
+```
+
+The child struct inherits all `Error` fields (`message`, `file`, `line`, `column`) plus its own. These work seamlessly with `Result<T>` and `?`:
+
+```lucis
+use result::Result;
+
+fn run() Result<int32> {
+    return Result<int32>::Err(
+        AppError { "custom error", "file.lc", 1, 0, 42 });
+}
+```
+
+The `?`, `catch`, and `try` all recognize types that inherit from `Error`.
+
 ## The Error Struct
 
 When an error is thrown, it is represented as an `Error` struct with four fields:
