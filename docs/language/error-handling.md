@@ -96,12 +96,41 @@ All three blocks can be combined:
 | `try { } finally { }` | Yes |
 | `try { } catch (Error e) { } finally { }` | Yes |
 
+### Multiple catch clauses with type dispatch
+
+Multiple `catch` clauses are supported, each handling a specific error type.
+The first matching clause is executed; unmatched clauses are skipped.
+Types that inherit from `Error` are recognized by their parent type:
+
+```lucis
+struct AppError : Error {
+    int32 code;
+}
+
+struct OtherError : Error {}
+
+try {
+    throw OtherError { "custom error" };
+} catch (AppError e) {
+    // skipped — OtherError is not AppError
+} catch (Error e) {
+    // runs — OtherError inherits from Error
+} catch (OtherError e) {
+    // unreachable — caught by Error above
+}
+```
+
+If no clause matches, the error is re-thrown to the next handler up the call stack.
+
 ### Execution flow
 
 1. Code in `try` executes normally
 2. If `throw` is reached, execution jumps to `catch`
-3. `finally` always executes — after `try` completes normally, or after `catch` handles the error
-4. Execution continues after the entire `try`/`catch`/`finally` block
+3. Each `catch` clause is checked in order: the thrown error's type hash is compared against the clause's type hash and its parent's hash
+4. The first matching `catch` clause runs
+5. If no clause matches, the error is re-thrown
+6. `finally` always executes — after `try` completes normally, or after `catch` handles the error
+7. Execution continues after the entire `try`/`catch`/`finally` block
 
 ---
 
