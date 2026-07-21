@@ -621,8 +621,28 @@ unifyGenericType(const std::string &formalRaw, const std::string &actualRaw,
 }
 
 // Look up the return type of a function by name.
+// Resolve Self to the enclosing extend block's struct name.
+static std::string resolveSelfType(const std::string& typeName,
+                                    LucisParser::ExtendDeclContext* ext) {
+    if (typeName == "Self" && ext && ext->IDENTIFIER())
+        return ext->IDENTIFIER()->getText();
+    return typeName;
+}
+
+static std::string resolveSelfType(const std::string& typeName,
+                                    LucisParser::ProgramContext* tree,
+                                    antlr4::ParserRuleContext* fnCtx) {
+    if (typeName != "Self" || !fnCtx) return typeName;
+    for (auto* p = fnCtx->parent; p; p = p->parent) {
+        if (auto* ext = dynamic_cast<LucisParser::ExtendDeclContext*>(p))
+            return ext->IDENTIFIER()->getText();
+    }
+    return typeName;
+}
+
 static std::string lookupFuncReturnType(const std::string &funcName,
-                                        const FuncLookupCtx *flc) {
+                                        const FuncLookupCtx *flc,
+                                        antlr4::ParserRuleContext* fnCtx = nullptr) {
   if (!flc)
     return "";
 
@@ -648,14 +668,14 @@ static std::string lookupFuncReturnType(const std::string &funcName,
       if (auto *fd = tld->functionDecl()) {
         if (!fd->IDENTIFIER().empty() && safeIdAt(fd, 0) == funcName &&
             fd->typeSpec())
-          return safeText(fd->typeSpec());
+          return resolveSelfType(safeText(fd->typeSpec()), flc->tree, fd);
       }
       if (auto *ext = tld->externDecl()) {
         if (ext->IDENTIFIER() && safeText(ext->IDENTIFIER()) == funcName &&
             ext->typeSpec()) {
           auto ret = safeText(ext->typeSpec());
           if (ret != "auto")
-            return ret;
+            return resolveSelfType(ret, flc->tree, ext);
         }
       }
     }
@@ -669,7 +689,7 @@ static std::string lookupFuncReturnType(const std::string &funcName,
       if (sym->kind == ExportedSymbol::Function) {
         auto *fd = dynamic_cast<LucisParser::FunctionDeclContext *>(sym->decl);
         if (fd)
-          return safeText(fd->typeSpec());
+          return resolveSelfType(safeText(fd->typeSpec()), flc->tree, fd);
       }
     }
   }
@@ -1056,7 +1076,7 @@ static std::string inferExprTypeName(
               continue;
 
             if (!ext->typeParamList())
-              return safeText(m->typeSpec());
+              return resolveSelfType(safeText(m->typeSpec()), ext);
 
             std::unordered_set<std::string> tps;
             for (auto *tp : ext->typeParamList()->typeParam()) {
@@ -1075,7 +1095,7 @@ static std::string inferExprTypeName(
             if (auto *pl = m->paramList())
               formalParams = pl->param();
             if (actualArgTypes.size() != formalParams.size())
-              return safeText(m->typeSpec());
+              return resolveSelfType(safeText(m->typeSpec()), ext);
 
             std::unordered_map<std::string, std::string> inferred;
             bool ok = true;
@@ -1099,8 +1119,8 @@ static std::string inferExprTypeName(
             }
 
             if (ok)
-              return substituteTypeParams(safeText(m->typeSpec()), inferred);
-            return safeText(m->typeSpec());
+              return resolveSelfType(substituteTypeParams(safeText(m->typeSpec()), inferred), ext);
+            return resolveSelfType(safeText(m->typeSpec()), ext);
           }
         }
       }
@@ -1115,7 +1135,7 @@ static std::string inferExprTypeName(
               continue;
             for (auto *m : ext->extendMethod()) {
               if (safeIdAt(m, 0) == methodName)
-                return safeText(m->typeSpec());
+                return resolveSelfType(safeText(m->typeSpec()), ext);
             }
           }
         }
@@ -1179,7 +1199,7 @@ static std::string inferExprTypeName(
             continue;
           for (auto *m : ext->extendMethod()) {
             if (safeIdAt(m, 0) == methodName && m->typeSpec())
-              return safeText(m->typeSpec());
+              return resolveSelfType(safeText(m->typeSpec()), ext);
           }
         }
       }
@@ -1196,7 +1216,7 @@ static std::string inferExprTypeName(
               continue;
             for (auto *m : ext->extendMethod()) {
               if (safeIdAt(m, 0) == methodName && m->typeSpec())
-                return safeText(m->typeSpec());
+                return resolveSelfType(safeText(m->typeSpec()), ext);
             }
           }
         }

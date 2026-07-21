@@ -477,6 +477,7 @@ SignatureInfo SignatureHelpProvider::buildFromExtendMethod(
     SignatureInfo sig;
 
     std::string retType = typeSpecToString(method->typeSpec());
+    if (retType == "Self") retType = structName;
     std::string name = safeIdAt(method, 0);
     bool hasReceiver = method->AMPERSAND() != nullptr;
 
@@ -495,6 +496,7 @@ SignatureInfo SignatureHelpProvider::buildFromExtendMethod(
     for (size_t i = 0; i < params.size(); i++) {
         if (i > 0) label << ", ";
         std::string pType = typeSpecToString(params[i]->typeSpec());
+        if (pType == "Self") pType = structName;
         std::string pName = safeText(params[i]->IDENTIFIER());
         bool isVariadic = params[i]->SPREAD() != nullptr;
 

@@ -76,6 +76,7 @@ static bool isKeyword(size_t tokenType) {
         case LucisLexer::INLINE_BLOCK: case LucisLexer::SCOPE_BLOCK:
         case LucisLexer::ASM:    case LucisLexer::VOLATILE: case LucisLexer::GOTO:
         case LucisLexer::INTEL:  case LucisLexer::COMPTIME: case LucisLexer::CONST:
+        case LucisLexer::SELF:
             return true;
         default:
             return false;

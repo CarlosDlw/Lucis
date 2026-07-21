@@ -3697,6 +3697,23 @@ std::optional<HoverResult> HoverProvider::hoverTypeSpec(
         }
     }
 
+    // Self keyword: show the resolved extend type
+    if (auto* selfTok = ts->SELF()) {
+        if (selfTok->getSymbol() == hoveredToken) {
+            for (auto* p = ts->parent; p; p = p->parent) {
+                auto* ruleCtx = dynamic_cast<antlr4::ParserRuleContext*>(p);
+                if (!ruleCtx) continue;
+                if (auto* ext = dynamic_cast<LucisParser::ExtendDeclContext*>(ruleCtx)) {
+                    std::string structName = ext->IDENTIFIER()->getText();
+                    std::string md = "```lucis\n(type) " + structName + "\n```\n\n"
+                                     "Resolves to `" + structName + "` inside this `extend` block.";
+                    return makeResult(hoveredToken, md);
+                }
+            }
+            return makeResult(hoveredToken, "```lucis\nSelf\n```\nThe `Self` type.");
+        }
+    }
+
     // Check if hovering on collection type keywords (tuple, Vec, Map, Set)
     if (ts->TUPLE() && ts->TUPLE()->getSymbol() == hoveredToken)
         return makeResult(hoveredToken, "```lucis\n(keyword) tuple\n```\nFixed-size heterogeneous collection type.");
