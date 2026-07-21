@@ -17102,8 +17102,10 @@ generic_template_handled:
         }
     }
 
-    auto* result = builder_->CreateCall(
-        llvm::FunctionCallee(fnType, fnPtr), args, "fncall");
+    bool isVoidCall = fnType->getReturnType()->isVoidTy();
+    auto* result = isVoidCall
+        ? builder_->CreateCall(llvm::FunctionCallee(fnType, fnPtr), args)
+        : builder_->CreateCall(llvm::FunctionCallee(fnType, fnPtr), args, "fncall");
 
     if (auto* argList = ctx->argList()) {
         auto exprs = argList->expression();
@@ -21625,11 +21627,15 @@ IRGen::visitMethodCallExpr(LucisParser::MethodCallExprContext* ctx) {
                     }
                 }
 
-                auto* result = builder_->CreateCall(
-                    llvm::FunctionCallee(fnType, fnPtr), callArgs, "fncall");
+                bool isVoidFn = retLLVM && retLLVM->isVoidTy();
+                auto* result = isVoidFn
+                    ? builder_->CreateCall(
+                        llvm::FunctionCallee(fnType, fnPtr), callArgs)
+                    : builder_->CreateCall(
+                        llvm::FunctionCallee(fnType, fnPtr), callArgs, "fncall");
                 for (auto* e : argExprs) consumeExprIfOwnedLocal(e);
 
-                if (retLLVM->isVoidTy())
+                if (isVoidFn)
                     return static_cast<llvm::Value*>(
                         llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
                 return static_cast<llvm::Value*>(result);
