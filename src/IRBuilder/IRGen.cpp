@@ -21465,7 +21465,7 @@ IRGen::visitMethodCallExpr(LucisParser::MethodCallExprContext* ctx) {
     // ── Non-extended method call (original path) ─────────────────────
 
     // ── Struct method via `extend` block (walks parent chain) ────────
-    if (receiverTI && receiverTI->kind == TypeKind::Struct) {
+    if (receiverTI && receiverTI->kind == TypeKind::Struct && recvArrayDims == 0) {
         auto* me = findMethodEntryInChain(receiverTI, methodName);
         if (me) {
             auto* fn = me->fn;
