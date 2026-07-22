@@ -20443,6 +20443,11 @@ unsigned IRGen::countArrayDims(LucisParser::TypeSpecContext* ctx) {
 
     unsigned dims = 0;
     while (!ctx->typeSpec().empty()) {
+        // Skip volatile qualifier — it's not an array dimension
+        if (ctx->VOLATILE()) {
+            ctx = ctx->typeSpec(0);
+            continue;
+        }
         // Only count [] array dimensions, not other compound types
         if (ctx->TUPLE() || ctx->VEC() || ctx->MAP() || ctx->SET() ||
             ctx->LT() || ctx->fnTypeSpec())
