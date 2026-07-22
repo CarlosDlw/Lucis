@@ -73,27 +73,43 @@ Regular Lucis strings (`"..."`) are **not** null-terminated — they are length-
 
 ## Type Correspondence
 
-Lucis types map directly to C types with no conversion:
+Lucis types map directly to C types with no conversion. The mapping uses the actual byte
+size reported by the compiler when the type's size is platform-dependent:
 
-| C Type | T Type |
-|--------|--------|
-| `char` | `char` |
-| `signed char` | `char` |
-| `unsigned char` | `uint8` |
-| `short` | `int16` |
-| `unsigned short` | `uint16` |
-| `int` | `int32` |
-| `unsigned int` | `uint32` |
-| `long` | `int64` |
-| `unsigned long` | `uint64` |
-| `float` | `float32` |
-| `double` | `float64` |
-| `long double` | `float80` |
-| `void` | `void` |
-| `void*` | `*void` |
-| `char*` | `*char` (or `cstring`) |
-| `T*` | `*T` |
-| `size_t` | `usize` |
+| C Type | Lucis Type | Notes |
+|--------|-----------|-------|
+| `char` | `char` | Plain `char` (signedness depends on platform) |
+| `signed char` | `int8` | Explicitly signed 8-bit |
+| `unsigned char` | `uint8` | |
+| `short` | `int16` | |
+| `unsigned short` | `uint16` | |
+| `int` | `int32` | |
+| `unsigned int` | `uint32` | |
+| `long` | `int32` or `int64` | Size checked at compile time (4 on Windows ILP32, 8 on Linux LP64) |
+| `unsigned long` | `uint32` or `uint64` | Same platform-dependent sizing |
+| `long long` | `int64` | |
+| `unsigned long long` | `uint64` | |
+| `int8_t` | `int8` | |
+| `uint8_t` | `uint8` | |
+| `int16_t` | `int16` | |
+| `uint16_t` | `uint16` | |
+| `int32_t` | `int32` | |
+| `uint32_t` | `uint32` | |
+| `int64_t` | `int64` | |
+| `uint64_t` | `uint64` | |
+| `float` | `float32` | |
+| `double` | `float64` | |
+| `long double` | `float64`, `float80`, or `float128` | Size checked at compile time (64 MSVC, 80 x86, 128 ARM) |
+| `void` | `void` | |
+| `void*` | `*void` | |
+| `char*` | `*char` (or `cstring`) | |
+| `signed char*` | `*int8` | |
+| `unsigned char*` | `*uint8` | |
+| `T*` | `*T` | Pointer to any type |
+| `size_t` | `usize` | Platform-dependent unsigned (4 or 8 bytes) |
+| `wchar_t` | `uint16` or `uint32` | Size checked at compile time |
+| `char16_t` | `uint16` | |
+| `char32_t` | `uint32` | |
 
 ---
 
