@@ -3,6 +3,28 @@
 CTypeMapper::CTypeMapper(TypeRegistry& registry, CBindings& bindings)
     : registry_(registry), bindings_(bindings) {}
 
+// Map an integer type by its byte size. Returns nullptr for unknown sizes.
+static const TypeInfo* intBySize(TypeRegistry& reg, unsigned bytes, bool isSigned) {
+    switch (bytes) {
+        case 1: return reg.lookup(isSigned ? "int8" : "uint8");
+        case 2: return reg.lookup(isSigned ? "int16" : "uint16");
+        case 4: return reg.lookup(isSigned ? "int32" : "uint32");
+        case 8: return reg.lookup(isSigned ? "int64" : "uint64");
+        case 16: return reg.lookup(isSigned ? "int128" : "uint128");
+        default: return nullptr;
+    }
+}
+
+static const TypeInfo* floatBySize(TypeRegistry& reg, unsigned bytes) {
+    switch (bytes) {
+        case 4:  return reg.lookup("float32");
+        case 8:  return reg.lookup("float64");
+        case 10: return reg.lookup("float80");
+        case 16: return reg.lookup("float128");
+        default: return reg.lookup("float64");
+    }
+}
+
 const TypeInfo* CTypeMapper::map(CXType cxType) {
     // Peel through typedefs to the canonical type
     CXType canonical = clang_getCanonicalType(cxType);
@@ -14,10 +36,14 @@ const TypeInfo* CTypeMapper::map(CXType cxType) {
     case CXType_Bool:
         return registry_.lookup("bool");
 
+    // plain char (platform-dependent signedness)
     case CXType_Char_S:
     case CXType_Char_U:
-    case CXType_SChar:
         return registry_.lookup("char");
+
+    // explicit signed char → int8 (distinct from plain char in C)
+    case CXType_SChar:
+        return registry_.lookup("int8");
 
     case CXType_UChar:
         return registry_.lookup("uint8");
@@ -32,10 +58,17 @@ const TypeInfo* CTypeMapper::map(CXType cxType) {
     case CXType_UInt:
         return registry_.lookup("uint32");
 
-    case CXType_Long:
-        return registry_.lookup("int64");
-    case CXType_ULong:
-        return registry_.lookup("uint64");
+    // long/ulong size varies by platform — check actual byte size
+    case CXType_Long: {
+        auto size = clang_Type_getSizeOf(canonical);
+        auto* t = intBySize(registry_, size > 0 ? static_cast<unsigned>(size) : 8, true);
+        return t ? t : registry_.lookup("int64");
+    }
+    case CXType_ULong: {
+        auto size = clang_Type_getSizeOf(canonical);
+        auto* t = intBySize(registry_, size > 0 ? static_cast<unsigned>(size) : 8, false);
+        return t ? t : registry_.lookup("uint64");
+    }
 
     case CXType_LongLong:
         return registry_.lookup("int64");
@@ -53,8 +86,11 @@ const TypeInfo* CTypeMapper::map(CXType cxType) {
     case CXType_Double:
         return registry_.lookup("float64");
 
-    case CXType_LongDouble:
-        return registry_.lookup("float80");
+    // long double size varies by platform (80-bit x86, 128-bit ARM, 64-bit MSVC)
+    case CXType_LongDouble: {
+        auto size = clang_Type_getSizeOf(canonical);
+        return floatBySize(registry_, size > 0 ? static_cast<unsigned>(size) : 8);
+    }
 
     case CXType_Pointer:
         return mapPointer(canonical);
@@ -100,6 +136,23 @@ const TypeInfo* CTypeMapper::map(CXType cxType) {
         return registry_.lookup("int32");
     }
 
+    // Wide/unicode character types — map by size
+    case CXType_WChar: {
+        auto size = clang_Type_getSizeOf(canonical);
+        auto* t = intBySize(registry_, size > 0 ? static_cast<unsigned>(size) : 4, false);
+        return t ? t : registry_.lookup("int32");
+    }
+    case CXType_Char16: {
+        auto size = clang_Type_getSizeOf(canonical);
+        auto* t = intBySize(registry_, size > 0 ? static_cast<unsigned>(size) : 2, false);
+        return t ? t : registry_.lookup("uint16");
+    }
+    case CXType_Char32: {
+        auto size = clang_Type_getSizeOf(canonical);
+        auto* t = intBySize(registry_, size > 0 ? static_cast<unsigned>(size) : 4, false);
+        return t ? t : registry_.lookup("uint32");
+    }
+
     default:
         return nullptr;
     }
@@ -115,11 +168,14 @@ const TypeInfo* CTypeMapper::mapPointer(CXType cxType) {
 
     CXType pointee = clang_getPointeeType(cxType);
 
-    // char* → *char
-    if (pointee.kind == CXType_Char_S || pointee.kind == CXType_Char_U ||
-        pointee.kind == CXType_SChar) {
+    // char* → *char, signed char* → *int8
+    if (pointee.kind == CXType_Char_S || pointee.kind == CXType_Char_U) {
         auto* charTI = registry_.lookup("char");
         return makePointerTo(charTI);
+    }
+    if (pointee.kind == CXType_SChar) {
+        auto* i8TI = registry_.lookup("int8");
+        return makePointerTo(i8TI);
     }
 
     // void* → *void
