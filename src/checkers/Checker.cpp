@@ -214,9 +214,12 @@ static bool classifyUnwrapCatchEnum(const TypeInfo* enumType,
         // or #[error] attribute, or payload type is Error.
         bool looksLikeErr = variant.payloadFields.empty()
             || variant.isError
+            || variant.name == "Err"
             || (variant.payloadFields.size() == 1
                 && variant.payloadFields[0].typeInfo
                 && isOrInheritsFrom(variant.payloadFields[0].typeInfo, "Error"));
+
+
 
         if (looksLikeErr) {
             if (out.errVariant) {
@@ -4545,13 +4548,17 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
                 return receiverType->valueType;
             return receiverType;
         }
-        // _vec_key → Vec<keyType>, _vec_val → Vec<valType>
-        if (desc->returnType == "_vec_key" || desc->returnType == "_vec_val") {
+        // _vec_key → Vec<keyType>, _vec_val → Vec<valType>,
+        // _vec_elem → Vec<elementType>
+        if (desc->returnType == "_vec_key" || desc->returnType == "_vec_val"
+            || desc->returnType == "_vec_elem") {
             const TypeInfo* innerType = nullptr;
             if (desc->returnType == "_vec_key" && receiverType->keyType)
                 innerType = receiverType->keyType;
             else if (desc->returnType == "_vec_val" && receiverType->valueType)
                 innerType = receiverType->valueType;
+            else if (desc->returnType == "_vec_elem" && receiverType->elementType)
+                innerType = receiverType->elementType;
             if (innerType) {
                 auto fullName = "Vec<" + innerType->name + ">";
                 for (auto& dt : dynamicTypes_) {
@@ -11479,6 +11486,7 @@ const TypeInfo* Checker::instantiateGenericEnum(
         EnumVariantInfo info;
         info.name = variantName;
         info.discriminant = static_cast<unsigned>(ti.enumVariantInfos.size());
+        info.isError = hasAttribute(variantDecl->attributeList(), "error");
 
         if (variantDecl->LPAREN()) {
             info.payloadKind = EnumPayloadKind::Tuple;

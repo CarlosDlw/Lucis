@@ -238,7 +238,7 @@ void ExtendedTypeRegistry::registerBuiltins() {
                             .emitTag = "set.free" });
 
     // ── Iteration ────────────────────────────────────────────────────────
-    set.methods.push_back({ "values", {TypeKind::Extended}, {}, "_self",
+    set.methods.push_back({ "values", {TypeKind::Extended}, {}, "_vec_elem",
                             .emitTag = "set.values" });
 
     registerType(std::move(set));

@@ -259,6 +259,7 @@ static bool classifyUnwrapCatchEnum(const TypeInfo* enumType,
     for (const auto& variant : enumType->enumVariantInfos) {
         bool looksLikeErr = variant.payloadFields.empty()
             || variant.isError
+            || variant.name == "Err"
             || (variant.payloadFields.size() == 1
                 && variant.payloadFields[0].typeInfo
                 && isOrInheritsFrom(variant.payloadFields[0].typeInfo, "Error"));
