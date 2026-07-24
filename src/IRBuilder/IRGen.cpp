@@ -4519,15 +4519,17 @@ std::any IRGen::visitFieldAssignStmt(LucisParser::FieldAssignStmtContext* ctx) {
             bitTI = structTI;
             bitPtr = alloca;
         }
+        // Determine if volatile — check the pointer type's volatile qualifier
+        bool isBitVol = structTI && structTI->isVolatile;
+
         if (bitTI && bitPtr && identifiers.size() == 2) {
             auto fieldName = identifiers[1]->getText();
             for (auto& bf : bitTI->bitFields) {
                 if (bf.name == fieldName && !bf.isPadding) {
                     auto* rhs = castValue(visit(ctx->expression()));
                     auto* backTy = bitTI->backingType->toLLVMType(*context_, module_->getDataLayout());
-                    bool isVol = bitTI->isVolatile;
                     auto* rawVal = builder_->CreateLoad(backTy, bitPtr, bitTI->name + "_raw");
-                    if (isVol) llvm::cast<llvm::LoadInst>(rawVal)->setVolatile(true);
+                    if (isBitVol) llvm::cast<llvm::LoadInst>(rawVal)->setVolatile(true);
                     // Clear the field bits
                     uint64_t mask = ((1ULL << bf.width) - 1);
                     auto* clearMask = llvm::ConstantInt::get(backTy, ~(mask << bf.offset));
@@ -4540,7 +4542,7 @@ std::any IRGen::visitFieldAssignStmt(LucisParser::FieldAssignStmtContext* ctx) {
                             llvm::ConstantInt::get(backTy, bf.offset), "bf_shl");
                     auto* result = builder_->CreateOr(cleared, shifted, "bf_set");
                     auto* store = builder_->CreateStore(result, bitPtr);
-                    if (isVol) store->setVolatile(true);
+                    if (isBitVol) store->setVolatile(true);
                     return {};
                 }
             }
@@ -11863,14 +11865,21 @@ std::any IRGen::visitFieldAccessExpr(LucisParser::FieldAccessExprContext* ctx) {
                 }
             }
         }
+        // Determine if volatile — check the variable's type qualifier
+        bool isBitVol = false;
+        if (auto* id = dynamic_cast<LucisParser::IdentExprContext*>(baseExpr)) {
+            auto it = locals_.find(id->IDENTIFIER()->getText());
+            if (it != locals_.end() && it->second.typeInfo)
+                isBitVol = it->second.typeInfo->isVolatile;
+        }
+
         if (bitTI && basePtr) {
             for (auto& bf : bitTI->bitFields) {
                 if (bf.name == fieldName && !bf.isPadding) {
                     auto* i32Ty = llvm::Type::getInt32Ty(*context_);
                     auto* backTy = bitTI->backingType->toLLVMType(*context_, module_->getDataLayout());
                     auto* rawVal = builder_->CreateLoad(backTy, basePtr, bitTI->name + "_raw");
-                    bool isVol = bitTI->isVolatile || (bitTI->backingType && bitTI->backingType->isVolatile);
-                    if (isVol) llvm::cast<llvm::LoadInst>(rawVal)->setVolatile(true);
+                    if (isBitVol) llvm::cast<llvm::LoadInst>(rawVal)->setVolatile(true);
 
                     // Shift right by offset
                     llvm::Value* shifted = rawVal;
