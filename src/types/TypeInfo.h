@@ -29,6 +29,7 @@ enum class TypeKind {
     Tuple,    // tuple type: tuple<T1, T2, ...>
     VAList,   // native variadic argument list state
     Closure,  // closure type: fn ptr + context (for capturing lambdas)
+    Fallible, // fallible type: !T — either T or Error
 };
 
 struct TypeInfo;
@@ -74,6 +75,8 @@ struct TypeInfo {
     const TypeInfo* elementType = nullptr;   // non-null for Extended generics (Vec<T> → T)
     const TypeInfo* keyType = nullptr;       // non-null for Map<K,V> → K
     const TypeInfo* valueType = nullptr;     // non-null for Map<K,V> → V
+    const TypeInfo* successType = nullptr;   // non-null for Fallible — T in !T
+    const TypeInfo* errorType = nullptr;     // non-null for Fallible — E in !T:E (default Error)
     std::string extendedKind;                // extended type base name: "Vec", "Map", etc.
     unsigned arraySize = 0;                  // >0 for fixed-size arrays: [N]T
     std::vector<unsigned> arraySizes;        // multi-dim array sizes for type aliases: [3][3]T → {3,3}
