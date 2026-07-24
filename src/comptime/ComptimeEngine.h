@@ -1,35 +1,32 @@
 #pragma once
 
 #include "comptime/ComptimeValue.h"
-#include "comptime/ComptimeJIT.h"
+#include "comptime/ComptimeInterpreter.h"
 #include "comptime/ComptimeRegistry.h"
+#include "types/TypeRegistry.h"
 #include <memory>
 
-// Orchestrates compile-time evaluation of comptime functions.
-// Called by the build pipeline between checker and IRGen.
 class ComptimeEngine {
 public:
     ComptimeEngine();
 
-    // Evaluate a comptime function call.
-    // funcDecl: the FunctionDeclContext* from the parsed AST
-    // args: already-evaluated comptime values (from compile-time constant folding)
+    void setTypeRegistry(const TypeRegistry& types);
+
+    void setConstEvalFn(ComptimeInterpreter::ConstEvalFn fn);
+
     ComptimeValue evaluate(void* funcDecl,
                            const std::vector<ComptimeValue>& args);
 
-    // Whether the JIT engine is ready.
-    bool isReady() const { return jit_ && jit_->isReady(); }
+    bool isReady() const { return true; }
 
-    // Set the target triple for cross-compilation comptime evaluation.
-    void setTargetTriple(const std::string& triple) {
-        if (jit_) jit_->setTargetTriple(triple);
-    }
+    void setTargetTriple(const std::string&) {}
 
-    // Access the comptime function registry.
     ComptimeRegistry& registry() { return registry_; }
     const ComptimeRegistry& registry() const { return registry_; }
 
 private:
-    std::unique_ptr<ComptimeJIT> jit_;
+    std::unique_ptr<ComptimeInterpreter> interpreter_;
+    const TypeRegistry* typeRegistry_ = nullptr;
+    ComptimeInterpreter::ConstEvalFn constEvalFn_;
     ComptimeRegistry registry_;
 };

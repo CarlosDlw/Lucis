@@ -245,9 +245,8 @@ set(SOURCES
     src/attributes/TargetInfo.cpp
     src/comptime/ComptimeRegistry.cpp
     src/comptime/ComptimeValue.cpp
-    src/comptime/ComptimeJIT.cpp
     src/comptime/ComptimeEngine.cpp
-    src/comptime/ComptimeIRGen.cpp
+    src/comptime/ComptimeInterpreter.cpp
     src/IRBuilder/IRGen.cpp
     src/LLVM_IR/IRModule.cpp
     src/LLVM_Optimizer/Optimizer.cpp

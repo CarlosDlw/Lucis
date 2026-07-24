@@ -2,9 +2,8 @@
 
 #include <string>
 #include <vector>
+#include <unordered_map>
 
-// Represents a value computed at compile time.
-// Analogous to a runtime value, but lives entirely within the compiler process.
 class ComptimeValue {
 public:
     enum class Kind {
@@ -14,6 +13,9 @@ public:
         Bool,
         String,
         Type,     // const TypeInfo*
+        List,
+        Struct,
+        Function,
     };
 
     static ComptimeValue voidVal();
@@ -21,7 +23,10 @@ public:
     static ComptimeValue floatVal(double v);
     static ComptimeValue boolVal(bool v);
     static ComptimeValue stringVal(const std::string& v);
-    static ComptimeValue typeVal(void* typePtr); // TypeInfo* opaque
+    static ComptimeValue typeVal(void* typePtr);
+    static ComptimeValue listVal(std::vector<ComptimeValue> v);
+    static ComptimeValue structVal(std::unordered_map<std::string, ComptimeValue> v);
+    static ComptimeValue functionVal(void* funcDecl);
 
     Kind kind() const { return kind_; }
 
@@ -30,6 +35,9 @@ public:
     bool         asBool() const;
     std::string  asString() const;
     void*        asType() const;
+    const std::vector<ComptimeValue>& asList() const;
+    const std::unordered_map<std::string, ComptimeValue>& asStruct() const;
+    void*        asFunction() const;
 
 private:
     Kind kind_ = Kind::Void;
@@ -37,5 +45,8 @@ private:
     double       floatVal_ = 0.0;
     bool         boolVal_ = false;
     std::string  stringVal_;
-    void*        typeVal_ = nullptr; // const TypeInfo*
+    void*        typeVal_ = nullptr;
+    std::vector<ComptimeValue> listVal_;
+    std::unordered_map<std::string, ComptimeValue> structVal_;
+    void*        funcDecl_ = nullptr;
 };

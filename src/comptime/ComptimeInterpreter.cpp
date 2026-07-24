@@ -1,0 +1,259 @@
+#include "comptime/ComptimeInterpreter.h"
+#include "generated/LucisParser.h"
+
+ComptimeInterpreter::ComptimeInterpreter(
+    const TypeRegistry& types, ComptimeRegistry& registry,
+    ConstEvalFn constEval)
+    : types_(types), registry_(registry), constEval_(constEval) {}
+
+ComptimeValue ComptimeInterpreter::evaluate(
+    void* funcDecl, const std::vector<ComptimeValue>& args) {
+    auto* func = static_cast<LucisParser::FunctionDeclContext*>(funcDecl);
+    Frame frame;
+    auto* params = func->paramList();
+    if (params) {
+        size_t i = 0;
+        for (auto* p : params->param()) {
+            if (i < args.size()) {
+                if (auto* id = p->IDENTIFIER())
+                    frame.locals[id->getText()] = args[i];
+            }
+            i++;
+        }
+    }
+    frames_.push_back(std::move(frame));
+    auto result = evalBlock(func->block());
+    frames_.pop_back();
+    return result;
+}
+
+ComptimeValue ComptimeInterpreter::evalBlock(void* blockCtx) {
+    auto* block = static_cast<LucisParser::BlockContext*>(blockCtx);
+    for (auto* stmt : block->statement()) {
+        auto result = evalStmt(stmt);
+        if (result.kind() != ComptimeValue::Kind::Void)
+            return result;
+    }
+    return ComptimeValue::voidVal();
+}
+
+ComptimeValue ComptimeInterpreter::evalStmt(void* stmtCtx) {
+    auto* stmt = static_cast<LucisParser::StatementContext*>(stmtCtx);
+
+    if (auto* ret = stmt->returnStmt()) return evalReturn(ret);
+    if (auto* ifs = stmt->ifStmt()) return evalIf(ifs);
+    if (auto* decl = stmt->varDeclStmt()) return evalVarDecl(decl);
+    if (auto* assign = stmt->assignStmt()) return evalAssign(assign);
+    if (auto* ws = stmt->whileStmt()) return evalWhile(ws);
+
+    // Expr statement — look for fn call or match
+    if (auto* es = stmt->exprStmt()) {
+        auto* expr = es->expression();
+        if (auto* call = dynamic_cast<LucisParser::FnCallExprContext*>(expr))
+            return evalFnCall(call);
+        if (auto* match = dynamic_cast<LucisParser::MatchExprContext*>(expr))
+            return evalMatch(match);
+    }
+
+    // Simple callStmt: name(args)
+    if (auto* cs = stmt->callStmt()) {
+        auto* id = cs->IDENTIFIER();
+        if (registry_.isComptime(id->getText())) {
+            std::vector<ComptimeValue> args;
+            if (auto* argList = cs->argList()) {
+                for (auto* arg : argList->expression())
+                    args.push_back(evalExpr(arg));
+            }
+            auto* decl = registry_.lookup(id->getText());
+            if (decl) return evaluate(decl, args);
+        }
+    }
+
+    if (auto* naked = stmt->nakedBlockStmt())
+        return evalBlock(naked);
+
+    return ComptimeValue::voidVal();
+}
+
+ComptimeValue ComptimeInterpreter::evalReturn(void* retCtx) {
+    auto* ret = static_cast<LucisParser::ReturnStmtContext*>(retCtx);
+    if (!ret->expression()) return ComptimeValue::voidVal();
+    return evalExpr(ret->expression());
+}
+
+ComptimeValue ComptimeInterpreter::evalIf(void* ifCtx) {
+    auto* ifStmt = static_cast<LucisParser::IfStmtContext*>(ifCtx);
+    auto cond = evalExpr(ifStmt->expression());
+    bool isTrue = cond.kind() == ComptimeValue::Kind::Bool ? cond.asBool()
+                : cond.kind() == ComptimeValue::Kind::Int ? cond.asInt() != 0 : false;
+    if (isTrue) {
+        if (auto* b = ifStmt->ifBody()->block()) return evalBlock(b);
+        return ComptimeValue::voidVal();
+    }
+    for (auto* eif : ifStmt->elseIfClause()) {
+        auto ec = evalExpr(eif->expression());
+        bool et = ec.kind() == ComptimeValue::Kind::Bool ? ec.asBool()
+                : ec.kind() == ComptimeValue::Kind::Int ? ec.asInt() != 0 : false;
+        if (et) {
+            if (auto* b = eif->ifBody()->block()) return evalBlock(b);
+            return ComptimeValue::voidVal();
+        }
+    }
+    if (auto* ec = ifStmt->elseClause()) {
+        if (auto* b = ec->ifBody()->block()) return evalBlock(b);
+    }
+    return ComptimeValue::voidVal();
+}
+
+ComptimeValue ComptimeInterpreter::evalVarDecl(void* declCtx) {
+    auto* decl = static_cast<LucisParser::VarDeclStmtContext*>(declCtx);
+    if (decl->varDeclarator().empty()) return ComptimeValue::voidVal();
+    auto* d = decl->varDeclarator(0);
+    if (!d->expression()) return ComptimeValue::voidVal();
+    auto val = evalExpr(d->expression());
+    if (auto* id = d->IDENTIFIER())
+        frames_.back().locals[id->getText()] = val;
+    return ComptimeValue::voidVal();
+}
+
+ComptimeValue ComptimeInterpreter::evalAssign(void* assignCtx) {
+    auto* assign = static_cast<LucisParser::AssignStmtContext*>(assignCtx);
+    if (!assign->IDENTIFIER()) return ComptimeValue::voidVal();
+    auto val = evalExpr(assign->expression(0));
+    frames_.back().locals[assign->IDENTIFIER()->getText()] = val;
+    return ComptimeValue::voidVal();
+}
+
+ComptimeValue ComptimeInterpreter::evalWhile(void* whileCtx) {
+    auto* ws = static_cast<LucisParser::WhileStmtContext*>(whileCtx);
+    while (true) {
+        auto cond = evalExpr(ws->expression());
+        bool isTrue = cond.kind() == ComptimeValue::Kind::Bool ? cond.asBool()
+                    : cond.kind() == ComptimeValue::Kind::Int ? cond.asInt() != 0 : false;
+        if (!isTrue) break;
+        auto r = evalBlock(ws->block());
+        if (r.kind() != ComptimeValue::Kind::Void) return r;
+    }
+    return ComptimeValue::voidVal();
+}
+
+ComptimeValue ComptimeInterpreter::evalExpr(void* exprCtx) {
+    auto* expr = static_cast<LucisParser::ExpressionContext*>(exprCtx);
+
+    if (auto* id = dynamic_cast<LucisParser::IdentExprContext*>(expr)) {
+        auto name = id->IDENTIFIER()->getText();
+        for (auto it = frames_.rbegin(); it != frames_.rend(); ++it) {
+            auto f = it->locals.find(name);
+            if (f != it->locals.end()) return f->second;
+        }
+        return ComptimeValue::voidVal();
+    }
+    if (auto* call = dynamic_cast<LucisParser::FnCallExprContext*>(expr))
+        return evalFnCall(call);
+    if (auto* match = dynamic_cast<LucisParser::MatchExprContext*>(expr))
+        return evalMatch(match);
+    if (auto* paren = dynamic_cast<LucisParser::ParenExprContext*>(expr))
+        return evalExpr(paren->expression());
+
+    if (constEval_) {
+        auto r = constEval_(expr);
+        if (r.has_value()) return *r;
+    }
+    return ComptimeValue::voidVal();
+}
+
+ComptimeValue ComptimeInterpreter::evalFnCall(void* callCtx) {
+    auto* call = static_cast<LucisParser::FnCallExprContext*>(callCtx);
+    std::string name;
+    if (auto* id = dynamic_cast<LucisParser::IdentExprContext*>(call->expression()))
+        name = id->IDENTIFIER()->getText();
+    else return ComptimeValue::voidVal();
+
+    auto* decl = registry_.lookup(name);
+    if (!decl) return ComptimeValue::voidVal();
+
+    auto* callee = static_cast<LucisParser::FunctionDeclContext*>(decl);
+    std::vector<ComptimeValue> args;
+    if (auto* al = call->argList()) {
+        for (auto* a : al->expression()) args.push_back(evalExpr(a));
+    }
+
+    Frame frame;
+    if (auto* pl = callee->paramList()) {
+        size_t i = 0;
+        for (auto* p : pl->param()) {
+            if (i < args.size()) {
+                if (auto* id = p->IDENTIFIER())
+                    frame.locals[id->getText()] = args[i];
+            }
+            i++;
+        }
+    }
+    frames_.push_back(std::move(frame));
+    auto r = evalBlock(callee->block());
+    frames_.pop_back();
+    return r;
+}
+
+ComptimeValue ComptimeInterpreter::evalMatch(void* matchCtx) {
+    auto* match = static_cast<LucisParser::MatchExprContext*>(matchCtx);
+    auto val = evalExpr(match->expression());
+
+    for (auto* arm : match->matchArm()) {
+        auto patterns = arm->pattern();
+        if (patterns.empty()) {
+            // default arm
+            if (arm->block()) return evalBlock(arm->block());
+            if (arm->expression().size() > 0) return evalExpr(arm->expression(0));
+            continue;
+        }
+
+        for (auto* pat : patterns) {
+            auto ids = pat->IDENTIFIER();
+            if (ids.empty()) {
+                // wildcard _
+                if (arm->block()) return evalBlock(arm->block());
+                if (arm->expression().size() > 0) return evalExpr(arm->expression(0));
+                continue;
+            }
+
+            // Enum variant pattern: VariantName(binding)
+            if (ids.size() >= 2) {
+                auto varName = ids[0]->getText();
+                auto bindName = ids[1]->getText();
+                if (val.kind() == ComptimeValue::Kind::Struct) {
+                    auto& fields = val.asStruct();
+                    auto it = fields.find(varName);
+                    if (it != fields.end()) {
+                        frames_.back().locals[bindName] = it->second;
+                        if (arm->block()) return evalBlock(arm->block());
+                        if (arm->expression().size() > 0) return evalExpr(arm->expression(0));
+                        return it->second;
+                    }
+                }
+                continue;
+            }
+
+            // Single identifier: binding or unit variant
+            auto name = ids[0]->getText();
+            if (name == "_") {
+                if (arm->block()) return evalBlock(arm->block());
+                if (arm->expression().size() > 0) return evalExpr(arm->expression(0));
+                continue;
+            }
+
+            // Check if it's a unit variant in the value
+            if (val.kind() == ComptimeValue::Kind::Struct && val.asStruct().count(name)) {
+                if (arm->block()) return evalBlock(arm->block());
+                if (arm->expression().size() > 0) return evalExpr(arm->expression(0));
+                continue;
+            }
+
+            // Otherwise it's a binding — capture the value
+            frames_.back().locals[name] = val;
+            return val;
+        }
+    }
+
+    return ComptimeValue::voidVal();
+}

@@ -60,7 +60,10 @@ public:
     void setNoStd(bool v) { noStd_ = v; }
 
     // Set comptime engine for compile-time function evaluation
-    void setComptimeEngine(ComptimeEngine* engine) { comptimeEngine_ = engine; }
+    void setComptimeEngine(ComptimeEngine* engine) {
+        comptimeEngine_ = engine;
+        if (engine) engine->setTypeRegistry(typeRegistry_);
+    }
 
     // Enable/disable DWARF debug info emission
     void setEmitDebugInfo(bool v) { emitDebugInfo_ = v; }
