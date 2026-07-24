@@ -1,0 +1,120 @@
+
+use std::test::{ assertEqual, assertTrue };
+use std::log::println;
+
+// ── Basic if/else ──
+comptime fn max(int32 a, int32 b) int32 {
+    if a > b { ret a; }
+    ret b;
+}
+
+fn testComptimeIfElse() int32 {
+    assertEqual(max(5, 10), 10);
+    assertEqual(max(20, 3), 20);
+    assertEqual(max(7, 7), 7);
+    println("  ✔ comptime if/else");
+    ret 0;
+}
+
+// ── Recursion ──
+comptime fn factorial(int32 n) int32 {
+    if n <= 1 { ret 1; }
+    ret n * factorial(n - 1);
+}
+
+fn testComptimeRecursion() int32 {
+    assertEqual(factorial(5), 120);
+    assertEqual(factorial(10), 3628800);
+    println("  ✔ comptime recursion");
+    ret 0;
+}
+
+// ── Chained calls ──
+comptime fn clamp(int32 n, int32 lo, int32 hi) int32 {
+    int32 v = max(n, lo);
+    v = max(v, hi);
+    ret v;
+}
+
+fn testComptimeChained() int32 {
+    assertEqual(clamp(5, 10, 20), 20);
+    assertEqual(clamp(25, 10, 20), 25);
+    assertEqual(clamp(15, 10, 20), 20);
+    println("  ✔ comptime chained calls");
+    ret 0;
+}
+
+// ── while + compound assign ──
+comptime fn sumTo(int32 n) int32 {
+    int32 total = 0;
+    int32 i = 1;
+    while i <= n {
+        total += i;
+        i += 1;
+    }
+    ret total;
+}
+
+fn testComptimeWhile() int32 {
+    assertEqual(sumTo(5), 15);
+    assertEqual(sumTo(10), 55);
+    println("  ✔ comptime while + compound assign");
+    ret 0;
+}
+
+// ── for in range ──
+comptime fn rangeSum(int32 n) int32 {
+    int32 total = 0;
+    for int32 i in 0..n {
+        total += i;
+    }
+    ret total;
+}
+
+fn testComptimeForIn() int32 {
+    assertEqual(rangeSum(5), 10);
+    assertEqual(rangeSum(10), 45);
+    println("  ✔ comptime for in range");
+    ret 0;
+}
+
+// ── @ builtins ──
+struct TestPoint { int32 x; int32 y; }
+enum TestColor { A, B, C }
+
+fn testComptimeBuiltins() int32 {
+    string tn = @typeName(TestPoint);
+    if tn == "TestPoint" {
+        println("  ✔ @typeName");
+    } else {
+        ret 1;
+    }
+
+    bool st = @isStruct(TestPoint);
+    bool en = @isEnum(TestPoint);
+    bool un = @isUnion(TestPoint);
+    if st && !en && !un {
+        println("  ✔ @isStruct / @isEnum / @isUnion");
+    } else {
+        ret 1;
+    }
+
+    println("  ✔ all comptime builtins");
+    ret 0;
+}
+
+// ── Runner ──
+
+fn testComptimeBasic() int32 {
+    println("[Testing comptime basic...]");
+
+    assertEqual(testComptimeIfElse(), 0);
+    assertEqual(testComptimeRecursion(), 0);
+    assertEqual(testComptimeChained(), 0);
+    assertEqual(testComptimeWhile(), 0);
+    assertEqual(testComptimeForIn(), 0);
+    assertEqual(testComptimeBuiltins(), 0);
+
+    println("✔ all comptime/basic tests passed");
+    ret 0;
+}
