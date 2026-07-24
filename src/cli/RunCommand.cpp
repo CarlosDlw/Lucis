@@ -135,6 +135,7 @@ int RunCommand::run(const ArgParser& parser) {
         irGen.setCBindings(pipeline->cBindings.get());
         irGen.setSemanticDB(pipeline->semanticDB.get());
         irGen.setComptimeEngine(&comptimeEngine);
+        irGen.setCompileTimeValues(pipeline->compileTimeValues);
         irGen.setTargetTriple(
             pipeOpts.targetTriple.empty()
                 ? llvm::sys::getDefaultTargetTriple()

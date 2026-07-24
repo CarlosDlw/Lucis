@@ -12,6 +12,7 @@
 #include "ffi/CBindings.h"
 #include "ffi/CHeaderResolver.h"
 #include "imports/ImportResolver.h"
+#include "comptime/ComptimeValue.h"
 
 #include <iostream>
 #include <iomanip>
@@ -377,6 +378,11 @@ std::unique_ptr<PipelineResult> LucisPipeline::run(const Options& opts) {
         if (opts.printCfg) {
             checker.printCfgInfo();
             return result;
+        }
+        // Accumulate compile-time integer values from checker
+        for (auto& [name, val] : checker.getCompileTimeValues()) {
+            if (val.kind() == ComptimeValue::Kind::Int)
+                result->compileTimeValues[name] = val.asInt();
         }
         for (auto& err : checker.errors())
             printErrorLine(unit.filePath + ": " + err);

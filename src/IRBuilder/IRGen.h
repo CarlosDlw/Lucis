@@ -66,6 +66,12 @@ public:
         if (engine) engine->setTypeRegistry(typeRegistry_);
     }
 
+    // Set compile-time constant integer values from checker (for array dimensions, etc.)
+    void setCompileTimeValues(const std::unordered_map<std::string, int64_t>& vals) {
+        for (auto& [name, val] : vals)
+            compileTimeValues_[name] = val;
+    }
+
     // Enable/disable DWARF debug info emission
     void setEmitDebugInfo(bool v) { emitDebugInfo_ = v; }
 

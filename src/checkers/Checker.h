@@ -33,6 +33,9 @@ public:
 
     const std::vector<std::string>& errors() const { return errors_; }
     const std::vector<Diagnostic>& diagnostics() const { return diagnostics_; }
+    const std::unordered_map<std::string, ComptimeValue>& getCompileTimeValues() const {
+        return compileTimeValues_;
+    }
 
     // Set module context for cross-file symbol resolution.
     void setModuleContext(const ModuleRegistry* registry,

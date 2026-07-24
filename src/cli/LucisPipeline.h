@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <unordered_map>
 #include <vector>
 #include <memory>
 
@@ -29,6 +30,9 @@ struct PipelineResult {
     std::vector<std::string> cSourceFiles;
 
     std::vector<std::string> linkerFlags;
+
+    // Compile-time constant integer values from checker (for array dimensions, etc.)
+    std::unordered_map<std::string, int64_t> compileTimeValues;
 
     bool hasErrors = false;
 };
