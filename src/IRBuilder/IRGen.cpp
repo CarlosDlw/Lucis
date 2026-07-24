@@ -5493,14 +5493,21 @@ std::any IRGen::visitArrowCompoundAssignStmt(
     auto* fieldTy = currentTI->fields[fieldIdx].typeInfo
                         ->toLLVMType(*context_, module_->getDataLayout());
 
+    auto* fieldTI = currentTI->fields[fieldIdx].typeInfo;
     auto* oldVal = builder_->CreateLoad(fieldTy, gep, fieldName + "_old");
+    if (fieldTI->isVolatile)
+        llvm::cast<llvm::LoadInst>(oldVal)->setVolatile(true);
     auto* rhs = castValue(visit(ctx->expression()));
 
     if (rhs->getType() != fieldTy) {
         if (rhs->getType()->isIntegerTy() && fieldTy->isIntegerTy())
-            rhs = builder_->CreateIntCast(rhs, fieldTy,
-                      currentTI->fields[fieldIdx].typeInfo->isSigned);
+            rhs = builder_->CreateIntCast(rhs, fieldTy, fieldTI->isSigned);
     }
+
+    auto acStore = [&](llvm::Value* v, llvm::Value* p) {
+        auto* s = builder_->CreateStore(v, p);
+        if (fieldTI->isVolatile) s->setVolatile(true);
+    };
 
     // ── Null-coalescing: ptr->field ??= default ──────────────────
     if (ctx->op->getType() == LucisLexer::NULLCOAL_ASSIGN) {
@@ -5511,7 +5518,7 @@ std::any IRGen::visitArrowCompoundAssignStmt(
         auto* mergeBB = llvm::BasicBlock::Create(*context_, "ncoal.end", currentFunction_);
         builder_->CreateCondBr(isNull, thenBB, mergeBB);
         builder_->SetInsertPoint(thenBB);
-        builder_->CreateStore(rhs, gep);
+        acStore(rhs, gep);
         builder_->CreateBr(mergeBB);
         builder_->SetInsertPoint(mergeBB);
         return {};
@@ -5522,7 +5529,6 @@ std::any IRGen::visitArrowCompoundAssignStmt(
     bool isFloat = fieldTy->isFloatingPointTy();
 
     // Pointer arithmetic on pointer field accessed via ->: field += int
-    auto* fieldTI = currentTI->fields[fieldIdx].typeInfo;
     if (fieldTI && fieldTI->kind == TypeKind::Pointer &&
         (opType == LucisLexer::PLUS_ASSIGN || opType == LucisLexer::MINUS_ASSIGN)) {
         auto* pointeeLLTy = fieldTI->pointeeType
@@ -5533,7 +5539,7 @@ std::any IRGen::visitArrowCompoundAssignStmt(
             idx = builder_->CreateNeg(rhs, "neg");
         result = static_cast<llvm::Value*>(
             builder_->CreateGEP(pointeeLLTy, oldVal, idx, "ptr_cmpd"));
-        builder_->CreateStore(result, gep);
+        acStore(result, gep);
         return {};
     }
 
@@ -5576,7 +5582,7 @@ std::any IRGen::visitArrowCompoundAssignStmt(
         return {};
     }
 
-    builder_->CreateStore(result, gep);
+    acStore(result, gep);
     return {};
 }
 
