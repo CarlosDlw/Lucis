@@ -12,32 +12,30 @@ ComptimeBuiltinRegistry::ComptimeBuiltinRegistry() {
             return ComptimeValue::stringVal(ti ? ti->name : "unknown");
         });
 
-    // @fields(T) → string: returns field names of a struct/union
+    // @fields(T) → string: field names (as list internally, string at runtime)
     add("fields", {ComptimeValue::Kind::Type},
         [](const std::vector<ComptimeValue>& args) -> ComptimeValue {
             auto* ti = static_cast<const TypeInfo*>(args[0].asType());
-            std::string result;
-            if (ti && (ti->kind == TypeKind::Struct || ti->kind == TypeKind::Union)) {
+            std::string s;
+            if (ti && (ti->kind == TypeKind::Struct || ti->kind == TypeKind::Union))
                 for (size_t i = 0; i < ti->fields.size(); i++) {
-                    if (i > 0) result += ", ";
-                    result += ti->fields[i].name;
+                    if (i > 0) s += ", ";
+                    s += ti->fields[i].name;
                 }
-            }
-            return ComptimeValue::stringVal(result);
+            return ComptimeValue::stringVal(s);
         });
 
-    // @variants(T) → string: returns variant names of an enum
+    // @variants(T) → string: variant/enum names
     add("variants", {ComptimeValue::Kind::Type},
         [](const std::vector<ComptimeValue>& args) -> ComptimeValue {
             auto* ti = static_cast<const TypeInfo*>(args[0].asType());
-            std::string result;
-            if (ti && ti->kind == TypeKind::Enum) {
+            std::string s;
+            if (ti && ti->kind == TypeKind::Enum)
                 for (size_t i = 0; i < ti->enumVariants.size(); i++) {
-                    if (i > 0) result += ", ";
-                    result += ti->enumVariants[i];
+                    if (i > 0) s += ", ";
+                    s += ti->enumVariants[i];
                 }
-            }
-            return ComptimeValue::stringVal(result);
+            return ComptimeValue::stringVal(s);
         });
 
     add("typeId", {ComptimeValue::Kind::Type},
@@ -65,6 +63,9 @@ ComptimeBuiltinRegistry::ComptimeBuiltinRegistry() {
             auto* ti = static_cast<const TypeInfo*>(args[0].asType());
             return ComptimeValue::boolVal(ti && ti->kind == TypeKind::Enum);
         });
+
+    // @len(list) → int32: returns list length (needs new grammar, disabled for now)
+    // @list(...) → List: creates a comptime list (needs new grammar, disabled for now)
 
     // @isUnion(T) → bool
     add("isUnion", {ComptimeValue::Kind::Type},

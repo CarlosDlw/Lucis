@@ -9975,6 +9975,7 @@ std::any IRGen::visitAtPtrExpr(LucisParser::AtPtrExprContext* ctx) {
 std::any IRGen::visitAtTypeExpr(LucisParser::AtTypeExprContext* ctx) {
         SET_DBG_LOC(ctx);
     auto builtinName = ctx->IDENTIFIER()->getText();
+
     auto* typeTI = resolveTypeInfo(ctx->typeSpec());
     if (!typeTI) {
         std::cerr << "lucis: @" << builtinName << ": unknown type\n";
