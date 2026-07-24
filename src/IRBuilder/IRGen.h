@@ -7,6 +7,7 @@
 #include <optional>
 #include <unordered_map>
 #include <unordered_set>
+#include <unordered_set>
 
 #include <llvm/IR/LLVMContext.h>
 #include <llvm/IR/Module.h>
@@ -346,9 +347,9 @@ private:
         std::unordered_map<std::string, MethodEntry>> staticStructMethods_;
 
     // Operator overloads registered via `extend` blocks
-    // structName → { internalName → MethodEntry }
+    // structName → { internalName → [overloads] }
     std::unordered_map<std::string,
-        std::unordered_map<std::string, MethodEntry>> operatorMethods_;
+        std::unordered_map<std::string, std::vector<MethodEntry>>> operatorMethods_;
 
     // walk parent chain for method lookup
     const TypeInfo* findMethodReturnInChain(const TypeInfo* ti,
@@ -421,6 +422,10 @@ private:
 
     // Compile-time known integer values (for consts and locals initialized with literals)
     std::unordered_map<std::string, int64_t> compileTimeValues_;
+
+    // Tracks which generic struct types have already had their extend methods lowered.
+    // Prevents duplicate entry blocks when instantiateGenericStruct is called multiple times.
+    std::unordered_set<std::string> loweredGenericExtendTypes_;
 
     // C struct literal macros: name → CStructMacro pointer (owned by CBindings)
     std::unordered_map<std::string, const CStructMacro*> cStructMacros_;

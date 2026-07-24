@@ -27215,7 +27215,8 @@ const TypeInfo* IRGen::instantiateGenericStruct(
         }
     }
 
-    // Instantiate extend methods for this struct, if any
+    // Instantiate extend methods for this struct, if any (only once per concrete type)
+    if (loweredGenericExtendTypes_.insert(mangledName).second) {
     auto extendIt = genericExtendTemplates_.find(baseName);
     if (extendIt != genericExtendTemplates_.end()) {
         auto& extTmpl = extendIt->second;
@@ -27423,6 +27424,8 @@ const TypeInfo* IRGen::instantiateGenericStruct(
         }
     }
 
+    } // end if (loweredGenericExtendTypes_)
+done:
     instantiatedGenerics_.erase(mangledName);
     return result;
 }
