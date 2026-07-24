@@ -6110,6 +6110,27 @@ void CompletionProvider::addAtCfgCompletions(
       ci.insertText = "ptr(";
       items.push_back(std::move(ci));
     }
+    // Comptime builtins (all take a single type argument)
+    struct CBBuiltin { const char* name; const char* detail; };
+    static const CBBuiltin cbBuiltins[] = {
+      {"typeName",  "Returns the name of a type as a string"},
+      {"fields",    "Returns field names of a struct/union"},
+      {"variants",  "Returns variant names of an enum"},
+      {"typeId",    "Returns the FNV-1a hash of a type name"},
+      {"isStruct",  "Returns true if the type is a struct"},
+      {"isEnum",    "Returns true if the type is an enum"},
+      {"isUnion",   "Returns true if the type is a union"},
+    };
+    for (auto& cb : cbBuiltins) {
+      if (matchesPrefix(std::string(cb.name), barePrefix)) {
+        CompletionItem ci;
+        ci.label = cb.name;
+        ci.kind = CompletionKind::Keyword;
+        ci.detail = std::string("Comptime builtin — @") + cb.name + "(T) — " + cb.detail;
+        ci.insertText = std::string(cb.name) + "(";
+        items.push_back(std::move(ci));
+      }
+    }
     return;
   }
 

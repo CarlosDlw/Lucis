@@ -2269,26 +2269,26 @@ std::optional<HoverResult> HoverProvider::walkExprForHover(
 
     // ── @typeName(T), @fields(T), @variants(T), @typeId(T) ─────────
     if (auto* at = dynamic_cast<LucisParser::AtTypeExprContext*>(expr)) {
-        if (at->AT() && at->AT()->getSymbol() == hoveredToken) {
-            std::string desc;
-            auto name = at->IDENTIFIER()->getText();
-            if (name == "typeName")
-                desc = "Returns the name of a type as a string.";
-            else if (name == "fields")
-                desc = "Returns the field names of a struct or union.";
-            else if (name == "variants")
-                desc = "Returns the variant names of an enum.";
-            else if (name == "typeId")
-                desc = "Returns the FNV-1a hash of a type name as int64.";
-            else if (name == "isStruct")
-                desc = "Returns true if the type is a struct.";
-            else if (name == "isEnum")
-                desc = "Returns true if the type is an enum.";
-            else if (name == "isUnion")
-                desc = "Returns true if the type is a union.";
-            if (!desc.empty())
-                return makeResult(hoveredToken,
-                    "```lucis\n(comptime builtin) @" + name + "\n```\n" + desc);
+        std::string desc;
+        auto name = at->IDENTIFIER()->getText();
+        if (name == "typeName")
+            desc = "Returns the name of a type as a string.";
+        else if (name == "fields")
+            desc = "Returns the field names of a struct or union.";
+        else if (name == "variants")
+            desc = "Returns the variant names of an enum.";
+        else if (name == "typeId")
+            desc = "Returns the FNV-1a hash of a type name as int64.";
+        else if (name == "isStruct")
+            desc = "Returns true if the type is a struct.";
+        else if (name == "isEnum")
+            desc = "Returns true if the type is an enum.";
+        else if (name == "isUnion")
+            desc = "Returns true if the type is a union.";
+        if (!desc.empty() && at->IDENTIFIER() &&
+            at->IDENTIFIER()->getSymbol() == hoveredToken) {
+            return makeResult(hoveredToken,
+                "```lucis\n(comptime builtin) @" + name + "\n```\n" + desc);
         }
         if (auto* ts = at->typeSpec()) {
             auto r = hoverTypeSpec(ts, hoveredToken, tree, bindings, project);
