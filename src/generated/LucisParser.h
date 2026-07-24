@@ -20,28 +20,28 @@ public:
     OPERATOR = 33, TRY = 34, CATCH = 35, FINALLY = 36, THROW = 37, BAIL = 38, 
     DEFER = 39, MATCH = 40, OR = 41, EXTERN = 42, ASM = 43, VOLATILE = 44, 
     GOTO = 45, INTEL = 46, AUTO = 47, SELF = 48, VEC = 49, MAP = 50, SET = 51, 
-    TUPLE = 52, ARROW = 53, INCLUDE_SYS = 54, INCLUDE_LOCAL = 55, INLINE_BLOCK = 56, 
-    SCOPE_BLOCK = 57, C_MACRO_BLOCK = 58, ASM_B_BLOCK = 59, NULLCOAL_ASSIGN = 60, 
-    NULLCOAL = 61, SPREAD = 62, RANGE_INCL = 63, RANGE = 64, INT1 = 65, 
-    INT8 = 66, INT16 = 67, INT32 = 68, INT64 = 69, INT128 = 70, INTINF = 71, 
-    ISIZE = 72, UINT1 = 73, UINT8 = 74, UINT16 = 75, UINT32 = 76, UINT64 = 77, 
-    UINT128 = 78, USIZE = 79, FLOAT32 = 80, FLOAT64 = 81, FLOAT80 = 82, 
-    FLOAT128 = 83, DOUBLE = 84, BOOL = 85, CHAR = 86, VOID = 87, STRING = 88, 
-    CSTRING = 89, SUFFIXED_HEX = 90, SUFFIXED_OCT = 91, SUFFIXED_BIN = 92, 
-    SUFFIXED_INT = 93, SUFFIXED_INT_FLOAT = 94, SUFFIXED_FLOAT = 95, SUFFIXED_FLOAT_INT = 96, 
-    SUFFIXED_DOT_FLOAT = 97, HEX_LIT = 98, OCT_LIT = 99, BIN_LIT = 100, 
-    INT_LIT = 101, FLOAT_LIT = 102, BOOL_LIT = 103, C_STR_LIT = 104, STR_LIT = 105, 
-    BTICK = 106, RAW_BTICK = 107, INT_BTICK = 108, SHELL_BTICK = 109, CMPT_BTICK = 110, 
-    CHAR_LIT = 111, ATTR_OPEN = 112, WILDCARD = 113, IDENTIFIER = 114, PLUS_ASSIGN = 115, 
-    MINUS_ASSIGN = 116, STAR_ASSIGN = 117, SLASH_ASSIGN = 118, PERCENT_ASSIGN = 119, 
-    AMP_ASSIGN = 120, PIPE_ASSIGN = 121, CARET_ASSIGN = 122, LSHIFT_ASSIGN = 123, 
-    RSHIFT_ASSIGN = 124, SEMI = 125, COLON = 126, SCOPE = 127, COMMA = 128, 
-    DOT = 129, ASSIGN = 130, LPAREN = 131, RPAREN = 132, LBRACE = 133, RBRACE = 134, 
-    LBRACKET = 135, RBRACKET = 136, STAR = 137, AMPERSAND = 138, MINUS = 139, 
-    PLUS = 140, SLASH = 141, PERCENT = 142, EQ = 143, NEQ = 144, LTE = 145, 
-    GTE = 146, LT = 147, GT = 148, LAND = 149, LOR = 150, NOT = 151, INCR = 152, 
-    DECR = 153, LSHIFT = 154, PIPE = 155, CARET = 156, TILDE = 157, QUESTION = 158, 
-    AT = 159, WS = 160, LINE_COMMENT = 161, BLOCK_COMMENT = 162
+    BITSTRUCT = 52, TUPLE = 53, ARROW = 54, INCLUDE_SYS = 55, INCLUDE_LOCAL = 56, 
+    INLINE_BLOCK = 57, SCOPE_BLOCK = 58, C_MACRO_BLOCK = 59, ASM_B_BLOCK = 60, 
+    NULLCOAL_ASSIGN = 61, NULLCOAL = 62, SPREAD = 63, RANGE_INCL = 64, RANGE = 65, 
+    INT1 = 66, INT8 = 67, INT16 = 68, INT32 = 69, INT64 = 70, INT128 = 71, 
+    INTINF = 72, ISIZE = 73, UINT1 = 74, UINT8 = 75, UINT16 = 76, UINT32 = 77, 
+    UINT64 = 78, UINT128 = 79, USIZE = 80, FLOAT32 = 81, FLOAT64 = 82, FLOAT80 = 83, 
+    FLOAT128 = 84, DOUBLE = 85, BOOL = 86, CHAR = 87, VOID = 88, STRING = 89, 
+    CSTRING = 90, SUFFIXED_HEX = 91, SUFFIXED_OCT = 92, SUFFIXED_BIN = 93, 
+    SUFFIXED_INT = 94, SUFFIXED_INT_FLOAT = 95, SUFFIXED_FLOAT = 96, SUFFIXED_FLOAT_INT = 97, 
+    SUFFIXED_DOT_FLOAT = 98, HEX_LIT = 99, OCT_LIT = 100, BIN_LIT = 101, 
+    INT_LIT = 102, FLOAT_LIT = 103, BOOL_LIT = 104, C_STR_LIT = 105, STR_LIT = 106, 
+    BTICK = 107, RAW_BTICK = 108, INT_BTICK = 109, SHELL_BTICK = 110, CMPT_BTICK = 111, 
+    CHAR_LIT = 112, ATTR_OPEN = 113, WILDCARD = 114, IDENTIFIER = 115, PLUS_ASSIGN = 116, 
+    MINUS_ASSIGN = 117, STAR_ASSIGN = 118, SLASH_ASSIGN = 119, PERCENT_ASSIGN = 120, 
+    AMP_ASSIGN = 121, PIPE_ASSIGN = 122, CARET_ASSIGN = 123, LSHIFT_ASSIGN = 124, 
+    RSHIFT_ASSIGN = 125, SEMI = 126, COLON = 127, SCOPE = 128, COMMA = 129, 
+    DOT = 130, ASSIGN = 131, LPAREN = 132, RPAREN = 133, LBRACE = 134, RBRACE = 135, 
+    LBRACKET = 136, RBRACKET = 137, STAR = 138, AMPERSAND = 139, MINUS = 140, 
+    PLUS = 141, SLASH = 142, PERCENT = 143, EQ = 144, NEQ = 145, LTE = 146, 
+    GTE = 147, LT = 148, GT = 149, LAND = 150, LOR = 151, NOT = 152, INCR = 153, 
+    DECR = 154, LSHIFT = 155, PIPE = 156, CARET = 157, TILDE = 158, QUESTION = 159, 
+    AT = 160, WS = 161, LINE_COMMENT = 162, BLOCK_COMMENT = 163
   };
 
   enum {
@@ -49,29 +49,29 @@ public:
     RuleIncludeDecl = 4, RuleAttrArg = 5, RuleAttrArgList = 6, RuleAttribute = 7, 
     RuleAttributeList = 8, RuleTopLevelDecl = 9, RuleTypeAliasDecl = 10, 
     RuleEnumDecl = 11, RuleEnumVariant = 12, RuleEnumPayloadField = 13, 
-    RuleStructDecl = 14, RuleStructField = 15, RuleUnionDecl = 16, RuleUnionField = 17, 
-    RuleExternDecl = 18, RuleExternParamList = 19, RuleExternParam = 20, 
-    RuleFunctionDecl = 21, RuleExtendDecl = 22, RuleTypeParamList = 23, 
-    RuleTypeParam = 24, RuleExtendMethod = 25, RuleOperatorDecl = 26, RuleOperatorName = 27, 
-    RuleParamList = 28, RuleParam = 29, RuleBlock = 30, RuleStatement = 31, 
-    RuleDeferStmt = 32, RuleNakedBlockStmt = 33, RuleInlineBlockStmt = 34, 
-    RuleScopeBlockStmt = 35, RuleScopeCallbackList = 36, RuleScopeCallback = 37, 
-    RuleLabelDef = 38, RuleAsmStmt = 39, RuleAsmOutputList = 40, RuleAsmInputList = 41, 
-    RuleAsmClobberList = 42, RuleAsmGotoLabelList = 43, RuleAsmOutput = 44, 
-    RuleAsmOperand = 45, RuleExprStmt = 46, RuleVarDeclStmt = 47, RuleVarDeclarator = 48, 
-    RuleConstDeclStmt = 49, RuleConstDeclarator = 50, RuleAssignStmt = 51, 
-    RuleCompoundAssignStmt = 52, RuleFieldAssignStmt = 53, RuleFieldCompoundAssignStmt = 54, 
-    RuleIndexFieldAssignStmt = 55, RuleFieldIndexAssignStmt = 56, RuleDerefAssignStmt = 57, 
-    RuleDerefCompoundAssignStmt = 58, RuleArrowAssignStmt = 59, RuleArrowCompoundAssignStmt = 60, 
-    RuleArrowAnyAssignStmt = 61, RuleArrowAnyCompoundAssignStmt = 62, RuleCallStmt = 63, 
-    RuleArgList = 64, RuleReturnStmt = 65, RuleIfStmt = 66, RuleElseIfClause = 67, 
-    RuleElseClause = 68, RuleIfBody = 69, RuleForStmt = 70, RuleBreakStmt = 71, 
-    RuleContinueStmt = 72, RuleLoopStmt = 73, RuleWhileStmt = 74, RuleDoWhileStmt = 75, 
-    RuleLockStmt = 76, RuleTryCatchStmt = 77, RuleCatchClause = 78, RuleFinallyClause = 79, 
-    RuleThrowStmt = 80, RuleBailStmt = 81, RuleSwitchStmt = 82, RuleCaseClause = 83, 
-    RuleDefaultClause = 84, RuleMatchArm = 85, RulePattern = 86, RuleLiteralPattern = 87, 
-    RuleExpression = 88, RuleTypeSpec = 89, RuleBangEntry = 90, RuleFnTypeSpec = 91, 
-    RulePrimitiveType = 92, RuleCMacroBlock = 93, RuleAsmBBlock = 94
+    RuleStructDecl = 14, RuleStructField = 15, RuleBitstructDecl = 16, RuleBitstructField = 17, 
+    RuleUnionDecl = 18, RuleUnionField = 19, RuleExternDecl = 20, RuleExternParamList = 21, 
+    RuleExternParam = 22, RuleFunctionDecl = 23, RuleExtendDecl = 24, RuleTypeParamList = 25, 
+    RuleTypeParam = 26, RuleExtendMethod = 27, RuleOperatorDecl = 28, RuleOperatorName = 29, 
+    RuleParamList = 30, RuleParam = 31, RuleBlock = 32, RuleStatement = 33, 
+    RuleDeferStmt = 34, RuleNakedBlockStmt = 35, RuleInlineBlockStmt = 36, 
+    RuleScopeBlockStmt = 37, RuleScopeCallbackList = 38, RuleScopeCallback = 39, 
+    RuleLabelDef = 40, RuleAsmStmt = 41, RuleAsmOutputList = 42, RuleAsmInputList = 43, 
+    RuleAsmClobberList = 44, RuleAsmGotoLabelList = 45, RuleAsmOutput = 46, 
+    RuleAsmOperand = 47, RuleExprStmt = 48, RuleVarDeclStmt = 49, RuleVarDeclarator = 50, 
+    RuleConstDeclStmt = 51, RuleConstDeclarator = 52, RuleAssignStmt = 53, 
+    RuleCompoundAssignStmt = 54, RuleFieldAssignStmt = 55, RuleFieldCompoundAssignStmt = 56, 
+    RuleIndexFieldAssignStmt = 57, RuleFieldIndexAssignStmt = 58, RuleDerefAssignStmt = 59, 
+    RuleDerefCompoundAssignStmt = 60, RuleArrowAssignStmt = 61, RuleArrowCompoundAssignStmt = 62, 
+    RuleArrowAnyAssignStmt = 63, RuleArrowAnyCompoundAssignStmt = 64, RuleCallStmt = 65, 
+    RuleArgList = 66, RuleReturnStmt = 67, RuleIfStmt = 68, RuleElseIfClause = 69, 
+    RuleElseClause = 70, RuleIfBody = 71, RuleForStmt = 72, RuleBreakStmt = 73, 
+    RuleContinueStmt = 74, RuleLoopStmt = 75, RuleWhileStmt = 76, RuleDoWhileStmt = 77, 
+    RuleLockStmt = 78, RuleTryCatchStmt = 79, RuleCatchClause = 80, RuleFinallyClause = 81, 
+    RuleThrowStmt = 82, RuleBailStmt = 83, RuleSwitchStmt = 84, RuleCaseClause = 85, 
+    RuleDefaultClause = 86, RuleMatchArm = 87, RulePattern = 88, RuleLiteralPattern = 89, 
+    RuleExpression = 90, RuleTypeSpec = 91, RuleBangEntry = 92, RuleFnTypeSpec = 93, 
+    RulePrimitiveType = 94, RuleCMacroBlock = 95, RuleAsmBBlock = 96
   };
 
   explicit LucisParser(antlr4::TokenStream *input);
@@ -107,6 +107,8 @@ public:
   class EnumPayloadFieldContext;
   class StructDeclContext;
   class StructFieldContext;
+  class BitstructDeclContext;
+  class BitstructFieldContext;
   class UnionDeclContext;
   class UnionFieldContext;
   class ExternDeclContext;
@@ -405,6 +407,7 @@ public:
     IncludeDeclContext *includeDecl();
     TypeAliasDeclContext *typeAliasDecl();
     StructDeclContext *structDecl();
+    BitstructDeclContext *bitstructDecl();
     UnionDeclContext *unionDecl();
     EnumDeclContext *enumDecl();
     ExtendDeclContext *extendDecl();
@@ -539,6 +542,45 @@ public:
   };
 
   StructFieldContext* structField();
+
+  class  BitstructDeclContext : public antlr4::ParserRuleContext {
+  public:
+    BitstructDeclContext(antlr4::ParserRuleContext *parent, size_t invokingState);
+    virtual size_t getRuleIndex() const override;
+    AttributeListContext *attributeList();
+    antlr4::tree::TerminalNode *BITSTRUCT();
+    antlr4::tree::TerminalNode *IDENTIFIER();
+    antlr4::tree::TerminalNode *COLON();
+    TypeSpecContext *typeSpec();
+    antlr4::tree::TerminalNode *LBRACE();
+    antlr4::tree::TerminalNode *RBRACE();
+    TypeParamListContext *typeParamList();
+    std::vector<BitstructFieldContext *> bitstructField();
+    BitstructFieldContext* bitstructField(size_t i);
+
+
+    virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+   
+  };
+
+  BitstructDeclContext* bitstructDecl();
+
+  class  BitstructFieldContext : public antlr4::ParserRuleContext {
+  public:
+    BitstructFieldContext(antlr4::ParserRuleContext *parent, size_t invokingState);
+    virtual size_t getRuleIndex() const override;
+    antlr4::tree::TerminalNode *IDENTIFIER();
+    antlr4::tree::TerminalNode *COLON();
+    std::vector<antlr4::tree::TerminalNode *> INT_LIT();
+    antlr4::tree::TerminalNode* INT_LIT(size_t i);
+    antlr4::tree::TerminalNode *SEMI();
+
+
+    virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+   
+  };
+
+  BitstructFieldContext* bitstructField();
 
   class  UnionDeclContext : public antlr4::ParserRuleContext {
   public:

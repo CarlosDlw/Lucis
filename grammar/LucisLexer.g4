@@ -52,6 +52,7 @@ SELF      : 'Self';
 VEC       : 'vec';
 MAP       : 'map';
 SET       : 'set';
+BITSTRUCT : 'bitstruct';
 TUPLE     : 'tuple';
 ARROW     : '->';
 

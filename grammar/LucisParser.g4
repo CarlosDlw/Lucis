@@ -70,6 +70,7 @@ topLevelDecl
     | includeDecl
     | typeAliasDecl
     | structDecl
+    | bitstructDecl
     | unionDecl
     | enumDecl
     | extendDecl
@@ -111,6 +112,16 @@ structDecl
 
 structField
     : attributeList typeSpec IDENTIFIER SEMI
+    ;
+
+// bitstruct Control : uint16 { enable : 1; mode : 2; }
+bitstructDecl
+    : attributeList BITSTRUCT IDENTIFIER typeParamList? COLON typeSpec LBRACE bitstructField* RBRACE
+    ;
+
+bitstructField
+    : IDENTIFIER COLON INT_LIT SEMI
+    | INT_LIT COLON INT_LIT SEMI
     ;
 
 // union Value { int32 i; float32 f; *void ptr; }

@@ -91,6 +91,14 @@ public:
     return visitChildren(ctx);
   }
 
+  virtual std::any visitBitstructDecl(LucisParser::BitstructDeclContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual std::any visitBitstructField(LucisParser::BitstructFieldContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
   virtual std::any visitUnionDecl(LucisParser::UnionDeclContext *ctx) override {
     return visitChildren(ctx);
   }

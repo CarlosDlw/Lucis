@@ -57,6 +57,10 @@ public:
 
     virtual std::any visitStructField(LucisParser::StructFieldContext *context) = 0;
 
+    virtual std::any visitBitstructDecl(LucisParser::BitstructDeclContext *context) = 0;
+
+    virtual std::any visitBitstructField(LucisParser::BitstructFieldContext *context) = 0;
+
     virtual std::any visitUnionDecl(LucisParser::UnionDeclContext *context) = 0;
 
     virtual std::any visitUnionField(LucisParser::UnionFieldContext *context) = 0;
