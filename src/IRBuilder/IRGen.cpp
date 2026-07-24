@@ -25604,6 +25604,28 @@ IRGen::visitMethodCallExpr(LucisParser::MethodCallExprContext* ctx) {
         ? retTI->toLLVMType(*context_, module_->getDataLayout())
         : llvm::Type::getVoidTy(*context_);
 
+    // ── BitStruct methods ────────────────────────────────────
+    if (desc->emitTag == "bitstruct.raw") {
+        return static_cast<llvm::Value*>(receiverVal);
+    }
+    if (desc->emitTag == "bitstruct.clearAll" || desc->emitTag == "bitstruct.setAll") {
+        llvm::Value* targetPtr = nullptr;
+        if (!receiverVarName.empty()) {
+            auto it = locals_.find(receiverVarName);
+            if (it != locals_.end())
+                targetPtr = it->second.alloca;
+        }
+        if (targetPtr) {
+            auto* backTy = receiverTI->backingType->toLLVMType(*context_, module_->getDataLayout());
+            if (desc->emitTag == "bitstruct.clearAll") {
+                builder_->CreateStore(llvm::Constant::getNullValue(backTy), targetPtr);
+            } else {
+                builder_->CreateStore(llvm::Constant::getAllOnesValue(backTy), targetPtr);
+            }
+        }
+        return static_cast<llvm::Value*>(llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
+    }
+
     std::cerr << "lucis: unimplemented method codegen for '" << desc->emitTag << "'\n";
 
     if (retTy->isVoidTy())

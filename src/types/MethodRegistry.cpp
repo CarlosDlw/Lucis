@@ -17,6 +17,7 @@ std::string MethodRegistry::kindToString(TypeKind kind) {
         case TypeKind::Pointer:  return "Pointer";
         case TypeKind::Function: return "Function";
         case TypeKind::Extended: return "Extended";
+        case TypeKind::BitStruct: return "BitStruct";
     }
     return "Unknown";
 }
@@ -619,4 +620,12 @@ void MethodRegistry::registerBuiltins() {
 
     registerArrayMethod({ "rotate",     {}, {"int32"}, "void",
                           .emitTag = "array.rotate" });
+
+    // ── BitStruct methods ────────────────────────────────────────────
+    registerMethod({ "raw",      {TypeKind::BitStruct}, {}, "_self",
+                    .emitTag = "bitstruct.raw" });
+    registerMethod({ "clearAll", {TypeKind::BitStruct}, {}, "void",
+                    .emitTag = "bitstruct.clearAll" });
+    registerMethod({ "setAll",   {TypeKind::BitStruct}, {}, "void",
+                    .emitTag = "bitstruct.setAll" });
 }
