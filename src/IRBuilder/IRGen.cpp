@@ -19646,6 +19646,8 @@ const TypeInfo* IRGen::resolveExprTypeInfo(LucisParser::ExpressionContext* ctx) 
     // ── Propagate operator: expr? — success payload type ────────────
     if (auto* pe = dynamic_cast<LucisParser::PropagateExprContext*>(ctx)) {
         auto* sourceTI = resolveExprTypeInfo(pe->expression());
+        if (sourceTI && sourceTI->kind == TypeKind::Fallible)
+            return sourceTI->successType;
         UnwrapCatchPatternInfo pattern;
         std::string reason;
         if (!classifyUnwrapCatchEnum(sourceTI, pattern, reason))
@@ -19656,6 +19658,8 @@ const TypeInfo* IRGen::resolveExprTypeInfo(LucisParser::ExpressionContext* ctx) 
     // ── Catch unwrap expression: expr catch { ... } ─────────────────
     if (auto* cu = dynamic_cast<LucisParser::CatchUnwrapExprContext*>(ctx)) {
         auto* sourceTI = resolveExprTypeInfo(cu->expression());
+        if (sourceTI && sourceTI->kind == TypeKind::Fallible)
+            return sourceTI->successType;
         UnwrapCatchPatternInfo pattern;
         std::string reason;
         if (!classifyUnwrapCatchEnum(sourceTI, pattern, reason))
@@ -20602,6 +20606,7 @@ unsigned IRGen::resolveExprArrayDims(LucisParser::ExpressionContext* ctx) {
 
     if (auto* cu = dynamic_cast<LucisParser::CatchUnwrapExprContext*>(ctx)) {
         auto* sourceTI = resolveExprTypeInfo(cu->expression());
+        if (sourceTI && sourceTI->kind == TypeKind::Fallible) return 0;
         UnwrapCatchPatternInfo pattern;
         std::string reason;
         if (!classifyUnwrapCatchEnum(sourceTI, pattern, reason)) return 0;

@@ -1,0 +1,182 @@
+
+use std::test::{ assertEqual, assertTrue };
+use std::log::println;
+
+fn div(int32 a, int32 b) !int32 {
+    if b == 0 {
+        bail Error { message: "division by zero" };
+    }
+    ret a / b;
+}
+
+fn testBasicFallible() int32 {
+    auto val = div(10, 2) catch {
+        ret 1;
+    };
+    assertEqual(val, 5);
+
+    div(10, 0) catch {
+        assertEqual(it.message, "division by zero");
+        ret 0;
+    };
+
+    println("  ✔ basic !T + catch");
+    ret 0;
+}
+
+fn process(int32 a) !int32 {
+    auto v = div(a, 2)?;
+    ret v * 3;
+}
+
+fn testPropagateFallible() int32 {
+    auto val = process(10) catch {
+        ret 1;
+    };
+    assertEqual(val, 15);
+
+    process(0) catch {
+        ret 0;
+    };
+
+    println("  ✔ ? propagate with !T");
+    ret 0;
+}
+
+fn fallibleDeepProcess(int32 a, int32 b) !int32 {
+    auto v = div(a, b)?;
+    ret v * 10;
+}
+
+fn testChainedPropagate() int32 {
+    auto val = fallibleDeepProcess(20, 4) catch {
+        ret 1;
+    };
+    assertEqual(val, 50);
+
+    fallibleDeepProcess(20, 0) catch {
+        ret 0;
+    };
+
+    println("  ✔ chained ? propagation");
+    ret 0;
+}
+
+fn validate(int32 n) !int32 {
+    if n < 0 {
+        bail "negative value not allowed";
+    }
+    if n > 100 {
+        bail "value too large";
+    }
+    ret n;
+}
+
+fn testBailShorthand() int32 {
+    auto ok = validate(42) catch {
+        ret 1;
+    };
+    assertEqual(ok, 42);
+
+    validate(-5) catch {
+        assertEqual(it.message, "negative value not allowed");
+        ret 0;
+    };
+
+    validate(200) catch {
+        assertEqual(it.message, "value too large");
+        ret 0;
+    };
+
+    println("  ✔ bail \"string\" shorthand");
+    ret 0;
+}
+
+fn safeDiv(int32 a, int32 b) !int32 {
+    if b == 0 {
+        bail Error { message: "cannot divide by zero" };
+    }
+    if a < 0 {
+        bail "negative dividend not supported";
+    }
+    ret a / b;
+}
+
+fn testMultipleCatches() int32 {
+    auto r1 = safeDiv(10, 2) catch {
+        ret 1;
+    };
+    assertEqual(r1, 5);
+
+    safeDiv(10, 0) catch {
+        ret 0;
+    };
+
+    safeDiv(-5, 2) catch {
+        assertEqual(it.message, "negative dividend not supported");
+        ret 0;
+    };
+
+    println("  ✔ multiple catch scenarios");
+    ret 0;
+}
+
+fn fdiv(float64 a, float64 b) !float64 {
+    if b == 0.0 {
+        bail "division by zero in float";
+    }
+    ret a / b;
+}
+
+fn testFallibleFloat() int32 {
+    fdiv(10.0, 3.0) catch {
+        ret 1;
+    };
+
+    fdiv(1.0, 0.0) catch {
+        assertEqual(it.message, "division by zero in float");
+        ret 0;
+    };
+
+    println("  ✔ !T with float64");
+    ret 0;
+}
+
+fn readEnv(string key) !string {
+    if key == "" {
+        bail "empty key not allowed";
+    }
+    if key == "DEBUG" {
+        ret "1";
+    }
+    bail "key not found: " + key;
+}
+
+fn testFallibleString() int32 {
+    readEnv("DEBUG") catch {
+        ret 1;
+    };
+
+    readEnv("") catch {
+        assertEqual(it.message, "empty key not allowed");
+        ret 0;
+    };
+
+    println("  ✔ !T with string");
+    ret 0;
+}
+
+fn testFallibleTypes() int32 {
+    println("[Testing !T fallible types...]");
+
+    assertEqual(testBasicFallible(), 0);
+    assertEqual(testPropagateFallible(), 0);
+    assertEqual(testChainedPropagate(), 0);
+    assertEqual(testBailShorthand(), 0);
+    assertEqual(testMultipleCatches(), 0);
+    assertEqual(testFallibleFloat(), 0);
+    assertEqual(testFallibleString(), 0);
+
+    println("✔ all !T/fallible tests passed");
+    ret 0;
+}

@@ -20,6 +20,7 @@ use tests::enum_unit_switch::testEnumUnitAndSwitch;
 use tests::error_handling_custom_types::testErrorHandlingCustomTypes;
 use tests::error_handling_features::testErrorHandlingFeatures;
 use tests::expressions_full::testExpressionsFull;
+use tests::fallible_types::testFallibleTypes;
 use tests::float_literal_formats::testFloatLiteralFormats;
 use tests::float_methods_extra::testFloatMethodsExtra;
 use tests::float_types::testFloatTypes;
@@ -105,6 +106,7 @@ fn main() int32 {
     testEnumPayloadAndIs();
     testEnumGenericAndStructField();
     testExpressionsFull();
+    testFallibleTypes();
     testGenericsInferenceAndMethods();
     testGenericsUserTypes();
     testGenericsTaskAndConstraints();
