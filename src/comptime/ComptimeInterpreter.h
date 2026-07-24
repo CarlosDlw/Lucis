@@ -1,6 +1,7 @@
 #pragma once
 
 #include "comptime/ComptimeValue.h"
+#include "comptime/ComptimeBuiltinRegistry.h"
 #include "comptime/ComptimeRegistry.h"
 #include "types/TypeRegistry.h"
 #include <optional>
@@ -14,6 +15,7 @@ public:
     using ConstEvalFn = std::function<std::optional<ComptimeValue>(void*)>;
 
     ComptimeInterpreter(const TypeRegistry& types, ComptimeRegistry& registry,
+                        const ComptimeBuiltinRegistry* builtins,
                         ConstEvalFn constEval);
 
     void setConstEval(ConstEvalFn fn) { constEval_ = fn; }
@@ -29,6 +31,7 @@ private:
 
     const TypeRegistry& types_;
     ComptimeRegistry& registry_;
+    const ComptimeBuiltinRegistry* builtins_ = nullptr;
     ConstEvalFn constEval_;
     std::vector<Frame> frames_;
 

@@ -15,7 +15,7 @@ ComptimeEngine::evaluate(void* funcDecl,
                          const std::vector<ComptimeValue>& args) {
     if (!interpreter_ && typeRegistry_) {
         interpreter_ = std::make_unique<ComptimeInterpreter>(
-            *typeRegistry_, registry_, constEvalFn_);
+            *typeRegistry_, registry_, &builtinRegistry_, constEvalFn_);
     }
     if (!interpreter_)
         return ComptimeValue::voidVal();

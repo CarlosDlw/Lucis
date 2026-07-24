@@ -3047,6 +3047,20 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
         return typeRegistry_.lookup("bool");
     }
 
+    // ── @typeName(T), @fields(T), @variants(T) — comptime builtins ──
+    if (auto* at = dynamic_cast<LucisParser::AtTypeExprContext*>(expr)) {
+        auto name = at->IDENTIFIER()->getText();
+        auto* typeCtx = at->typeSpec();
+        unsigned dims = 0;
+        resolveTypeSpec(typeCtx, dims);
+        if (name == "typeName" || name == "typeId")
+            return typeRegistry_.lookup("string");
+        if (name == "fields" || name == "variants")
+            return typeRegistry_.lookup("string");
+        error(at, "unknown comptime builtin '@" + name + "'");
+        return typeRegistry_.lookup("int32");
+    }
+
     // ── @ptr(T, addr) — convert integer address to pointer ────
     if (auto* ptr = dynamic_cast<LucisParser::AtPtrExprContext*>(expr)) {
         auto* typeCtx = ptr->typeSpec();

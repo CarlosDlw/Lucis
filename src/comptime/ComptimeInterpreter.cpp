@@ -4,8 +4,9 @@
 
 ComptimeInterpreter::ComptimeInterpreter(
     const TypeRegistry& types, ComptimeRegistry& registry,
+    const ComptimeBuiltinRegistry* builtins,
     ConstEvalFn constEval)
-    : types_(types), registry_(registry), constEval_(constEval) {}
+    : types_(types), registry_(registry), builtins_(builtins), constEval_(constEval) {}
 
 ComptimeValue ComptimeInterpreter::evaluate(
     void* funcDecl, const std::vector<ComptimeValue>& args) {
@@ -341,6 +342,17 @@ ComptimeValue ComptimeInterpreter::evalFnCall(void* callCtx) {
     if (auto* id = dynamic_cast<LucisParser::IdentExprContext*>(call->expression()))
         name = id->IDENTIFIER()->getText();
     else return ComptimeValue::voidVal();
+
+    // Check builtin registry first
+    if (builtins_) {
+        if (auto* builtin = builtins_->lookup(name)) {
+            std::vector<ComptimeValue> args;
+            if (auto* al = call->argList()) {
+                for (auto* a : al->expression()) args.push_back(evalExpr(a));
+            }
+            return builtin->fn(args);
+        }
+    }
 
     auto* decl = registry_.lookup(name);
     if (!decl) return ComptimeValue::voidVal();

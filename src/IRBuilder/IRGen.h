@@ -141,6 +141,7 @@ public:
     std::any visitIdentExpr(LucisParser::IdentExprContext* ctx)         override;
     std::any visitCfgExpr(LucisParser::CfgExprContext* ctx)             override;
     std::any visitAtPtrExpr(LucisParser::AtPtrExprContext* ctx)          override;
+    std::any visitAtTypeExpr(LucisParser::AtTypeExprContext* ctx)        override;
 
     // ── @cfg(...) compile-time evaluation helpers ─────────────
     bool evalCfgPredicate(LucisParser::ExpressionContext* expr);

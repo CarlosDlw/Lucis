@@ -407,22 +407,6 @@ public:
     return visitChildren(ctx);
   }
 
-  virtual std::any visitRshiftExpr(LucisParser::RshiftExprContext *ctx) override {
-    return visitChildren(ctx);
-  }
-
-  virtual std::any visitArrowMethodCallExpr(LucisParser::ArrowMethodCallExprContext *ctx) override {
-    return visitChildren(ctx);
-  }
-
-  virtual std::any visitAsmExpr(LucisParser::AsmExprContext *ctx) override {
-    return visitChildren(ctx);
-  }
-
-  virtual std::any visitOctLitExpr(LucisParser::OctLitExprContext *ctx) override {
-    return visitChildren(ctx);
-  }
-
   virtual std::any visitBitXorExpr(LucisParser::BitXorExprContext *ctx) override {
     return visitChildren(ctx);
   }
@@ -447,19 +431,147 @@ public:
     return visitChildren(ctx);
   }
 
-  virtual std::any visitSuffixedIntFloatExpr(LucisParser::SuffixedIntFloatExprContext *ctx) override {
-    return visitChildren(ctx);
-  }
-
-  virtual std::any visitChainedTupleIndexExpr(LucisParser::ChainedTupleIndexExprContext *ctx) override {
-    return visitChildren(ctx);
-  }
-
   virtual std::any visitNullLitExpr(LucisParser::NullLitExprContext *ctx) override {
     return visitChildren(ctx);
   }
 
   virtual std::any visitMulExpr(LucisParser::MulExprContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual std::any visitIntBtickExpr(LucisParser::IntBtickExprContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual std::any visitSuffixedFloatIntExpr(LucisParser::SuffixedFloatIntExprContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual std::any visitAddSubExpr(LucisParser::AddSubExprContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual std::any visitAddrOfExpr(LucisParser::AddrOfExprContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual std::any visitTupleIndexExpr(LucisParser::TupleIndexExprContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual std::any visitFloatLitExpr(LucisParser::FloatLitExprContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual std::any visitArrowAccessExpr(LucisParser::ArrowAccessExprContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual std::any visitIndexExpr(LucisParser::IndexExprContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual std::any visitPreDecrExpr(LucisParser::PreDecrExprContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual std::any visitSpreadExpr(LucisParser::SpreadExprContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual std::any visitShellBtickExpr(LucisParser::ShellBtickExprContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual std::any visitStaticMethodCallExpr(LucisParser::StaticMethodCallExprContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual std::any visitEnumAccessExpr(LucisParser::EnumAccessExprContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual std::any visitParenExpr(LucisParser::ParenExprContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual std::any visitLambdaExpr(LucisParser::LambdaExprContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual std::any visitPostDecrExpr(LucisParser::PostDecrExprContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual std::any visitRangeInclExpr(LucisParser::RangeInclExprContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual std::any visitTupleArrowIndexExpr(LucisParser::TupleArrowIndexExprContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual std::any visitGenericQualifiedFnCallExpr(LucisParser::GenericQualifiedFnCallExprContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual std::any visitQualifiedStructPosInitExpr(LucisParser::QualifiedStructPosInitExprContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual std::any visitQualifiedStructNamedInitExpr(LucisParser::QualifiedStructNamedInitExprContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual std::any visitFnCallExpr(LucisParser::FnCallExprContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual std::any visitLogicalOrExpr(LucisParser::LogicalOrExprContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual std::any visitEqExpr(LucisParser::EqExprContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual std::any visitCharLitExpr(LucisParser::CharLitExprContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual std::any visitPostIncrExpr(LucisParser::PostIncrExprContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual std::any visitGenericEnumPosVariantExpr(LucisParser::GenericEnumPosVariantExprContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual std::any visitChainedTupleArrowIndexExpr(LucisParser::ChainedTupleArrowIndexExprContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual std::any visitRshiftExpr(LucisParser::RshiftExprContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual std::any visitArrowMethodCallExpr(LucisParser::ArrowMethodCallExprContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual std::any visitAsmExpr(LucisParser::AsmExprContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual std::any visitOctLitExpr(LucisParser::OctLitExprContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual std::any visitSuffixedIntFloatExpr(LucisParser::SuffixedIntFloatExprContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual std::any visitChainedTupleIndexExpr(LucisParser::ChainedTupleIndexExprContext *ctx) override {
     return visitChildren(ctx);
   }
 
@@ -472,10 +584,6 @@ public:
   }
 
   virtual std::any visitBitAndExpr(LucisParser::BitAndExprContext *ctx) override {
-    return visitChildren(ctx);
-  }
-
-  virtual std::any visitIntBtickExpr(LucisParser::IntBtickExprContext *ctx) override {
     return visitChildren(ctx);
   }
 
@@ -499,14 +607,6 @@ public:
     return visitChildren(ctx);
   }
 
-  virtual std::any visitSuffixedFloatIntExpr(LucisParser::SuffixedFloatIntExprContext *ctx) override {
-    return visitChildren(ctx);
-  }
-
-  virtual std::any visitAddSubExpr(LucisParser::AddSubExprContext *ctx) override {
-    return visitChildren(ctx);
-  }
-
   virtual std::any visitSuffixedFloatLitExpr(LucisParser::SuffixedFloatLitExprContext *ctx) override {
     return visitChildren(ctx);
   }
@@ -515,19 +615,7 @@ public:
     return visitChildren(ctx);
   }
 
-  virtual std::any visitAddrOfExpr(LucisParser::AddrOfExprContext *ctx) override {
-    return visitChildren(ctx);
-  }
-
   virtual std::any visitSuffixedBinLitExpr(LucisParser::SuffixedBinLitExprContext *ctx) override {
-    return visitChildren(ctx);
-  }
-
-  virtual std::any visitTupleIndexExpr(LucisParser::TupleIndexExprContext *ctx) override {
-    return visitChildren(ctx);
-  }
-
-  virtual std::any visitFloatLitExpr(LucisParser::FloatLitExprContext *ctx) override {
     return visitChildren(ctx);
   }
 
@@ -539,19 +627,11 @@ public:
     return visitChildren(ctx);
   }
 
-  virtual std::any visitArrowAccessExpr(LucisParser::ArrowAccessExprContext *ctx) override {
-    return visitChildren(ctx);
-  }
-
   virtual std::any visitGenericStaticMethodCallExpr(LucisParser::GenericStaticMethodCallExprContext *ctx) override {
     return visitChildren(ctx);
   }
 
   virtual std::any visitListCompExpr(LucisParser::ListCompExprContext *ctx) override {
-    return visitChildren(ctx);
-  }
-
-  virtual std::any visitIndexExpr(LucisParser::IndexExprContext *ctx) override {
     return visitChildren(ctx);
   }
 
@@ -563,27 +643,11 @@ public:
     return visitChildren(ctx);
   }
 
-  virtual std::any visitPreDecrExpr(LucisParser::PreDecrExprContext *ctx) override {
-    return visitChildren(ctx);
-  }
-
-  virtual std::any visitSpreadExpr(LucisParser::SpreadExprContext *ctx) override {
-    return visitChildren(ctx);
-  }
-
   virtual std::any visitRawBtickExpr(LucisParser::RawBtickExprContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual std::any visitShellBtickExpr(LucisParser::ShellBtickExprContext *ctx) override {
-    return visitChildren(ctx);
-  }
-
   virtual std::any visitCatchUnwrapExpr(LucisParser::CatchUnwrapExprContext *ctx) override {
-    return visitChildren(ctx);
-  }
-
-  virtual std::any visitStaticMethodCallExpr(LucisParser::StaticMethodCallExprContext *ctx) override {
     return visitChildren(ctx);
   }
 
@@ -615,14 +679,6 @@ public:
     return visitChildren(ctx);
   }
 
-  virtual std::any visitEnumAccessExpr(LucisParser::EnumAccessExprContext *ctx) override {
-    return visitChildren(ctx);
-  }
-
-  virtual std::any visitParenExpr(LucisParser::ParenExprContext *ctx) override {
-    return visitChildren(ctx);
-  }
-
   virtual std::any visitBitNotExpr(LucisParser::BitNotExprContext *ctx) override {
     return visitChildren(ctx);
   }
@@ -643,15 +699,7 @@ public:
     return visitChildren(ctx);
   }
 
-  virtual std::any visitLambdaExpr(LucisParser::LambdaExprContext *ctx) override {
-    return visitChildren(ctx);
-  }
-
   virtual std::any visitStructLitExpr(LucisParser::StructLitExprContext *ctx) override {
-    return visitChildren(ctx);
-  }
-
-  virtual std::any visitPostDecrExpr(LucisParser::PostDecrExprContext *ctx) override {
     return visitChildren(ctx);
   }
 
@@ -663,27 +711,11 @@ public:
     return visitChildren(ctx);
   }
 
-  virtual std::any visitRangeInclExpr(LucisParser::RangeInclExprContext *ctx) override {
-    return visitChildren(ctx);
-  }
-
   virtual std::any visitLambdaBlockExpr(LucisParser::LambdaBlockExprContext *ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual std::any visitTupleArrowIndexExpr(LucisParser::TupleArrowIndexExprContext *ctx) override {
-    return visitChildren(ctx);
-  }
-
-  virtual std::any visitGenericQualifiedFnCallExpr(LucisParser::GenericQualifiedFnCallExprContext *ctx) override {
-    return visitChildren(ctx);
-  }
-
   virtual std::any visitLogicalAndExpr(LucisParser::LogicalAndExprContext *ctx) override {
-    return visitChildren(ctx);
-  }
-
-  virtual std::any visitQualifiedStructPosInitExpr(LucisParser::QualifiedStructPosInitExprContext *ctx) override {
     return visitChildren(ctx);
   }
 
@@ -699,19 +731,7 @@ public:
     return visitChildren(ctx);
   }
 
-  virtual std::any visitQualifiedStructNamedInitExpr(LucisParser::QualifiedStructNamedInitExprContext *ctx) override {
-    return visitChildren(ctx);
-  }
-
   virtual std::any visitCStrLitExpr(LucisParser::CStrLitExprContext *ctx) override {
-    return visitChildren(ctx);
-  }
-
-  virtual std::any visitFnCallExpr(LucisParser::FnCallExprContext *ctx) override {
-    return visitChildren(ctx);
-  }
-
-  virtual std::any visitLogicalOrExpr(LucisParser::LogicalOrExprContext *ctx) override {
     return visitChildren(ctx);
   }
 
@@ -723,15 +743,7 @@ public:
     return visitChildren(ctx);
   }
 
-  virtual std::any visitEqExpr(LucisParser::EqExprContext *ctx) override {
-    return visitChildren(ctx);
-  }
-
   virtual std::any visitBitOrExpr(LucisParser::BitOrExprContext *ctx) override {
-    return visitChildren(ctx);
-  }
-
-  virtual std::any visitCharLitExpr(LucisParser::CharLitExprContext *ctx) override {
     return visitChildren(ctx);
   }
 
@@ -739,11 +751,7 @@ public:
     return visitChildren(ctx);
   }
 
-  virtual std::any visitPostIncrExpr(LucisParser::PostIncrExprContext *ctx) override {
-    return visitChildren(ctx);
-  }
-
-  virtual std::any visitGenericEnumPosVariantExpr(LucisParser::GenericEnumPosVariantExprContext *ctx) override {
+  virtual std::any visitAtTypeExpr(LucisParser::AtTypeExprContext *ctx) override {
     return visitChildren(ctx);
   }
 
@@ -756,10 +764,6 @@ public:
   }
 
   virtual std::any visitSuffixedIntLitExpr(LucisParser::SuffixedIntLitExprContext *ctx) override {
-    return visitChildren(ctx);
-  }
-
-  virtual std::any visitChainedTupleArrowIndexExpr(LucisParser::ChainedTupleArrowIndexExprContext *ctx) override {
     return visitChildren(ctx);
   }
 

@@ -9972,6 +9972,42 @@ std::any IRGen::visitAtPtrExpr(LucisParser::AtPtrExprContext* ctx) {
         builder_->CreateIntToPtr(addrVal, ptrTy, "ptr"));
 }
 
+std::any IRGen::visitAtTypeExpr(LucisParser::AtTypeExprContext* ctx) {
+        SET_DBG_LOC(ctx);
+    auto builtinName = ctx->IDENTIFIER()->getText();
+    auto* typeTI = resolveTypeInfo(ctx->typeSpec());
+    if (!typeTI) {
+        std::cerr << "lucis: @" << builtinName << ": unknown type\n";
+        return static_cast<llvm::Value*>(
+            llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
+    }
+
+    // Look up the builtin in the comptime engine
+    if (comptimeEngine_) {
+        auto* builtin = comptimeEngine_->builtinRegistry().lookup(builtinName);
+        if (builtin) {
+            std::vector<ComptimeValue> args;
+            args.push_back(ComptimeValue::typeVal(const_cast<TypeInfo*>(typeTI)));
+            auto result = builtin->fn(args);
+
+            if (result.kind() == ComptimeValue::Kind::String) {
+                return static_cast<llvm::Value*>(
+                    builder_->CreateGlobalStringPtr(result.asString(),
+                        ".builtin_str", 0, module_));
+            }
+            if (result.kind() == ComptimeValue::Kind::Int) {
+                return static_cast<llvm::Value*>(
+                    llvm::ConstantInt::get(llvm::Type::getInt64Ty(*context_),
+                        result.asInt(), true));
+            }
+        }
+    }
+
+    std::cerr << "lucis: unknown comptime builtin '@" << builtinName << "'\n";
+    return static_cast<llvm::Value*>(
+        llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
+}
+
 // ── Helper: evaluate @cfg predicate expression ─────────────────────
 bool IRGen::evalCfgPredicate(LucisParser::ExpressionContext* expr) {
     // Bool literals
@@ -14032,12 +14068,14 @@ std::any IRGen::visitFnCallExpr(LucisParser::FnCallExprContext* ctx) {
                         getLLVMType(retTypeName), result.asFloat()));
             }
             if (result.kind() == ComptimeValue::Kind::Void) {
-                // Void comptime call — return an un-used constant to signal
-                // that the call was handled and avoid falling through to
-                // the regular function call code generator below.
                 return static_cast<llvm::Value*>(
                     llvm::Constant::getNullValue(
                         llvm::Type::getInt32Ty(*context_)));
+            }
+            if (result.kind() == ComptimeValue::Kind::String) {
+                return static_cast<llvm::Value*>(
+                    builder_->CreateGlobalStringPtr(
+                        result.asString(), ".comptime_str", 0, module_));
             }
         }
 
@@ -19627,6 +19665,10 @@ const TypeInfo* IRGen::resolveExprTypeInfo(LucisParser::ExpressionContext* ctx) 
         typeRegistry_.registerType(std::move(ti));
         return typeRegistry_.lookup(ptrName);
     }
+
+    // ── @typeName(T), @fields(T), @variants(T) → string ────────────
+    if (dynamic_cast<LucisParser::AtTypeExprContext*>(ctx))
+        return typeRegistry_.lookup("string");
 
     // ── Dereference: *expr → pointee type ────────────────────────────
     if (auto* deref = dynamic_cast<LucisParser::DerefExprContext*>(ctx)) {
