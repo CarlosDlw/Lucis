@@ -212,6 +212,7 @@ public:
     std::any visitLockStmt(LucisParser::LockStmtContext* ctx)           override;
     std::any visitTryCatchStmt(LucisParser::TryCatchStmtContext* ctx)   override;
     std::any visitThrowStmt(LucisParser::ThrowStmtContext* ctx)         override;
+    std::any visitBailStmt(LucisParser::BailStmtContext* ctx)           override;
     std::any visitTryExpr(LucisParser::TryExprContext* ctx)             override;
     std::any visitCatchUnwrapExpr(LucisParser::CatchUnwrapExprContext* ctx) override;
     std::any visitPropagateExpr(LucisParser::PropagateExprContext* ctx) override;

@@ -7938,6 +7938,27 @@ std::any IRGen::visitReturnStmt(LucisParser::ReturnStmtContext* ctx) {
     auto  val    = visit(ctx->expression());
     auto* retVal = castValue(val);
 
+    // Fallible return: if returning from !T function, auto-wrap
+    if (currentFnReturnType_ && currentFnReturnType_->kind == TypeKind::Fallible) {
+        auto* fnTy = currentFnReturnType_;
+        auto* fnLLTy = fnTy->toLLVMType(*context_, module_->getDataLayout());
+        auto* valTy = retVal->getType();
+        auto* succTy = fnTy->successType->toLLVMType(*context_, module_->getDataLayout());
+        auto* errTy = fnTy->errorType->toLLVMType(*context_, module_->getDataLayout());
+
+        // Check if expression is an error type → tag=1, else tag=0
+        bool isError = (valTy == errTy);
+        auto* tag = llvm::ConstantInt::get(llvm::Type::getInt32Ty(*context_), isError ? 1 : 0);
+
+        auto* alloca = builder_->CreateAlloca(fnLLTy, nullptr, "ret.fallible");
+        builder_->CreateStore(tag,
+            builder_->CreateStructGEP(fnLLTy, alloca, 0));
+        builder_->CreateStore(retVal,
+            builder_->CreateStructGEP(fnLLTy, alloca, isError ? 2 : 1));
+        retVal = builder_->CreateLoad(fnLLTy, alloca);
+        // Fall through to cleanup + ret
+    }
+
     // Cast to the function's return type if needed
     auto* expectedTy = builder_->getCurrentFunctionReturnType();
     if (retVal->getType() != expectedTy) {
@@ -18874,6 +18895,37 @@ const TypeInfo* IRGen::resolveTypeInfo(LucisParser::TypeSpecContext* ctx) {
         return typeRegistry_.lookup(fnName);
     }
 
+    // Fallible type: !T or !T:E
+    if (ctx->NOT()) {
+        auto* inner = resolveTypeInfo(ctx->typeSpec(0));
+        if (!inner) return typeRegistry_.lookup("int32");
+
+        const TypeInfo* errType = nullptr;
+        if (ctx->typeSpec().size() > 1)
+            errType = resolveTypeInfo(ctx->typeSpec(1));
+        else
+            errType = typeRegistry_.lookup("Error");
+
+        if (!errType) return typeRegistry_.lookup("int32");
+
+        auto name = "!" + inner->name;
+        if (errType->name != "Error")
+            name += ":" + errType->name;
+
+        if (auto* existing = typeRegistry_.lookup(name))
+            return existing;
+
+        TypeInfo ti;
+        ti.name = name;
+        ti.kind = TypeKind::Fallible;
+        ti.successType = inner;
+        ti.errorType = errType;
+        ti.bitWidth = 0;
+        ti.isSigned = false;
+        typeRegistry_.registerType(std::move(ti));
+        return typeRegistry_.lookup(name);
+    }
+
     // Built-in collection types: vec<T>, map<K,V>, set<T>
     std::string nativeBaseName;
     if (ctx->VEC())      nativeBaseName = "Vec";
@@ -25707,6 +25759,59 @@ std::any IRGen::visitThrowStmt(LucisParser::ThrowStmtContext* ctx) {
     return {};
 }
 
+std::any IRGen::visitBailStmt(LucisParser::BailStmtContext* ctx) {
+        SET_DBG_LOC(ctx);
+    if (!currentFnReturnType_ || currentFnReturnType_->kind != TypeKind::Fallible) {
+        std::cerr << "lucis: 'bail' requires enclosing function with !T return type\n";
+        return {};
+    }
+
+    auto* errVal = castValue(visit(ctx->expression()));
+    auto* fnTy = currentFnReturnType_;
+    auto* fnLLTy = fnTy->toLLVMType(*context_, module_->getDataLayout());
+    auto* errTy = fnTy->errorType->toLLVMType(*context_, module_->getDataLayout());
+
+    // "string → Error" shorthand: wrap string into Error{message: str}
+    if (errTy && errTy->isStructTy() && errVal->getType()->isStructTy() &&
+        llvm::cast<llvm::StructType>(errVal->getType())->getNumElements() == 2) {
+        auto* strLLTy = errTy->getStructElementType(0);
+        auto* i32Ty = llvm::Type::getInt32Ty(*context_);
+        auto* i64Ty = llvm::Type::getInt64Ty(*context_);
+        auto* msgPtr = builder_->CreateExtractValue(errVal, {0}, "bail.msg.ptr");
+        auto* msgLen = builder_->CreateExtractValue(errVal, {1}, "bail.msg.len");
+        llvm::Value* msgStrVal = llvm::Constant::getNullValue(strLLTy);
+        msgStrVal = builder_->CreateInsertValue(msgStrVal, msgPtr, {0});
+        msgStrVal = builder_->CreateInsertValue(msgStrVal, msgLen, {1});
+        errVal = llvm::Constant::getNullValue(errTy);
+        errVal = builder_->CreateInsertValue(errVal, msgStrVal, {0});
+        errVal = builder_->CreateInsertValue(errVal,
+            llvm::Constant::getNullValue(strLLTy), {1});
+        errVal = builder_->CreateInsertValue(errVal,
+            llvm::ConstantInt::get(i32Ty, ctx->getStart()->getLine()), {2});
+        errVal = builder_->CreateInsertValue(errVal,
+            llvm::ConstantInt::get(i32Ty, ctx->getStart()->getCharPositionInLine() + 1), {3});
+        errVal = builder_->CreateInsertValue(errVal,
+            llvm::ConstantInt::get(i64Ty, 0), {4});
+        errVal = builder_->CreateInsertValue(errVal,
+            llvm::ConstantInt::get(i64Ty, 0), {5});
+    } else if (errVal->getType() != errTy) {
+        std::cerr << "lucis: 'bail' type mismatch\n";
+        return {};
+    }
+
+    auto* tag = llvm::ConstantInt::get(llvm::Type::getInt32Ty(*context_), 1);
+    auto* alloca = builder_->CreateAlloca(fnLLTy, nullptr, "bail.ret");
+    builder_->CreateStore(tag,
+        builder_->CreateStructGEP(fnLLTy, alloca, 0));
+    builder_->CreateStore(errVal,
+        builder_->CreateStructGEP(fnLLTy, alloca, 2));
+    auto* retVal = builder_->CreateLoad(fnLLTy, alloca);
+
+    emitAllCleanups();
+    builder_->CreateRet(retVal);
+    return {};
+}
+
 std::any IRGen::visitTryExpr(LucisParser::TryExprContext* ctx) {
         SET_DBG_LOC(ctx);
     auto* fn    = currentFunction_;
@@ -25865,6 +25970,68 @@ std::any IRGen::visitCatchUnwrapExpr(LucisParser::CatchUnwrapExprContext* ctx) {
     auto* sourceVal = castValue(visit(ctx->expression()));
     auto* sourceTI = resolveExprTypeInfo(ctx->expression());
 
+    // Fallible source: !T — handle natively
+    if (sourceTI && sourceTI->kind == TypeKind::Fallible) {
+        auto* fallibleLLTy = sourceTI->toLLVMType(*context_, module_->getDataLayout());
+        auto* okPayloadTy = sourceTI->successType->toLLVMType(*context_, module_->getDataLayout());
+        auto* errPayloadTy = sourceTI->errorType->toLLVMType(*context_, module_->getDataLayout());
+
+        auto* tempAlloca = builder_->CreateAlloca(fallibleLLTy, nullptr, "unwrap.tmp");
+        builder_->CreateStore(sourceVal, tempAlloca);
+
+        auto* tagPtr = builder_->CreateStructGEP(fallibleLLTy, tempAlloca, 0, "unwrap.tag.ptr");
+        auto* tagVal = builder_->CreateLoad(llvm::Type::getInt32Ty(*context_), tagPtr, "unwrap.tag");
+        auto* isErr = builder_->CreateICmpEQ(tagVal,
+            llvm::ConstantInt::get(llvm::Type::getInt32Ty(*context_), 1), "unwrap.is_err");
+
+        auto* okBB = llvm::BasicBlock::Create(*context_, "unwrap.ok", fn);
+        auto* errBB = llvm::BasicBlock::Create(*context_, "unwrap.err", fn);
+        auto* mergeBB = llvm::BasicBlock::Create(*context_, "unwrap.merge", fn);
+        builder_->CreateCondBr(isErr, errBB, okBB);
+
+        // Success path: extract field 1
+        builder_->SetInsertPoint(okBB);
+        auto* okPayload = builder_->CreateExtractValue(sourceVal, {1}, "unwrap.ok.payload");
+        builder_->CreateBr(mergeBB);
+        auto* okEndBB = builder_->GetInsertBlock();
+
+        // Error path: extract error from field 2, bind `it`
+        builder_->SetInsertPoint(errBB);
+        auto* errPayload = builder_->CreateExtractValue(sourceVal, {2}, "unwrap.err.payload");
+
+        auto itSaved = locals_.find("it");
+        bool hadIt = itSaved != locals_.end();
+        VarInfo savedInfo;
+        if (hadIt) savedInfo = itSaved->second;
+
+        auto* itAlloca = builder_->CreateAlloca(errPayloadTy, nullptr, "it");
+        builder_->CreateStore(errPayload, itAlloca);
+        locals_["it"] = {itAlloca, sourceTI->errorType, 0};
+
+        for (auto* stmt : ctx->block()->statement()) visit(stmt);
+
+        if (hadIt) locals_["it"] = savedInfo;
+        else locals_.erase("it");
+
+        bool errFallsThrough = !builder_->GetInsertBlock()->getTerminator();
+        llvm::Value* errFallback = nullptr;
+        llvm::BasicBlock* errEndBB = nullptr;
+        if (errFallsThrough) {
+            errFallback = llvm::Constant::getNullValue(okPayloadTy);
+            builder_->CreateBr(mergeBB);
+            errEndBB = builder_->GetInsertBlock();
+        }
+
+        builder_->SetInsertPoint(mergeBB);
+        if (errFallsThrough) {
+            auto* phi = builder_->CreatePHI(okPayloadTy, 2, "unwrap.value");
+            phi->addIncoming(okPayload, okEndBB);
+            phi->addIncoming(errFallback, errEndBB);
+            return static_cast<llvm::Value*>(phi);
+        }
+        return static_cast<llvm::Value*>(okPayload);
+    }
+
     UnwrapCatchPatternInfo pattern;
     std::string reason;
     if (!classifyUnwrapCatchEnum(sourceTI, pattern, reason)) {
@@ -25967,6 +26134,60 @@ std::any IRGen::visitPropagateExpr(LucisParser::PropagateExprContext* ctx) {
     auto* fn = currentFunction_;
     auto* sourceVal = castValue(visit(ctx->expression()));
     auto* sourceTI = resolveExprTypeInfo(ctx->expression());
+
+    // Fallible source: !T — propagate natively
+    if (sourceTI && sourceTI->kind == TypeKind::Fallible) {
+        auto* fnRetTy = currentFnReturnType_;
+        if (!fnRetTy || fnRetTy->kind != TypeKind::Fallible) {
+            std::cerr << "lucis: '?' requires enclosing !T return type, got '"
+                      << (fnRetTy ? fnRetTy->name : "void") << "'\n";
+            return static_cast<llvm::Value*>(
+                llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
+        }
+
+        auto* fallibleLLTy = sourceTI->toLLVMType(*context_, module_->getDataLayout());
+        auto* tempAlloca = builder_->CreateAlloca(fallibleLLTy, nullptr, "prop.tmp");
+        builder_->CreateStore(sourceVal, tempAlloca);
+
+        auto* tagPtr = builder_->CreateStructGEP(fallibleLLTy, tempAlloca, 0, "prop.tag.ptr");
+        auto* tagVal = builder_->CreateLoad(llvm::Type::getInt32Ty(*context_), tagPtr, "prop.tag");
+        auto* isErr = builder_->CreateICmpEQ(tagVal,
+            llvm::ConstantInt::get(llvm::Type::getInt32Ty(*context_), 1), "prop.is_err");
+
+        auto* okBB  = llvm::BasicBlock::Create(*context_, "prop.ok",  fn);
+        auto* errBB = llvm::BasicBlock::Create(*context_, "prop.err", fn);
+        auto* mergeBB = llvm::BasicBlock::Create(*context_, "prop.merge", fn);
+        builder_->CreateCondBr(isErr, errBB, okBB);
+
+        // Error path: build return !T with error payload
+        builder_->SetInsertPoint(errBB);
+        if (auto* ctxBlock = ctx->block()) {
+            for (auto* stmt : ctxBlock->statement()) visit(stmt);
+        }
+        auto* errPayload = builder_->CreateExtractValue(sourceVal, {2}, "prop.err.payload");
+        auto* retFallibleTy = fnRetTy->toLLVMType(*context_, module_->getDataLayout());
+        auto* retAlloca = builder_->CreateAlloca(retFallibleTy, nullptr, "prop.ret");
+        auto* retTag = llvm::ConstantInt::get(llvm::Type::getInt32Ty(*context_), 1);
+        builder_->CreateStore(retTag,
+            builder_->CreateStructGEP(retFallibleTy, retAlloca, 0));
+        builder_->CreateStore(errPayload,
+            builder_->CreateStructGEP(retFallibleTy, retAlloca, 2));
+        auto* retVal = builder_->CreateLoad(retFallibleTy, retAlloca);
+        emitAllCleanups();
+        builder_->CreateRet(retVal);
+
+        // Success path: extract value and continue
+        builder_->SetInsertPoint(okBB);
+        auto* okPayload = builder_->CreateExtractValue(sourceVal, {1}, "prop.ok.payload");
+        builder_->CreateBr(mergeBB);
+        auto* okEndBB = builder_->GetInsertBlock();
+
+        builder_->SetInsertPoint(mergeBB);
+        auto* succTy = sourceTI->successType->toLLVMType(*context_, module_->getDataLayout());
+        auto* phi = builder_->CreatePHI(succTy, 1, "prop.value");
+        phi->addIncoming(okPayload, okEndBB);
+        return static_cast<llvm::Value*>(phi);
+    }
 
     // Phase 3: void functions can have unit success variant
     bool isVoidReturn = currentFnReturnType_ &&
