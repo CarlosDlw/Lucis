@@ -10034,10 +10034,27 @@ void Checker::checkFieldCompoundAssignStmt(LucisParser::FieldCompoundAssignStmtC
         if (currentType && currentType->kind == TypeKind::Pointer && currentType->pointeeType)
             currentType = currentType->pointeeType;
 
-        if (!currentType || (currentType->kind != TypeKind::Struct && currentType->kind != TypeKind::Union)) {
+        if (!currentType || (currentType->kind != TypeKind::Struct &&
+                             currentType->kind != TypeKind::Union &&
+                             currentType->kind != TypeKind::BitStruct)) {
             error(stmt, "'" +
                              (i == 1 ? varName : identifiers[i-1]->getText()) +
                              "' is not a struct or union type");
+            return;
+        }
+
+        if (currentType->kind == TypeKind::BitStruct) {
+            bool found = false;
+            for (auto& bf : currentType->bitFields) {
+                if (bf.name == fieldName && !bf.isPadding) { found = true; break; }
+            }
+            if (!found) {
+                error(stmt, "'" + currentType->name + "' has no field '" + fieldName + "'");
+                return;
+            }
+            auto* rhsType = resolveExprType(stmt->expression());
+            if (rhsType && rhsType->kind != TypeKind::Integer)
+                error(stmt, "bitstruct field '" + fieldName + "' requires an integer value");
             return;
         }
 

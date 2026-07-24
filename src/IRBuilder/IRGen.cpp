@@ -4710,6 +4710,64 @@ std::any IRGen::visitFieldCompoundAssignStmt(
     auto* structTI = it->second.typeInfo;
     auto* structTy = alloca->getAllocatedType();
 
+    // ── Bitstruct field compound assign (RMW with op) ────────────
+    {
+        const TypeInfo* bitTI = nullptr;
+        llvm::Value* bitPtr = nullptr;
+        if (structTI->kind == TypeKind::Pointer && structTI->pointeeType &&
+            structTI->pointeeType->kind == TypeKind::BitStruct) {
+            bitTI = structTI->pointeeType;
+            auto* ptrTy = llvm::PointerType::getUnqual(*context_);
+            bitPtr = builder_->CreateLoad(ptrTy, alloca, varName + "_ptr");
+        } else if (structTI->kind == TypeKind::BitStruct) {
+            bitTI = structTI;
+            bitPtr = alloca;
+        }
+        if (bitTI && bitPtr && identifiers.size() == 2) {
+            auto fieldName = identifiers[1]->getText();
+            for (auto& bf : bitTI->bitFields) {
+                if (bf.name == fieldName && !bf.isPadding) {
+                    bool isBitVol = structTI && structTI->isVolatile;
+                    auto* backTy = bitTI->backingType->toLLVMType(*context_, module_->getDataLayout());
+                    // Load raw value
+                    auto* rawVal = builder_->CreateLoad(backTy, bitPtr, bitTI->name + "_raw");
+                    if (isBitVol) llvm::cast<llvm::LoadInst>(rawVal)->setVolatile(true);
+                    // Extract current field value
+                    uint64_t mask = (1ULL << bf.width) - 1;
+                    llvm::Value* curVal = rawVal;
+                    if (bf.offset > 0)
+                        curVal = builder_->CreateLShr(rawVal, llvm::ConstantInt::get(backTy, bf.offset));
+                    curVal = builder_->CreateAnd(curVal, llvm::ConstantInt::get(backTy, mask));
+                    // Evaluate RHS and apply operator
+                    auto* rhs = castValue(visit(ctx->expression()));
+                    auto* rhsExt = builder_->CreateZExt(rhs, backTy);
+                    llvm::Value* newVal = nullptr;
+                    switch (ctx->op->getType()) {
+                    case LucisLexer::PLUS_ASSIGN:  newVal = builder_->CreateAdd(curVal, rhsExt); break;
+                    case LucisLexer::MINUS_ASSIGN: newVal = builder_->CreateSub(curVal, rhsExt); break;
+                    case LucisLexer::STAR_ASSIGN:  newVal = builder_->CreateMul(curVal, rhsExt); break;
+                    case LucisLexer::AMP_ASSIGN:   newVal = builder_->CreateAnd(curVal, rhsExt); break;
+                    case LucisLexer::PIPE_ASSIGN:  newVal = builder_->CreateOr(curVal, rhsExt);  break;
+                    case LucisLexer::CARET_ASSIGN: newVal = builder_->CreateXor(curVal, rhsExt); break;
+                    default:
+                        std::cerr << "lucis: unsupported compound assign on bitstruct field\n";
+                        return {};
+                    }
+                    // Clear and set field
+                    auto* cleared = builder_->CreateAnd(rawVal,
+                        llvm::ConstantInt::get(backTy, ~(mask << bf.offset)));
+                    auto* shifted = newVal;
+                    if (bf.offset > 0)
+                        shifted = builder_->CreateShl(newVal, llvm::ConstantInt::get(backTy, bf.offset));
+                    auto* result = builder_->CreateOr(cleared, shifted, "bf_cmpd");
+                    auto* store = builder_->CreateStore(result, bitPtr);
+                    if (isBitVol) store->setVolatile(true);
+                    return {};
+                }
+            }
+        }
+    }
+
     if (structTI && structTI->kind == TypeKind::Pointer && structTI->pointeeType) {
         auto* ptrTy = llvm::PointerType::getUnqual(*context_);
         auto* basePtr = builder_->CreateLoad(ptrTy, alloca, varName + "_selfptr");
