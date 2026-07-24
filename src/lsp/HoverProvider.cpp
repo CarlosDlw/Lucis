@@ -5528,6 +5528,14 @@ static std::string inferExprTypeName(
         auto sourceType = inferExprTypeName(cu->expression(), locals, flc);
         if (sourceType.empty() || !flc) return "";
 
+        // Fallible type: !T → success type is T
+        if (!sourceType.empty() && sourceType[0] == '!') {
+            auto colonPos = sourceType.find(':');
+            if (colonPos != std::string::npos)
+                return sourceType.substr(1, colonPos - 1);
+            return sourceType.substr(1);
+        }
+
         std::string baseName = sourceType;
         std::vector<std::string> sourceArgs;
         parseGenericInstance(sourceType, baseName, sourceArgs);
@@ -5570,6 +5578,15 @@ static std::string inferExprTypeName(
     if (auto* pe = dynamic_cast<LucisParser::PropagateExprContext*>(expr)) {
         auto sourceType = inferExprTypeName(pe->expression(), locals, flc);
         if (sourceType.empty() || !flc) return "";
+
+        // Fallible type: !T → success type is T
+        if (!sourceType.empty() && sourceType[0] == '!') {
+            auto colonPos = sourceType.find(':');
+            if (colonPos != std::string::npos)
+                return sourceType.substr(1, colonPos - 1);
+            return sourceType.substr(1);
+        }
+
         std::string baseName = sourceType;
         std::vector<std::string> sourceArgs;
         parseGenericInstance(sourceType, baseName, sourceArgs);

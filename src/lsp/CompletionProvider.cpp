@@ -297,6 +297,14 @@ static std::string inferCatchUnwrapSuccessType(
   if (enumTypeName.empty())
     return "";
 
+  // Fallible type: !T → success type is T
+  if (!enumTypeName.empty() && enumTypeName[0] == '!') {
+    auto colonPos = enumTypeName.find(':');
+    if (colonPos != std::string::npos)
+      return enumTypeName.substr(1, colonPos - 1);
+    return enumTypeName.substr(1);
+  }
+
   auto baseName = enumTypeName;
   std::vector<std::string> sourceArgs;
   parseGenericInstance(enumTypeName, baseName, sourceArgs);
