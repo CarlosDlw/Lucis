@@ -18908,6 +18908,18 @@ const TypeInfo* IRGen::resolveTypeInfo(LucisParser::TypeSpecContext* ctx) {
 
         if (!errType) return typeRegistry_.lookup("int32");
 
+        if (errType->name != "Error") {
+            bool isErrorDerived = false;
+            for (auto* p = errType; p; p = p->parentType) {
+                if (p->name == "Error") { isErrorDerived = true; break; }
+            }
+            if (!isErrorDerived) {
+                std::cerr << "lucis: error type in !T must be 'Error' or inherit from 'Error', got '"
+                          << errType->name << "'\n";
+                return typeRegistry_.lookup("int32");
+            }
+        }
+
         auto name = "!" + inner->name;
         if (errType->name != "Error")
             name += ":" + errType->name;

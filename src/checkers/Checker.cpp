@@ -1929,6 +1929,19 @@ const TypeInfo* Checker::resolveTypeSpec(LucisParser::TypeSpecContext* ctx,
             return nullptr;
         }
 
+        // Error type must be 'Error' or a struct inheriting from 'Error'
+        if (errType->name != "Error") {
+            bool isErrorDerived = false;
+            for (auto* p = errType; p; p = p->parentType) {
+                if (p->name == "Error") { isErrorDerived = true; break; }
+            }
+            if (!isErrorDerived) {
+                error(cur, "error type in !T must be 'Error' or inherit from 'Error', got '" +
+                           errType->name + "'");
+                return nullptr;
+            }
+        }
+
         auto ti = std::make_unique<TypeInfo>();
         ti->kind = TypeKind::Fallible;
         ti->name = "!" + inner->name;
