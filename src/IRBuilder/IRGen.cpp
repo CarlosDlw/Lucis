@@ -4636,6 +4636,8 @@ std::any IRGen::visitFieldCompoundAssignStmt(
         }
 
         auto* cur = builder_->CreateLoad(currentTy, currentPtr, "field_cur");
+        if (currentTI->isVolatile)
+            llvm::cast<llvm::LoadInst>(cur)->setVolatile(true);
         auto* rhs = castValue(visit(ctx->expression()));
         if (rhs->getType() != currentTy) {
             if (rhs->getType()->isIntegerTy() && currentTy->isIntegerTy())
@@ -4648,6 +4650,11 @@ std::any IRGen::visitFieldCompoundAssignStmt(
             }
         }
 
+        auto volatileStore = [&](llvm::Value* v, llvm::Value* p) {
+            auto* s = builder_->CreateStore(v, p);
+            if (currentTI->isVolatile) s->setVolatile(true);
+        };
+
         // ── Null-coalescing: ptr ??= default ──────────────────
         if (ctx->op->getType() == LucisLexer::NULLCOAL_ASSIGN) {
             auto* isNull = builder_->CreateICmpEQ(
@@ -4657,7 +4664,7 @@ std::any IRGen::visitFieldCompoundAssignStmt(
             auto* mergeBB = llvm::BasicBlock::Create(*context_, "ncoal.end", currentFunction_);
             builder_->CreateCondBr(isNull, thenBB, mergeBB);
             builder_->SetInsertPoint(thenBB);
-            builder_->CreateStore(rhs, currentPtr);
+            volatileStore(rhs, currentPtr);
             builder_->CreateBr(mergeBB);
             builder_->SetInsertPoint(mergeBB);
             return {};
@@ -4677,7 +4684,7 @@ std::any IRGen::visitFieldCompoundAssignStmt(
                 idx = builder_->CreateNeg(rhs, "neg");
             result = static_cast<llvm::Value*>(
                 builder_->CreateGEP(pointeeLLTy, cur, idx, "ptr_cmpd"));
-            builder_->CreateStore(result, currentPtr);
+            volatileStore(result, currentPtr);
             return {};
         }
         if (!isFloat && (ctx->op->getType() == LucisLexer::SLASH_ASSIGN ||
@@ -4720,7 +4727,7 @@ std::any IRGen::visitFieldCompoundAssignStmt(
             result = cur;
             break;
         }
-        builder_->CreateStore(result, currentPtr);
+        volatileStore(result, currentPtr);
         return {};
     }
 
@@ -4763,7 +4770,14 @@ std::any IRGen::visitFieldCompoundAssignStmt(
     }
 
     auto* cur = builder_->CreateLoad(currentTy, currentPtr, "field_cur");
+    if (currentTI->isVolatile)
+        llvm::cast<llvm::LoadInst>(cur)->setVolatile(true);
     auto* rhs = castValue(visit(ctx->expression()));
+
+    auto nvStore = [&](llvm::Value* v, llvm::Value* p) {
+        auto* s = builder_->CreateStore(v, p);
+        if (currentTI->isVolatile) s->setVolatile(true);
+    };
 
     // Cast RHS to field type
     if (rhs->getType() != currentTy) {
@@ -4786,7 +4800,7 @@ std::any IRGen::visitFieldCompoundAssignStmt(
         auto* mergeBB = llvm::BasicBlock::Create(*context_, "ncoal.end", currentFunction_);
         builder_->CreateCondBr(isNull, thenBB, mergeBB);
         builder_->SetInsertPoint(thenBB);
-        builder_->CreateStore(rhs, currentPtr);
+        nvStore(rhs, currentPtr);
         builder_->CreateBr(mergeBB);
         builder_->SetInsertPoint(mergeBB);
         return {};
@@ -4807,7 +4821,7 @@ std::any IRGen::visitFieldCompoundAssignStmt(
             idx = builder_->CreateNeg(rhs, "neg");
         result = static_cast<llvm::Value*>(
             builder_->CreateGEP(pointeeLLTy, cur, idx, "ptr_cmpd"));
-        builder_->CreateStore(result, currentPtr);
+        nvStore(result, currentPtr);
         return {};
     }
 
@@ -4854,7 +4868,7 @@ std::any IRGen::visitFieldCompoundAssignStmt(
         break;
     }
 
-    builder_->CreateStore(result, currentPtr);
+    nvStore(result, currentPtr);
     return {};
 }
 
@@ -5007,7 +5021,10 @@ std::any IRGen::visitIndexFieldAssignStmt(
         }
     }
 
-    builder_->CreateStore(val, currentPtr);
+    {
+        auto* store = builder_->CreateStore(val, currentPtr);
+        if (currentTI && currentTI->isVolatile) store->setVolatile(true);
+    }
     return {};
 }
 
@@ -5949,11 +5966,18 @@ std::any IRGen::visitArrowAnyCompoundAssignStmt(
     if (!lv.ptr) return {};
 
     auto* oldVal = builder_->CreateLoad(lv.ty, lv.ptr, "arrow_any_old");
+    if (lv.fieldTI && lv.fieldTI->isVolatile)
+        llvm::cast<llvm::LoadInst>(oldVal)->setVolatile(true);
     auto* rhs = castValue(visit(rhsExpr));
     if (rhs->getType() != lv.ty) {
         if (rhs->getType()->isIntegerTy() && lv.ty->isIntegerTy())
             rhs = builder_->CreateIntCast(rhs, lv.ty, lv.fieldTI && lv.fieldTI->isSigned);
     }
+
+    auto avStore = [&](llvm::Value* v, llvm::Value* p) {
+        auto* s = builder_->CreateStore(v, p);
+        if (lv.fieldTI && lv.fieldTI->isVolatile) s->setVolatile(true);
+    };
 
     // ── Null-coalescing: arrow_any ??= default ──────────────────
     if (ctx->op->getType() == LucisLexer::NULLCOAL_ASSIGN) {
@@ -5964,7 +5988,7 @@ std::any IRGen::visitArrowAnyCompoundAssignStmt(
         auto* mergeBB = llvm::BasicBlock::Create(*context_, "ncoal.end", currentFunction_);
         builder_->CreateCondBr(isNull, thenBB, mergeBB);
         builder_->SetInsertPoint(thenBB);
-        builder_->CreateStore(rhs, lv.ptr);
+        avStore(rhs, lv.ptr);
         builder_->CreateBr(mergeBB);
         builder_->SetInsertPoint(mergeBB);
         return {};
@@ -5985,7 +6009,7 @@ std::any IRGen::visitArrowAnyCompoundAssignStmt(
             idx = builder_->CreateNeg(rhs, "neg");
         result = static_cast<llvm::Value*>(
             builder_->CreateGEP(pointeeLLTy, oldVal, idx, "ptr_cmpd"));
-        builder_->CreateStore(result, lv.ptr);
+        avStore(result, lv.ptr);
         return {};
     }
 
@@ -6021,7 +6045,7 @@ std::any IRGen::visitArrowAnyCompoundAssignStmt(
         std::cerr << "lucis: unsupported arrow compound assign\n";
         return {};
     }
-    builder_->CreateStore(result, lv.ptr);
+    avStore(result, lv.ptr);
     return {};
 }
 
@@ -10803,7 +10827,10 @@ std::any IRGen::visitIndexExpr(LucisParser::IndexExprContext* ctx) {
                     auto* elemSzVal = llvm::ConstantInt::get(usizeTy, elemSz);
                     auto ptrFn = declareBuiltin("lucis_vec_ptr_raw", ptrTy, {ptrTy, usizeTy, usizeTy});
                     auto* elemPtr = builder_->CreateCall(ptrFn, {vecPtr, idx, elemSzVal}, "vec_elem_ptr");
-                    return static_cast<llvm::Value*>(builder_->CreateLoad(elemLLTy, elemPtr, "vec_at"));
+                    auto* load = builder_->CreateLoad(elemLLTy, elemPtr, "vec_at");
+                    if (baseTI->elementType && baseTI->elementType->isVolatile)
+                        load->setVolatile(true);
+                    return static_cast<llvm::Value*>(load);
                 }
                 auto callee = declareBuiltin("lucis_vec_at_" + suffix, elemLLTy, {ptrTy, usizeTy});
                 auto* result = builder_->CreateCall(callee, {vecPtr, idx}, "vec_at");
@@ -10836,7 +10863,10 @@ std::any IRGen::visitIndexExpr(LucisParser::IndexExprContext* ctx) {
                         llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
                 }
                 auto* elemPtr = builder_->CreateGEP(elemTy, ptrBase, idxVal, "idx_elem_ptr");
-                return static_cast<llvm::Value*>(builder_->CreateLoad(elemTy, elemPtr, "idx_elem"));
+                auto* load = builder_->CreateLoad(elemTy, elemPtr, "idx_elem");
+                if (baseTI->pointeeType && baseTI->pointeeType->isVolatile)
+                    load->setVolatile(true);
+                return static_cast<llvm::Value*>(load);
             }
 
             // Slice {ptr, len} indexing: expr returning []T, e.g., dots[i].arr[j]
@@ -10866,8 +10896,9 @@ std::any IRGen::visitIndexExpr(LucisParser::IndexExprContext* ctx) {
                     auto* elemTy = elemTI->toLLVMType(*context_, module_->getDataLayout());
                     auto* elemPtr = builder_->CreateGEP(
                         elemTy, dataPtr, idx, "slice_elem_ptr");
-                    return static_cast<llvm::Value*>(
-                        builder_->CreateLoad(elemTy, elemPtr, "slice_val"));
+                    auto* load = builder_->CreateLoad(elemTy, elemPtr, "slice_val");
+                    if (elemTI && elemTI->isVolatile) load->setVolatile(true);
+                    return static_cast<llvm::Value*>(load);
                 }
             }
 
@@ -11776,13 +11807,16 @@ std::any IRGen::visitFieldAccessExpr(LucisParser::FieldAccessExprContext* ctx) {
             structTI->fields[fieldIdx].arraySizes);
 
         if (structTI->kind == TypeKind::Union) {
-            return static_cast<llvm::Value*>(
-                builder_->CreateLoad(fieldLLTy, alloca, fieldName));
+            auto* load = builder_->CreateLoad(fieldLLTy, alloca, fieldName);
+            if (fieldTI->isVolatile) load->setVolatile(true);
+            return static_cast<llvm::Value*>(load);
         }
 
         auto* structTy = alloca->getAllocatedType();
         auto* gep = builder_->CreateStructGEP(structTy, alloca, fieldIdx, fieldName + "_ptr");
-        return static_cast<llvm::Value*>(builder_->CreateLoad(fieldLLTy, gep, fieldName));
+        auto* load = builder_->CreateLoad(fieldLLTy, gep, fieldName);
+        if (fieldTI->isVolatile) load->setVolatile(true);
+        return static_cast<llvm::Value*>(load);
     }
 
     // ── Case 2: base is an indexed array element (e.g. arr[i].field) ──
@@ -11820,7 +11854,9 @@ std::any IRGen::visitFieldAccessExpr(LucisParser::FieldAccessExprContext* ctx) {
                         auto* tmp = builder_->CreateAlloca(indexedVal->getType(), nullptr, "tmp_idx_field");
                         builder_->CreateStore(indexedVal, tmp);
                         auto* gep = builder_->CreateStructGEP(indexedVal->getType(), tmp, fieldIdx, fieldName + "_ptr");
-                        return static_cast<llvm::Value*>(builder_->CreateLoad(fieldLLTy, gep, fieldName));
+                        auto* load = builder_->CreateLoad(fieldLLTy, gep, fieldName);
+                        if (fieldTI->isVolatile) load->setVolatile(true);
+                        return static_cast<llvm::Value*>(load);
                     }
                 }
             }
@@ -11992,13 +12028,15 @@ std::any IRGen::visitFieldAccessExpr(LucisParser::FieldAccessExprContext* ctx) {
                     auto* tmp = builder_->CreateAlloca(baseVal->getType(), nullptr, "chain_tmp");
                     builder_->CreateStore(baseVal, tmp);
                     if (baseTI->kind == TypeKind::Union) {
-                        return static_cast<llvm::Value*>(
-                            builder_->CreateLoad(fieldLLTy, tmp, fieldName));
+                        auto* l = builder_->CreateLoad(fieldLLTy, tmp, fieldName);
+                        if (fieldTI->isVolatile) l->setVolatile(true);
+                        return static_cast<llvm::Value*>(l);
                     }
                     auto* gep = builder_->CreateStructGEP(baseVal->getType(), tmp,
                                                           fieldIdx, fieldName + "_ptr");
-                    return static_cast<llvm::Value*>(
-                        builder_->CreateLoad(fieldLLTy, gep, fieldName));
+                    auto* l = builder_->CreateLoad(fieldLLTy, gep, fieldName);
+                    if (fieldTI->isVolatile) l->setVolatile(true);
+                    return static_cast<llvm::Value*>(l);
                 }
             }
         }
@@ -12036,7 +12074,9 @@ std::any IRGen::visitFieldAccessExpr(LucisParser::FieldAccessExprContext* ctx) {
                         structLLTy = static_cast<llvm::StructType*>(
                             structTI->toLLVMType(*context_, module_->getDataLayout()));
                     auto* gep = builder_->CreateStructGEP(structLLTy, baseVal, fieldIdx, fieldName + "_ptr");
-                    return static_cast<llvm::Value*>(builder_->CreateLoad(fieldLLTy, gep, fieldName));
+                    auto* load = builder_->CreateLoad(fieldLLTy, gep, fieldName);
+                    if (fieldTI->isVolatile) load->setVolatile(true);
+                    return static_cast<llvm::Value*>(load);
                 }
             }
         }
@@ -13684,6 +13724,8 @@ std::any IRGen::visitDerefCompoundAssignStmt(LucisParser::DerefCompoundAssignStm
 
     auto* pointeeTy = ptrTI->pointeeType->toLLVMType(*context_, module_->getDataLayout());
     auto* cur = builder_->CreateLoad(pointeeTy, ptrVal, "deref_compound_cur");
+    if (ptrTI->pointeeType->isVolatile)
+        llvm::cast<llvm::LoadInst>(cur)->setVolatile(true);
     auto* rhs = castValue(visit(rhsExpr));
 
     if (rhs->getType() != pointeeTy) {
@@ -13757,7 +13799,10 @@ std::any IRGen::visitDerefCompoundAssignStmt(LucisParser::DerefCompoundAssignStm
         break;
     }
 
-    builder_->CreateStore(result, ptrVal);
+    {
+        auto* store = builder_->CreateStore(result, ptrVal);
+        if (ptrTI->pointeeType->isVolatile) store->setVolatile(true);
+    }
     return {};
 }
 
