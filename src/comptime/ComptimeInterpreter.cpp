@@ -45,7 +45,13 @@ ComptimeValue ComptimeInterpreter::evalStmt(void* stmtCtx) {
     if (auto* ifs = stmt->ifStmt()) return evalIf(ifs);
     if (auto* decl = stmt->varDeclStmt()) return evalVarDecl(decl);
     if (auto* assign = stmt->assignStmt()) return evalAssign(assign);
+    if (auto* compound = stmt->compoundAssignStmt()) return evalCompoundAssign(compound);
     if (auto* ws = stmt->whileStmt()) return evalWhile(ws);
+    if (auto* forStmt = stmt->forStmt()) {
+        if (auto* forIn = dynamic_cast<LucisParser::ForInStmtContext*>(forStmt))
+            return evalForIn(forIn);
+        return ComptimeValue::voidVal();
+    }
 
     // Expr statement — look for fn call or match
     if (auto* es = stmt->exprStmt()) {
@@ -122,6 +128,79 @@ ComptimeValue ComptimeInterpreter::evalAssign(void* assignCtx) {
     if (!assign->IDENTIFIER()) return ComptimeValue::voidVal();
     auto val = evalExpr(assign->expression(0));
     frames_.back().locals[assign->IDENTIFIER()->getText()] = val;
+    return ComptimeValue::voidVal();
+}
+
+ComptimeValue ComptimeInterpreter::evalCompoundAssign(void* compoundCtx) {
+    auto* ca = static_cast<LucisParser::CompoundAssignStmtContext*>(compoundCtx);
+    if (!ca->IDENTIFIER()) return ComptimeValue::voidVal();
+    auto name = ca->IDENTIFIER()->getText();
+    auto* it = [&]() -> std::unordered_map<std::string, ComptimeValue>* {
+        for (auto it = frames_.rbegin(); it != frames_.rend(); ++it) {
+            if (it->locals.count(name)) return &it->locals;
+        }
+        return nullptr;
+    }();
+    if (!it) return ComptimeValue::voidVal();
+
+    auto& var = (*it)[name];
+    auto rhs = evalExpr(ca->expression());
+    if (var.kind() == ComptimeValue::Kind::Int && rhs.kind() == ComptimeValue::Kind::Int) {
+        if (ca->PLUS_ASSIGN())   var = ComptimeValue::intVal(var.asInt() + rhs.asInt());
+        else if (ca->MINUS_ASSIGN())  var = ComptimeValue::intVal(var.asInt() - rhs.asInt());
+        else if (ca->STAR_ASSIGN())   var = ComptimeValue::intVal(var.asInt() * rhs.asInt());
+        else if (ca->SLASH_ASSIGN())  var = rhs.asInt() != 0 ? ComptimeValue::intVal(var.asInt() / rhs.asInt()) : ComptimeValue::intVal(0);
+        else if (ca->PERCENT_ASSIGN()) var = rhs.asInt() != 0 ? ComptimeValue::intVal(var.asInt() % rhs.asInt()) : ComptimeValue::intVal(0);
+        else if (ca->AMP_ASSIGN())    var = ComptimeValue::intVal(var.asInt() & rhs.asInt());
+        else if (ca->PIPE_ASSIGN())   var = ComptimeValue::intVal(var.asInt() | rhs.asInt());
+    }
+    return ComptimeValue::voidVal();
+}
+
+ComptimeValue ComptimeInterpreter::evalForIn(void* forCtx) {
+    auto* forStmt = static_cast<LucisParser::ForInStmtContext*>(forCtx);
+    auto* id = forStmt->IDENTIFIER();
+    if (!id) return ComptimeValue::voidVal();
+    auto varName = id->getText();
+
+    // Evaluate the iterable
+    auto* iterExpr = forStmt->expression();
+
+    // Try range evaluation: 0..n or 0..=n
+    if (auto* range = dynamic_cast<LucisParser::RangeExprContext*>(iterExpr)) {
+        auto start = evalExpr(range->expression(0));
+        auto end   = evalExpr(range->expression(1));
+        if (start.kind() == ComptimeValue::Kind::Int && end.kind() == ComptimeValue::Kind::Int) {
+            for (int64_t i = start.asInt(); i < end.asInt(); i++) {
+                frames_.back().locals[varName] = ComptimeValue::intVal(i);
+                auto result = evalBlock(forStmt->block());
+                if (result.kind() != ComptimeValue::Kind::Void) return result;
+            }
+        }
+        return ComptimeValue::voidVal();
+    }
+    if (auto* rangeIncl = dynamic_cast<LucisParser::RangeInclExprContext*>(iterExpr)) {
+        auto start = evalExpr(rangeIncl->expression(0));
+        auto end   = evalExpr(rangeIncl->expression(1));
+        if (start.kind() == ComptimeValue::Kind::Int && end.kind() == ComptimeValue::Kind::Int) {
+            for (int64_t i = start.asInt(); i <= end.asInt(); i++) {
+                frames_.back().locals[varName] = ComptimeValue::intVal(i);
+                auto result = evalBlock(forStmt->block());
+                if (result.kind() != ComptimeValue::Kind::Void) return result;
+            }
+        }
+        return ComptimeValue::voidVal();
+    }
+
+    // Generic list iteration
+    auto iterable = evalExpr(iterExpr);
+    if (iterable.kind() == ComptimeValue::Kind::List) {
+        for (auto& elem : iterable.asList()) {
+            frames_.back().locals[varName] = elem;
+            auto result = evalBlock(forStmt->block());
+            if (result.kind() != ComptimeValue::Kind::Void) return result;
+        }
+    }
     return ComptimeValue::voidVal();
 }
 

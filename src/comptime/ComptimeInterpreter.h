@@ -40,6 +40,7 @@ private:
     ComptimeValue evalIf(void* ifCtx);
     ComptimeValue evalVarDecl(void* declCtx);
     ComptimeValue evalAssign(void* assignCtx);
+    ComptimeValue evalCompoundAssign(void* compoundCtx);
     ComptimeValue evalForIn(void* forCtx);
     ComptimeValue evalWhile(void* whileCtx);
     ComptimeValue evalFnCall(void* callCtx);
