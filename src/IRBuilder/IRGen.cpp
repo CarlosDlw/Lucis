@@ -4568,7 +4568,7 @@ std::any IRGen::visitFieldAssignStmt(LucisParser::FieldAssignStmtContext* ctx) {
         }
     }
 
-    if (isVolatileAccess)
+    if (isVolatileAccess || (currentTI && currentTI->isVolatile))
         builder_->CreateStore(val, currentPtr, true);
     else
         builder_->CreateStore(val, currentPtr);
@@ -11743,8 +11743,9 @@ std::any IRGen::visitFieldAccessExpr(LucisParser::FieldAccessExprContext* ctx) {
             }
             auto* gep = builder_->CreateStructGEP(
                 structLLTy, ptrVal, fieldIdx, fieldName + "_ptr");
-            return static_cast<llvm::Value*>(
-                builder_->CreateLoad(fieldLLTy, gep, fieldName));
+            auto* load = builder_->CreateLoad(fieldLLTy, gep, fieldName);
+            if (fieldTI && fieldTI->isVolatile) load->setVolatile(true);
+            return static_cast<llvm::Value*>(load);
         }
 
         if (structTI->kind != TypeKind::Struct && structTI->kind != TypeKind::Union) {
@@ -13568,8 +13569,9 @@ std::any IRGen::visitDerefExpr(LucisParser::DerefExprContext* ctx) {
     }
 
     auto* pointeeLLVM = pointeeTI->toLLVMType(*context_, module_->getDataLayout());
-    return static_cast<llvm::Value*>(
-        builder_->CreateLoad(pointeeLLVM, ptrVal, "deref"));
+    auto* load = builder_->CreateLoad(pointeeLLVM, ptrVal, "deref");
+    if (pointeeTI->isVolatile) load->setVolatile(true);
+    return static_cast<llvm::Value*>(load);
 }
 
 std::any IRGen::visitDerefAssignStmt(LucisParser::DerefAssignStmtContext* ctx) {
@@ -13629,7 +13631,11 @@ std::any IRGen::visitDerefAssignStmt(LucisParser::DerefAssignStmtContext* ctx) {
         }
     }
 
-    builder_->CreateStore(val, ptrVal);
+    {
+        bool isVol = ptrTI && ptrTI->pointeeType && ptrTI->pointeeType->isVolatile;
+        auto* store = builder_->CreateStore(val, ptrVal);
+        if (isVol) store->setVolatile(true);
+    }
     return {};
 }
 
