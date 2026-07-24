@@ -406,6 +406,7 @@ Operator overloads are **static functions** with two parameters (lhs, rhs). The 
 | Bitwise | `&` `\|` `^` `<<` `>>` |
 | Logical | `&&` `\|\|` `!` |
 | Unary | `-` `~` `++` `--` |
+| Index | `[]` (getter with `&self`, optional setter with `&self` + value) |
 
 ### Example
 
@@ -450,12 +451,53 @@ auto r = a + b * c;       // (b * c) evaluated first
 auto r = (a + b) * c;     // (a + b) evaluated first
 ```
 
+### Instance operators: `[]`
+
+The index operator `[]` uses `&self` syntax and can be overloaded with both a getter and a setter:
+
+```lucis
+extend MyVec {
+  // Getter: fn [](&self, index_type) value_type
+  fn [](&self, int32 idx) int32 { ... }
+
+  // Setter: fn [](&self, index_type, value_type) void
+  fn [](&self, int32 idx, int32 val) void { ... }
+}
+```
+
+The getter takes the index and returns the element. The setter takes the index and the new value, returning `void`.
+
+```lucis
+use stdio::printf;
+
+struct MyVec { int32 x; int32 y; }
+
+extend MyVec {
+  fn [](&self, int32 idx) int32 {
+    if idx == 0 { ret self->x; }
+    ret self->y;
+  }
+  fn [](&self, int32 idx, int32 val) void {
+    if idx == 0 { self->x = val; }
+    else { self->y = val; }
+  }
+}
+
+fn main() int32 {
+  auto v = MyVec { 10, 20 };
+  printf("{d}\n", v[0]);   // 10 (getter)
+  v[0] = 99;                // (setter)
+  printf("{d}\n", v[0]);   // 99
+  ret 0;
+}
+```
+
 ### Restrictions
 
 - Only existing operators can be overloaded (you cannot create new operator symbols)
 - The number of parameters is fixed per operator: binary ops take 2, unary ops take 1
 - At least one parameter must be a user-defined struct type
-- `[]`, `()`, `.`, `::`, `??`, `as`, `is`, and assignment operators (`=`, `+=`, etc.) cannot be overloaded
+- `()`, `.`, `::`, `??`, `as`, `is`, and assignment operators (`=`, `+=`, etc.) cannot be overloaded
 
 ## See Also
 
