@@ -26,6 +26,7 @@ enum class TypeKind {
     Pointer, // pointer to another type
     Function, // function type: fn(params) -> ret
     Extended, // extended types from stdlib (Vec<T>, Map<K,V>, etc.)
+    BitStruct, // bitstruct type: bit-level field access
     Tuple,    // tuple type: tuple<T1, T2, ...>
     VAList,   // native variadic argument list state
     Closure,  // closure type: fn ptr + context (for capturing lambdas)
@@ -48,6 +49,13 @@ enum class EnumPayloadKind {
     Named,
 };
 
+struct BitFieldInfo {
+    std::string name;
+    unsigned offset = 0;  // bit offset from LSB
+    unsigned width = 0;   // bit width
+    bool isPadding = false; // true if declared as `_`
+};
+
 struct EnumVariantInfo {
     std::string name;
     unsigned discriminant = 0;
@@ -66,6 +74,8 @@ struct TypeInfo {
     const TypeInfo* parentType = nullptr;   // non-null for structs with : Parent
     std::vector<std::string> enumVariants;  // non-empty only for Enum
     std::vector<EnumVariantInfo> enumVariantInfos; // detailed variant metadata for Enum
+    std::vector<BitFieldInfo> bitFields;       // non-empty only for BitStruct
+    const TypeInfo* backingType = nullptr;     // non-null only for BitStruct — underlying integer type
     const TypeInfo* pointeeType = nullptr;   // non-null only for Pointer
     const TypeInfo* returnType = nullptr;                // non-null only for Function
     std::vector<const TypeInfo*> paramTypes;              // non-empty only for Function

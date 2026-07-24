@@ -34,6 +34,7 @@ enum class DeclKind {
     VAList,
     // Composites
     Struct,
+    BitStruct,
     Union,
     Enum,
     Pointer,
@@ -53,6 +54,7 @@ enum class DeclKind {
 struct Decl;
 struct PrimitiveDecl;
 struct StructDecl;
+struct BitStructDecl;
 struct UnionDecl;
 struct EnumDecl;
 struct PointerDecl;
@@ -156,6 +158,24 @@ struct StructDecl : Decl {
     std::string parentName;                 // empty = no parent struct
 
     StructDecl() : Decl(DeclKind::Struct) {}
+
+    std::unique_ptr<Decl> clone() const override;
+    void substituteTypes(
+        const std::unordered_map<std::string, Decl*>& subst) override;
+};
+
+// ── BitStructDecl ───────────────────────────────────────────────────────────
+
+struct BitStructField {
+    std::string name;
+    unsigned    width = 0;
+    bool        isPadding = false;
+};
+
+struct BitStructDecl : Decl {
+    std::vector<BitStructField> fields;
+
+    BitStructDecl() : Decl(DeclKind::BitStruct) {}
 
     std::unique_ptr<Decl> clone() const override;
     void substituteTypes(

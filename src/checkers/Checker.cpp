@@ -12166,6 +12166,7 @@ semantic::DeclKind Checker::toSemanticKind(TypeKind tk) const {
     case TypeKind::Tuple:    return semantic::DeclKind::Tuple;
     case TypeKind::VAList:   return semantic::DeclKind::VAList;
     case TypeKind::Fallible: return semantic::DeclKind::Fallible;
+    case TypeKind::BitStruct: return semantic::DeclKind::BitStruct;
     }
     return semantic::DeclKind::Void;
 }
