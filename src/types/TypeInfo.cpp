@@ -41,6 +41,19 @@ static llvm::Type* buildEnumVariantPayloadType(const EnumVariantInfo& variant,
     return llvm::StructType::get(ctx, fieldTypes);
 }
 
+llvm::StructType* getOrCreateErrorStructType(llvm::LLVMContext& ctx,
+                                              const llvm::DataLayout& dl) {
+    auto* existing = llvm::StructType::getTypeByName(ctx, "Error");
+    if (existing) return existing;
+    auto* ptrTy   = llvm::PointerType::getUnqual(ctx);
+    auto* usizeTy = dl.getIntPtrType(ctx);
+    auto* i32Ty   = llvm::Type::getInt32Ty(ctx);
+    auto* i64Ty   = llvm::Type::getInt64Ty(ctx);
+    auto* strTy   = llvm::StructType::get(ctx, {ptrTy, usizeTy});
+    return llvm::StructType::create(ctx,
+        {strTy, strTy, i32Ty, i32Ty, i64Ty, i64Ty}, "Error");
+}
+
 static bool enumHasPayload(const TypeInfo& typeInfo) {
     for (const auto& variant : typeInfo.enumVariantInfos) {
         if (!variant.payloadFields.empty()) return true;
@@ -182,6 +195,18 @@ llvm::Type* TypeInfo::toLLVMType(llvm::LLVMContext& ctx,
         for (auto* elem : tupleElements)
             elemTypes.push_back(elem->toLLVMType(ctx, dl));
         return llvm::StructType::get(ctx, elemTypes);
+    }
+
+    case TypeKind::Fallible: {
+        auto* discTy  = llvm::Type::getInt32Ty(ctx);
+        auto* succTy  = successType->toLLVMType(ctx, dl);
+        auto* errTy   = errorType
+                        ? errorType->toLLVMType(ctx, dl)
+                        : getOrCreateErrorStructType(ctx, dl);
+        auto llvmName = "fallible." + name;
+        auto* existing = llvm::StructType::getTypeByName(ctx, llvmName);
+        if (existing) return existing;
+        return llvm::StructType::create(ctx, {discTy, succTy, errTy}, llvmName);
     }
 
     case TypeKind::Extended: {
