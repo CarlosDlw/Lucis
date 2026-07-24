@@ -11453,14 +11453,28 @@ const TypeInfo* Checker::instantiateGenericStruct(
 
                 operatorMethods_[mangledName].push_back(std::move(info));
 
-                // ── Check operator body return paths ──
-                if (retType->kind != TypeKind::Void) {
-                    if (!blockAlwaysReturns(opDecl->block())) {
-                        auto opName = opSymbol(opDecl->operatorName());
-                        error(opDecl, "operator '" + opName +
-                                      "' must return a value of type '" + retType->name +
-                                      "' on all code paths");
+                // ── Check operator body return types ──
+                {
+                    auto savedLocals = std::move(locals_);
+                    auto savedSubst = std::move(activeTypeSubst_);
+                    activeTypeSubst_ = subst;
+                    if (info.isInstance) {
+                        auto* ptrType = getPointerType(result);
+                        locals_["self"] = {ptrType, 0, {}, true, true, nullptr};
                     }
+                    for (auto* param : params) {
+                        auto paramName = param->IDENTIFIER()->getText();
+                        unsigned pDims = 0;
+                        auto* pType = resolveTypeSpecWithSubst(param->typeSpec(), subst, pDims);
+                        if (!pType) continue;
+                        locals_[paramName] = {pType, pDims, {}, true, true, nullptr};
+                    }
+                    auto* prevRet = currentReturnType_;
+                    currentReturnType_ = retType;
+                    checkBlock(opDecl->block(), retType);
+                    currentReturnType_ = prevRet;
+                    activeTypeSubst_ = std::move(savedSubst);
+                    locals_ = std::move(savedLocals);
                 }
                 continue;
             }
