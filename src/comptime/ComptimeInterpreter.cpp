@@ -1,5 +1,6 @@
 #include "comptime/ComptimeInterpreter.h"
 #include "generated/LucisParser.h"
+#include "generated/LucisLexer.h"
 
 ComptimeInterpreter::ComptimeInterpreter(
     const TypeRegistry& types, ComptimeRegistry& registry,
@@ -140,6 +141,15 @@ ComptimeValue ComptimeInterpreter::evalWhile(void* whileCtx) {
 ComptimeValue ComptimeInterpreter::evalExpr(void* exprCtx) {
     auto* expr = static_cast<LucisParser::ExpressionContext*>(exprCtx);
 
+    // Literals
+    if (auto* i = dynamic_cast<LucisParser::IntLitExprContext*>(expr))
+        return ComptimeValue::intVal(std::stoll(i->INT_LIT()->getText()));
+    if (auto* f = dynamic_cast<LucisParser::FloatLitExprContext*>(expr))
+        return ComptimeValue::floatVal(std::stod(f->FLOAT_LIT()->getText()));
+    if (auto* b = dynamic_cast<LucisParser::BoolLitExprContext*>(expr))
+        return ComptimeValue::boolVal(b->BOOL_LIT()->getText() == "true");
+
+    // Identifier lookup
     if (auto* id = dynamic_cast<LucisParser::IdentExprContext*>(expr)) {
         auto name = id->IDENTIFIER()->getText();
         for (auto it = frames_.rbegin(); it != frames_.rend(); ++it) {
@@ -148,12 +158,96 @@ ComptimeValue ComptimeInterpreter::evalExpr(void* exprCtx) {
         }
         return ComptimeValue::voidVal();
     }
+
+    // Function call & match
     if (auto* call = dynamic_cast<LucisParser::FnCallExprContext*>(expr))
         return evalFnCall(call);
     if (auto* match = dynamic_cast<LucisParser::MatchExprContext*>(expr))
         return evalMatch(match);
+
+    // Unary operators
+    if (auto* neg = dynamic_cast<LucisParser::NegExprContext*>(expr)) {
+        auto v = evalExpr(neg->expression());
+        if (v.kind() == ComptimeValue::Kind::Int) return ComptimeValue::intVal(-v.asInt());
+        if (v.kind() == ComptimeValue::Kind::Float) return ComptimeValue::floatVal(-v.asFloat());
+        return v;
+    }
+
+    // Relational: < > <= >=
+    if (auto* rel = dynamic_cast<LucisParser::RelExprContext*>(expr)) {
+        auto l = evalExpr(rel->expression(0));
+        auto r = evalExpr(rel->expression(1));
+        if (l.kind() == ComptimeValue::Kind::Int && r.kind() == ComptimeValue::Kind::Int) {
+            auto op = rel->op->getType();
+            if (op == LucisLexer::LT)  return ComptimeValue::boolVal(l.asInt() < r.asInt());
+            if (op == LucisLexer::GT)  return ComptimeValue::boolVal(l.asInt() > r.asInt());
+            if (op == LucisLexer::LTE) return ComptimeValue::boolVal(l.asInt() <= r.asInt());
+            if (op == LucisLexer::GTE) return ComptimeValue::boolVal(l.asInt() >= r.asInt());
+        }
+        return ComptimeValue::voidVal();
+    }
+
+    // Equality: == !=
+    if (auto* eq = dynamic_cast<LucisParser::EqExprContext*>(expr)) {
+        auto l = evalExpr(eq->expression(0));
+        auto r = evalExpr(eq->expression(1));
+        if (l.kind() == ComptimeValue::Kind::Int && r.kind() == ComptimeValue::Kind::Int) {
+            if (eq->EQ()) return ComptimeValue::boolVal(l.asInt() == r.asInt());
+            if (eq->NEQ()) return ComptimeValue::boolVal(l.asInt() != r.asInt());
+        }
+        return ComptimeValue::voidVal();
+    }
+
+    // Add/Sub
+    if (auto* as = dynamic_cast<LucisParser::AddSubExprContext*>(expr)) {
+        auto l = evalExpr(as->expression(0));
+        auto r = evalExpr(as->expression(1));
+        if (l.kind() == ComptimeValue::Kind::Int && r.kind() == ComptimeValue::Kind::Int) {
+            if (as->PLUS()) return ComptimeValue::intVal(l.asInt() + r.asInt());
+            if (as->MINUS()) return ComptimeValue::intVal(l.asInt() - r.asInt());
+        }
+        if (l.kind() == ComptimeValue::Kind::Float && r.kind() == ComptimeValue::Kind::Float) {
+            if (as->PLUS()) return ComptimeValue::floatVal(l.asFloat() + r.asFloat());
+            if (as->MINUS()) return ComptimeValue::floatVal(l.asFloat() - r.asFloat());
+        }
+        return l;
+    }
+
+    // Mul/Div/Mod
+    if (auto* mul = dynamic_cast<LucisParser::MulExprContext*>(expr)) {
+        auto l = evalExpr(mul->expression(0));
+        auto r = evalExpr(mul->expression(1));
+        if (l.kind() == ComptimeValue::Kind::Int && r.kind() == ComptimeValue::Kind::Int) {
+            if (mul->STAR()) return ComptimeValue::intVal(l.asInt() * r.asInt());
+            if (mul->SLASH()) return r.asInt() != 0 ? ComptimeValue::intVal(l.asInt() / r.asInt()) : ComptimeValue::intVal(0);
+            if (mul->PERCENT()) return r.asInt() != 0 ? ComptimeValue::intVal(l.asInt() % r.asInt()) : ComptimeValue::intVal(0);
+        }
+        return l;
+    }
+
+    // Bitwise AND
+    if (auto* band = dynamic_cast<LucisParser::BitAndExprContext*>(expr)) {
+        auto l = evalExpr(band->expression(0));
+        auto r = evalExpr(band->expression(1));
+        if (l.kind() == ComptimeValue::Kind::Int && r.kind() == ComptimeValue::Kind::Int)
+            return ComptimeValue::intVal(l.asInt() & r.asInt());
+        return l;
+    }
+
+    // Logical NOT
+    if (auto* notE = dynamic_cast<LucisParser::LogicalNotExprContext*>(expr)) {
+        auto v = evalExpr(notE->expression());
+        if (v.kind() == ComptimeValue::Kind::Bool) return ComptimeValue::boolVal(!v.asBool());
+        if (v.kind() == ComptimeValue::Kind::Int) return ComptimeValue::intVal(~v.asInt());
+        return v;
+    }
+
+    // Parenthesized expression
     if (auto* paren = dynamic_cast<LucisParser::ParenExprContext*>(expr))
         return evalExpr(paren->expression());
+
+    // CompoundAssign in while body: x += 1, etc.
+    // These are handled as statements, not expressions.
 
     if (constEval_) {
         auto r = constEval_(expr);
