@@ -277,6 +277,7 @@ private:
     void checkAsmStmt(LucisParser::AsmStmtContext* stmt);
     void checkCMacroBlock(LucisParser::CMacroBlockContext* ctx);
     void checkExprStmt(LucisParser::ExprStmtContext* stmt);
+    void checkBailStmt(LucisParser::BailStmtContext* stmt);
     void checkReturnStmt(LucisParser::ReturnStmtContext* stmt,
                          const TypeInfo* expectedType);
     void checkIfStmt(LucisParser::IfStmtContext* stmt,

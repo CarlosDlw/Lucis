@@ -1912,6 +1912,37 @@ const TypeInfo* Checker::resolveTypeSpec(LucisParser::TypeSpecContext* ctx,
         return getPointerType(inner);
     }
 
+    // Fallible type: !T or !T:E
+    if (cur && cur->NOT()) {
+        unsigned innerDims = 0;
+        auto* inner = resolveTypeSpec(cur->typeSpec(0), innerDims);
+        if (!inner) return nullptr;
+
+        const TypeInfo* errType = nullptr;
+        if (cur->typeSpec().size() > 1)
+            errType = resolveTypeSpec(cur->typeSpec(1), innerDims);
+        else
+            errType = typeRegistry_.lookup("Error");
+
+        if (!errType) {
+            error(cur, "cannot resolve error type for !T");
+            return nullptr;
+        }
+
+        auto ti = std::make_unique<TypeInfo>();
+        ti->kind = TypeKind::Fallible;
+        ti->name = "!" + inner->name;
+        if (errType->name != "Error")
+            ti->name += ":" + errType->name;
+        ti->successType = inner;
+        ti->errorType = errType;
+        ti->bitWidth = 0;
+        ti->isSigned = false;
+        auto* raw = ti.get();
+        dynamicTypes_.push_back(std::move(ti));
+        return raw;
+    }
+
     // Function type: fn(params) -> ret
     if (cur && cur->fnTypeSpec()) {
         auto* fnSpec = cur->fnTypeSpec();
@@ -2429,6 +2460,14 @@ bool Checker::isAssignable(const TypeInfo* lhs, const TypeInfo* rhs) {
         for (auto* ti = rhs; ti; ti = ti->parentType) {
             if (ti == lhs) return true;
         }
+    }
+
+    // Fallible: !T = T (auto-wrap success), !T = Error (auto-wrap error)
+    if (lhs->kind == TypeKind::Fallible) {
+        if (lhs->successType && isAssignable(lhs->successType, rhs))
+            return true;
+        if (lhs->errorType && isAssignable(lhs->errorType, rhs))
+            return true;
     }
 
     return false;
@@ -3567,6 +3606,15 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
             return typeRegistry_.lookup("void");
         }
 
+        // Fallible source type: !T
+        if (sourceType->kind == TypeKind::Fallible) {
+            if (!currentReturnType_ || currentReturnType_->kind != TypeKind::Fallible) {
+                error(pe, "'?' requer função envolvente com retorno !T");
+                return nullptr;
+            }
+            return sourceType->successType;
+        }
+
         if (!classifyUnwrapCatchEnum(sourceType, pattern, reason)) {
             error(pe, reason);
             return nullptr;
@@ -3601,6 +3649,33 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
     if (auto* cu = dynamic_cast<LucisParser::CatchUnwrapExprContext*>(expr)) {
         auto* sourceType = resolveExprType(cu->expression());
         if (!sourceType) return nullptr;
+
+        // Fallible source type: !T
+        if (sourceType->kind == TypeKind::Fallible) {
+            auto* errPayloadTI = sourceType->errorType;
+
+            if (errPayloadTI) {
+                auto saved = locals_.find("it");
+                bool hadSaved = saved != locals_.end();
+                VarInfo savedInfo;
+                if (hadSaved) savedInfo = saved->second;
+
+                locals_["it"] = {errPayloadTI, 0, {}, true, true, nullptr};
+
+                ++unwrapCatchItDepth_;
+                auto* retCtx = currentReturnType_ ? currentReturnType_ : typeRegistry_.lookup("void");
+                checkBlock(cu->block(), retCtx);
+                --unwrapCatchItDepth_;
+
+                if (hadSaved) locals_["it"] = savedInfo;
+                else locals_.erase("it");
+            } else {
+                auto* retCtx = currentReturnType_ ? currentReturnType_ : typeRegistry_.lookup("void");
+                checkBlock(cu->block(), retCtx);
+            }
+
+            return sourceType->successType;
+        }
 
         UnwrapCatchPatternInfo pattern;
         std::string reason;
@@ -7772,7 +7847,7 @@ bool Checker::blockAlwaysReturns(LucisParser::BlockContext* block) {
         if (auto* b = body->block())
             return blockAlwaysReturns(b);
         if (auto* s = body->statement()) {
-            if (s->returnStmt() || s->throwStmt())
+            if (s->returnStmt() || s->throwStmt() || s->bailStmt())
                 return true;
             if (auto* ls = s->loopStmt())
                 return blockAlwaysReturns(ls->block());
@@ -7795,8 +7870,8 @@ bool Checker::blockAlwaysReturns(LucisParser::BlockContext* block) {
             return true;
         }
 
-        // throw always exits the current function
-        if (stmt->throwStmt()) {
+        // throw / bail always exit the current function
+        if (stmt->throwStmt() || stmt->bailStmt()) {
             return true;
         }
 
@@ -8087,6 +8162,8 @@ void Checker::checkStmt(LucisParser::StatementContext* stmt,
         }
     } else if (stmt->throwStmt()) {
         resolveExprType(stmt->throwStmt()->expression());
+    } else if (stmt->bailStmt()) {
+        checkBailStmt(stmt->bailStmt());
     } else if (auto* ifa = stmt->indexFieldAssignStmt()) {
         for (auto* e : ifa->expression()) {
             resolveExprType(e);
@@ -10651,6 +10728,26 @@ void Checker::checkExprStmt(LucisParser::ExprStmtContext* stmt) {
     resolveExprType(stmt->expression());
 }
 
+void Checker::checkBailStmt(LucisParser::BailStmtContext* stmt) {
+    if (!currentReturnType_ || currentReturnType_->kind != TypeKind::Fallible) {
+        error(stmt, "'bail' só pode ser usado dentro de função com retorno !T");
+        return;
+    }
+    auto* exprType = resolveExprType(stmt->expression());
+    if (!exprType) return;
+
+    if (isAssignable(currentReturnType_->errorType, exprType))
+        return;
+
+    if (exprType->kind == TypeKind::String) {
+        return;
+    }
+
+    error(stmt, "'bail' type mismatch: expected '" +
+               currentReturnType_->errorType->name + "', got '" +
+               exprType->name + "'");
+}
+
 void Checker::checkReturnStmt(LucisParser::ReturnStmtContext* stmt,
                                const TypeInfo* expectedType) {
     auto* expr = stmt->expression();
@@ -11980,6 +12077,7 @@ semantic::DeclKind Checker::toSemanticKind(TypeKind tk) const {
     case TypeKind::Extended: return semantic::DeclKind::Extended;
     case TypeKind::Tuple:    return semantic::DeclKind::Tuple;
     case TypeKind::VAList:   return semantic::DeclKind::VAList;
+    case TypeKind::Fallible: return semantic::DeclKind::Fallible;
     }
     return semantic::DeclKind::Void;
 }

@@ -40,6 +40,7 @@ enum class DeclKind {
     Function,
     Extended,
     Tuple,
+    Fallible,
     // Aliases / templates
     TypeAlias,
     GenericTemplate,
