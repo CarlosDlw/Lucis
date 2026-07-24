@@ -229,6 +229,13 @@ ComptimeValue ComptimeInterpreter::evalExpr(void* exprCtx) {
     if (auto* b = dynamic_cast<LucisParser::BoolLitExprContext*>(expr))
         return ComptimeValue::boolVal(b->BOOL_LIT()->getText() == "true");
 
+    // String literal
+    if (auto* sl = dynamic_cast<LucisParser::StrLitExprContext*>(expr)) {
+        auto raw = sl->STR_LIT()->getText();
+        if (raw.size() >= 2) raw = raw.substr(1, raw.size() - 2);
+        return ComptimeValue::stringVal(raw);
+    }
+
     // Identifier lookup
     if (auto* id = dynamic_cast<LucisParser::IdentExprContext*>(expr)) {
         auto name = id->IDENTIFIER()->getText();
