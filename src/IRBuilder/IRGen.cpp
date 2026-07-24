@@ -1566,7 +1566,8 @@ std::any IRGen::visitExtendDecl(LucisParser::ExtendDeclContext* ctx) {
                 paramLLTypes.push_back(pTI->toLLVMType(*context_, module_->getDataLayout()));
             }
 
-            auto funcName = structName + "__" + internalName; // MyStruct__opAdd
+            auto baseName = structName + "__" + internalName;
+            auto funcName = baseName + "_" + std::to_string(paramLLTypes.size());
             auto* fnType = llvm::FunctionType::get(retLLTy, paramLLTypes, false);
             auto* fn = module_->getFunction(funcName);
             if (!fn) {
@@ -1574,7 +1575,7 @@ std::any IRGen::visitExtendDecl(LucisParser::ExtendDeclContext* ctx) {
                     fnType, llvm::Function::ExternalLinkage, funcName, module_);
             }
 
-            operatorMethods_[structName][internalName] = { fn, retTI };
+            operatorMethods_[structName][internalName].push_back({ fn, retTI });
 
             loweringInfos.push_back(ExtendMethodLoweringInfo{
                 method,
@@ -1950,8 +1951,8 @@ IRGen::MethodEntry* IRGen::findOperatorEntryInChain(const TypeInfo* ti,
         auto smIt = operatorMethods_.find(t->name);
         if (smIt == operatorMethods_.end()) continue;
         auto mIt = smIt->second.find(internalName);
-        if (mIt != smIt->second.end())
-            return &mIt->second;
+        if (mIt != smIt->second.end() && !mIt->second.empty())
+            return &mIt->second[0];
     }
     return nullptr;
 }
@@ -4096,6 +4097,32 @@ std::any IRGen::visitAssignStmt(LucisParser::AssignStmtContext* ctx) {
 
     // Indexed assignment: arr[i] = val  or  vec[i] = val
     // All expressions except the last are indices; the last is the RHS value
+
+    // ── User-defined opIndex assignment on struct ──────────────────────
+    if (elemTI && elemTI->kind == TypeKind::Struct && exprs.size() >= 2) {
+        IRGen::MethodEntry* setter = nullptr;
+        for (auto* t = elemTI; t; t = t->parentType) {
+            auto smIt = operatorMethods_.find(t->name);
+            if (smIt == operatorMethods_.end()) continue;
+            auto mIt = smIt->second.find("opIndex");
+            if (mIt != smIt->second.end()) {
+                for (auto& entry : mIt->second) {
+                    if (entry.fn->arg_size() == 3)
+                        setter = &entry;
+                }
+            }
+        }
+        if (setter) {
+            auto* idxVal = castValue(visit(exprs[0]));
+            auto* val = castValue(visit(exprs.back()));
+            llvm::Value* selfPtr = alloca->getAllocatedType()->isPointerTy()
+                ? static_cast<llvm::Value*>(
+                    builder_->CreateLoad(llvm::PointerType::getUnqual(*context_), alloca))
+                : static_cast<llvm::Value*>(alloca);
+            return static_cast<llvm::Value*>(
+                builder_->CreateCall(setter->fn, {selfPtr, idxVal, val}));
+        }
+    }
 
     // ── Extended type (Vec<T>, Map<K,V>) index assignment ──────────────
     llvm::Value* containerPtr = alloca;
@@ -10830,6 +10857,30 @@ std::any IRGen::visitIndexExpr(LucisParser::IndexExprContext* ctx) {
     }
 
     auto* identBase = dynamic_cast<LucisParser::IdentExprContext*>(current);
+
+    // Check for user-defined opIndex on struct
+    if (!indexExprs.empty()) {
+        auto* baseTI = resolveExprTypeInfo(current);
+        if (baseTI && baseTI->kind == TypeKind::Struct) {
+            if (auto* opEntry = findOperatorEntryInChain(baseTI, "opIndex")) {
+                auto* idxVal = castValue(visit(indexExprs[0]));
+                if (identBase) {
+                    auto it = locals_.find(identBase->IDENTIFIER()->getText());
+                    if (it != locals_.end()) {
+                        return static_cast<llvm::Value*>(
+                            builder_->CreateCall(opEntry->fn, {it->second.alloca, idxVal}));
+                    }
+                }
+                auto* baseVal = castValue(visit(current));
+                auto* temp = builder_->CreateAlloca(baseVal->getType(), nullptr, "opidx_base");
+                builder_->CreateStore(baseVal, temp);
+                return static_cast<llvm::Value*>(
+                    builder_->CreateCall(opEntry->fn, {temp, idxVal}));
+            }
+        }
+    }
+
+
     if (!identBase) {
         std::reverse(indexExprs.begin(), indexExprs.end());
 
@@ -27198,14 +27249,15 @@ const TypeInfo* IRGen::instantiateGenericStruct(
                     paramLLTypes.push_back(pTI->toLLVMType(*context_, module_->getDataLayout()));
                 }
 
-                auto funcName = mangledName + "__" + internalName;
+                auto baseName = mangledName + "__" + internalName;
+                auto funcName = baseName + "_" + std::to_string(paramLLTypes.size());
                 auto* fnType = llvm::FunctionType::get(retLLTy, paramLLTypes, false);
                 auto* fn = module_->getFunction(funcName);
                 if (!fn) {
                     fn = llvm::Function::Create(
                         fnType, llvm::Function::ExternalLinkage, funcName, module_);
                 }
-                operatorMethods_[mangledName][internalName] = { fn, retTI };
+                operatorMethods_[mangledName][internalName].push_back({ fn, retTI });
 
                 // ── Emit operator body ──
                 auto* savedFunc = currentFunction_;

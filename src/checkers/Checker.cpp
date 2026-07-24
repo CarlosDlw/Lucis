@@ -5027,6 +5027,19 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
         auto* baseType = resolveExprType(exprs[0]);
         auto* indexType = resolveExprType(exprs[1]);
 
+        // User-defined opIndex on struct
+        if (baseType && baseType->kind == TypeKind::Struct) {
+            if (auto* op = findOperatorInChain(baseType, "opIndex")) {
+                if (indexType && op->paramTypes.size() >= 2 &&
+                    !isAssignable(op->paramTypes[1], indexType)) {
+                    error(expr, "index type mismatch: expected '" +
+                                 op->paramTypes[1]->name + "', got '" +
+                                 indexType->name + "'");
+                }
+                return op->returnType;
+            }
+        }
+
         // Map<K,V>[key] returns V — key type must match K
         if (baseType && baseType->kind == TypeKind::Extended && baseType->keyType) {
             if (indexType && !isAssignable(baseType->keyType, indexType))
@@ -9606,6 +9619,38 @@ void Checker::checkAssignStmt(LucisParser::AssignStmtContext* stmt) {
     auto indexExprs = stmt->expression();
 
     auto* varType = it->second.type;
+
+    // User-defined opIndex on struct: obj[i] = val
+    if (indexExprs.size() >= 2 && varType && varType->kind == TypeKind::Struct) {
+        const OperatorInfo* setter = nullptr;
+        for (auto* t = varType; t; t = t->parentType) {
+            auto it = operatorMethods_.find(t->name);
+            if (it == operatorMethods_.end()) continue;
+            for (auto& o : it->second) {
+                if (o.internalName == "opIndex" && o.paramTypes.size() == 2)
+                    setter = &o;
+            }
+        }
+        if (setter) {
+            auto* idxType = resolveExprType(indexExprs[0]);
+            if (idxType && !isAssignable(setter->paramTypes[0], idxType))
+                error(stmt, "index type mismatch: expected '" +
+                             setter->paramTypes[0]->name + "', got '" +
+                             idxType->name + "'");
+            auto* rhsType = resolveExprType(indexExprs.back());
+            if (rhsType && !isAssignable(setter->paramTypes[1], rhsType))
+                error(stmt, "value type mismatch: expected '" +
+                             setter->paramTypes[1]->name + "', got '" +
+                             rhsType->name + "'");
+            return;
+        }
+        auto* getter = findOperatorInChain(varType, "opIndex");
+        if (getter) {
+            error(stmt, "operator '[]' for type '" + varType->name +
+                         "' requires a setter overload with value parameter");
+            return;
+        }
+    }
 
     // For Map<K,V>, subscript assignment: m[key] = val
     if (indexExprs.size() == 2 && varType &&
