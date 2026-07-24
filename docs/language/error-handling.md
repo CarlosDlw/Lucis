@@ -1,6 +1,111 @@
 # Error Handling
 
-Lucis provides structured error handling with `try`/`catch`/`finally`, `throw`, custom enum-based error types, the `?` propagate operator, and the built-in `Error` struct. For immediate program termination, global builtins `panic`, `assert`, `assertMsg`, and `unreachable` are also available.
+Lucis provides structured error handling with `try`/`catch`/`finally`, `throw`, the built-in `!T` fallible type, custom enum-based error types, the `?` propagate operator, and the built-in `Error` struct. For immediate program termination, global builtins `panic`, `assert`, `assertMsg`, and `unreachable` are also available.
+
+---
+
+## The `!T` Fallible Type
+
+`!T` is a **built-in compiler type** that represents "either a value of type `T`, or an `Error`". It is **not** an enum and does not require any imports or declarations.
+
+```lucis
+fn div(int32 a, int32 b) !int32 {
+    if b == 0 {
+        bail Error { message: "division by zero" };
+    }
+    ret a / b;
+}
+```
+
+### Returning values
+
+- **`ret expr`** — automatically wraps `expr` as the success value (tag=0)
+- **`bail Error { ... }`** — returns the error value (tag=1)
+
+### `bail "string"` shorthand
+
+Instead of constructing a full `Error` struct, `bail` accepts a string directly:
+
+```lucis
+fn validate(int32 n) !int32 {
+    if n < 0 {
+        bail "negative value not allowed";
+    }
+    ret n;
+}
+```
+
+This is equivalent to `bail Error { message: "negative value not allowed" }`. The compiler auto-fills `file`, `line`, and `column`.
+
+### The `?` operator
+
+Propagates the error to the caller, extracting the success value:
+
+```lucis
+fn process(int32 a) !int32 {
+    auto v = div(a, 2)?;
+    ret v * 3;
+}
+
+fn main() {
+    auto val = process(10) catch {
+        println("error: {it.message}");
+        ret 1;
+    };
+    println("result: {val}");
+}
+```
+
+- If `div` returns success, `v` gets the value and `process` continues.
+- If `div` returns error, `process` immediately returns that error.
+- The `?` operator requires the enclosing function to also return `!T`.
+
+### The `catch` expression
+
+Unwraps a `!T` value, binding the error as `it` in the catch block:
+
+```lucis
+auto val = div(10, 0) catch {
+    println("error: {it.message}");
+    ret -1;
+};
+```
+
+- On success: `val` gets the success value.
+- On error: the catch block runs with `it` bound to the `Error` struct.
+
+### `!T:E` — custom error type
+
+By default, the error type is the built-in `Error` struct. Custom error types are supported:
+
+```lucis
+struct HttpError {
+    int32 code;
+    string message;
+}
+
+fn fetch(string url) !string:HttpError {
+    if url == "" {
+        bail HttpError { code: 400, message: "empty url" };
+    }
+    ret "<html>...</html>";
+}
+```
+
+Inside `catch`, `it` is typed as `HttpError`.
+
+### Comparison with enums
+
+| Aspect | `!T` fallible | Enum-based (e.g. `Result<T>`) |
+|--------|---------------|-------------------------------|
+| Declaration | None (built-in) | `enum Result<T> { Ok(T), Err(Error) }` |
+| Return value | `ret val` | `ret Result<T>::Ok(val)` |
+| Return error | `bail Error{...}` or `bail "msg"` | `ret Result<T>::Err(Error{...})` |
+| Import needed | No | Yes (`use result::Result`) |
+| Flexibility | Always `T` or `Error` | Any variant names, payload types |
+| `?` / `catch` | Works natively | Works via `classifyUnwrapCatchEnum` |
+
+Use `!T` for simple fallible functions. Use enums when you need custom variant names or multiple error payload types.
 
 ---
 
