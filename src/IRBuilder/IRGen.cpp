@@ -4506,6 +4506,47 @@ std::any IRGen::visitFieldAssignStmt(LucisParser::FieldAssignStmtContext* ctx) {
     auto* structTI = it->second.typeInfo;
     auto* structTy = alloca->getAllocatedType();
 
+    // ── Bitstruct field write: RMW with shift+mask ────────────────
+    {
+        const TypeInfo* bitTI = nullptr;
+        llvm::Value* bitPtr = nullptr;
+        if (structTI->kind == TypeKind::Pointer && structTI->pointeeType &&
+            structTI->pointeeType->kind == TypeKind::BitStruct) {
+            bitTI = structTI->pointeeType;
+            auto* ptrTy = llvm::PointerType::getUnqual(*context_);
+            bitPtr = builder_->CreateLoad(ptrTy, alloca, varName + "_ptr");
+        } else if (structTI->kind == TypeKind::BitStruct) {
+            bitTI = structTI;
+            bitPtr = alloca;
+        }
+        if (bitTI && bitPtr && identifiers.size() == 2) {
+            auto fieldName = identifiers[1]->getText();
+            for (auto& bf : bitTI->bitFields) {
+                if (bf.name == fieldName && !bf.isPadding) {
+                    auto* rhs = castValue(visit(ctx->expression()));
+                    auto* backTy = bitTI->backingType->toLLVMType(*context_, module_->getDataLayout());
+                    bool isVol = bitTI->isVolatile;
+                    auto* rawVal = builder_->CreateLoad(backTy, bitPtr, bitTI->name + "_raw");
+                    if (isVol) llvm::cast<llvm::LoadInst>(rawVal)->setVolatile(true);
+                    // Clear the field bits
+                    uint64_t mask = ((1ULL << bf.width) - 1);
+                    auto* clearMask = llvm::ConstantInt::get(backTy, ~(mask << bf.offset));
+                    auto* cleared = builder_->CreateAnd(rawVal, clearMask, "bf_clear");
+                    // Set the new value
+                    auto* valExt = builder_->CreateZExt(rhs, backTy);
+                    auto* shifted = valExt;
+                    if (bf.offset > 0)
+                        shifted = builder_->CreateShl(valExt,
+                            llvm::ConstantInt::get(backTy, bf.offset), "bf_shl");
+                    auto* result = builder_->CreateOr(cleared, shifted, "bf_set");
+                    auto* store = builder_->CreateStore(result, bitPtr);
+                    if (isVol) store->setVolatile(true);
+                    return {};
+                }
+            }
+        }
+    }
+
     bool isVolatileAccess = false;
     if (structTI && structTI->kind == TypeKind::Pointer && structTI->pointeeType) {
         isVolatileAccess = structTI->pointeeType->isVolatile;
@@ -11802,6 +11843,55 @@ std::any IRGen::visitFieldAccessExpr(LucisParser::FieldAccessExprContext* ctx) {
 
     // The base expression should resolve to a variable with a struct type
     auto* baseExpr = ctx->expression();
+
+    // ── Bitstruct field read: load + shift + mask ─────────────────
+    {
+        const TypeInfo* bitTI = nullptr;
+        llvm::Value* basePtr = nullptr;
+        if (auto* id = dynamic_cast<LucisParser::IdentExprContext*>(baseExpr)) {
+            auto it = locals_.find(id->IDENTIFIER()->getText());
+            if (it != locals_.end()) {
+                auto* ti = it->second.typeInfo;
+                if (ti->kind == TypeKind::Pointer && ti->pointeeType &&
+                    ti->pointeeType->kind == TypeKind::BitStruct) {
+                    bitTI = ti->pointeeType;
+                    auto* ptrTy = llvm::PointerType::getUnqual(*context_);
+                    basePtr = builder_->CreateLoad(ptrTy, it->second.alloca, id->getText() + "_ptr");
+                } else if (ti->kind == TypeKind::BitStruct) {
+                    bitTI = ti;
+                    basePtr = it->second.alloca;
+                }
+            }
+        }
+        if (bitTI && basePtr) {
+            for (auto& bf : bitTI->bitFields) {
+                if (bf.name == fieldName && !bf.isPadding) {
+                    auto* i32Ty = llvm::Type::getInt32Ty(*context_);
+                    auto* backTy = bitTI->backingType->toLLVMType(*context_, module_->getDataLayout());
+                    auto* rawVal = builder_->CreateLoad(backTy, basePtr, bitTI->name + "_raw");
+                    bool isVol = bitTI->isVolatile || (bitTI->backingType && bitTI->backingType->isVolatile);
+                    if (isVol) llvm::cast<llvm::LoadInst>(rawVal)->setVolatile(true);
+
+                    // Shift right by offset
+                    llvm::Value* shifted = rawVal;
+                    if (bf.offset > 0) {
+                        shifted = builder_->CreateLShr(rawVal,
+                            llvm::ConstantInt::get(backTy, bf.offset), "bf_shift");
+                    }
+                    // Mask
+                    auto* masked = builder_->CreateAnd(shifted,
+                        llvm::ConstantInt::get(backTy, (1ULL << bf.width) - 1), "bf_mask");
+                    // Cast to target width
+                    auto* resultTy = bf.width <= 8 ? llvm::Type::getInt8Ty(*context_)
+                                  : bf.width <= 16 ? llvm::Type::getInt16Ty(*context_)
+                                  : bf.width <= 32 ? llvm::Type::getInt32Ty(*context_)
+                                  : llvm::Type::getInt64Ty(*context_);
+                    auto* result = builder_->CreateIntCast(masked, resultTy, false, "bf_val");
+                    return static_cast<llvm::Value*>(result);
+                }
+            }
+        }
+    }
 
     // ── Case 1: base is a bare variable (e.g. myStruct.field) ──────
     auto* identBase = dynamic_cast<LucisParser::IdentExprContext*>(baseExpr);

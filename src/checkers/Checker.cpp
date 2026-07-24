@@ -1130,6 +1130,7 @@ bool Checker::check(LucisParser::ProgramContext* tree) {
                 }
             }
         }
+
         // Pre-register imported enums so type aliases referencing them resolve
         for (auto& [symName, ns] : userImports_) {
             auto* sym = moduleRegistry_->findSymbol(ns, symName);
@@ -1644,6 +1645,11 @@ bool Checker::check(LucisParser::ProgramContext* tree) {
                     !existing->fields.empty())
                     continue;
                 checkUnionDecl(ud);
+            } else if (auto* bd = decl->bitstructDecl()) {
+                auto name = bd->IDENTIFIER()->getText();
+                auto* existing = typeRegistry_.lookup(name);
+                if (!existing || (existing->kind == TypeKind::BitStruct && existing->bitFields.empty()))
+                    checkBitStructDecl(bd);
             }
         }
     }
@@ -5022,7 +5028,19 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
         if (baseType && baseType->kind == TypeKind::Pointer && baseType->pointeeType)
             baseType = baseType->pointeeType;
 
-        if (baseType && (baseType->kind == TypeKind::Struct || baseType->kind == TypeKind::Union)) {
+        if (baseType && baseType->kind == TypeKind::BitStruct) {
+            for (auto& bf : baseType->bitFields) {
+                if (bf.name == fieldName && !bf.isPadding) {
+                    // Return an unsigned integer type matching the field width
+                    std::string typeName = "uint" + std::to_string(bf.width <= 8 ? 8
+                                          : bf.width <= 16 ? 16
+                                          : bf.width <= 32 ? 32 : 64);
+                    return typeRegistry_.lookup(typeName);
+                }
+            }
+            error(expr, "[" + currentFile_ + "] '" + baseType->name +
+                             "' has no field '" + fieldName + "'");
+        } else if (baseType && (baseType->kind == TypeKind::Struct || baseType->kind == TypeKind::Union)) {
             for (auto& field : baseType->fields) {
                 if (field.name == fieldName)
                     return field.typeInfo;
@@ -9952,10 +9970,27 @@ void Checker::checkFieldAssignStmt(LucisParser::FieldAssignStmtContext* stmt) {
         if (currentType && currentType->kind == TypeKind::Pointer && currentType->pointeeType)
             currentType = currentType->pointeeType;
 
-        if (!currentType || (currentType->kind != TypeKind::Struct && currentType->kind != TypeKind::Union)) {
+        if (!currentType || (currentType->kind != TypeKind::Struct &&
+                             currentType->kind != TypeKind::Union &&
+                             currentType->kind != TypeKind::BitStruct)) {
             error(stmt, "'" +
                              (i == 1 ? varName : identifiers[i-1]->getText()) +
                              "' is not a struct or union type");
+            return;
+        }
+
+        if (currentType->kind == TypeKind::BitStruct) {
+            bool found = false;
+            for (auto& bf : currentType->bitFields) {
+                if (bf.name == fieldName && !bf.isPadding) { found = true; break; }
+            }
+            if (!found) {
+                error(stmt, "'" + currentType->name + "' has no field '" + fieldName + "'");
+                return;
+            }
+            auto* rhsType = resolveExprType(stmt->expression());
+            if (rhsType && rhsType->kind != TypeKind::Integer)
+                error(stmt, "bitstruct field '" + fieldName + "' requires an integer value");
             return;
         }
 
