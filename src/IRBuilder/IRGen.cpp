@@ -5758,20 +5758,32 @@ IRGen::ArrowLValue IRGen::resolveArrowLValue(
     if (fieldTI && fieldTI->kind == TypeKind::Extended)
         return {};
 
+    // Pointer field: load pointer and index via pointer arithmetic
+    if (fieldTI && fieldTI->kind == TypeKind::Pointer) {
+        destPtr = builder_->CreateLoad(llvm::PointerType::getUnqual(*context_), destPtr, fieldName + "_ptr");
+        fieldTy = fieldTI->pointeeType->toLLVMType(*context_, module_->getDataLayout());
+        fieldTI = fieldTI->pointeeType;
+    }
+
     for (size_t ai = 0; ai < numBrackets; ai++) {
         auto* idxVal = castValue(visit(indexExprs[ai]));
         if (idxVal->getType() != i64Ty)
             idxVal = builder_->CreateIntCast(idxVal, i64Ty, true);
-        if (!fieldTy->isArrayTy()) {
-            std::cerr << "lucis: indexing non-array field '" << fieldName << "'\n";
-            return {};
+        if (fieldTy && fieldTy->isArrayTy()) {
+            destPtr = builder_->CreateInBoundsGEP(fieldTy, destPtr,
+                { llvm::ConstantInt::get(i64Ty, 0), idxVal },
+                fieldName + "_elem");
+            fieldTy = llvm::cast<llvm::ArrayType>(fieldTy)->getElementType();
+            if (fieldTI && fieldTI->elementType)
+                fieldTI = fieldTI->elementType;
+        } else if (fieldTI) {
+            // Pointer or scalar: simple GEP
+            destPtr = builder_->CreateGEP(fieldTy, destPtr, idxVal, fieldName + "_elem");
+            if (fieldTI->pointeeType) {
+                fieldTy = fieldTI->pointeeType->toLLVMType(*context_, module_->getDataLayout());
+                fieldTI = fieldTI->pointeeType;
+            }
         }
-        destPtr = builder_->CreateInBoundsGEP(fieldTy, destPtr,
-            { llvm::ConstantInt::get(i64Ty, 0), idxVal },
-            fieldName + "_elem");
-        fieldTy = llvm::cast<llvm::ArrayType>(fieldTy)->getElementType();
-        if (fieldTI && fieldTI->elementType)
-            fieldTI = fieldTI->elementType;
     }
 
     return { destPtr, fieldTy, fieldTI };
@@ -5923,21 +5935,33 @@ IRGen::ArrowLValue IRGen::resolveArrowAnyLValue(
     if (fieldTI && fieldTI->kind == TypeKind::Extended)
         return {};
 
+    // Pointer field: load pointer and index via pointer arithmetic
+    if (fieldTI && fieldTI->kind == TypeKind::Pointer && fieldTI->pointeeType) {
+        auto* ptrTy = llvm::PointerType::getUnqual(*context_);
+        destPtr = builder_->CreateLoad(ptrTy, destPtr, fieldName + "_ptr");
+        fieldTy = fieldTI->pointeeType->toLLVMType(*context_, module_->getDataLayout());
+        fieldTI = fieldTI->pointeeType;
+    }
+
     // Array indices
     for (size_t ai = 0; ai < indexExprs.size(); ai++) {
         auto* idxVal = castValue(visit(indexExprs[ai]));
         if (idxVal->getType() != i64Ty)
             idxVal = builder_->CreateIntCast(idxVal, i64Ty, true);
-        if (!fieldTy->isArrayTy()) {
-            std::cerr << "lucis: indexing non-array field '" << fieldName << "'\n";
-            return {};
+        if (fieldTy && fieldTy->isArrayTy()) {
+            destPtr = builder_->CreateInBoundsGEP(fieldTy, destPtr,
+                { llvm::ConstantInt::get(i64Ty, 0), idxVal },
+                fieldName + "_idx" + std::to_string(ai));
+            fieldTy = fieldTy->getArrayElementType();
+        } else if (fieldTI) {
+            destPtr = builder_->CreateGEP(fieldTy, destPtr, idxVal, fieldName + "_idx");
+            if (fieldTI->pointeeType) {
+                fieldTy = fieldTI->pointeeType->toLLVMType(*context_, module_->getDataLayout());
+                fieldTI = fieldTI->pointeeType;
+            }
         }
-        destPtr = builder_->CreateInBoundsGEP(fieldTy, destPtr,
-            { llvm::ConstantInt::get(i64Ty, 0), idxVal },
-            fieldName + "_idx" + std::to_string(ai));
-        fieldTy = fieldTy->getArrayElementType();
     }
-    if (fieldTI && fieldTI->elementType)
+    if (fieldTI && !fieldTy->isArrayTy() && fieldTI->elementType)
         fieldTI = fieldTI->elementType;
 
     return { destPtr, fieldTy, fieldTI };
