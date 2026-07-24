@@ -19610,6 +19610,24 @@ const TypeInfo* IRGen::resolveExprTypeInfo(LucisParser::ExpressionContext* ctx) 
         return typeRegistry_.lookup(ptrName);
     }
 
+    // ── @ptr(T, addr) → *T ─────────────────────────────────────────
+    if (auto* ptr = dynamic_cast<LucisParser::AtPtrExprContext*>(ctx)) {
+        auto* pointeeType = resolveTypeInfo(ptr->typeSpec());
+        if (!pointeeType) return nullptr;
+        auto ptrName = "*" + pointeeType->name;
+        if (auto* existing = typeRegistry_.lookup(ptrName))
+            return existing;
+        TypeInfo ti;
+        ti.name = ptrName;
+        ti.kind = TypeKind::Pointer;
+        ti.bitWidth = 0;
+        ti.isSigned = false;
+        ti.builtinSuffix = "ptr";
+        ti.pointeeType = pointeeType;
+        typeRegistry_.registerType(std::move(ti));
+        return typeRegistry_.lookup(ptrName);
+    }
+
     // ── Dereference: *expr → pointee type ────────────────────────────
     if (auto* deref = dynamic_cast<LucisParser::DerefExprContext*>(ctx)) {
         auto* baseTI = resolveExprTypeInfo(deref->expression());
