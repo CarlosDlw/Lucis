@@ -3057,6 +3057,8 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
             return typeRegistry_.lookup("string");
         if (name == "fields" || name == "variants")
             return typeRegistry_.lookup("string");
+        if (name == "isStruct" || name == "isEnum" || name == "isUnion")
+            return typeRegistry_.lookup("bool");
         error(at, "unknown comptime builtin '@" + name + "'");
         return typeRegistry_.lookup("int32");
     }

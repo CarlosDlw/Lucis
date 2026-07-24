@@ -40,7 +40,6 @@ ComptimeBuiltinRegistry::ComptimeBuiltinRegistry() {
             return ComptimeValue::stringVal(result);
         });
 
-    // @typeId(T) → int32: returns FNV-1a hash of type name (for switch dispatch)
     add("typeId", {ComptimeValue::Kind::Type},
         [](const std::vector<ComptimeValue>& args) -> ComptimeValue {
             auto* ti = static_cast<const TypeInfo*>(args[0].asType());
@@ -51,6 +50,27 @@ ComptimeBuiltinRegistry::ComptimeBuiltinRegistry() {
                 hash *= 0x100000001b3ULL;
             }
             return ComptimeValue::intVal(static_cast<int64_t>(hash));
+        });
+
+    // @isStruct(T) → bool
+    add("isStruct", {ComptimeValue::Kind::Type},
+        [](const std::vector<ComptimeValue>& args) -> ComptimeValue {
+            auto* ti = static_cast<const TypeInfo*>(args[0].asType());
+            return ComptimeValue::boolVal(ti && ti->kind == TypeKind::Struct);
+        });
+
+    // @isEnum(T) → bool
+    add("isEnum", {ComptimeValue::Kind::Type},
+        [](const std::vector<ComptimeValue>& args) -> ComptimeValue {
+            auto* ti = static_cast<const TypeInfo*>(args[0].asType());
+            return ComptimeValue::boolVal(ti && ti->kind == TypeKind::Enum);
+        });
+
+    // @isUnion(T) → bool
+    add("isUnion", {ComptimeValue::Kind::Type},
+        [](const std::vector<ComptimeValue>& args) -> ComptimeValue {
+            auto* ti = static_cast<const TypeInfo*>(args[0].asType());
+            return ComptimeValue::boolVal(ti && ti->kind == TypeKind::Union);
         });
 }
 

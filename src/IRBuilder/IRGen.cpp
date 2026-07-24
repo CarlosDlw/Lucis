@@ -9990,6 +9990,11 @@ std::any IRGen::visitAtTypeExpr(LucisParser::AtTypeExprContext* ctx) {
             args.push_back(ComptimeValue::typeVal(const_cast<TypeInfo*>(typeTI)));
             auto result = builtin->fn(args);
 
+            if (result.kind() == ComptimeValue::Kind::Bool) {
+                return static_cast<llvm::Value*>(
+                    llvm::ConstantInt::get(llvm::Type::getInt1Ty(*context_),
+                        result.asBool() ? 1 : 0));
+            }
             if (result.kind() == ComptimeValue::Kind::String) {
                 return static_cast<llvm::Value*>(
                     builder_->CreateGlobalStringPtr(result.asString(),
