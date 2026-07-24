@@ -243,6 +243,7 @@ statement
     | lockStmt
     | tryCatchStmt
     | throwStmt
+    | bailStmt
     | deferStmt
     | nakedBlockStmt
     | inlineBlockStmt
@@ -503,6 +504,11 @@ throwStmt
     : THROW expression SEMI
     ;
 
+// bail expr — return error from !T function
+bailStmt
+    : BAIL expression SEMI
+    ;
+
 // switch x { case 1 { ... } case 2, 3 { ... } default { ... } }
 switchStmt
     : SWITCH expression LBRACE caseClause* defaultClause? RBRACE
@@ -695,6 +701,7 @@ typeSpec
     | typeSpec STAR                    // Error: C-style pointer (int32*)
     | LBRACKET (INT_LIT | IDENTIFIER) RBRACKET typeSpec  // Fixed-size array: [10]int32, [SOME_CONST]float64
     | LBRACKET RBRACKET typeSpec       // Array type: []int32, [][]char
+    | NOT typeSpec (COLON typeSpec)?   // Fallible type: !int32, !int32:HttpError
     | fnTypeSpec                       // Function type
     | VEC LT typeSpec GT               // Built-in: vec<int32>
     | MAP LT typeSpec COMMA typeSpec GT // Built-in: map<string, int32>

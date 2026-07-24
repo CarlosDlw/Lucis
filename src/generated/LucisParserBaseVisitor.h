@@ -355,6 +355,10 @@ public:
     return visitChildren(ctx);
   }
 
+  virtual std::any visitBailStmt(LucisParser::BailStmtContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
   virtual std::any visitSwitchStmt(LucisParser::SwitchStmtContext *ctx) override {
     return visitChildren(ctx);
   }

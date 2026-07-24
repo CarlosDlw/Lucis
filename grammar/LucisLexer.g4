@@ -38,6 +38,7 @@ TRY       : 'try';
 CATCH     : 'catch';
 FINALLY   : 'finally';
 THROW     : 'throw';
+BAIL      : 'bail';
 DEFER     : 'defer';
 MATCH     : 'match';
 OR        : 'or';

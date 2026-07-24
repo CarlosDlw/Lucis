@@ -189,6 +189,8 @@ public:
 
     virtual std::any visitThrowStmt(LucisParser::ThrowStmtContext *context) = 0;
 
+    virtual std::any visitBailStmt(LucisParser::BailStmtContext *context) = 0;
+
     virtual std::any visitSwitchStmt(LucisParser::SwitchStmtContext *context) = 0;
 
     virtual std::any visitCaseClause(LucisParser::CaseClauseContext *context) = 0;
