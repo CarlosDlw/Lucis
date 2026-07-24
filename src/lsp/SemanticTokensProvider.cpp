@@ -69,7 +69,7 @@ static bool isKeyword(size_t tokenType) {
         case LucisLexer::SWITCH: case LucisLexer::CASE: case LucisLexer::DEFAULT:
         case LucisLexer::SPAWN: case LucisLexer::AWAIT: case LucisLexer::LOCK:
         case LucisLexer::EXTEND: case LucisLexer::TRY: case LucisLexer::CATCH:
-        case LucisLexer::FINALLY: case LucisLexer::THROW: case LucisLexer::DEFER:
+        case LucisLexer::FINALLY: case LucisLexer::THROW: case LucisLexer::BAIL: case LucisLexer::DEFER:
         case LucisLexer::EXTERN: case LucisLexer::AUTO: case LucisLexer::NULL_LIT:
         case LucisLexer::RET:    case LucisLexer::OR:
         case LucisLexer::MATCH:  case LucisLexer::WILDCARD:

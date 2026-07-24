@@ -374,6 +374,14 @@ static std::string inferCatchUnwrapItType(
     }
   }
 
+  // Fallible type: !T or !T:E
+  if (!enumTypeName.empty() && enumTypeName[0] == '!') {
+    auto colonPos = enumTypeName.find(':');
+    if (colonPos != std::string::npos)
+      return enumTypeName.substr(colonPos + 1);
+    return "Error";
+  }
+
   std::string errType;
   for (auto *variant : enumDecl->enumVariant()) {
     if (!variant || variant->typeSpec().size() != 1) continue;
@@ -5598,7 +5606,7 @@ void CompletionProvider::addKeywords(std::vector<CompletionItem> &items,
       "switch", "case",   "default",   "break",  "continue", "ret",
       "fn",     "struct", "enum",      "union",  "extend",   "type",
       "extern", "use",    "namespace", "try",    "catch",    "finally",
-       "throw",  "spawn",  "await",     "lock",   "defer",    "as",
+        "throw",  "bail",   "spawn",     "await",  "lock",    "defer",    "as",
        "match",  "or",     "is",     "in",     "sizeof",    "typeof", "alignof",  "offsetof", "true",     "false",
        "null",   "return", "asm", "asm_b", "c_macro", "volatile",
         "goto",   "intel", "comptime", "const", "Self",

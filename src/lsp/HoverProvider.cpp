@@ -6009,6 +6009,14 @@ static std::string inferCatchUnwrapItType(
         }
     }
 
+    // Fallible type: !T or !T:E
+    if (!enumTypeName.empty() && enumTypeName[0] == '!') {
+        auto colonPos = enumTypeName.find(':');
+        if (colonPos != std::string::npos)
+            return enumTypeName.substr(colonPos + 1);
+        return "Error";
+    }
+
     std::string errType;
     for (auto* variant : enumDecl->enumVariant()) {
         if (!variant || variant->typeSpec().size() != 1) continue;
