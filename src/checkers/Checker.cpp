@@ -3116,8 +3116,8 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
         auto it = locals_.find(name);
         if (it != locals_.end()) {
             validateExprNotMoved(expr, id);
-            // Warn on use of uninitialized variable
-            if (!it->second.initialized) {
+            // Warn on use of uninitialized variable (skip bitstruct — zero-initialized by default)
+            if (!it->second.initialized && !(it->second.type && it->second.type->kind == TypeKind::BitStruct)) {
                 warning(id, "variable '" + name + "' is used before being initialized");
             }
             it->second.used = true;
