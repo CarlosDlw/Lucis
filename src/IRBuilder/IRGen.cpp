@@ -1070,6 +1070,10 @@ std::any IRGen::visitProgram(LucisParser::ProgramContext* ctx) {
             auto name = enumDecl->IDENTIFIER()->getText();
             if (!typeRegistry_.lookup(name) && !genericEnumTemplates_.count(name))
                 visit(decl);
+        } else if (auto* bitD = decl->bitstructDecl()) {
+            auto name = bitD->IDENTIFIER()->getText();
+            if (!typeRegistry_.lookup(name))
+                visit(decl);
         }
     }
     // Register extern (FFI) function declarations
@@ -1432,6 +1436,50 @@ std::any IRGen::visitEnumDecl(LucisParser::EnumDeclContext* ctx) {
         }
 
         ti.enumVariantInfos.push_back(std::move(info));
+    }
+
+    typeRegistry_.registerType(std::move(ti));
+    return {};
+}
+
+std::any IRGen::visitBitstructDecl(LucisParser::BitstructDeclContext* ctx) {
+        SET_DBG_LOC(ctx);
+    auto name = ctx->IDENTIFIER()->getText();
+
+    // Resolve backing type
+    auto* backType = resolveTypeInfo(ctx->typeSpec());
+    if (!backType) return {};
+
+    TypeInfo ti;
+    ti.name = name;
+    ti.kind = TypeKind::BitStruct;
+    ti.bitWidth = backType->bitWidth == 0 ? 64 : backType->bitWidth;
+    ti.isSigned = false;
+    ti.backingType = backType;
+
+    unsigned runningOffset = 0;
+    for (auto* field : ctx->bitstructField()) {
+        auto ints = field->INT_LIT();
+        auto* id = field->IDENTIFIER();
+
+        if (ints.size() == 2) {
+            unsigned width = std::stoul(ints[1]->getText());
+            BitFieldInfo bfi;
+            bfi.offset = runningOffset;
+            bfi.width = width;
+            bfi.isPadding = true;
+            ti.bitFields.push_back(bfi);
+            runningOffset += width;
+        } else if (ints.size() == 1 && id) {
+            unsigned width = std::stoul(ints[0]->getText());
+            BitFieldInfo bfi;
+            bfi.name = id->getText();
+            bfi.offset = runningOffset;
+            bfi.width = width;
+            bfi.isPadding = false;
+            ti.bitFields.push_back(bfi);
+            runningOffset += width;
+        }
     }
 
     typeRegistry_.registerType(std::move(ti));

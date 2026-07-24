@@ -1118,6 +1118,16 @@ bool Checker::check(LucisParser::ProgramContext* tree) {
                     skeleton.isSigned = false;
                     typeRegistry_.registerType(std::move(skeleton));
                 }
+            } else if (auto* bd = decl->bitstructDecl()) {
+                auto name = bd->IDENTIFIER()->getText();
+                if (!typeRegistry_.lookup(name) && !bd->typeParamList()) {
+                    TypeInfo skeleton;
+                    skeleton.name = name;
+                    skeleton.kind = TypeKind::BitStruct;
+                    skeleton.bitWidth = 0;
+                    skeleton.isSigned = false;
+                    typeRegistry_.registerType(std::move(skeleton));
+                }
             }
         }
         // Pre-register imported enums so type aliases referencing them resolve
@@ -1602,6 +1612,11 @@ bool Checker::check(LucisParser::ProgramContext* tree) {
                     !existing->enumVariantInfos.empty())
                     continue;
                 checkEnumDecl(ed);
+            } else if (auto* bd = decl->bitstructDecl()) {
+                auto name = bd->IDENTIFIER()->getText();
+                auto* existing = typeRegistry_.lookup(name);
+                if (!existing || (existing->kind == TypeKind::BitStruct && existing->bitFields.empty()))
+                    checkBitStructDecl(bd);
             }
         }
     } else {
@@ -7162,6 +7177,99 @@ void Checker::checkUnionDecl(LucisParser::UnionDeclContext* decl) {
     }
 
     syncToSemanticDB_Union(ti, currentModulePath_, decl);
+    typeRegistry_.registerType(std::move(ti));
+}
+
+void Checker::checkBitStructDecl(LucisParser::BitstructDeclContext* decl) {
+    if (!isDeclActive(decl->attributeList())) return;
+    auto name = decl->IDENTIFIER()->getText();
+
+    // Resolve backing type
+    unsigned dummyDims = 0;
+    auto* backType = resolveTypeSpec(decl->typeSpec(), dummyDims);
+    if (!backType) return;
+
+    // Validate backing type is unsigned integer or auto
+    if (backType->name == "auto") {
+        // Will compute later based on total bits
+    } else if (backType->kind != TypeKind::Integer || backType->isSigned) {
+        error(decl, "bitstruct backing type must be an unsigned integer type, got '" +
+                     backType->name + "'");
+        return;
+    }
+
+    // Collect fields and compute offsets
+    TypeInfo ti;
+    ti.name = name;
+    ti.kind = TypeKind::BitStruct;
+    ti.bitWidth = 0;
+    ti.isSigned = false;
+    ti.backingType = backType;
+
+    unsigned runningOffset = 0;
+    for (auto* field : decl->bitstructField()) {
+        auto ids = field->IDENTIFIER();
+        auto ints = field->INT_LIT();
+
+        // Padding field: _ : N
+        if (ints.size() == 2) {
+            unsigned width = std::stoul(ints[1]->getText());
+            BitFieldInfo bfi;
+            bfi.offset = runningOffset;
+            bfi.width = width;
+            bfi.isPadding = true;
+            ti.bitFields.push_back(bfi);
+            runningOffset += width;
+            continue;
+        }
+
+        // Named field: name : N
+        if (ints.size() == 1 && ids) {
+            auto fieldName = ids->getText();
+            unsigned width = std::stoul(ints[0]->getText());
+            if (width == 0) {
+                error(field, "bitstruct field '" + fieldName + "' must have width > 0");
+                continue;
+            }
+            BitFieldInfo bfi;
+            bfi.name = fieldName;
+            bfi.offset = runningOffset;
+            bfi.width = width;
+            bfi.isPadding = false;
+            ti.bitFields.push_back(bfi);
+            runningOffset += width;
+        }
+    }
+
+    // Validate total bits fit in backing type
+    unsigned backBits = 0;
+    if (backType->name == "auto") {
+        // Pick smallest unsigned type
+        if (runningOffset <= 8) backBits = 8;
+        else if (runningOffset <= 16) backBits = 16;
+        else if (runningOffset <= 32) backBits = 32;
+        else if (runningOffset <= 64) backBits = 64;
+        else if (runningOffset <= 128) backBits = 128;
+        else {
+            error(decl, "bitstruct '" + name + "' requires more than 128 bits");
+            return;
+        }
+        // Create or resolve the auto-chosen backing type
+        auto typeName = "uint" + std::to_string(backBits);
+        ti.backingType = typeRegistry_.lookup(typeName);
+    } else {
+        backBits = backType->bitWidth == 0 ? 64 : backType->bitWidth;
+    }
+
+    if (runningOffset > backBits) {
+        error(decl, "bitstruct '" + name + "' requires " + std::to_string(runningOffset) +
+                     " bits but backing type '" + ti.backingType->name + "' only has " +
+                     std::to_string(backBits) + " bits");
+        return;
+    }
+
+    // Register in TypeRegistry
+    ti.bitWidth = backBits;
     typeRegistry_.registerType(std::move(ti));
 }
 

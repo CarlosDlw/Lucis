@@ -83,6 +83,7 @@ public:
     std::any visitStructDecl(LucisParser::StructDeclContext* ctx)       override;
     std::any visitUnionDecl(LucisParser::UnionDeclContext* ctx)         override;
     std::any visitEnumDecl(LucisParser::EnumDeclContext* ctx)           override;
+    std::any visitBitstructDecl(LucisParser::BitstructDeclContext* ctx)  override;
     std::any visitExternDecl(LucisParser::ExternDeclContext* ctx)       override;
     std::any visitFunctionDecl(LucisParser::FunctionDeclContext* ctx)   override;
     std::any visitBlock(LucisParser::BlockContext* ctx)                 override;
