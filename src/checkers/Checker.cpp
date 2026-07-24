@@ -3053,10 +3053,10 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
         auto* typeCtx = at->typeSpec();
         unsigned dims = 0;
         resolveTypeSpec(typeCtx, dims);
-        if (name == "typeName" || name == "typeId")
+        if (name == "typeName" || name == "fields" || name == "variants")
             return typeRegistry_.lookup("string");
-        if (name == "fields" || name == "variants")
-            return typeRegistry_.lookup("string");
+        if (name == "typeId")
+            return typeRegistry_.lookup("int64");
         if (name == "isStruct" || name == "isEnum" || name == "isUnion")
             return typeRegistry_.lookup("bool");
         error(at, "unknown comptime builtin '@" + name + "'");

@@ -9997,15 +9997,40 @@ std::any IRGen::visitAtTypeExpr(LucisParser::AtTypeExprContext* ctx) {
                         result.asBool() ? 1 : 0));
             }
             if (result.kind() == ComptimeValue::Kind::String) {
-                return static_cast<llvm::Value*>(
-                    builder_->CreateGlobalStringPtr(result.asString(),
-                        ".builtin_str", 0, module_));
+                // Build a proper {i8*, i64} string struct (like visitStrLitExpr does)
+                std::string s = result.asString();
+                auto* strGlobal = builder_->CreateGlobalString(s,
+                    ".builtin_str", 0, module_);
+                auto* strTy = typeRegistry_.lookup("string")
+                    ->toLLVMType(*context_, module_->getDataLayout());
+                auto* usizeTy = module_->getDataLayout().getIntPtrType(*context_);
+                auto* len = llvm::ConstantInt::get(usizeTy, s.size());
+                llvm::Value* strStruct = llvm::UndefValue::get(strTy);
+                strStruct = builder_->CreateInsertValue(strStruct, strGlobal, 0, "builtin_ptr");
+                strStruct = builder_->CreateInsertValue(strStruct, len,       1, "builtin_len");
+                return static_cast<llvm::Value*>(strStruct);
             }
             if (result.kind() == ComptimeValue::Kind::Int) {
                 return static_cast<llvm::Value*>(
                     llvm::ConstantInt::get(llvm::Type::getInt64Ty(*context_),
                         result.asInt(), true));
             }
+            if (result.kind() == ComptimeValue::Kind::Float) {
+                return static_cast<llvm::Value*>(
+                    llvm::ConstantFP::get(llvm::Type::getDoubleTy(*context_),
+                        result.asFloat()));
+            }
+            if (result.kind() == ComptimeValue::Kind::Void) {
+                return static_cast<llvm::Value*>(
+                    llvm::Constant::getNullValue(
+                        llvm::Type::getInt32Ty(*context_)));
+            }
+            // Kind::List, Kind::Struct, Kind::Function, Kind::Type are not
+            // supported as comptime builtin return values yet.
+            std::cerr << "lucis: @" << builtinName
+                      << ": unsupported comptime builtin return kind\n";
+            return static_cast<llvm::Value*>(
+                llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
         }
     }
 
@@ -14079,9 +14104,18 @@ std::any IRGen::visitFnCallExpr(LucisParser::FnCallExprContext* ctx) {
                         llvm::Type::getInt32Ty(*context_)));
             }
             if (result.kind() == ComptimeValue::Kind::String) {
-                return static_cast<llvm::Value*>(
-                    builder_->CreateGlobalStringPtr(
-                        result.asString(), ".comptime_str", 0, module_));
+                // Build a proper {i8*, i64} string struct (like visitStrLitExpr does)
+                std::string s = result.asString();
+                auto* strGlobal = builder_->CreateGlobalString(s,
+                    ".comptime_str", 0, module_);
+                auto* strTy = typeRegistry_.lookup("string")
+                    ->toLLVMType(*context_, module_->getDataLayout());
+                auto* usizeTy = module_->getDataLayout().getIntPtrType(*context_);
+                auto* len = llvm::ConstantInt::get(usizeTy, s.size());
+                llvm::Value* strStruct = llvm::UndefValue::get(strTy);
+                strStruct = builder_->CreateInsertValue(strStruct, strGlobal, 0, "cmpt_str_ptr");
+                strStruct = builder_->CreateInsertValue(strStruct, len,       1, "cmpt_str_len");
+                return static_cast<llvm::Value*>(strStruct);
             }
         }
 
@@ -19673,8 +19707,18 @@ const TypeInfo* IRGen::resolveExprTypeInfo(LucisParser::ExpressionContext* ctx) 
     }
 
     // ── @typeName(T), @fields(T), @variants(T) → string ────────────
-    if (dynamic_cast<LucisParser::AtTypeExprContext*>(ctx))
-        return typeRegistry_.lookup("string");
+    //     @typeId(T) → int64
+    //     @isStruct(T), @isEnum(T), @isUnion(T) → bool
+    if (auto* at = dynamic_cast<LucisParser::AtTypeExprContext*>(ctx)) {
+        auto name = at->IDENTIFIER()->getText();
+        if (name == "typeName" || name == "fields" || name == "variants")
+            return typeRegistry_.lookup("string");
+        if (name == "typeId")
+            return typeRegistry_.lookup("int64");
+        if (name == "isStruct" || name == "isEnum" || name == "isUnion")
+            return typeRegistry_.lookup("bool");
+        return typeRegistry_.lookup("string"); // fallback
+    }
 
     // ── Dereference: *expr → pointee type ────────────────────────────
     if (auto* deref = dynamic_cast<LucisParser::DerefExprContext*>(ctx)) {

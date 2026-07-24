@@ -239,6 +239,19 @@ ComptimeValue ComptimeInterpreter::evalExpr(void* exprCtx) {
         return ComptimeValue::voidVal();
     }
 
+    // Index access: list[idx]
+    if (auto* idx = dynamic_cast<LucisParser::IndexExprContext*>(expr)) {
+        auto base = evalExpr(idx->expression(0));
+        auto index = evalExpr(idx->expression(1));
+        if (base.kind() == ComptimeValue::Kind::List &&
+            index.kind() == ComptimeValue::Kind::Int) {
+            auto& list = base.asList();
+            size_t i = static_cast<size_t>(index.asInt());
+            if (i < list.size()) return list[i];
+        }
+        return ComptimeValue::voidVal();
+    }
+
     // Function call & match
     if (auto* call = dynamic_cast<LucisParser::FnCallExprContext*>(expr))
         return evalFnCall(call);
