@@ -12136,14 +12136,17 @@ std::any IRGen::visitArrowAccessExpr(LucisParser::ArrowAccessExprContext* ctx) {
 
     if (structTI->kind == TypeKind::Union) {
         // Union: all fields at offset 0
-        return static_cast<llvm::Value*>(
-            builder_->CreateLoad(fieldLLTy, ptrVal, fieldName));
+        auto* load = builder_->CreateLoad(fieldLLTy, ptrVal, fieldName);
+        if (fieldTI && fieldTI->isVolatile) load->setVolatile(true);
+        return static_cast<llvm::Value*>(load);
     }
 
     auto* structTy = structTI->toLLVMType(*context_, module_->getDataLayout());
     auto* gep = builder_->CreateStructGEP(structTy, ptrVal, fieldIdx, fieldName + "_ptr");
 
-    return static_cast<llvm::Value*>(builder_->CreateLoad(fieldLLTy, gep, fieldName));
+    auto* load = builder_->CreateLoad(fieldLLTy, gep, fieldName);
+    if (fieldTI && fieldTI->isVolatile) load->setVolatile(true);
+    return static_cast<llvm::Value*>(load);
 }
 
 llvm::Type* IRGen::buildFieldLLVMType(const TypeInfo* elemTI, unsigned arrayDims,
