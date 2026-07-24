@@ -2267,6 +2267,36 @@ std::optional<HoverResult> HoverProvider::walkExprForHover(
         return std::nullopt;
     }
 
+    // ── @typeName(T), @fields(T), @variants(T), @typeId(T) ─────────
+    if (auto* at = dynamic_cast<LucisParser::AtTypeExprContext*>(expr)) {
+        if (at->AT() && at->AT()->getSymbol() == hoveredToken) {
+            std::string desc;
+            auto name = at->IDENTIFIER()->getText();
+            if (name == "typeName")
+                desc = "Returns the name of a type as a string.";
+            else if (name == "fields")
+                desc = "Returns the field names of a struct or union.";
+            else if (name == "variants")
+                desc = "Returns the variant names of an enum.";
+            else if (name == "typeId")
+                desc = "Returns the FNV-1a hash of a type name as int64.";
+            else if (name == "isStruct")
+                desc = "Returns true if the type is a struct.";
+            else if (name == "isEnum")
+                desc = "Returns true if the type is an enum.";
+            else if (name == "isUnion")
+                desc = "Returns true if the type is a union.";
+            if (!desc.empty())
+                return makeResult(hoveredToken,
+                    "```lucis\n(comptime builtin) @" + name + "\n```\n" + desc);
+        }
+        if (auto* ts = at->typeSpec()) {
+            auto r = hoverTypeSpec(ts, hoveredToken, tree, bindings, project);
+            if (r) return r;
+        }
+        return std::nullopt;
+    }
+
     // ── List comprehension: [expr | for Type x in range if cond] ────
     if (auto* lc = dynamic_cast<LucisParser::ListCompExprContext*>(expr)) {
         // Hover on iterator type spec
@@ -5757,6 +5787,17 @@ static std::string inferExprTypeName(
 
     // Offsetof → int64
     if (dynamic_cast<LucisParser::OffsetofExprContext*>(expr)) return "int64";
+
+    // @typeName, @fields, @variants → string
+    if (auto* at = dynamic_cast<LucisParser::AtTypeExprContext*>(expr)) {
+        auto name = at->IDENTIFIER()->getText();
+        if (name == "typeName" || name == "fields" || name == "variants")
+            return "string";
+        if (name == "typeId") return "int64";
+        if (name == "isStruct" || name == "isEnum" || name == "isUnion")
+            return "bool";
+        return "string";
+    }
 
     // Tuple literal: (10, 20) → "tuple<int32, int32>"
     if (auto* tup = dynamic_cast<LucisParser::TupleLitExprContext*>(expr)) {
