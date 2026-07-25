@@ -2289,6 +2289,14 @@ const TypeInfo* Checker::resolveTypeSpec(LucisParser::TypeSpecContext* ctx,
         if (enumIt != genericEnumTemplates_.end()) {
             return instantiateGenericEnum(baseName, enumIt->second, resolvedArgs, cur);
         }
+        auto traitIt = genericTraitTemplates_.find(baseName);
+        if (traitIt != genericTraitTemplates_.end()) {
+            // Generic trait reference — return a trait sentinel TypeInfo
+            static TypeInfo traitTypeInfo;
+            traitTypeInfo.name = baseName;
+            traitTypeInfo.kind = TypeKind::Trait;
+            return &traitTypeInfo;
+        }
 
         // Fall through to known extended types (Task, etc.)
         auto* extDesc = extTypeRegistry_.lookup(baseName);
@@ -8088,6 +8096,62 @@ void Checker::checkImplDecl(LucisParser::ImplDeclContext* decl)
 
     // Look up the trait definition
     const TraitInfo* trait = traitRegistry_.lookup(traitTI->name);
+    TraitInfo genericTraitStorage; // lives for the scope of this function
+    if (!trait && genericTraitTemplates_.count(traitTI->name)) {
+        // Generic trait — extract methods from the template with substitution
+        auto& gtmpl = genericTraitTemplates_[traitTI->name];
+
+        // Build substitution map: type param → concrete type arg
+        std::unordered_map<std::string, const TypeInfo*> subst;
+        if (gtmpl.typeParams.size() == decl->typeSpec(0)->typeSpec().size()) {
+            for (size_t i = 0; i < gtmpl.typeParams.size(); ++i) {
+                unsigned argDims = 0;
+                auto* argTI = resolveTypeSpec(decl->typeSpec(0)->typeSpec(i), argDims);
+                if (argTI) subst[gtmpl.typeParams[i]] = argTI;
+            }
+        }
+
+        genericTraitStorage.name = traitTI->name;
+        genericTraitStorage.modulePath = currentModulePath_;
+        genericTraitStorage.decl = gtmpl.decl;
+
+        for (auto* method : gtmpl.decl->traitMethod()) {
+            TraitMethodInfo mi;
+            mi.name = method->IDENTIFIER(0)->getText();
+            mi.hasSelfReceiver = (method->AMPERSAND() != nullptr);
+            mi.isStatic = !mi.hasSelfReceiver;
+
+            unsigned retDims = 0;
+            if (subst.empty())
+                mi.returnType = resolveTypeSpec(method->typeSpec(), retDims);
+            else
+                mi.returnType = resolveTypeSpecWithSubst(method->typeSpec(), subst, retDims);
+
+            if (mi.isStatic) {
+                if (auto* pl = method->paramList()) {
+                    for (auto* p : pl->param()) {
+                        unsigned dims = 0;
+                        if (subst.empty())
+                            mi.paramTypes.push_back(resolveTypeSpec(p->typeSpec(), dims));
+                        else
+                            mi.paramTypes.push_back(resolveTypeSpecWithSubst(p->typeSpec(), subst, dims));
+                    }
+                }
+            } else {
+                for (auto* p : method->param()) {
+                    unsigned dims = 0;
+                    if (subst.empty())
+                        mi.paramTypes.push_back(resolveTypeSpec(p->typeSpec(), dims));
+                    else
+                        mi.paramTypes.push_back(resolveTypeSpecWithSubst(p->typeSpec(), subst, dims));
+                }
+            }
+
+            genericTraitStorage.methods.push_back(std::move(mi));
+        }
+
+        trait = &genericTraitStorage;
+    }
     if (!trait) {
         error(decl, "'" + traitTI->name + "' is not a trait");
         return;

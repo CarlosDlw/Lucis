@@ -1883,6 +1883,37 @@ std::any IRGen::visitImplDecl(LucisParser::ImplDeclContext* ctx)
     if (!traitTI || traitTI->kind != TypeKind::Trait) return {};
 
     const TraitInfo* trait = traitRegistry_.lookup(traitTI->name);
+    TraitInfo genericStorage;
+    if (!trait && genericTraitTemplates_.count(traitTI->name)) {
+        auto& gtmpl = genericTraitTemplates_[traitTI->name];
+        genericStorage.name = traitTI->name;
+        std::unordered_map<std::string, const TypeInfo*> subst;
+        if (gtmpl.typeParams.size() == ctx->typeSpec(0)->typeSpec().size()) {
+            for (size_t i = 0; i < gtmpl.typeParams.size(); ++i)
+                subst[gtmpl.typeParams[i]] = resolveTypeInfo(ctx->typeSpec(0)->typeSpec(i));
+        }
+        for (auto* m : gtmpl.decl->traitMethod()) {
+            TraitMethodInfo mi;
+            mi.name = m->IDENTIFIER(0)->getText();
+            mi.hasSelfReceiver = (m->AMPERSAND() != nullptr);
+            mi.isStatic = !mi.hasSelfReceiver;
+            mi.returnType = subst.empty() ? resolveTypeInfo(m->typeSpec())
+                                          : resolveTypeInfoWithSubst(m->typeSpec(), subst);
+            auto addParams = [&](auto* pl, auto& params) {
+                if (!pl) return;
+                for (auto* p : pl->param()) {
+                    params.push_back(subst.empty() ? resolveTypeInfo(p->typeSpec())
+                                                   : resolveTypeInfoWithSubst(p->typeSpec(), subst));
+                }
+            };
+            if (mi.isStatic) addParams(m->paramList(), mi.paramTypes);
+            else for (auto* p : m->param()) mi.paramTypes.push_back(
+                subst.empty() ? resolveTypeInfo(p->typeSpec())
+                              : resolveTypeInfoWithSubst(p->typeSpec(), subst));
+            genericStorage.methods.push_back(mi);
+        }
+        trait = &genericStorage;
+    }
     if (!trait) return {};
 
     // Register ImplEntry
@@ -19931,6 +19962,13 @@ const TypeInfo* IRGen::resolveTypeInfo(LucisParser::TypeSpecContext* ctx) {
         auto enumIt = genericEnumTemplates_.find(baseName);
         if (enumIt != genericEnumTemplates_.end()) {
             return instantiateGenericEnum(baseName, enumIt->second, resolvedArgs);
+        }
+        auto traitIt = genericTraitTemplates_.find(baseName);
+        if (traitIt != genericTraitTemplates_.end()) {
+            static TypeInfo traitTI;
+            traitTI.name = baseName;
+            traitTI.kind = TypeKind::Trait;
+            return &traitTI;
         }
 
         // Lazy load: search module registry for a generic type not yet visited

@@ -1,0 +1,44 @@
+
+use std::log::println;
+use std::test::{ assertEqual };
+
+trait From<T> {
+    fn from(T value) int32;
+}
+
+trait Pair<T> {
+    fn pair(&self, T other) int32;
+}
+
+struct TestValue {
+    int32 base;
+}
+
+impl From<int32> for TestValue {
+    fn from(int32 value) int32 {
+        ret value * 10;
+    }
+}
+
+impl Pair<int32> for TestValue {
+    fn pair(&self, int32 other) int32 {
+        ret self.base * other;
+    }
+}
+
+fn testTraitGeneric() int32 {
+    println("[Testing traits: generic traits...]");
+
+    TestValue v = TestValue { base: 10 };
+
+    // Generic trait From<T> — static method with concrete T=int32
+    auto f = TestValue::from(5);
+    assertEqual(f, 50);
+
+    // Generic trait Pair<T> — instance method with concrete T=int32
+    auto p = v.pair(3);
+    assertEqual(p, 30);
+
+    println("[traits generic: OK]");
+    ret 0;
+}
