@@ -1447,17 +1447,40 @@ std::any IRGen::visitBitstructDecl(LucisParser::BitstructDeclContext* ctx) {
     auto name = ctx->IDENTIFIER()->getText();
 
     // Resolve backing type
-    auto* backType = resolveTypeInfo(ctx->typeSpec());
-    if (!backType) return {};
+    bool isAuto = ctx->typeSpec() && ctx->typeSpec()->AUTO() != nullptr;
+    const TypeInfo* backType = nullptr;
+    if (!isAuto)
+        backType = resolveTypeInfo(ctx->typeSpec());
+    if (!backType && !isAuto) return {};
 
     TypeInfo ti;
     ti.name = name;
     ti.kind = TypeKind::BitStruct;
-    ti.bitWidth = backType->bitWidth == 0 ? 64 : backType->bitWidth;
+    ti.bitWidth = 0;
     ti.isSigned = false;
-    ti.backingType = backType;
 
+    // First pass: compute total bits for auto backing type
+    unsigned totalBits = 0;
     unsigned runningOffset = 0;
+    if (isAuto) {
+        for (auto* field : ctx->bitstructField()) {
+            auto ints = field->INT_LIT();
+            if (ints.size() >= 1)
+                totalBits += std::stoul(ints.back()->getText());
+        }
+        unsigned backBits = 0;
+        if (totalBits <= 8) backBits = 8;
+        else if (totalBits <= 16) backBits = 16;
+        else if (totalBits <= 32) backBits = 32;
+        else if (totalBits <= 64) backBits = 64;
+        else if (totalBits <= 128) backBits = 128;
+        else return {};
+        auto typeName = "uint" + std::to_string(backBits);
+        backType = typeRegistry_.lookup(typeName);
+        if (!backType) return {};
+    }
+    ti.backingType = backType;
+    ti.bitWidth = backType->bitWidth == 0 ? 64 : backType->bitWidth;
     for (auto* field : ctx->bitstructField()) {
         auto ints = field->INT_LIT();
         auto* id = field->IDENTIFIER();

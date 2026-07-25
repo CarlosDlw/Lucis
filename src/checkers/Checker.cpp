@@ -7204,14 +7204,18 @@ void Checker::checkBitStructDecl(LucisParser::BitstructDeclContext* decl) {
 
     // Resolve backing type
     unsigned dummyDims = 0;
-    auto* backType = resolveTypeSpec(decl->typeSpec(), dummyDims);
-    if (!backType) return;
+    bool isAuto = decl->typeSpec() && decl->typeSpec()->AUTO() != nullptr;
+    auto* backType = isAuto ? nullptr : resolveTypeSpec(decl->typeSpec(), dummyDims);
+    if (!backType && !isAuto) return;
 
     // Validate backing type is unsigned integer or auto
-    if (backType->name == "auto") {
-        // Will compute later based on total bits
-    } else if (backType->kind != TypeKind::Integer || backType->isSigned) {
+    if (backType && backType->kind != TypeKind::Integer) {
         error(decl, "bitstruct backing type must be an unsigned integer type, got '" +
+                     backType->name + "'");
+        return;
+    }
+    if (backType && backType->isSigned) {
+        error(decl, "bitstruct backing type must be unsigned, got signed '" +
                      backType->name + "'");
         return;
     }
@@ -7261,7 +7265,7 @@ void Checker::checkBitStructDecl(LucisParser::BitstructDeclContext* decl) {
 
     // Validate total bits fit in backing type
     unsigned backBits = 0;
-    if (backType->name == "auto") {
+    if (isAuto) {
         // Pick smallest unsigned type
         if (runningOffset <= 8) backBits = 8;
         else if (runningOffset <= 16) backBits = 16;
