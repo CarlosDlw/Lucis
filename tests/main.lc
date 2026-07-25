@@ -69,6 +69,7 @@ use tests::vec_pointers::testVecPointers;
 use tests::vec_features::testVecFeatures;
 use tests::map_features::testMapFeatures;
 use tests::set_features::testSetFeatures;
+use tests::trait_basic::testTraitBasic;
 use tests::void_types::testVoidTypes;
 use tests::stdstr::testStdstr;
 use tests::stdconv::testStdConv;
@@ -150,5 +151,6 @@ fn main() int32 {
     testStdstr();
     testStdConv();
     testStdFmt();
+    testTraitBasic();
     ret 0;
 }

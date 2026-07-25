@@ -1092,6 +1092,16 @@ std::any IRGen::visitProgram(LucisParser::ProgramContext* ctx) {
         if (decl->extendDecl())
             visit(decl);
     }
+    // Register trait declarations
+    for (auto* decl : ctx->topLevelDecl()) {
+        if (decl->traitDecl())
+            visit(decl);
+    }
+    // Register impl declarations (must follow trait declarations)
+    for (auto* decl : ctx->topLevelDecl()) {
+        if (decl->implDecl())
+            visit(decl);
+    }
     // Process c_macro blocks
     for (auto* decl : ctx->topLevelDecl()) {
         if (auto* cm = decl->cMacroBlock())
@@ -1815,7 +1825,37 @@ std::any IRGen::visitTraitDecl(LucisParser::TraitDeclContext* ctx)
         return {};
     }
 
-    // Non-generic trait — store method signatures (no codegen needed)
+    // Register non-generic trait in IRGen's trait registry
+    TraitInfo ti;
+    ti.name = name;
+    ti.modulePath = currentModulePath_;
+    ti.decl = ctx;
+
+    for (auto* method : ctx->traitMethod()) {
+        TraitMethodInfo mi;
+        mi.name = method->IDENTIFIER(0)->getText();
+        mi.hasSelfReceiver = (method->AMPERSAND() != nullptr);
+        mi.isStatic = !mi.hasSelfReceiver;
+
+        unsigned retDims = 0;
+        mi.returnType = resolveTypeInfo(method->typeSpec());
+
+        if (mi.isStatic) {
+            if (auto* pl = method->paramList()) {
+                for (auto* p : pl->param()) {
+                    mi.paramTypes.push_back(resolveTypeInfo(p->typeSpec()));
+                }
+            }
+        } else {
+            for (auto* p : method->param()) {
+                mi.paramTypes.push_back(resolveTypeInfo(p->typeSpec()));
+            }
+        }
+
+        ti.methods.push_back(mi);
+    }
+
+    traitRegistry_.registerTrait(std::move(ti));
     return {};
 }
 
@@ -1834,22 +1874,38 @@ std::any IRGen::visitImplDecl(LucisParser::ImplDeclContext* ctx)
         return {};
     }
 
-    // Resolve trait and impl types
-    unsigned traitDims = 0;
-    const TypeInfo* traitTI = resolveTypeInfo(ctx->typeSpec(0));
-    unsigned implDims = 0;
+    // Resolve the implementing type
     const TypeInfo* implTI = resolveTypeInfo(ctx->typeSpec(1));
+    if (!implTI) return {};
 
-    if (!traitTI || !implTI) return {};
+    // Resolve the trait via the type system (will find it in traitRegistry_)
+    const TypeInfo* traitTI = resolveTypeInfo(ctx->typeSpec(0));
+    if (!traitTI || traitTI->kind != TypeKind::Trait) return {};
+
+    const TraitInfo* trait = traitRegistry_.lookup(traitTI->name);
+    if (!trait) return {};
 
     // Register ImplEntry
     ImplEntry entry;
-    entry.traitName = traitTI->name;
+    entry.traitName = trait->name;
     entry.typeName = implTI->name;
     entry.implType = implTI;
     entry.decl = ctx;
     entry.sourceModulePath = currentModulePath_;
     traitImpls_[entry.traitName].push_back(std::move(entry));
+
+    // Register impl in trait registry
+    ImplInfo implInfo;
+    implInfo.traitName = trait->name;
+    implInfo.typeName = implTI->name;
+    implInfo.decl = ctx;
+    implInfo.modulePath = currentModulePath_;
+    traitRegistry_.registerImpl(std::move(implInfo));
+
+    // Mark the type as implementing this trait
+    auto* mutableTI = typeRegistry_.lookupMutable(implTI->name);
+    if (mutableTI)
+        mutableTI->implementedTraits.insert(trait->name);
 
     // Generate LLVM functions for each impl method
     for (auto* method : ctx->implMethod()) {
@@ -1857,13 +1913,12 @@ std::any IRGen::visitImplDecl(LucisParser::ImplDeclContext* ctx)
         bool isStatic = (method->AMPERSAND() == nullptr);
 
         auto mangledFnName = mangleImplMethodName(
-            traitTI->name, implTI->name, methodName);
+            trait->name, implTI->name, methodName);
 
         // Check if already lowered
         if (loweredImplMethods_.count(mangledFnName)) continue;
 
         // Resolve return type
-        unsigned retDims = 0;
         const TypeInfo* retTI = resolveTypeInfo(method->typeSpec());
 
         // Build LLVM function type
@@ -1929,11 +1984,18 @@ std::any IRGen::visitImplDecl(LucisParser::ImplDeclContext* ctx)
         if (!isStatic) {
             auto* selfArg = fn->getArg(0);
             selfArg->setName("self");
-            auto* selfAlloca = builder_->CreateAlloca(
-                llvm::PointerType::getUnqual(implTI->toLLVMType(*context_, module_->getDataLayout())),
-                nullptr, "self");
+            auto ptrTIName = "*" + implTI->name;
+            if (!typeRegistry_.lookup(ptrTIName)) {
+                TypeInfo ptrTI;
+                ptrTI.name = ptrTIName;
+                ptrTI.kind = TypeKind::Pointer;
+                ptrTI.pointeeType = implTI;
+                typeRegistry_.registerType(std::move(ptrTI));
+            }
+            auto* selfPtrTI = typeRegistry_.lookup(ptrTIName);
+            auto* selfAlloca = builder_->CreateAlloca(selfArg->getType(), nullptr, "self");
             builder_->CreateStore(selfArg, selfAlloca);
-            locals_["self"] = {selfAlloca, implTI, 0};
+            locals_["self"] = {selfAlloca, selfPtrTI, 0};
             argIdx = 1;
         }
 
@@ -1971,7 +2033,9 @@ std::any IRGen::visitImplDecl(LucisParser::ImplDeclContext* ctx)
         // Visit method body
         auto savedRetType = currentFnReturnType_;
         currentFnReturnType_ = retTI;
-        visitBlock(method->block());
+        for (auto* stmt : method->block()->statement()) {
+            visit(stmt);
+        }
         currentFnReturnType_ = savedRetType;
 
         // Implicit ret void if needed
@@ -3355,28 +3419,33 @@ void IRGen::registerCrossFileSymbols(LucisParser::ProgramContext* ctx) {
             if (!implCtx || implCtx->typeParamList()) continue; // skip generic
 
             // Validate impl type exists
-            unsigned implDims = 0;
             const TypeInfo* implTI = resolveTypeInfo(implCtx->typeSpec(1));
             if (!implTI) continue;
 
-            unsigned traitDims = 0;
             const TypeInfo* traitTI = resolveTypeInfo(implCtx->typeSpec(0));
-            if (!traitTI) continue;
+            if (!traitTI || traitTI->kind != TypeKind::Trait) continue;
+
+            const TraitInfo* trait = traitRegistry_.lookup(traitTI->name);
+            if (!trait) continue;
 
             // Register entry
             ImplEntry entry;
-            entry.traitName = traitTI->name;
+            entry.traitName = trait->name;
             entry.typeName = implTI->name;
             entry.implType = implTI;
             entry.decl = implCtx;
             entry.sourceModulePath = ns;
             traitImpls_[entry.traitName].push_back(std::move(entry));
 
+            // Mark the type as implementing this trait
+            auto* ti = typeRegistry_.lookupMutable(implTI->name);
+            if (ti) ti->implementedTraits.insert(trait->name);
+
             // Forward-declare LLVM functions for each impl method
             for (auto* method : implCtx->implMethod()) {
                 auto methodName = method->IDENTIFIER(0)->getText();
                 auto mangledFnName = mangleImplMethodName(
-                    traitTI->name, implTI->name, methodName);
+                    trait->name, implTI->name, methodName);
 
                 if (loweredImplMethods_.count(mangledFnName)) continue;
 
@@ -20008,6 +20077,13 @@ const TypeInfo* IRGen::resolveTypeInfo(LucisParser::TypeSpecContext* ctx) {
     }
 
     auto* ti  = typeRegistry_.lookup(name);
+    if (!ti && traitRegistry_.lookup(name)) {
+        // Trait name — return a sentinel TypeInfo
+        static TypeInfo traitTypeInfo;
+        traitTypeInfo.name = name;
+        traitTypeInfo.kind = TypeKind::Trait;
+        ti = &traitTypeInfo;
+    }
     if (!ti) {
         // Check active generic type-param substitution (e.g. T → int32 inside generic body)
         auto substIt = currentGenericSubst_.find(name);
@@ -22715,11 +22791,6 @@ IRGen::visitMethodCallExpr(LucisParser::MethodCallExprContext* ctx) {
                 }
 
                 size_t paramIdx = 1;
-                if (ctx->expression()) {
-                    auto* arg = castValue(visit(ctx->expression()));
-                    callArgs.push_back(arg);
-                    paramIdx++;
-                }
                 if (auto* al = ctx->argList()) {
                     for (auto* a : al->expression()) {
                         auto* argVal = castValue(visit(a));
@@ -28160,26 +28231,30 @@ const TypeInfo* IRGen::instantiateGenericStruct(
             implSubst["Self"] = result;
 
             // Resolve trait type
-            unsigned traitDims = 0;
-            const TypeInfo* traitTI = resolveTypeInfoWithSubst(
-                implCtx->typeSpec(0), implSubst);
+            const TypeInfo* traitTI = resolveTypeInfo(implCtx->typeSpec(0));
+            if (!traitTI || traitTI->kind != TypeKind::Trait) continue;
 
-            if (!traitTI) continue;
+            const TraitInfo* trait = traitRegistry_.lookup(traitTI->name);
+            if (!trait) continue;
 
             // Register ImplEntry
             ImplEntry entry;
-            entry.traitName = traitTI->name;
+            entry.traitName = trait->name;
             entry.typeName = mangledName;
             entry.implType = result;
             entry.decl = implCtx;
             entry.sourceModulePath = currentModulePath_;
             traitImpls_[entry.traitName].push_back(std::move(entry));
 
+            // Mark the type as implementing this trait
+            auto* mutTI = typeRegistry_.lookupMutable(mangledName);
+            if (mutTI) mutTI->implementedTraits.insert(trait->name);
+
             // Generate LLVM functions for each generic impl method
             for (auto* method : implCtx->implMethod()) {
                 auto methodName = method->IDENTIFIER(0)->getText();
                 auto fnName = mangleImplMethodName(
-                    traitTI->name, mangledName, methodName);
+                    trait->name, mangledName, methodName);
 
                 if (loweredImplMethods_.count(fnName)) continue;
 
@@ -28248,11 +28323,18 @@ const TypeInfo* IRGen::instantiateGenericStruct(
                 if (!isStatic) {
                     auto* selfArg = fn->getArg(0);
                     selfArg->setName("self");
-                    auto* selfAlloca = builder_->CreateAlloca(
-                        llvm::PointerType::getUnqual(result->toLLVMType(*context_, module_->getDataLayout())),
-                        nullptr, "self");
+                    auto ptrTIName = "*" + mangledName;
+                    if (!typeRegistry_.lookup(ptrTIName)) {
+                        TypeInfo ptrTI;
+                        ptrTI.name = ptrTIName;
+                        ptrTI.kind = TypeKind::Pointer;
+                        ptrTI.pointeeType = result;
+                        typeRegistry_.registerType(std::move(ptrTI));
+                    }
+                    auto* selfPtrTI = typeRegistry_.lookup(ptrTIName);
+                    auto* selfAlloca = builder_->CreateAlloca(selfArg->getType(), nullptr, "self");
                     builder_->CreateStore(selfArg, selfAlloca);
-                    locals_["self"] = {selfAlloca, result, 0};
+                    locals_["self"] = {selfAlloca, selfPtrTI, 0};
                     argIdx = 1;
                 }
 

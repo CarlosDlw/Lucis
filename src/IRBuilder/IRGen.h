@@ -22,6 +22,7 @@
 #include "types/TypeRegistry.h"
 #include "types/MethodRegistry.h"
 #include "types/ExtendedTypeRegistry.h"
+#include "types/TraitRegistry.h"
 #include "intrinsics/IntrinsicRegistry.h"
 #include "comptime/ComptimeEngine.h"
 #include "ffi/ABIInfo.h"
@@ -307,6 +308,7 @@ private:
 
     // Centralized type registry
     TypeRegistry typeRegistry_;
+    TraitRegistry traitRegistry_;
 
     // Built-in type method registry
     MethodRegistry methodRegistry_;

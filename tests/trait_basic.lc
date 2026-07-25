@@ -1,0 +1,51 @@
+
+use std::log::println;
+use std::test::{ assertEqual };
+
+trait Greeter {
+    fn greet(&self) int32;
+}
+
+trait Counter {
+    fn count(&self) int32;
+    fn incr(&self) void;
+}
+
+struct TestPerson {
+    int32 id;
+    int32 visitCount;
+}
+
+impl Greeter for TestPerson {
+    fn greet(&self) int32 {
+        ret self.id;
+    }
+}
+
+impl Counter for TestPerson {
+    fn count(&self) int32 {
+        ret self.visitCount;
+    }
+
+    fn incr(&self) void {
+        self.visitCount = self.visitCount + 1;
+    }
+}
+
+fn testTraitBasic() int32 {
+    println("[Testing traits: basic declaration, impl, method call...]");
+
+    TestPerson p = TestPerson { id: 100, visitCount: 0 };
+
+    // Test Greeter trait
+    auto g = p.greet();
+    assertEqual(g, 100);
+
+    // Test Counter trait
+    assertEqual(p.count(), 0);
+    p.incr();
+    assertEqual(p.count(), 1);
+
+    println("[traits basic: OK]");
+    ret 0;
+}

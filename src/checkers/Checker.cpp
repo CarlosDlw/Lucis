@@ -1777,6 +1777,26 @@ bool Checker::check(LucisParser::ProgramContext* tree) {
     if (hasErrors())
         return false;
 
+    // Pass 3.6: register trait declarations
+    for (auto* decl : tree->topLevelDecl()) {
+        if (auto* td = decl->traitDecl()) {
+            checkTraitDecl(td);
+        }
+    }
+
+    if (hasErrors())
+        return false;
+
+    // Pass 3.7: register impl declarations
+    for (auto* decl : tree->topLevelDecl()) {
+        if (auto* id = decl->implDecl()) {
+            checkImplDecl(id);
+        }
+    }
+
+    if (hasErrors())
+        return false;
+
     // Validate attributes on all top-level declarations
     for (auto* decl : tree->topLevelDecl()) {
         auto* attrs = decl->functionDecl()    ? static_cast<AttributeListContext*>(decl->functionDecl()->attributeList())
@@ -1873,26 +1893,6 @@ VarInfo vi{typeRegistry_.lookup("int32"), 0, {}, true, false, nullptr};
             checkFunction(func);
         }
     }
-
-    // Pass 3.6: register trait declarations
-    for (auto* decl : tree->topLevelDecl()) {
-        if (auto* td = decl->traitDecl()) {
-            checkTraitDecl(td);
-        }
-    }
-
-    if (hasErrors())
-        return false;
-
-    // Pass 3.7: register impl declarations
-    for (auto* decl : tree->topLevelDecl()) {
-        if (auto* id = decl->implDecl()) {
-            checkImplDecl(id);
-        }
-    }
-
-    if (hasErrors())
-        return false;
 
     // Pass 5.5: check extend method bodies
     for (auto* decl : tree->topLevelDecl()) {
@@ -2402,6 +2402,13 @@ const TypeInfo* Checker::resolveTypeSpec(LucisParser::TypeSpecContext* ctx,
         return getPointerType(typeRegistry_.lookup("char"));
 
     auto* ti = typeRegistry_.lookup(name);
+    if (!ti && traitRegistry_.lookup(name)) {
+        // Not a concrete type, but a trait — return a trait sentinel
+        static TypeInfo traitTypeInfo;
+        traitTypeInfo.name = name;
+        traitTypeInfo.kind = TypeKind::Trait;
+        ti = &traitTypeInfo;
+    }
     if (!ti) {
         if (genericStructTemplates_.count(name) ||
             genericUnionTemplates_.count(name) ||
