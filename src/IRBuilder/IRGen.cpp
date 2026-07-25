@@ -4642,6 +4642,26 @@ std::any IRGen::visitFieldAssignStmt(LucisParser::FieldAssignStmtContext* ctx) {
             }
         }
         if (fieldIdx < 0) {
+            // BitStruct field in chain: atc.reg.counter — handle bitfield RMW
+            if (currentTI && currentTI->kind == TypeKind::BitStruct) {
+                for (auto& bf : currentTI->bitFields) {
+                    if (bf.name == fieldName && !bf.isPadding) {
+                        auto* val = castValue(visit(ctx->expression()));
+                        auto* backTy = currentTI->backingType->toLLVMType(*context_, module_->getDataLayout());
+                        auto* rawVal = builder_->CreateLoad(backTy, currentPtr, currentTI->name + "_raw");
+                        uint64_t mask = ((1ULL << bf.width) - 1);
+                        auto* cleared = builder_->CreateAnd(rawVal,
+                            llvm::ConstantInt::get(backTy, ~(mask << bf.offset)));
+                        auto* valExt = builder_->CreateZExt(val, backTy);
+                        auto* shifted = bf.offset > 0
+                            ? builder_->CreateShl(valExt, llvm::ConstantInt::get(backTy, bf.offset))
+                            : valExt;
+                        auto* result = builder_->CreateOr(cleared, shifted);
+                        builder_->CreateStore(result, currentPtr);
+                        return {};
+                    }
+                }
+            }
             std::cerr << "lucis: '" << currentTI->name
                       << "' has no field '" << fieldName << "'\n";
             return {};
@@ -4686,6 +4706,51 @@ std::any IRGen::visitFieldAssignStmt(LucisParser::FieldAssignStmtContext* ctx) {
         }
     }
 
+    // BitStruct field write through chained access: atc.reg.counter = 42
+    if (identifiers.size() > 2 && structTI->kind != TypeKind::BitStruct) {
+        // Check if the LAST identifier accesses a bitstruct field
+        auto* baseType = it->second.typeInfo;
+        if (baseType && baseType->kind == TypeKind::Pointer && baseType->pointeeType)
+            baseType = baseType->pointeeType;
+        const TypeInfo* bitTI = nullptr;
+        llvm::Value* bitPtr = nullptr;
+        for (size_t i = 1; i < identifiers.size() - 1 && baseType; i++) {
+            if (baseType->kind == TypeKind::BitStruct) { bitTI = baseType; break; }
+            if (baseType->kind == TypeKind::Struct || baseType->kind == TypeKind::Union) {
+                bool found = false;
+                for (auto& f : baseType->fields) {
+                    if (f.name == identifiers[i]->getText()) {
+                        baseType = f.typeInfo;
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found) break;
+            } else break;
+        }
+        if (!bitTI && baseType && baseType->kind == TypeKind::BitStruct)
+            bitTI = baseType;
+        if (bitTI) {
+            auto fieldName = identifiers.back()->getText();
+            for (auto& bf : bitTI->bitFields) {
+                if (bf.name == fieldName && !bf.isPadding) {
+                    auto* backTy = bitTI->backingType->toLLVMType(*context_, module_->getDataLayout());
+                    auto* rawVal = builder_->CreateLoad(backTy, currentPtr, bitTI->name + "_raw");
+                    uint64_t mask = ((1ULL << bf.width) - 1);
+                    auto* cleared = builder_->CreateAnd(rawVal,
+                        llvm::ConstantInt::get(backTy, ~(mask << bf.offset)));
+                    auto* valExt = builder_->CreateZExt(val, backTy);
+                    auto* shifted = valExt;
+                    if (bf.offset > 0)
+                        shifted = builder_->CreateShl(valExt,
+                            llvm::ConstantInt::get(backTy, bf.offset));
+                    auto* result = builder_->CreateOr(cleared, shifted);
+                    builder_->CreateStore(result, currentPtr);
+                    return {};
+                }
+            }
+        }
+    }
     if (isVolatileAccess || (currentTI && currentTI->isVolatile))
         builder_->CreateStore(val, currentPtr, true);
     else
@@ -12190,8 +12255,8 @@ std::any IRGen::visitFieldAccessExpr(LucisParser::FieldAccessExprContext* ctx) {
             auto* indexedVal = castValue(visit(baseExpr));
             if (indexedVal && indexedVal->getType()->isStructTy()) {
                 auto* baseTI = resolveExprTypeInfo(baseExpr);
-                if (baseTI && (baseTI->kind == TypeKind::Struct || baseTI->kind == TypeKind::Union)) {
-                    const TypeInfo* fieldTI = nullptr;
+            if (baseTI && (baseTI->kind == TypeKind::Struct || baseTI->kind == TypeKind::Union)) {
+                const TypeInfo* fieldTI = nullptr;
                     int fieldIdx = -1;
                     for (size_t f = 0; f < baseTI->fields.size(); f++) {
                         if (baseTI->fields[f].name == fieldName) {
@@ -12402,6 +12467,32 @@ std::any IRGen::visitFieldAccessExpr(LucisParser::FieldAccessExprContext* ctx) {
             std::cerr << "lucis: null base value for field access\n";
             return static_cast<llvm::Value*>(
                 llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
+        }
+
+        // ── BitStruct field through chained access ────────────────
+        {
+            auto* baseTI = resolveExprTypeInfo(baseExpr);
+            if (baseTI && baseTI->kind == TypeKind::BitStruct) {
+                for (auto& bf : baseTI->bitFields) {
+                    if (bf.name == fieldName && !bf.isPadding) {
+                        auto* backTy = baseTI->backingType->toLLVMType(*context_, module_->getDataLayout());
+                        llvm::Value* rawVal = baseVal;
+                        if (rawVal->getType() != backTy)
+                            rawVal = builder_->CreateTrunc(rawVal, backTy);
+                        llvm::Value* shifted = rawVal;
+                        if (bf.offset > 0)
+                            shifted = builder_->CreateLShr(rawVal, llvm::ConstantInt::get(backTy, bf.offset));
+                        auto* masked = builder_->CreateAnd(shifted,
+                            llvm::ConstantInt::get(backTy, (1ULL << bf.width) - 1));
+                        auto* resultTy = bf.width <= 8 ? llvm::Type::getInt8Ty(*context_)
+                                      : bf.width <= 16 ? llvm::Type::getInt16Ty(*context_)
+                                      : bf.width <= 32 ? llvm::Type::getInt32Ty(*context_)
+                                      : llvm::Type::getInt64Ty(*context_);
+                        auto* result = builder_->CreateIntCast(masked, resultTy, false);
+                        return static_cast<llvm::Value*>(result);
+                    }
+                }
+            }
         }
 
         // Pointer to struct: e.g. a.field which is *Struct → access field through pointer
