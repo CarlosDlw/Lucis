@@ -195,6 +195,12 @@ private:
                           LucisParser::ProgramContext* tree,
                           const ProjectContext* project);
 
+    // Add trait impl methods for dot/arrow access.
+    void addTraitMethods(std::vector<CompletionItem>& items,
+                          const std::string& typeName,
+                          LucisParser::ProgramContext* tree,
+                          const std::string& prefix);
+
     // Add built-in type methods (int.abs, string.len, vec.push, etc.).
     void addTypeMethods(std::vector<CompletionItem>& items,
                         const std::string& typeName,

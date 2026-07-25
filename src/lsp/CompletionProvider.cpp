@@ -2309,6 +2309,7 @@ CompletionProvider::complete(const std::string &source, size_t line, size_t col,
     addStructFields(items, receiverType, parsed->tree, *cBindingsPtr,
                     project);
     addExtendMethods(items, receiverType, parsed->tree, project);
+    addTraitMethods(items, receiverType, parsed->tree, req.prefix);
     addTypeMethods(items, receiverType, req.prefix);
     break;
   }
@@ -3729,6 +3730,10 @@ void CompletionProvider::addImportedSymbols(std::vector<CompletionItem> &items,
         ci.kind = CompletionKind::Struct;
         ci.detail = "bitstruct " + symName;
         break;
+      case ExportedSymbol::TraitDecl:
+        ci.kind = CompletionKind::Interface;
+        ci.detail = "trait " + symName;
+        break;
       }
 
       items.push_back(std::move(ci));
@@ -3997,6 +4002,10 @@ void CompletionProvider::addProjectSymbols(std::vector<CompletionItem> &items,
       case ExportedSymbol::BitStruct:
         ci.kind = CompletionKind::Struct;
         ci.detail = "bitstruct " + sym->name + " [" + currentModPath + "]";
+        break;
+      case ExportedSymbol::TraitDecl:
+        ci.kind = CompletionKind::Interface;
+        ci.detail = "trait " + sym->name + " [" + currentModPath + "]";
         break;
       default:
         continue;
@@ -4712,6 +4721,37 @@ void CompletionProvider::addExtendMethods(std::vector<CompletionItem> &items,
           }
         }
       }
+    }
+  }
+}
+
+// ─── Trait impl methods for dot/arrow access ─────────────────────────
+
+void CompletionProvider::addTraitMethods(std::vector<CompletionItem> &items,
+                                         const std::string &typeName,
+                                         LucisParser::ProgramContext *tree,
+                                         const std::string &prefix) {
+  // Scan local impl blocks for the given type
+  for (auto *tld : tree->topLevelDecl()) {
+    auto *id = tld->implDecl();
+    if (!id) continue;
+
+    // Extract impl type name from the second typeSpec
+    if (!id->typeSpec(1)) continue;
+    std::string implType = safeText(id->typeSpec(1));
+    if (implType != typeName) continue;
+
+    // Add all instance methods (non-static) from the impl
+    for (auto *m : id->implMethod()) {
+      if (m->AMPERSAND() == nullptr) continue; // skip static methods
+      std::string mName = safeIdAt(m, 0);
+      if (!matchesPrefix(mName, prefix)) continue;
+
+      CompletionItem ci;
+      ci.label = mName;
+      ci.kind = CompletionKind::Method;
+      ci.detail = "trait method: " + typeName + "." + mName + "(...)";
+      items.push_back(std::move(ci));
     }
   }
 }
@@ -5622,6 +5662,12 @@ void CompletionProvider::addTypeNames(std::vector<CompletionItem> &items,
       if (!matchesPrefix(name, prefix))
         continue;
       items.push_back({name, CompletionKind::Class, "type " + name});
+    }
+    if (auto *td = tld->traitDecl()) {
+      std::string name = safeText(td->IDENTIFIER());
+      if (!matchesPrefix(name, prefix))
+        continue;
+      items.push_back({name, CompletionKind::Interface, "trait " + name});
     }
   }
 
