@@ -207,16 +207,16 @@ def test_definition(description, source, line, col, expect_line, root_uri=None):
     if resp and "result" in resp and resp["result"]:
         r = resp["result"]
         if isinstance(r, list) and len(r) > 0:
-            got_line = r[0].get("line", -1)
-        elif isinstance(r, dict):
-            got_line = r.get("line", -1)
+            r = r[0]
+        if isinstance(r, dict):
+            got_line = r.get("range", {}).get("start", {}).get("line", -1)
     ok = got_line == expect_line
     if ok:
         print(f"  OK   {description}")
         passed += 1
     else:
         print(f"  FAIL {description}")
-        print(f"       expected line {expect_line}, got line {got_line}")
+        print(f"       expected line {expect_line}, got {got_line}")
         failed += 1
 
 
@@ -468,7 +468,7 @@ def main():
         "use traits::Hashable;\n"
         "struct Val {}\n"
         "impl Hashable for Val { fn hash(&self) int32 { ret 42; } }\n",
-        2, 5, 0, root_uri=ROOT_URI)  # 'Hashable' on impl line → jumps to traits.lc line 0
+        2, 5, 1, root_uri=ROOT_URI)  # traits.lc line 1 (0-based)
 
     # ── Signature help ──
     print("═══ Signature help ═══")
