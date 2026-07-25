@@ -3537,6 +3537,14 @@ void CompletionProvider::addImportedSymbols(std::vector<CompletionItem> &items,
       auto registryPath = ModuleRegistry::usePathToModulePath(modulePath);
       auto *sym = project->registry().findSymbol(registryPath, symName);
 
+      // Broad search all modules (handles path-mismatch from directory scan)
+      if (!sym) {
+        for (auto& ns : project->registry().allModules()) {
+          sym = project->registry().findSymbol(ns, symName);
+          if (sym) break;
+        }
+      }
+
       // If not in project registry, try on-demand parse of stdlib module
       if (!sym) {
         static const std::vector<std::string> stdlibDirs3 = ImportResolver::stdlibSearchPaths();

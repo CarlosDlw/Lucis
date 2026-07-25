@@ -1283,6 +1283,12 @@ std::optional<HoverResult> HoverProvider::hoverImportedSymbol(
     if (project && project->isValid()) {
         auto registryPath = ModuleRegistry::usePathToModulePath(modulePath);
         auto* sym = project->registry().findSymbol(registryPath, symbolName);
+        if (!sym) {
+            for (auto& ns : project->registry().allModules()) {
+                sym = project->registry().findSymbol(ns, symbolName);
+                if (sym) break;
+            }
+        }
         if (sym) {
             const auto& crossDocs = docCommentsForFile(sym->sourceFile);
             switch (sym->kind) {
@@ -1323,6 +1329,34 @@ std::optional<HoverResult> HoverProvider::hoverImportedSymbol(
                         std::string md = "```lucis\ntype " + symbolName + " = "
                                        + typeSpecToString(ta->typeSpec()) + "\n```";
                         size_t declLine = ta->getStart()->getLine() - 1;
+                        md = appendDocToHover(md, crossDocs, declLine);
+                        return makeResult(token, md);
+                    }
+                    break;
+                case ExportedSymbol::TraitDecl:
+                    if (auto* td = dynamic_cast<LucisParser::TraitDeclContext*>(sym->decl)) {
+                        std::string md = "```lucis\ntrait " + symbolName;
+                        if (td->typeParamList()) {
+                            md += "<";
+                            bool fst = true;
+                            for (auto* tp : td->typeParamList()->typeParam()) {
+                                if (!fst) md += ", ";
+                                auto ids = tp->IDENTIFIER();
+                                if (!ids.empty()) md += ids[0]->getText();
+                                fst = false;
+                            }
+                            md += ">";
+                        }
+                        md += " {\n";
+                        for (auto* m : td->traitMethod()) {
+                            md += "  fn " + safeIdAt(m, 0) + "(";
+                            if (m->AMPERSAND()) md += "&self";
+                            for (auto* p : m->param())
+                                md += (m->AMPERSAND() ? ", " : "") + typeSpecToString(p->typeSpec());
+                            md += ") " + typeSpecToString(m->typeSpec()) + ";\n";
+                        }
+                        md += "}\n```";
+                        size_t declLine = td->getStart()->getLine() - 1;
                         md = appendDocToHover(md, crossDocs, declLine);
                         return makeResult(token, md);
                     }

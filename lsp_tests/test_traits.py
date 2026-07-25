@@ -494,6 +494,32 @@ def main():
         "struct S {}\nimpl Hashable for S { fn hash(&self) int32 { ret 0; } }\n",
         "impl")
 
+    # ── Remaining Phase 7.1 completions ──
+    print("═══ Extra completions ═══")
+
+    test_completion(
+        "cross: impl Hashable for | completes type names",
+        "use traits::Hashable;\n"
+        "struct Val {}\n"
+        "struct Point {}\n"
+        "impl Hashable for Po\n",
+        3, 17, ["Point"], root_uri=ROOT_URI)
+
+    # ── Hover on imported traits in use declarations ──
+    print("═══ Hover on use imports ═══")
+
+    test_hover(
+        "cross: hover on 'Hashable' in use import",
+        "use traits::Hashable;\n"
+        "struct Val {}\n",
+        0, 13, "trait Hashable", root_uri=ROOT_URI)
+
+    test_hover(
+        "cross: hover on 'Counter' in use import",
+        "use traits::Counter;\n"
+        "struct Val {}\n",
+        0, 13, "trait Counter", root_uri=ROOT_URI)
+
     total = passed + failed
     print(f"\n{'='*50}")
     print(f"  {passed} passed, {failed} failed out of {total}")

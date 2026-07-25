@@ -307,7 +307,7 @@ void LspServer::handleDidOpen(const json& msg) {
         std::cerr << "[lucis-lsp] opened: " << uri << "\n";
 
         std::string filePath = DocumentStore::uriToPath(uri);
-        rebuildContext(filePath, false);
+        rebuildContext(filePath, true);
 
         publishDiagnostics(uri, text);
     } catch (const std::exception& e) {

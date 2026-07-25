@@ -7078,6 +7078,13 @@ void Checker::checkUseDecls(LucisParser::ProgramContext* tree) {
             } else if (moduleRegistry_ && moduleRegistry_->hasModule(modPath)) {
                 auto* sym = moduleRegistry_->findSymbol(modPath, symbolName);
                 if (!sym) {
+                    // Search all modules (handles path-mismatch from directory scan)
+                    for (auto& ns : moduleRegistry_->allModules()) {
+                        sym = moduleRegistry_->findSymbol(ns, symbolName);
+                        if (sym) break;
+                    }
+                }
+                if (!sym) {
                     error(item, "module '" + path +
                                 "' does not export '" + symbolName + "'");
                 } else {
@@ -7103,6 +7110,12 @@ void Checker::checkUseDecls(LucisParser::ProgramContext* tree) {
                         imports_.addImport(path, symbolName);
                     } else if (moduleRegistry_ && moduleRegistry_->hasModule(modPath)) {
                         auto* sym = moduleRegistry_->findSymbol(modPath, symbolName);
+                        if (!sym) {
+                            for (auto& ns : moduleRegistry_->allModules()) {
+                                sym = moduleRegistry_->findSymbol(ns, symbolName);
+                                if (sym) break;
+                            }
+                        }
                         if (!sym) {
                             error(grp, "module '" + path +
                                         "' does not export '" + symbolName + "'");
