@@ -1,0 +1,34 @@
+
+use traits::{ Hashable, Counter, From };
+
+struct Point {
+    int32 x;
+    int32 y;
+}
+
+impl Hashable for Point {
+    fn hash(&self) int32 {
+        ret self.x * 100 + self.y;
+    }
+}
+
+impl Counter for Point {
+    fn count(&self) int32 {
+        ret self.x + self.y;
+    }
+
+    fn incr(&self) void {
+        self.x = self.x + 1;
+    }
+}
+
+impl From<int32> for Point {
+    fn from(int32 value) int32 {
+        ret value * 10;
+    }
+}
+
+fn main() int32 {
+    Point p = Point { x: 2, y: 3 };
+    ret p.hash();
+}

@@ -1,0 +1,13 @@
+
+trait Hashable {
+    fn hash(&self) int32;
+}
+
+trait Counter {
+    fn count(&self) int32;
+    fn incr(&self) void;
+}
+
+trait From<T> {
+    fn from(T value) int32;
+}

@@ -5671,6 +5671,18 @@ void CompletionProvider::addTypeNames(std::vector<CompletionItem> &items,
     }
   }
 
+  // Cross-file trait declarations from project registry
+  if (project && project->isValid()) {
+    for (auto &ns : project->registry().allModules()) {
+      auto syms = project->registry().getModuleSymbols(ns);
+      for (auto *sym : syms) {
+        if (sym->kind != ExportedSymbol::TraitDecl) continue;
+        if (!matchesPrefix(sym->name, prefix)) continue;
+        items.push_back({sym->name, CompletionKind::Interface, "trait " + sym->name + " [" + ns + "]"});
+      }
+    }
+  }
+
   // C structs/enums/typedefs
   for (auto &[name, _] : bindings.structs()) {
     if (!matchesPrefix(name, prefix))

@@ -1,0 +1,5 @@
+name: lsp_traits_test
+version: 0.0.1
+binary: test
+source:
+  - src/
