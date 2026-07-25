@@ -388,16 +388,22 @@ void LspServer::handleDidChange(const json& msg) {
                     if (modulePath.empty()) continue;
                     // Only register if not already in project context
                     if (projectContext_.registry().hasModule(modulePath)) continue;
-                    // Try stdlib paths
-                    for (auto& dir : ImportResolver::stdlibSearchPaths()) {
+                    // Try project-local source paths, project root, then stdlib
+                    bool registered = false;
+                    auto tryRegister = [&](const std::string& dir) {
                         auto candidate = fs::path(dir) / (modulePath + ".lc");
                         std::error_code ec;
-                        if (!fs::exists(candidate, ec) || ec) continue;
+                        if (!fs::exists(candidate, ec) || ec) return false;
                         auto pr = std::make_shared<ParseResult>(Parser::parse(candidate.string()));
-                        if (!pr->tree) continue;
+                        if (!pr->tree) return false;
                         auto* modReg = const_cast<ModuleRegistry*>(&projectContext_.registry());
                         modReg->registerFile(modulePath, candidate.string(), pr->tree, pr);
-                        break;
+                        return true;
+                    };
+                    if (!rootPath_.empty() && tryRegister(rootPath_)) registered = true;
+                    if (!registered) {
+                        for (auto& dir : ImportResolver::stdlibSearchPaths())
+                            if (tryRegister(dir)) break;
                     }
                 }
             }
