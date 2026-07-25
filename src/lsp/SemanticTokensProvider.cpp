@@ -59,7 +59,7 @@ static inline void emit(std::vector<RawSemanticToken>& out,
 // Keyword token types (by lexer token id)
 static bool isKeyword(size_t tokenType) {
     switch (tokenType) {
-        case LucisLexer::STRUCT: case LucisLexer::UNION: case LucisLexer::ENUM:
+        case LucisLexer::STRUCT: case LucisLexer::BITSTRUCT: case LucisLexer::UNION: case LucisLexer::ENUM:
         case LucisLexer::FN: case LucisLexer::TYPE: case LucisLexer::AS:
         case LucisLexer::IS: case LucisLexer::SIZEOF: case LucisLexer::TYPEOF:
         case LucisLexer::ALIGNOF: case LucisLexer::OFFSETOF:
