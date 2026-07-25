@@ -120,6 +120,20 @@ class LspClient:
                 return r
         return None
 
+    def signatureHelp(self, source, line, col, timeout=10):
+        self._send({"jsonrpc": "2.0", "id": 1, "method": "textDocument/didOpen",
+            "params": {"textDocument": {"uri": VIRTUAL_URI, "languageId": "lucis", "version": 1, "text": source}}})
+        time.sleep(0.3)
+        self._recv(timeout=2)
+        self._send({"jsonrpc": "2.0", "id": 2, "method": "textDocument/signatureHelp",
+            "params": {"textDocument": {"uri": VIRTUAL_URI}, "position": {"line": line, "character": col}}})
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            r = self._recv(timeout=2)
+            if r and "id" in r:
+                return r
+        return None
+
 
 def test_completion(description, source, line, col, expect_any=None, root_uri=None):
     global passed, failed
@@ -189,6 +203,26 @@ def test_definition(description, source, line, col, expect_line, root_uri=None):
     else:
         print(f"  FAIL {description}")
         print(f"       expected line {expect_line}, got line {got_line}")
+        failed += 1
+
+
+def test_signature(description, source, line, col, expect_contains, root_uri=None):
+    global passed, failed
+    client = LspClient(root_uri=root_uri)
+    try:
+        resp = client.signatureHelp(source, line, col, timeout=8)
+    finally:
+        client.close()
+    labels = []
+    if resp and "result" in resp and resp["result"]:
+        labels = [s.get("label", "") for s in resp["result"].get("signatures", [])]
+    ok = any(expect_contains in s for s in labels)
+    if ok:
+        print(f"  OK   {description}")
+        passed += 1
+    else:
+        print(f"  FAIL {description}")
+        print(f"       expected '{expect_contains}' in {labels}")
         failed += 1
 
 
@@ -389,6 +423,17 @@ def main():
         "struct Val {}\n"
         "impl Hashable for Val { fn hash(&self) int32 { ret 42; } }\n",
         2, 5, 0, root_uri=ROOT_URI)  # 'Hashable' on impl line → jumps to traits.lc line 0
+
+    # ── Signature help ──
+    print("═══ Signature help ═══")
+
+    test_signature(
+        "local: signature help for trait method call",
+        "trait Greeter { fn greet(&self, int32 n) int32; }\n"
+        "struct S {}\n"
+        "impl Greeter for S { fn greet(&self, int32 n) int32 { ret n; } }\n"
+        "fn main() int32 { S s; s.greet(42); }\n",
+        3, 31, "greet")
 
     total = passed + failed
     print(f"\n{'='*50}")

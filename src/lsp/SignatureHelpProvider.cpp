@@ -699,6 +699,27 @@ SignatureHelpProvider::signatureHelp(
             }
         }
 
+        // 1.5) Trait impl methods in current file
+        for (auto* tld : parsed.tree->topLevelDecl()) {
+            auto* id = tld->implDecl();
+            if (!id || !id->typeSpec(1)) continue;
+            if (safeText(id->typeSpec(1)) != recvBase) continue;
+            for (auto* m : id->implMethod()) {
+                if (safeIdAt(m, 0) != name) continue;
+                SignatureInfo sig;
+                sig.label = recvBase + "." + name + "(";
+                bool first = true;
+                for (auto* p : m->param()) {
+                    if (!first) sig.label += ", ";
+                    sig.label += typeSpecToString(p->typeSpec());
+                    first = false;
+                }
+                sig.label += ")";
+                sig.activeParameter = site->activeParam;
+                result.signatures.push_back(std::move(sig));
+            }
+        }
+
         // 2) Extended type methods (Vec, Map, Set) — filtered by receiver type
         if (!recvBase.empty()) {
             auto* desc = extTypeRegistry_.lookup(recvBase);
@@ -851,6 +872,29 @@ SignatureHelpProvider::signatureHelp(
                     sig.activeParameter = site->activeParam;
                     result.signatures.push_back(std::move(sig));
                 }
+            }
+        }
+
+        // 1.5) Trait impl static methods in current file
+        for (auto* tld : parsed.tree->topLevelDecl()) {
+            auto* id = tld->implDecl();
+            if (!id || !id->typeSpec(1)) continue;
+            if (safeText(id->typeSpec(1)) != site->staticTypeName) continue;
+            for (auto* m : id->implMethod()) {
+                if (safeIdAt(m, 0) != name) continue;
+                SignatureInfo sig;
+                sig.label = site->staticTypeName + "::" + name + "(";
+                bool first = true;
+                if (auto* pl = m->paramList()) {
+                    for (auto* p : pl->param()) {
+                        if (!first) sig.label += ", ";
+                        sig.label += typeSpecToString(p->typeSpec());
+                        first = false;
+                    }
+                }
+                sig.label += ")";
+                sig.activeParameter = site->activeParam;
+                result.signatures.push_back(std::move(sig));
             }
         }
 
