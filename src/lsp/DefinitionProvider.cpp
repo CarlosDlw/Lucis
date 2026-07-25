@@ -399,8 +399,27 @@ std::optional<DefinitionResult> DefinitionProvider::resolveAtPosition(
         // Extend declaration
         if (auto* ext = tld->extendDecl()) {
             if (ext->IDENTIFIER() && ext->IDENTIFIER()->getSymbol() == hoveredToken) {
-                // Jump to the struct definition
                 return resolveTypeName(tokenText, tree, bindings, filePath, project);
+            }
+        }
+
+        // Trait declaration
+        if (auto* td = tld->traitDecl()) {
+            if (td->IDENTIFIER() && td->IDENTIFIER()->getSymbol() == hoveredToken)
+                return makeResult(hoveredToken, filePath);
+        }
+
+        // Impl declaration — resolve trait name or type name
+        if (auto* id = tld->implDecl()) {
+            if (id->typeSpec(0)) {
+                if (auto r = resolveTypeSpecToken(id->typeSpec(0), hoveredToken,
+                        tree, bindings, filePath, project))
+                    return r;
+            }
+            if (id->typeSpec(1)) {
+                if (auto r = resolveTypeSpecToken(id->typeSpec(1), hoveredToken,
+                        tree, bindings, filePath, project))
+                    return r;
             }
         }
 
@@ -573,6 +592,13 @@ std::optional<DefinitionResult> DefinitionProvider::resolveIdent(
     auto* extDecl = findExtendDecl(tree, name);
     if (extDecl)
         return makeResult(extDecl->IDENTIFIER()->getSymbol(), filePath);
+
+    // 8.5) Trait declaration
+    for (auto* tld : tree->topLevelDecl()) {
+        auto* td = tld->traitDecl();
+        if (td && td->IDENTIFIER() && safeText(td->IDENTIFIER()) == name)
+            return makeResult(td->IDENTIFIER()->getSymbol(), filePath);
+    }
 
     // 8.5) Top-level const declaration
     auto* constDecl = findConstDecl(tree, name);
@@ -772,7 +798,7 @@ std::optional<DefinitionResult> DefinitionProvider::resolveTypeName(
     const CBindings& bindings, const std::string& filePath,
     const ProjectContext* project) {
 
-    // Same-file struct/enum/union/typealias
+    // Same-file struct/enum/union/typealias/trait
     if (auto* sd = findStructDecl(tree, name))
         return makeResult(sd->IDENTIFIER()->getSymbol(), filePath);
     if (auto* ed = findEnumDecl(tree, name))
@@ -781,6 +807,11 @@ std::optional<DefinitionResult> DefinitionProvider::resolveTypeName(
         return makeResult(ud->IDENTIFIER()->getSymbol(), filePath);
     if (auto* ta = findTypeAliasDecl(tree, name))
         return makeResult(ta->IDENTIFIER()->getSymbol(), filePath);
+    for (auto* tld : tree->topLevelDecl()) {
+        auto* td = tld->traitDecl();
+        if (td && td->IDENTIFIER() && safeText(td->IDENTIFIER()) == name)
+            return makeResult(td->IDENTIFIER()->getSymbol(), filePath);
+    }
 
     // Cross-file
     if (project && project->isValid()) {
@@ -790,7 +821,8 @@ std::optional<DefinitionResult> DefinitionProvider::resolveTypeName(
             if (sym->kind != ExportedSymbol::Struct &&
                 sym->kind != ExportedSymbol::Enum &&
                 sym->kind != ExportedSymbol::Union &&
-                sym->kind != ExportedSymbol::TypeAlias) continue;
+                sym->kind != ExportedSymbol::TypeAlias &&
+                sym->kind != ExportedSymbol::TraitDecl) continue;
             // Phase 4: use ModuleRegistry location
             DefinitionResult r;
             r.uri     = "file://" + sym->sourceFile;

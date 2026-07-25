@@ -106,6 +106,20 @@ class LspClient:
             self.proc.kill()
         self.log.close()
 
+    def definition(self, source, line, col, timeout=10):
+        self._send({"jsonrpc": "2.0", "id": 1, "method": "textDocument/didOpen",
+            "params": {"textDocument": {"uri": VIRTUAL_URI, "languageId": "lucis", "version": 1, "text": source}}})
+        time.sleep(0.3)
+        self._recv(timeout=2)
+        self._send({"jsonrpc": "2.0", "id": 2, "method": "textDocument/definition",
+            "params": {"textDocument": {"uri": VIRTUAL_URI}, "position": {"line": line, "character": col}}})
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            r = self._recv(timeout=2)
+            if r and "id" in r:
+                return r
+        return None
+
 
 def test_completion(description, source, line, col, expect_any=None, root_uri=None):
     global passed, failed
@@ -151,6 +165,30 @@ def test_hover(description, source, line, col, expect_contains, root_uri=None):
     else:
         print(f"  FAIL {description}")
         print(f"       expected '{expect_contains}' in '{raw[:200]}'")
+        failed += 1
+
+
+def test_definition(description, source, line, col, expect_line, root_uri=None):
+    global passed, failed
+    client = LspClient(root_uri=root_uri)
+    try:
+        resp = client.definition(source, line, col, timeout=8)
+    finally:
+        client.close()
+    got_line = -1
+    if resp and "result" in resp and resp["result"]:
+        r = resp["result"]
+        if isinstance(r, list) and len(r) > 0:
+            got_line = r[0].get("line", -1)
+        elif isinstance(r, dict):
+            got_line = r.get("line", -1)
+    ok = got_line == expect_line
+    if ok:
+        print(f"  OK   {description}")
+        passed += 1
+    else:
+        print(f"  FAIL {description}")
+        print(f"       expected line {expect_line}, got line {got_line}")
         failed += 1
 
 
@@ -332,6 +370,25 @@ def main():
         "    ret 0;\n"
         "}\n",
         5, 6, ["hash"], root_uri=ROOT_URI)
+
+    # ── Go-to-definition ──
+    print("═══ Go-to-definition ═══")
+
+    test_definition(
+        "local: go-to-def on trait name",
+        "trait Greeter { fn greet(&self) int32; }\n"
+        "struct S {}\n"
+        "impl Greeter for S {\n"
+        "    fn greet(&self) int32 { ret 0; }\n"
+        "}\n",
+        2, 6, 0)  # 'Greeter' on impl line col 6 → trait at line 0
+
+    test_definition(
+        "cross: go-to-def on cross-file trait name",
+        "use traits::Hashable;\n"
+        "struct Val {}\n"
+        "impl Hashable for Val { fn hash(&self) int32 { ret 42; } }\n",
+        2, 5, 0, root_uri=ROOT_URI)  # 'Hashable' on impl line → jumps to traits.lc line 0
 
     total = passed + failed
     print(f"\n{'='*50}")
