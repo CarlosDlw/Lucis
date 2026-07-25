@@ -126,6 +126,19 @@ void HelpCParser::discoverSystemIncludes() {
 static std::string cTypeToLucisType(CXType cxType) {
     CXTypeKind kind = cxType.kind;
 
+    // Helper: map integer by actual byte size (platform-aware)
+    auto intBySize = [](unsigned bytes, bool isSigned) -> std::string {
+        switch (bytes) {
+            case 0:  return isSigned ? "int64"  : "uint64";
+            case 1:  return isSigned ? "int8"   : "uint8";
+            case 2:  return isSigned ? "int16"  : "uint16";
+            case 4:  return isSigned ? "int32"  : "uint32";
+            case 8:  return isSigned ? "int64"  : "uint64";
+            case 16: return isSigned ? "int128" : "uint128";
+            default: return isSigned ? "int64"  : "uint64";
+        }
+    };
+
     switch (kind) {
     case CXType_Void:     return "void";
     case CXType_Bool:     return "bool";
@@ -138,19 +151,28 @@ static std::string cTypeToLucisType(CXType cxType) {
     case CXType_UInt:     return "uint32";
     case CXType_Int:      return "int32";
     case CXType_ULong:
-    case CXType_ULongLong: return "uint64";
+    case CXType_ULongLong: {
+        long long size = clang_Type_getSizeOf(cxType);
+        return intBySize(size > 0 ? static_cast<unsigned>(size) : 8, false);
+    }
     case CXType_Long:
-    case CXType_LongLong: return "int64";
+    case CXType_LongLong: {
+        long long size = clang_Type_getSizeOf(cxType);
+        return intBySize(size > 0 ? static_cast<unsigned>(size) : 8, true);
+    }
     case CXType_Float:    return "float32";
     case CXType_Double:   return "float64";
-    case CXType_LongDouble: return "float64";
+    case CXType_LongDouble: {
+        long long size = clang_Type_getSizeOf(cxType);
+        if (size <= 8) return "float64";
+        return "float128";
+    }
     case CXType_Pointer: {
         CXType pointee = clang_getPointeeType(cxType);
         if (pointee.kind == CXType_Char_S || pointee.kind == CXType_Char_U ||
             pointee.kind == CXType_SChar || pointee.kind == CXType_UChar) {
-            // Check for const
             if (clang_isConstQualifiedType(pointee))
-                return "*char";
+                return "cstring";
             return "*char";
         }
         if (pointee.kind == CXType_Void) return "*void";
@@ -164,7 +186,6 @@ static std::string cTypeToLucisType(CXType cxType) {
         CXString spelling = clang_getTypeSpelling(cxType);
         std::string s = clang_getCString(spelling);
         clang_disposeString(spelling);
-        // Strip "struct " or "union " prefix
         if (s.rfind("struct ", 0) == 0) s = s.substr(7);
         if (s.rfind("union ", 0) == 0) s = s.substr(6);
         return s;

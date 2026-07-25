@@ -182,7 +182,7 @@ void HelpCFormatter::printFunction(const HelpCFunction& fn,
         for (size_t i = 0; i < fn.params.size(); i++) {
             if (i > 0) call += ", ";
             // Generate example argument
-            if (fn.params[i].lucisType == "*char")
+            if (fn.params[i].lucisType == "*char" || fn.params[i].lucisType == "cstring")
                 call += "c\"...\"";
             else if (fn.params[i].lucisType == "int32")
                 call += "0";
