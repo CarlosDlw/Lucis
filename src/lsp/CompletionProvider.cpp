@@ -2309,7 +2309,7 @@ CompletionProvider::complete(const std::string &source, size_t line, size_t col,
     addStructFields(items, receiverType, parsed->tree, *cBindingsPtr,
                     project);
     addExtendMethods(items, receiverType, parsed->tree, project);
-    addTraitMethods(items, receiverType, parsed->tree, req.prefix);
+    addTraitMethods(items, receiverType, parsed->tree, req.prefix, project);
     addTypeMethods(items, receiverType, req.prefix);
     break;
   }
@@ -4730,28 +4730,46 @@ void CompletionProvider::addExtendMethods(std::vector<CompletionItem> &items,
 void CompletionProvider::addTraitMethods(std::vector<CompletionItem> &items,
                                          const std::string &typeName,
                                          LucisParser::ProgramContext *tree,
-                                         const std::string &prefix) {
-  // Scan local impl blocks for the given type
+                                         const std::string &prefix,
+                                         const ProjectContext *project) {
+  // Scan local impl blocks
   for (auto *tld : tree->topLevelDecl()) {
     auto *id = tld->implDecl();
     if (!id) continue;
-
-    // Extract impl type name from the second typeSpec
     if (!id->typeSpec(1)) continue;
-    std::string implType = safeText(id->typeSpec(1));
-    if (implType != typeName) continue;
-
-    // Add all instance methods (non-static) from the impl
+    if (safeText(id->typeSpec(1)) != typeName) continue;
     for (auto *m : id->implMethod()) {
-      if (m->AMPERSAND() == nullptr) continue; // skip static methods
+      if (m->AMPERSAND() == nullptr) continue;
       std::string mName = safeIdAt(m, 0);
       if (!matchesPrefix(mName, prefix)) continue;
-
       CompletionItem ci;
       ci.label = mName;
       ci.kind = CompletionKind::Method;
       ci.detail = "trait method: " + typeName + "." + mName + "(...)";
       items.push_back(std::move(ci));
+    }
+  }
+
+  // Scan cross-file impl blocks from project registry
+  if (project && project->isValid()) {
+    for (auto &ns : project->registry().allModules()) {
+      auto syms = project->registry().getModuleSymbols(ns);
+      for (auto *sym : syms) {
+        if (sym->kind != ExportedSymbol::ImplBlock) continue;
+        auto *id = dynamic_cast<LucisParser::ImplDeclContext *>(sym->decl);
+        if (!id || !id->typeSpec(1)) continue;
+        if (safeText(id->typeSpec(1)) != typeName) continue;
+        for (auto *m : id->implMethod()) {
+          if (m->AMPERSAND() == nullptr) continue;
+          std::string mName = safeIdAt(m, 0);
+          if (!matchesPrefix(mName, prefix)) continue;
+          CompletionItem ci;
+          ci.label = mName;
+          ci.kind = CompletionKind::Method;
+          ci.detail = "trait method: " + typeName + "." + mName + "(...) [" + ns + "]";
+          items.push_back(std::move(ci));
+        }
+      }
     }
   }
 }

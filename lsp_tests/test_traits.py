@@ -289,6 +289,50 @@ def main():
         "}\n",
         2, 5, "trait Counter", root_uri=ROOT_URI)
 
+    # ── Trait method hover ──
+    print("═══ Trait method hover ═══")
+
+    test_hover(
+        "local: hover on trait method call 'hash'",
+        "trait Hashable { fn hash(&self) int32; }\n"
+        "struct S {}\n"
+        "impl Hashable for S {\n"
+        "    fn hash(&self) int32 { ret 42; }\n"
+        "}\n"
+        "fn main() int32 {\n"
+        "    S s;\n"
+        "    ret s.hash();\n"
+        "}\n",
+        7, 13, "trait method")
+
+    test_hover(
+        "cross: hover on trait method call 'hash'",
+        "use traits::Hashable;\n"
+        "struct Val {}\n"
+        "impl Hashable for Val {\n"
+        "    fn hash(&self) int32 { ret 42; }\n"
+        "}\n"
+        "fn main() int32 {\n"
+        "    Val v;\n"
+        "    ret v.hash();\n"
+        "}\n",
+        7, 13, "trait method", root_uri=ROOT_URI)
+
+    # ── Cross-file trait method completions ──
+    print("═══ Cross-file method completions ═══")
+
+    test_completion(
+        "cross: v.| completes trait method 'hash'",
+        "use traits::Hashable;\n"
+        "struct Val {}\n"
+        "impl Hashable for Val { fn hash(&self) int32 { ret 42; } }\n"
+        "fn main() int32 {\n"
+        "    Val v;\n"
+        "    v.\n"
+        "    ret 0;\n"
+        "}\n",
+        5, 6, ["hash"], root_uri=ROOT_URI)
+
     total = passed + failed
     print(f"\n{'='*50}")
     print(f"  {passed} passed, {failed} failed out of {total}")

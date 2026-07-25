@@ -4454,6 +4454,43 @@ std::optional<HoverResult> HoverProvider::hoverMethodCall(
         }
     }
 
+    // ── Trait impl method hover ────────────────────────────────────
+    if (!receiverTypeName.empty()) {
+        for (auto* tld : tree->topLevelDecl()) {
+            auto* id = tld->implDecl();
+            if (!id || !id->typeSpec(1)) continue;
+            if (safeText(id->typeSpec(1)) != receiverTypeName) continue;
+            for (auto* m : id->implMethod()) {
+                if (safeIdAt(m, 0) != methodName) continue;
+                std::string md = "```lucis\ntrait method: " + receiverTypeName + "." + methodName + "(";
+                if (m->AMPERSAND()) md += "&self";
+                for (auto* p : m->param())
+                    md += (m->AMPERSAND() ? ", " : "") + typeSpecToString(p->typeSpec());
+                md += ") " + typeSpecToString(m->typeSpec()) + "\n```";
+                return makeResult(ctx->IDENTIFIER()->getSymbol(), md);
+            }
+        }
+        if (project && project->isValid()) {
+            for (auto &ns : project->registry().allModules()) {
+                for (auto* sym : project->registry().getModuleSymbols(ns)) {
+                    if (sym->kind != ExportedSymbol::ImplBlock) continue;
+                    auto* id = dynamic_cast<LucisParser::ImplDeclContext*>(sym->decl);
+                    if (!id || !id->typeSpec(1)) continue;
+                    if (safeText(id->typeSpec(1)) != receiverTypeName) continue;
+                    for (auto* m : id->implMethod()) {
+                        if (safeIdAt(m, 0) != methodName) continue;
+                        std::string md = "```lucis\ntrait method: " + receiverTypeName + "." + methodName + "(";
+                        if (m->AMPERSAND()) md += "&self";
+                        for (auto* p : m->param())
+                            md += (m->AMPERSAND() ? ", " : "") + typeSpecToString(p->typeSpec());
+                        md += ") " + typeSpecToString(m->typeSpec()) + "\n```\n[" + ns + "]";
+                        return makeResult(ctx->IDENTIFIER()->getSymbol(), md);
+                    }
+                }
+            }
+        }
+    }
+
     return std::nullopt;
 }
 

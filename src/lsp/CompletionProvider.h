@@ -199,7 +199,8 @@ private:
     void addTraitMethods(std::vector<CompletionItem>& items,
                           const std::string& typeName,
                           LucisParser::ProgramContext* tree,
-                          const std::string& prefix);
+                          const std::string& prefix,
+                          const ProjectContext* project = nullptr);
 
     // Add built-in type methods (int.abs, string.len, vec.push, etc.).
     void addTypeMethods(std::vector<CompletionItem>& items,
