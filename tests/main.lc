@@ -72,6 +72,7 @@ use tests::set_features::testSetFeatures;
 use tests::trait_basic::testTraitBasic;
 use tests::trait_static::testTraitStatic;
 use tests::trait_methods::testTraitMethods;
+use tests::trait_generic::testTraitGeneric;
 use tests::void_types::testVoidTypes;
 use tests::stdstr::testStdstr;
 use tests::stdconv::testStdConv;
@@ -156,5 +157,6 @@ fn main() int32 {
     testTraitBasic();
     testTraitStatic();
     testTraitMethods();
+    testTraitGeneric();
     ret 0;
 }
