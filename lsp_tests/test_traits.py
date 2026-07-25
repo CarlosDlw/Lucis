@@ -134,6 +134,20 @@ class LspClient:
                 return r
         return None
 
+    def semanticTokens(self, source, timeout=10):
+        self._send({"jsonrpc": "2.0", "id": 1, "method": "textDocument/didOpen",
+            "params": {"textDocument": {"uri": VIRTUAL_URI, "languageId": "lucis", "version": 1, "text": source}}})
+        time.sleep(0.3)
+        self._recv(timeout=2)
+        self._send({"jsonrpc": "2.0", "id": 2, "method": "textDocument/semanticTokens/full",
+            "params": {"textDocument": {"uri": VIRTUAL_URI}}})
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            r = self._recv(timeout=2)
+            if r and "id" in r:
+                return r
+        return None
+
 
 def test_completion(description, source, line, col, expect_any=None, root_uri=None):
     global passed, failed
@@ -223,6 +237,38 @@ def test_signature(description, source, line, col, expect_contains, root_uri=Non
     else:
         print(f"  FAIL {description}")
         print(f"       expected '{expect_contains}' in {labels}")
+        failed += 1
+
+
+def test_semantic(description, source, keyword):
+    global passed, failed
+    client = LspClient()
+    try:
+        resp = client.semanticTokens(source, timeout=8)
+    finally:
+        client.close()
+    ok = False
+    KW = 10
+    if resp and "result" in resp and resp["result"]:
+        data = resp["result"]["data"]
+        line = 0; col = 0
+        for i in range(0, len(data), 5):
+            dline = data[i]; dcol = data[i+1]; length = data[i+2]; toktype = data[i+3]
+            if dline > 0: line += dline; col = dcol
+            else: col += dcol
+            lines = source.split('\n')
+            if line < len(lines) and col + length <= len(lines[line]):
+                tokText = lines[line][col:col+length]
+            else:
+                tokText = ""
+            if tokText == keyword:
+                ok = (toktype == KW)
+                break
+    if ok:
+        print(f"  OK   {description}")
+        passed += 1
+    else:
+        print(f"  FAIL {description}")
         failed += 1
 
 
@@ -434,6 +480,19 @@ def main():
         "impl Greeter for S { fn greet(&self, int32 n) int32 { ret n; } }\n"
         "fn main() int32 { S s; s.greet(42); }\n",
         3, 31, "greet")
+
+    # ── Semantic tokens ──
+    print("═══ Semantic tokens ═══")
+
+    test_semantic(
+        "'trait' keyword is classified as Keyword",
+        "trait Hashable { fn hash(&self) int32; }\n",
+        "trait")
+
+    test_semantic(
+        "'impl' keyword is classified as Keyword",
+        "struct S {}\nimpl Hashable for S { fn hash(&self) int32 { ret 0; } }\n",
+        "impl")
 
     total = passed + failed
     print(f"\n{'='*50}")

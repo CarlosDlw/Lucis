@@ -77,6 +77,7 @@ static bool isKeyword(size_t tokenType) {
         case LucisLexer::ASM:    case LucisLexer::VOLATILE: case LucisLexer::GOTO:
         case LucisLexer::INTEL:  case LucisLexer::COMPTIME: case LucisLexer::CONST:
         case LucisLexer::SELF:
+        case LucisLexer::TRAIT: case LucisLexer::IMPL: case LucisLexer::DYN:
             return true;
         default:
             return false;
@@ -441,7 +442,6 @@ static void walkTree(IdentMap& map, InactiveRanges& inactiveRanges,
                 ctx->getStop());
         }
         classifyIdent(map, ctx->IDENTIFIER(), SemanticTokenType::Struct, mods);
-        // Generic type params
         if (ctx->typeParamList()) {
             for (auto* tp : ctx->typeParamList()->typeParam()) {
                 auto ids = tp->IDENTIFIER();
@@ -450,6 +450,38 @@ static void walkTree(IdentMap& map, InactiveRanges& inactiveRanges,
                                   static_cast<uint32_t>(SemanticTokenMod::Declaration));
             }
         }
+    }
+    else if (auto* ctx = dynamic_cast<LucisParser::TraitDeclContext*>(node)) {
+        uint32_t mods = static_cast<uint32_t>(SemanticTokenMod::Declaration) |
+                        static_cast<uint32_t>(SemanticTokenMod::Definition);
+        if (!declActive(ctx->attributeList())) {
+            mods |= static_cast<uint32_t>(SemanticTokenMod::CfgInactive);
+            auto* attrStart = firstAttrToken(ctx->attributeList());
+            recordInactive(inactiveRanges, attrStart ? attrStart : ctx->getStart(), ctx->getStop());
+        }
+        classifyIdent(map, ctx->IDENTIFIER(), SemanticTokenType::Type, mods);
+        if (ctx->typeParamList()) {
+            for (auto* tp : ctx->typeParamList()->typeParam()) {
+                auto ids = tp->IDENTIFIER();
+                if (!ids.empty())
+                    classifyIdent(map, ids[0], SemanticTokenType::Type,
+                                  static_cast<uint32_t>(SemanticTokenMod::Declaration));
+            }
+        }
+    }
+    else if (auto* ctx = dynamic_cast<LucisParser::ImplDeclContext*>(node)) {
+        uint32_t mods = 0;
+        if (!declActive(ctx->attributeList())) {
+            mods |= static_cast<uint32_t>(SemanticTokenMod::CfgInactive);
+            auto* attrStart = firstAttrToken(ctx->attributeList());
+            recordInactive(inactiveRanges, attrStart ? attrStart : ctx->getStart(), ctx->getStop());
+        }
+        // Trait name (first typeSpec) — classify as Type
+        if (ctx->typeSpec(0) && ctx->typeSpec(0)->IDENTIFIER())
+            classifyIdent(map, ctx->typeSpec(0)->IDENTIFIER(), SemanticTokenType::Type, mods);
+        // Impl type name (second typeSpec) — classify as Struct
+        if (ctx->typeSpec(1) && ctx->typeSpec(1)->IDENTIFIER())
+            classifyIdent(map, ctx->typeSpec(1)->IDENTIFIER(), SemanticTokenType::Struct, mods);
     }
     else if (auto* ctx = dynamic_cast<LucisParser::OperatorNameContext*>(node)) {
         // Classify the operator symbol token (+, -, ==, etc.) as Method
