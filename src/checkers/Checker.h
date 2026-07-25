@@ -187,6 +187,9 @@ private:
     // Walk parent chain to find a method (struct inheritance)
     const StructMethodInfo* findMethodInChain(const TypeInfo* ti,
                                                const std::string& name) const;
+    // Walk trait impls to find a method
+    const TraitMethodInfo* findMethodInTraits(const TypeInfo* ti,
+                                               const std::string& name) const;
     // Walk parent chain to find an operator overload
     const OperatorInfo* findOperatorInChain(const TypeInfo* ti,
                                              const std::string& internalName) const;

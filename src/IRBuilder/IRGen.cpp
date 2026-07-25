@@ -22688,6 +22688,66 @@ IRGen::visitMethodCallExpr(LucisParser::MethodCallExprContext* ctx) {
                 return static_cast<llvm::Value*>(extResult);
             }
 
+            // ── Trait method via `impl` block ──────────────────────────
+            for (const auto& traitName : receiverTI->implementedTraits) {
+                std::string fnName = mangleImplMethodName(
+                    traitName, receiverTI->name, methodName);
+                auto it = loweredImplMethods_.find(fnName);
+                if (it == loweredImplMethods_.end()) continue;
+
+                auto* fn = it->second;
+                std::vector<llvm::Value*> callArgs;
+
+                auto* recvPtr = resolveMethodReceiverAddress(baseExpr);
+                if (!recvPtr) {
+                    auto* receiverVal = castValue(visit(baseExpr));
+                    auto* selfParamTy = fn->getFunctionType()->getParamType(0);
+                    if (receiverVal->getType() == selfParamTy) {
+                        callArgs.push_back(receiverVal);
+                    } else {
+                        auto* tmpSelf = builder_->CreateAlloca(
+                            receiverVal->getType(), nullptr, "tmp_self");
+                        builder_->CreateStore(receiverVal, tmpSelf);
+                        callArgs.push_back(tmpSelf);
+                    }
+                } else {
+                    callArgs.push_back(recvPtr);
+                }
+
+                size_t paramIdx = 1;
+                if (ctx->expression()) {
+                    auto* arg = castValue(visit(ctx->expression()));
+                    callArgs.push_back(arg);
+                    paramIdx++;
+                }
+                if (auto* al = ctx->argList()) {
+                    for (auto* a : al->expression()) {
+                        auto* argVal = castValue(visit(a));
+                        if (paramIdx < fn->getFunctionType()->getNumParams()) {
+                            auto* paramTy = fn->getFunctionType()->getParamType(paramIdx);
+                            auto* argTy = argVal->getType();
+                            if (argTy != paramTy) {
+                                if (argTy->isIntegerTy() && paramTy->isIntegerTy())
+                                    argVal = builder_->CreateIntCast(argVal, paramTy, true);
+                                else if (argTy->isFloatingPointTy() && paramTy->isFloatingPointTy())
+                                    argVal = builder_->CreateFPCast(argVal, paramTy);
+                            }
+                        }
+                        callArgs.push_back(argVal);
+                        paramIdx++;
+                    }
+                }
+
+                auto* retTy = fn->getReturnType();
+                if (retTy->isVoidTy()) {
+                    builder_->CreateCall(fn, callArgs);
+                    return static_cast<llvm::Value*>(
+                        llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
+                }
+                auto* implResult = builder_->CreateCall(fn, callArgs, "trait_result");
+                return static_cast<llvm::Value*>(implResult);
+            }
+
         // ── Struct field function pointer call ─────────────────────────
         for (auto& field : receiverTI->fields) {
             if (field.name == methodName && field.typeInfo) {

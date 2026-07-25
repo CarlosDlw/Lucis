@@ -4678,6 +4678,16 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
                 }
                 return sm->returnType;
             }
+            // Trait method via `impl` block
+            auto* tm = findMethodInTraits(receiverType, methodName);
+            if (tm && !tm->isStatic) {
+                if (argTypes.size() != tm->paramTypes.size()) {
+                    error(expr, "method '" + methodName + "' expects " +
+                        std::to_string(tm->paramTypes.size()) +
+                        " arguments, got " + std::to_string(argTypes.size()));
+                }
+                return tm->returnType;
+            }
             error(expr, "struct '" + receiverType->name +
                         "' has no method '" + methodName + "'");
             return nullptr;
@@ -7768,6 +7778,18 @@ const Checker::StructMethodInfo* Checker::findMethodInChain(
         auto it = structMethods_.find(t->name);
         if (it == structMethods_.end()) continue;
         for (auto& m : it->second) {
+            if (m.name == name) return &m;
+        }
+    }
+    return nullptr;
+}
+
+const TraitMethodInfo* Checker::findMethodInTraits(
+    const TypeInfo* ti, const std::string& name) const {
+    for (const auto& traitName : ti->implementedTraits) {
+        auto* impl = traitRegistry_.findImpl(traitName, ti->name);
+        if (!impl) continue;
+        for (auto& m : impl->methodBodies) {
             if (m.name == name) return &m;
         }
     }
