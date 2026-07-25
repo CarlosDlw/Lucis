@@ -19983,6 +19983,8 @@ const TypeInfo* IRGen::resolveTypeInfo(LucisParser::TypeSpecContext* ctx) {
                     visitUnionDecl(static_cast<LucisParser::UnionDeclContext*>(sym->decl));
                 } else if (sym->kind == ExportedSymbol::BitStruct) {
                     visitBitstructDecl(static_cast<LucisParser::BitstructDeclContext*>(sym->decl));
+                } else if (sym->kind == ExportedSymbol::TraitDecl) {
+                    visitTraitDecl(static_cast<LucisParser::TraitDeclContext*>(sym->decl));
                 } else {
                     return nullptr;
                 }
@@ -19993,6 +19995,12 @@ const TypeInfo* IRGen::resolveTypeInfo(LucisParser::TypeSpecContext* ctx) {
                     return instantiateGenericStruct(baseName, sIt->second, resolvedArgs);
                 if (auto uIt = genericUnionTemplates_.find(baseName); uIt != genericUnionTemplates_.end())
                     return instantiateGenericUnion(baseName, uIt->second, resolvedArgs);
+                if (auto tIt = genericTraitTemplates_.find(baseName); tIt != genericTraitTemplates_.end()) {
+                    static TypeInfo traitTI;
+                    traitTI.name = baseName;
+                    traitTI.kind = TypeKind::Trait;
+                    return &traitTI;
+                }
                 return nullptr;
             };
 
@@ -20072,7 +20080,8 @@ const TypeInfo* IRGen::resolveTypeInfo(LucisParser::TypeSpecContext* ctx) {
                 return typeRegistry_.lookup(fullName);
             }
         }
-        std::cerr << "lucis: unknown generic type '" << baseName << "'\n";
+        if (!genericTraitTemplates_.count(baseName) && !traitRegistry_.lookup(baseName))
+            std::cerr << "lucis: unknown generic type '" << baseName << "'\n";
         return typeRegistry_.lookup("int32");
     }
 
