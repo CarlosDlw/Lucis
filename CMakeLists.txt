@@ -256,6 +256,7 @@ set(SOURCES
     src/namespace/ModuleRegistry.cpp
     src/types/TypeInfo.cpp
     src/types/TypeRegistry.cpp
+    src/types/TraitRegistry.cpp
     src/semantic/Decl.cpp
     src/semantic/SemanticDB.cpp
     src/types/MethodRegistry.cpp

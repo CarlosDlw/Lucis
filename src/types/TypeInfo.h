@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 namespace llvm {
@@ -31,6 +32,7 @@ enum class TypeKind {
     VAList,   // native variadic argument list state
     Closure,  // closure type: fn ptr + context (for capturing lambdas)
     Fallible, // fallible type: !T — either T or Error
+    Trait,    // trait type (used as constraint, not instantiable)
 };
 
 struct TypeInfo;
@@ -93,6 +95,7 @@ struct TypeInfo {
     std::vector<const TypeInfo*> tupleElements; // non-empty only for Tuple
     bool dropTracked = false;                   // ownership/autodrop relevant type
     bool moveOnly = false;                      // value should move instead of implicit copy
+    std::unordered_set<std::string> implementedTraits;  // trait basenames this type implements
 
     // User-defined generic instance metadata (set by Checker during monomorphization)
     bool isGenericInstance = false;                     // true when Foo<int32> was instantiated
