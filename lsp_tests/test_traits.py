@@ -520,6 +520,25 @@ def main():
         "struct Val {}\n",
         0, 13, "trait Counter", root_uri=ROOT_URI)
 
+    # ── Static trait method completions ──
+    print("═══ Static method completions ═══")
+
+    test_completion(
+        "local: Type::| completes static trait method",
+        "trait From<T> { fn from(T value) int32; }\n"
+        "struct Val {}\n"
+        "impl From<int32> for Val { fn from(int32 value) int32 { ret value; } }\n"
+        "fn main() int32 { Val::fr\n}\n",
+        3, 23, ["from"])
+
+    test_completion(
+        "cross: Type::| completes static trait method",
+        "use traits::From;\n"
+        "struct Val {}\n"
+        "impl From<int32> for Val { fn from(int32 value) int32 { ret value; } }\n"
+        "fn main() int32 { Val::fr\n}\n",
+        3, 23, ["from"], root_uri=ROOT_URI)
+
     total = passed + failed
     print(f"\n{'='*50}")
     print(f"  {passed} passed, {failed} failed out of {total}")

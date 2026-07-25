@@ -5545,6 +5545,24 @@ void CompletionProvider::addStaticMethods(std::vector<CompletionItem> &items,
       }
     }
   }
+
+  // Trait impl static methods
+  for (auto *tld : tree->topLevelDecl()) {
+    auto *id = tld->implDecl();
+    if (!id || !id->typeSpec(1)) continue;
+    if (safeText(id->typeSpec(1)) != baseTypeName) continue;
+    for (auto *m : id->implMethod()) {
+      if (m->AMPERSAND() != nullptr) continue;
+      CompletionItem ci;
+      std::string mName = safeIdAt(m, 0);
+      if (!matchesPrefix(mName, prefix)) continue;
+      ci.label = mName;
+      ci.kind = CompletionKind::Function;
+      ci.detail = "trait static: " + baseTypeName + "::" + mName + "(...)";
+      ci.insertText = mName + "()";
+      items.push_back(std::move(ci));
+    }
+  }
 }
 
 void CompletionProvider::addTypeNames(std::vector<CompletionItem> &items,
