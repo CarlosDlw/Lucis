@@ -10,7 +10,7 @@
 #include "attributes/TargetInfo.h"
 
 struct ExportedSymbol {
-    enum Kind { Function, Struct, Union, Enum, TypeAlias, ExtendBlock, Constant, BitStruct };
+    enum Kind { Function, Struct, Union, Enum, TypeAlias, ExtendBlock, Constant, BitStruct, TraitDecl, ImplBlock };
 
     Kind        kind;
     std::string name;

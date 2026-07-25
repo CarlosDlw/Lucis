@@ -1594,6 +1594,63 @@ bool Checker::check(LucisParser::ProgramContext* tree) {
             }
         }
 
+        // Phase B.6: trait declarations from imported modules
+        for (auto* sym : extSyms) {
+            if (sym->kind == ExportedSymbol::TraitDecl) {
+                auto* decl = static_cast<LucisParser::TraitDeclContext*>(sym->decl);
+                checkTraitDecl(decl);
+            }
+        }
+        for (auto& [symName, ns] : userImports_) {
+            auto* sym = moduleRegistry_->findSymbol(ns, symName);
+            if (!sym || sym->kind != ExportedSymbol::TraitDecl) continue;
+            auto* traitDecl = static_cast<LucisParser::TraitDeclContext*>(sym->decl);
+            checkTraitDecl(traitDecl);
+        }
+
+        // Phase B.7: impl blocks from imported modules
+        for (auto* sym : extSyms) {
+            if (sym->kind == ExportedSymbol::ImplBlock) {
+                auto* decl = static_cast<LucisParser::ImplDeclContext*>(sym->decl);
+                // Pre-register type dependencies
+                for (auto* method : decl->implMethod()) {
+                    ensureTypeDependencyFromSpec(
+                        ensureTypeDependencyFromSpec, method->typeSpec(),
+                        currentModulePath_);
+                    for (auto* p : method->param()) {
+                        ensureTypeDependencyFromSpec(
+                            ensureTypeDependencyFromSpec, p->typeSpec(),
+                            currentModulePath_);
+                    }
+                    if (auto* pl = method->paramList()) {
+                        for (auto* p : pl->param()) {
+                            ensureTypeDependencyFromSpec(
+                                ensureTypeDependencyFromSpec, p->typeSpec(),
+                                currentModulePath_);
+                        }
+                    }
+                }
+                checkImplDecl(decl);
+            }
+        }
+        for (auto& [symName, ns] : userImports_) {
+            auto* sym = moduleRegistry_->findSymbol(ns, symName);
+            if (!sym || (sym->kind != ExportedSymbol::Struct &&
+                         sym->kind != ExportedSymbol::Union &&
+                         sym->kind != ExportedSymbol::Enum))
+                continue;
+            auto nsSyms = moduleRegistry_->getModuleSymbols(ns);
+            for (auto* nsSym : nsSyms) {
+                if (nsSym->kind != ExportedSymbol::ImplBlock) continue;
+                // Check if the impl block's type matches the imported type
+                auto* implDecl = static_cast<LucisParser::ImplDeclContext*>(nsSym->decl);
+                auto implTypeName = implDecl->typeSpec(1)->getText();
+                if (implTypeName == symName) {
+                    checkImplDecl(implDecl);
+                }
+            }
+        }
+
         // Phase C: functions (may reference types from phases A and B)
         for (auto* sym : extSyms) {
             if (sym->kind == ExportedSymbol::Function) {

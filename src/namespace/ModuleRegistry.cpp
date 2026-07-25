@@ -68,6 +68,8 @@ void ModuleRegistry::registerFile(const std::string& modulePath,
             if (auto* e = tl->enumDecl())          return e->attributeList();
             if (auto* t = tl->typeAliasDecl())     return t->attributeList();
             if (auto* x = tl->extendDecl())        return x->attributeList();
+            if (auto* tr = tl->traitDecl())        return tr->attributeList();
+            if (auto* im = tl->implDecl())         return im->attributeList();
             if (auto* c = tl->constDeclStmt())     return c->attributeList();
             return nullptr;
         };
@@ -165,6 +167,35 @@ void ModuleRegistry::registerFile(const std::string& modulePath,
             sym.treeAnchor = anchor;
             symbols.push_back(std::move(sym));
         }
+        else if (auto* traitDecl = topLevel->traitDecl()) {
+            ExportedSymbol sym;
+            sym.kind       = ExportedSymbol::TraitDecl;
+            sym.name       = traitDecl->IDENTIFIER()->getText();
+            sym.modulePath = modulePath;
+            sym.sourceFile = filePath;
+            sym.isStdlib   = isStdlib;
+            sym.line       = static_cast<unsigned>(traitDecl->getStart()->getLine());
+            sym.column     = static_cast<unsigned>(traitDecl->getStart()->getCharPositionInLine());
+            sym.decl       = traitDecl;
+            sym.treeAnchor = anchor;
+            symbols.push_back(std::move(sym));
+        }
+        else if (auto* implDecl = topLevel->implDecl()) {
+            ExportedSymbol sym;
+            sym.kind       = ExportedSymbol::ImplBlock;
+            // Name format: "TraitName:TypeName"
+            auto traitName = implDecl->typeSpec(0)->getText();
+            auto typeName  = implDecl->typeSpec(1)->getText();
+            sym.name       = traitName + ":" + typeName;
+            sym.modulePath = modulePath;
+            sym.sourceFile = filePath;
+            sym.isStdlib   = isStdlib;
+            sym.line       = static_cast<unsigned>(implDecl->getStart()->getLine());
+            sym.column     = static_cast<unsigned>(implDecl->getStart()->getCharPositionInLine());
+            sym.decl       = implDecl;
+            sym.treeAnchor = anchor;
+            symbols.push_back(std::move(sym));
+        }
         else if (auto* constStmt = topLevel->constDeclStmt()) {
             for (auto* d : constStmt->constDeclarator()) {
                 ExportedSymbol sym;
@@ -190,6 +221,7 @@ std::vector<std::string> ModuleRegistry::validate() const {
         std::unordered_map<std::string, const ExportedSymbol*> seen;
         for (auto& sym : symbols) {
             if (sym.kind == ExportedSymbol::ExtendBlock) continue;
+            if (sym.kind == ExportedSymbol::ImplBlock) continue;
             auto it = seen.find(sym.name);
             if (it != seen.end()) {
                 errors.push_back(
@@ -212,7 +244,9 @@ const ExportedSymbol* ModuleRegistry::findSymbol(
     if (it == modules_.end()) return nullptr;
 
     for (auto& sym : it->second) {
-        if (sym.name == name && sym.kind != ExportedSymbol::ExtendBlock)
+        if (sym.name == name &&
+            sym.kind != ExportedSymbol::ExtendBlock &&
+            sym.kind != ExportedSymbol::ImplBlock)
             return &sym;
     }
     return nullptr;
