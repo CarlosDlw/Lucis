@@ -525,6 +525,50 @@ void GenericTemplateDecl::substituteTypes(
     // Instantiation clones the pattern and substitutes the clone.
 }
 
+// ── TraitDecl ─────────────────────────────────────────────────────────────────
+
+std::unique_ptr<Decl> TraitDecl::clone() const {
+    auto c = std::make_unique<TraitDecl>();
+    c->name          = name;
+    c->modulePath    = modulePath;
+    c->loc           = loc;
+    c->dropTracked   = dropTracked;
+    c->moveOnly      = moveOnly;
+    c->genericParams = genericParams;
+    cloneMethods(c->methods, methods);
+    return c;
+}
+
+void TraitDecl::substituteTypes(
+    const std::unordered_map<std::string, Decl*>& subst) {
+    for (auto& m : methods) {
+        if (m.returnType) {
+            auto it = subst.find(m.returnType->name);
+            if (it != subst.end()) m.returnType = it->second;
+        }
+        for (auto& p : m.params) {
+            if (p.type) {
+                auto it = subst.find(p.type->name);
+                if (it != subst.end()) p.type = it->second;
+            }
+        }
+    }
+}
+
+// ── ImplDecl ──────────────────────────────────────────────────────────────────
+
+std::unique_ptr<Decl> ImplDecl::clone() const {
+    auto c = std::make_unique<ImplDecl>();
+    c->name            = name;
+    c->modulePath      = modulePath;
+    c->loc             = loc;
+    c->traitName       = traitName;
+    c->typeName        = typeName;
+    c->implTypeParams  = implTypeParams;
+    cloneMethods(c->methods, methods);
+    return c;
+}
+
 // ── IntrinsicDecl ─────────────────────────────────────────────────────────────
 
 std::unique_ptr<Decl> IntrinsicDecl::clone() const {

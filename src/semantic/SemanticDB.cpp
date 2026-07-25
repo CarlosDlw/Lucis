@@ -27,6 +27,8 @@ static std::string kindToString(DeclKind k) {
     case DeclKind::TypeAlias:        return "type alias";
     case DeclKind::GenericTemplate:  return "generic template";
     case DeclKind::Intrinsic:        return "intrinsic";
+    case DeclKind::Trait:            return "trait";
+    case DeclKind::Impl:             return "impl";
     }
     return "unknown";
 }
@@ -188,7 +190,7 @@ bool SemanticDB::mergeExtendMethods(const std::string& structName,
 // ── Lookup ────────────────────────────────────────────────────────────────────
 
 const Decl* SemanticDB::lookupAny(const std::string& name) const {
-    // Priority: types > functions > builtins > intrinsics > generics
+    // Priority: types > functions > builtins > intrinsics > generics > traits
     if (auto it = types_.find(name); it != types_.end())
         return it->second.get();
     if (auto it = functions_.find(name); it != functions_.end())
@@ -198,6 +200,8 @@ const Decl* SemanticDB::lookupAny(const std::string& name) const {
     if (auto it = intrinsics_.find(name); it != intrinsics_.end())
         return it->second.get();
     if (auto it = generics_.find(name); it != generics_.end())
+        return it->second.get();
+    if (auto it = traits_.find(name); it != traits_.end())
         return it->second.get();
     return nullptr;
 }
@@ -217,6 +221,61 @@ const IntrinsicDecl* SemanticDB::lookupIntrinsic(
     const std::string& name) const {
     auto it = intrinsics_.find(name);
     return it != intrinsics_.end() ? it->second.get() : nullptr;
+}
+
+// ── Trait registration ────────────────────────────────────────────────────────
+
+bool SemanticDB::registerTrait(std::unique_ptr<TraitDecl> trait) {
+    if (!trait) return false;
+    const std::string& name = trait->name;
+
+    if (traits_.count(name)) return false;
+
+    if (!trait->modulePath.empty())
+        indexInModule(trait->modulePath, name, trait.get());
+
+    traits_[name] = std::move(trait);
+    return true;
+}
+
+const TraitDecl* SemanticDB::lookupTrait(const std::string& name) const {
+    auto it = traits_.find(name);
+    return it != traits_.end() ? it->second.get() : nullptr;
+}
+
+bool SemanticDB::hasTrait(const std::string& name) const {
+    return traits_.count(name) > 0;
+}
+
+std::vector<const TraitDecl*> SemanticDB::allTraits() const {
+    std::vector<const TraitDecl*> result;
+    result.reserve(traits_.size());
+    for (const auto& [_, decl] : traits_)
+        result.push_back(decl.get());
+    return result;
+}
+
+// ── Impl registration ─────────────────────────────────────────────────────────
+
+bool SemanticDB::registerImpl(std::unique_ptr<ImplDecl> impl) {
+    if (!impl) return false;
+
+    std::string key = impl->traitName + ":" + impl->typeName;
+
+    if (impls_.count(key)) return false;
+
+    if (!impl->modulePath.empty())
+        indexInModule(impl->modulePath, impl->name, impl.get());
+
+    impls_[key] = std::move(impl);
+    return true;
+}
+
+const ImplDecl* SemanticDB::findImpl(const std::string& traitName,
+                                       const std::string& typeName) const {
+    std::string key = traitName + ":" + typeName;
+    auto it = impls_.find(key);
+    return it != impls_.end() ? it->second.get() : nullptr;
 }
 
 // ── Cross-file lookup ─────────────────────────────────────────────────────────
@@ -396,6 +455,8 @@ static std::string declKindToStr(DeclKind k) {
     case DeclKind::TypeAlias:       return "TypeAlias";
     case DeclKind::GenericTemplate: return "GenericTemplate";
     case DeclKind::Intrinsic:       return "Intrinsic";
+    case DeclKind::Trait:            return "Trait";
+    case DeclKind::Impl:             return "Impl";
     }
     return "Void";
 }
@@ -418,6 +479,8 @@ static DeclKind strToDeclKind(const std::string& s) {
     if (s == "TypeAlias")       return DeclKind::TypeAlias;
     if (s == "GenericTemplate") return DeclKind::GenericTemplate;
     if (s == "Intrinsic")       return DeclKind::Intrinsic;
+    if (s == "Trait")            return DeclKind::Trait;
+    if (s == "Impl")             return DeclKind::Impl;
     return DeclKind::Void;
 }
 

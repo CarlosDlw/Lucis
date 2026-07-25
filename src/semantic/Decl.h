@@ -47,6 +47,9 @@ enum class DeclKind {
     GenericTemplate,
     // Intrinsics
     Intrinsic,
+    // Traits / interfaces
+    Trait,
+    Impl,
 };
 
 // ── Forward declarations ──────────────────────────────────────────────────────
@@ -63,6 +66,8 @@ struct ExtendedDecl;
 struct TupleDecl;
 struct TypeAliasDecl;
 struct GenericTemplateDecl;
+struct TraitDecl;
+struct ImplDecl;
 
 // ── Supporting types ──────────────────────────────────────────────────────────
 
@@ -309,6 +314,36 @@ struct GenericTemplateDecl : Decl {
     std::unique_ptr<Decl> clone() const override;
     void substituteTypes(
         const std::unordered_map<std::string, Decl*>& subst) override;
+};
+
+// ── TraitDecl ─────────────────────────────────────────────────────────────────
+
+struct TraitDecl : Decl {
+    static constexpr DeclKind staticKind = DeclKind::Trait;
+
+    std::vector<std::string>  genericParams;
+    std::vector<MethodInfo>   methods;
+
+    TraitDecl() : Decl(DeclKind::Trait) {}
+
+    std::unique_ptr<Decl> clone() const override;
+    void substituteTypes(
+        const std::unordered_map<std::string, Decl*>& subst) override;
+};
+
+// ── ImplDecl ──────────────────────────────────────────────────────────────────
+
+struct ImplDecl : Decl {
+    static constexpr DeclKind staticKind = DeclKind::Impl;
+
+    std::string              traitName;
+    std::string              typeName;
+    std::vector<std::string> implTypeParams;
+    std::vector<MethodInfo>  methods;
+
+    ImplDecl() : Decl(DeclKind::Impl) {}
+
+    std::unique_ptr<Decl> clone() const override;
 };
 
 // ── IntrinsicDecl (compiler intrinsics) ───────────────────────────────────────

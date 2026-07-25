@@ -84,6 +84,19 @@ public:
 
     bool registerGeneric(std::unique_ptr<GenericTemplateDecl> tmpl);
 
+    // ── Trait registration ────────────────────────────────────────────────
+
+    bool registerTrait(std::unique_ptr<TraitDecl> trait);
+    const TraitDecl* lookupTrait(const std::string& name) const;
+    bool hasTrait(const std::string& name) const;
+    std::vector<const TraitDecl*> allTraits() const;
+
+    // ── Impl registration ─────────────────────────────────────────────────
+
+    bool registerImpl(std::unique_ptr<ImplDecl> impl);
+    const ImplDecl* findImpl(const std::string& traitName,
+                             const std::string& typeName) const;
+
     // ── Intrinsic registration ────────────────────────────────────────────
 
     bool registerIntrinsic(std::unique_ptr<IntrinsicDecl> decl);
@@ -178,6 +191,12 @@ private:
 
     // Generic templates
     std::unordered_map<std::string, std::unique_ptr<GenericTemplateDecl>> generics_;
+
+    // Traits
+    std::unordered_map<std::string, std::unique_ptr<TraitDecl>> traits_;
+
+    // Impls — keyed by "traitName:typeName"
+    std::unordered_map<std::string, std::unique_ptr<ImplDecl>> impls_;
 
     // Intrinsics
     std::unordered_map<std::string, std::unique_ptr<IntrinsicDecl>> intrinsics_;
