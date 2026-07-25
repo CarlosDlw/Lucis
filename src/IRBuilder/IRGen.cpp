@@ -1799,6 +1799,198 @@ std::any IRGen::visitExtendDecl(LucisParser::ExtendDeclContext* ctx) {
     return {};
 }
 
+// ── Trait declaration ─────────────────────────────────────────────────────────
+
+std::any IRGen::visitTraitDecl(LucisParser::TraitDeclContext* ctx)
+{
+    auto name = ctx->IDENTIFIER()->getText();
+
+    // Handle generic trait — store as template
+    if (auto* tpl = ctx->typeParamList()) {
+        GenericTraitTemplate tmpl;
+        for (auto* tp : tpl->typeParam())
+            tmpl.typeParams.push_back(tp->IDENTIFIER(0)->getText());
+        tmpl.decl = ctx;
+        genericTraitTemplates_[name] = std::move(tmpl);
+        return {};
+    }
+
+    // Non-generic trait — store method signatures (no codegen needed)
+    return {};
+}
+
+// ── Impl declaration ──────────────────────────────────────────────────────────
+
+std::any IRGen::visitImplDecl(LucisParser::ImplDeclContext* ctx)
+{
+    // Handle generic impl — store as template
+    if (auto* tpl = ctx->typeParamList()) {
+        GenericImplTemplate tmpl;
+        for (auto* tp : tpl->typeParam())
+            tmpl.typeParams.push_back(tp->IDENTIFIER(0)->getText());
+        tmpl.decl = ctx;
+        auto implTypeName = ctx->typeSpec(1)->getText();
+        genericImplTemplates_[implTypeName] = std::move(tmpl);
+        return {};
+    }
+
+    // Resolve trait and impl types
+    unsigned traitDims = 0;
+    const TypeInfo* traitTI = resolveTypeInfo(ctx->typeSpec(0));
+    unsigned implDims = 0;
+    const TypeInfo* implTI = resolveTypeInfo(ctx->typeSpec(1));
+
+    if (!traitTI || !implTI) return {};
+
+    // Register ImplEntry
+    ImplEntry entry;
+    entry.traitName = traitTI->name;
+    entry.typeName = implTI->name;
+    entry.implType = implTI;
+    entry.decl = ctx;
+    entry.sourceModulePath = currentModulePath_;
+    traitImpls_[entry.traitName].push_back(std::move(entry));
+
+    // Generate LLVM functions for each impl method
+    for (auto* method : ctx->implMethod()) {
+        auto methodName = method->IDENTIFIER(0)->getText();
+        bool isStatic = (method->AMPERSAND() == nullptr);
+
+        auto mangledFnName = mangleImplMethodName(
+            traitTI->name, implTI->name, methodName);
+
+        // Check if already lowered
+        if (loweredImplMethods_.count(mangledFnName)) continue;
+
+        // Resolve return type
+        unsigned retDims = 0;
+        const TypeInfo* retTI = resolveTypeInfo(method->typeSpec());
+
+        // Build LLVM function type
+        std::vector<llvm::Type*> paramLLTypes;
+
+        // Instance methods: first param is &self (pointer to impl type)
+        if (!isStatic) {
+            auto* llvmType = implTI->toLLVMType(*context_, module_->getDataLayout());
+            if (!llvmType) continue;
+            auto* ptrTy = llvm::PointerType::getUnqual(llvmType);
+            paramLLTypes.push_back(ptrTy);
+        }
+
+        // Method params
+        if (isStatic) {
+            if (auto* pl = method->paramList()) {
+                for (auto* p : pl->param()) {
+                    if (p->SPREAD()) continue;
+                    unsigned dims = 0;
+                    const TypeInfo* pTI = resolveTypeInfo(p->typeSpec());
+                    if (!pTI) continue;
+                    auto* pLL = pTI->toLLVMType(*context_, module_->getDataLayout());
+                    if (pLL) paramLLTypes.push_back(pLL);
+                }
+            }
+        } else {
+            for (auto* p : method->param()) {
+                if (p->SPREAD()) continue;
+                unsigned dims = 0;
+                const TypeInfo* pTI = resolveTypeInfo(p->typeSpec());
+                if (!pTI) continue;
+                auto* pLL = pTI->toLLVMType(*context_, module_->getDataLayout());
+                if (pLL) paramLLTypes.push_back(pLL);
+            }
+        }
+
+        llvm::Type* retLLType = llvm::Type::getVoidTy(*context_);
+        if (retTI && retTI->kind != TypeKind::Void) {
+            retLLType = retTI->toLLVMType(*context_, module_->getDataLayout());
+            if (!retLLType) retLLType = llvm::Type::getVoidTy(*context_);
+        }
+
+        auto* fnType = llvm::FunctionType::get(retLLType, paramLLTypes, false);
+        auto* fn = llvm::Function::Create(
+            fnType, llvm::Function::ExternalLinkage, mangledFnName, module_);
+
+        loweredImplMethods_[mangledFnName] = fn;
+
+        // Lower the method body
+        auto* prevFn = currentFunction_;
+        auto* prevBB = builder_->GetInsertBlock();
+        currentFunction_ = fn;
+
+        auto* entryBB = llvm::BasicBlock::Create(*context_, "entry", fn);
+        builder_->SetInsertPoint(entryBB);
+
+        // Save/restore locals
+        auto savedLocals = locals_;
+        locals_.clear();
+
+        // Set up self for instance methods
+        size_t argIdx = 0;
+        if (!isStatic) {
+            auto* selfArg = fn->getArg(0);
+            selfArg->setName("self");
+            auto* selfAlloca = builder_->CreateAlloca(
+                llvm::PointerType::getUnqual(implTI->toLLVMType(*context_, module_->getDataLayout())),
+                nullptr, "self");
+            builder_->CreateStore(selfArg, selfAlloca);
+            locals_["self"] = {selfAlloca, implTI, 0};
+            argIdx = 1;
+        }
+
+        // Register params as locals
+        if (isStatic) {
+            if (auto* pl = method->paramList()) {
+                for (auto* p : pl->param()) {
+                    if (p->SPREAD()) continue;
+                    auto paramName = p->IDENTIFIER()->getText();
+                    unsigned dims = 0;
+                    const TypeInfo* pTI = resolveTypeInfo(p->typeSpec());
+                    if (!pTI) continue;
+                    auto* arg = fn->getArg(argIdx++);
+                    arg->setName(paramName);
+                    auto* alloca = builder_->CreateAlloca(pTI->toLLVMType(*context_, module_->getDataLayout()), nullptr, paramName);
+                    builder_->CreateStore(arg, alloca);
+                    locals_[paramName] = {alloca, pTI, dims};
+                }
+            }
+        } else {
+            for (auto* p : method->param()) {
+                if (p->SPREAD()) continue;
+                auto paramName = p->IDENTIFIER()->getText();
+                unsigned dims = 0;
+                const TypeInfo* pTI = resolveTypeInfo(p->typeSpec());
+                if (!pTI) continue;
+                auto* arg = fn->getArg(argIdx++);
+                arg->setName(paramName);
+                auto* alloca = builder_->CreateAlloca(pTI->toLLVMType(*context_, module_->getDataLayout()), nullptr, paramName);
+                builder_->CreateStore(arg, alloca);
+                locals_[paramName] = {alloca, pTI, dims};
+            }
+        }
+
+        // Visit method body
+        auto savedRetType = currentFnReturnType_;
+        currentFnReturnType_ = retTI;
+        visitBlock(method->block());
+        currentFnReturnType_ = savedRetType;
+
+        // Implicit ret void if needed
+        if (!builder_->GetInsertBlock()->getTerminator()) {
+            if (fn->getReturnType()->isVoidTy())
+                builder_->CreateRetVoid();
+            else
+                builder_->CreateRet(llvm::UndefValue::get(fn->getReturnType()));
+        }
+
+        // Restore
+        locals_ = savedLocals;
+        currentFunction_ = prevFn;
+        if (prevBB) builder_->SetInsertPoint(prevBB);
+    }
+
+    return {};
+}
+
 llvm::Value* IRGen::resolveMethodReceiverAddress(LucisParser::ExpressionContext* expr) {
     if (!expr)
         return nullptr;
@@ -3152,6 +3344,95 @@ void IRGen::registerCrossFileSymbols(LucisParser::ProgramContext* ctx) {
     for (auto& [symbolName, sourceNs] : userImports_) {
         if (processedNs.insert(sourceNs).second)
             declareExtendMethods(sourceNs);
+    }
+
+    // ── Impl blocks from same and imported namespaces ──────────────────
+    auto declareImplMethods = [&](const std::string& ns) {
+        auto symbols = moduleRegistry_->getModuleSymbols(ns);
+        for (auto* sym : symbols) {
+            if (sym->kind != ExportedSymbol::ImplBlock) continue;
+            auto* implCtx = dynamic_cast<LucisParser::ImplDeclContext*>(sym->decl);
+            if (!implCtx || implCtx->typeParamList()) continue; // skip generic
+
+            // Validate impl type exists
+            unsigned implDims = 0;
+            const TypeInfo* implTI = resolveTypeInfo(implCtx->typeSpec(1));
+            if (!implTI) continue;
+
+            unsigned traitDims = 0;
+            const TypeInfo* traitTI = resolveTypeInfo(implCtx->typeSpec(0));
+            if (!traitTI) continue;
+
+            // Register entry
+            ImplEntry entry;
+            entry.traitName = traitTI->name;
+            entry.typeName = implTI->name;
+            entry.implType = implTI;
+            entry.decl = implCtx;
+            entry.sourceModulePath = ns;
+            traitImpls_[entry.traitName].push_back(std::move(entry));
+
+            // Forward-declare LLVM functions for each impl method
+            for (auto* method : implCtx->implMethod()) {
+                auto methodName = method->IDENTIFIER(0)->getText();
+                auto mangledFnName = mangleImplMethodName(
+                    traitTI->name, implTI->name, methodName);
+
+                if (loweredImplMethods_.count(mangledFnName)) continue;
+
+                bool isStatic = (method->AMPERSAND() == nullptr);
+
+                unsigned retDims = 0;
+                const TypeInfo* retTI = resolveTypeInfo(method->typeSpec());
+
+                std::vector<llvm::Type*> paramLLTypes;
+                if (!isStatic) {
+                    auto* llvmType = implTI->toLLVMType(*context_, module_->getDataLayout());
+                    if (llvmType) {
+                        auto* ptrTy = llvm::PointerType::getUnqual(llvmType);
+                        paramLLTypes.push_back(ptrTy);
+                    }
+                }
+                if (isStatic) {
+                    if (auto* pl = method->paramList()) {
+                        for (auto* p : pl->param()) {
+                            if (p->SPREAD()) continue;
+                            unsigned dims = 0;
+                            const TypeInfo* pTI = resolveTypeInfo(p->typeSpec());
+                            if (!pTI) continue;
+                            auto* pLL = pTI->toLLVMType(*context_, module_->getDataLayout());
+                            if (pLL) paramLLTypes.push_back(pLL);
+                        }
+                    }
+                } else {
+                    for (auto* p : method->param()) {
+                        if (p->SPREAD()) continue;
+                        unsigned dims = 0;
+                        const TypeInfo* pTI = resolveTypeInfo(p->typeSpec());
+                        if (!pTI) continue;
+                        auto* pLL = pTI->toLLVMType(*context_, module_->getDataLayout());
+                        if (pLL) paramLLTypes.push_back(pLL);
+                    }
+                }
+
+                llvm::Type* retLLType = llvm::Type::getVoidTy(*context_);
+                if (retTI && retTI->kind != TypeKind::Void)
+                    retLLType = retTI->toLLVMType(*context_, module_->getDataLayout());
+
+                auto* fnType = llvm::FunctionType::get(retLLType, paramLLTypes, false);
+                auto* fn = llvm::Function::Create(
+                    fnType, llvm::Function::ExternalLinkage,
+                    mangledFnName, module_);
+                loweredImplMethods_[mangledFnName] = fn;
+            }
+        }
+    };
+
+    declareImplMethods(currentModulePath_);
+    processedNs.clear();
+    for (auto& [symbolName, sourceNs] : userImports_) {
+        if (processedNs.insert(sourceNs).second)
+            declareImplMethods(sourceNs);
     }
 
     // ── Phase 2: Declare extern functions from same namespace ──────────
@@ -27358,6 +27639,12 @@ std::string IRGen::mangleGenericName(const std::string& baseName,
     return name;
 }
 
+std::string IRGen::mangleImplMethodName(const std::string& traitName,
+                                          const std::string& typeName,
+                                          const std::string& methodName) {
+    return "impl_" + traitName + "_" + typeName + "__" + methodName;
+}
+
 const TypeInfo* IRGen::resolveTypeInfoWithSubst(
     LucisParser::TypeSpecContext* ctx,
     const std::unordered_map<std::string, const TypeInfo*>& subst) {
@@ -27796,6 +28083,174 @@ const TypeInfo* IRGen::instantiateGenericStruct(
     }
 
     } // end if (loweredGenericExtendTypes_)
+
+    // ── Instantiate generic impl blocks for this concrete type ──────────
+    if (loweredGenericImplTypes_.insert(mangledName).second) {
+        // Find all generic impls whose type name matches this struct's base name
+        for (auto& [implTypeName, genImpl] : genericImplTemplates_) {
+            if (implTypeName != baseName) continue;
+
+            auto* implCtx = genImpl.decl;
+            if (!implCtx) continue;
+
+            // Build substitution map: impl's type params → concrete type args
+            std::unordered_map<std::string, const TypeInfo*> implSubst;
+            for (size_t i = 0; i < genImpl.typeParams.size() && i < typeArgs.size(); ++i)
+                implSubst[genImpl.typeParams[i]] = typeArgs[i];
+            implSubst["Self"] = result;
+
+            // Resolve trait type
+            unsigned traitDims = 0;
+            const TypeInfo* traitTI = resolveTypeInfoWithSubst(
+                implCtx->typeSpec(0), implSubst);
+
+            if (!traitTI) continue;
+
+            // Register ImplEntry
+            ImplEntry entry;
+            entry.traitName = traitTI->name;
+            entry.typeName = mangledName;
+            entry.implType = result;
+            entry.decl = implCtx;
+            entry.sourceModulePath = currentModulePath_;
+            traitImpls_[entry.traitName].push_back(std::move(entry));
+
+            // Generate LLVM functions for each generic impl method
+            for (auto* method : implCtx->implMethod()) {
+                auto methodName = method->IDENTIFIER(0)->getText();
+                auto fnName = mangleImplMethodName(
+                    traitTI->name, mangledName, methodName);
+
+                if (loweredImplMethods_.count(fnName)) continue;
+
+                bool isStatic = (method->AMPERSAND() == nullptr);
+
+                unsigned retDims = 0;
+                const TypeInfo* retTI = resolveTypeInfoWithSubst(
+                    method->typeSpec(), implSubst);
+
+                std::vector<llvm::Type*> paramLLTypes;
+                if (!isStatic) {
+                    auto* ptrTy = llvm::PointerType::getUnqual(result->toLLVMType(*context_, module_->getDataLayout()));
+                    paramLLTypes.push_back(ptrTy);
+                }
+
+                if (isStatic) {
+                    if (auto* pl = method->paramList()) {
+                        for (auto* p : pl->param()) {
+                            if (p->SPREAD()) continue;
+                            unsigned dims = 0;
+                            const TypeInfo* pTI = resolveTypeInfoWithSubst(
+                                p->typeSpec(), implSubst);
+                            if (!pTI) continue;
+                            auto* pLL = pTI->toLLVMType(*context_, module_->getDataLayout());
+                            if (pLL) paramLLTypes.push_back(pLL);
+                        }
+                    }
+                } else {
+                    for (auto* p : method->param()) {
+                        if (p->SPREAD()) continue;
+                        unsigned dims = 0;
+                        const TypeInfo* pTI = resolveTypeInfoWithSubst(
+                            p->typeSpec(), implSubst);
+                        if (!pTI) continue;
+                        auto* pLL = pTI->toLLVMType(*context_, module_->getDataLayout());
+                        if (pLL) paramLLTypes.push_back(pLL);
+                    }
+                }
+
+                llvm::Type* retLLType = llvm::Type::getVoidTy(*context_);
+                if (retTI && retTI->kind != TypeKind::Void)
+                    retLLType = retTI->toLLVMType(*context_, module_->getDataLayout());
+
+                auto* fnType = llvm::FunctionType::get(
+                    retLLType, paramLLTypes, false);
+                auto* fn = llvm::Function::Create(
+                    fnType, llvm::Function::ExternalLinkage,
+                    fnName, module_);
+                loweredImplMethods_[fnName] = fn;
+
+                // Lower body with active substitution
+                auto* prevFn = currentFunction_;
+                auto* prevBB = builder_->GetInsertBlock();
+                currentFunction_ = fn;
+
+                auto* entryBB = llvm::BasicBlock::Create(
+                    *context_, "entry", fn);
+                builder_->SetInsertPoint(entryBB);
+
+                auto savedLocals = locals_;
+                locals_.clear();
+                auto savedSubst = currentGenericSubst_;
+                currentGenericSubst_ = implSubst;
+
+                size_t argIdx = 0;
+                if (!isStatic) {
+                    auto* selfArg = fn->getArg(0);
+                    selfArg->setName("self");
+                    auto* selfAlloca = builder_->CreateAlloca(
+                        llvm::PointerType::getUnqual(result->toLLVMType(*context_, module_->getDataLayout())),
+                        nullptr, "self");
+                    builder_->CreateStore(selfArg, selfAlloca);
+                    locals_["self"] = {selfAlloca, result, 0};
+                    argIdx = 1;
+                }
+
+                if (isStatic) {
+                    if (auto* pl = method->paramList()) {
+                        for (auto* p : pl->param()) {
+                            if (p->SPREAD()) continue;
+                            auto paramName = p->IDENTIFIER()->getText();
+                            unsigned dims = 0;
+                            const TypeInfo* pTI = resolveTypeInfoWithSubst(
+                                p->typeSpec(), implSubst);
+                            if (!pTI) continue;
+                            auto* arg = fn->getArg(argIdx++);
+                            arg->setName(paramName);
+                            auto* alloca = builder_->CreateAlloca(
+                                pTI->toLLVMType(*context_, module_->getDataLayout()), nullptr, paramName);
+                            builder_->CreateStore(arg, alloca);
+                            locals_[paramName] = {alloca, pTI, dims};
+                        }
+                    }
+                } else {
+                    for (auto* p : method->param()) {
+                        if (p->SPREAD()) continue;
+                        auto paramName = p->IDENTIFIER()->getText();
+                        unsigned dims = 0;
+                        const TypeInfo* pTI = resolveTypeInfoWithSubst(
+                            p->typeSpec(), implSubst);
+                        if (!pTI) continue;
+                        auto* arg = fn->getArg(argIdx++);
+                        arg->setName(paramName);
+                        auto* alloca = builder_->CreateAlloca(
+                            pTI->toLLVMType(*context_, module_->getDataLayout()), nullptr, paramName);
+                        builder_->CreateStore(arg, alloca);
+                        locals_[paramName] = {alloca, pTI, dims};
+                    }
+                }
+
+                auto savedRetType = currentFnReturnType_;
+                currentFnReturnType_ = retTI;
+                visitBlock(method->block());
+                currentFnReturnType_ = savedRetType;
+
+                if (!builder_->GetInsertBlock()->getTerminator()) {
+                    if (fn->getReturnType()->isVoidTy())
+                        builder_->CreateRetVoid();
+                    else
+                        builder_->CreateRet(
+                            llvm::UndefValue::get(fn->getReturnType()));
+                }
+
+                locals_ = savedLocals;
+                currentGenericSubst_ = savedSubst;
+                currentFunction_ = prevFn;
+                if (prevBB) builder_->SetInsertPoint(prevBB);
+            }
+        }
+    }
+
 done:
     instantiatedGenerics_.erase(mangledName);
     return result;

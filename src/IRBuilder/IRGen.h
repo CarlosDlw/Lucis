@@ -232,6 +232,8 @@ public:
     std::any visitLambdaBlockExpr(LucisParser::LambdaBlockExprContext* ctx) override;
     std::any visitMatchExpr(LucisParser::MatchExprContext* ctx)         override;
     std::any visitExtendDecl(LucisParser::ExtendDeclContext* ctx)        override;
+    std::any visitTraitDecl(LucisParser::TraitDeclContext* ctx)         override;
+    std::any visitImplDecl(LucisParser::ImplDeclContext* ctx)           override;
     std::any visitDeferStmt(LucisParser::DeferStmtContext* ctx)           override;
     std::any visitNakedBlockStmt(LucisParser::NakedBlockStmtContext* ctx) override;
     std::any visitInlineBlockStmt(LucisParser::InlineBlockStmtContext* ctx) override;
@@ -515,7 +517,47 @@ private:
     std::unordered_map<std::string, GenericEnumTemplate>    genericEnumTemplates_;
     std::unordered_map<std::string, GenericFuncTemplate>    genericFuncTemplates_;
     std::unordered_map<std::string, GenericExtendTemplate>  genericExtendTemplates_;
-    // Prevents re-instantiation (also detects cycles)
+
+    struct GenericTraitTemplate {
+        std::vector<std::string>      typeParams;
+        LucisParser::TraitDeclContext* decl;
+    };
+    std::unordered_map<std::string, GenericTraitTemplate> genericTraitTemplates_;
+
+    struct GenericImplTemplate {
+        std::vector<std::string>      typeParams;
+        LucisParser::ImplDeclContext* decl;
+    };
+    std::unordered_map<std::string, GenericImplTemplate> genericImplTemplates_;
+
+    // ── Trait impl storage ──────────────────────────────────────────────
+
+    struct TraitMethodEntry {
+        std::string traitName;
+        std::string methodName;
+        const TypeInfo* returnType = nullptr;
+        std::vector<const TypeInfo*> paramTypes;
+        bool hasSelfReceiver = false;
+    };
+
+    // impls_[traitName] = vector of ImplEntry
+    struct ImplEntry {
+        std::string traitName;
+        std::string typeName;
+        const TypeInfo* implType = nullptr;
+        LucisParser::ImplDeclContext* decl = nullptr;
+        std::string sourceModulePath;
+    };
+    std::unordered_map<std::string, std::vector<ImplEntry>> traitImpls_;
+
+    // loweredImpls_[mangledFnName] = llvm::Function*
+    // Key format: impl_TraitName_TypeName__methodName
+    std::unordered_map<std::string, llvm::Function*> loweredImplMethods_;
+
+    // Tracked lowered generic impl types to prevent duplicate codegen
+    std::unordered_set<std::string> loweredGenericImplTypes_;
+
+    // ── Prevents re-instantiation (also detects cycles) ────────────────
     std::unordered_set<std::string> instantiatedGenerics_;
     // Active type-param substitution during generic body emission (T → int32, etc.)
     std::unordered_map<std::string, const TypeInfo*> currentGenericSubst_;
@@ -523,6 +565,11 @@ private:
     // Mangles "Node" + ["int32"] → "Node__int32"
     static std::string mangleGenericName(const std::string& baseName,
                                           const std::vector<const TypeInfo*>& typeArgs);
+
+    // Mangles an impl method name: impl_TraitName_TypeName__methodName
+    static std::string mangleImplMethodName(const std::string& traitName,
+                                              const std::string& typeName,
+                                              const std::string& methodName);
 
     // Resolves a type spec with a substitution map (type param → concrete TypeInfo*)
     const TypeInfo* resolveTypeInfoWithSubst(
