@@ -309,6 +309,47 @@ void LspServer::handleDidOpen(const json& msg) {
         std::string filePath = DocumentStore::uriToPath(uri);
         rebuildContext(filePath, true);
 
+        // Belt-and-suspenders: register modules from use declarations
+        // directly, in case the full rebuild above failed silently.
+        try {
+            auto parseResult = Parser::parseString(text);
+            if (parseResult.tree && projectContext_.isValid()) {
+                for (auto* pre : parseResult.tree->preambleDecl()) {
+                    auto* ud = pre->useDecl();
+                    if (!ud) continue;
+                    std::string modulePath;
+                    if (auto* item = dynamic_cast<LucisParser::UseItemContext*>(ud)) {
+                        if (item->modulePath())
+                            for (auto* id : item->modulePath()->IDENTIFIER()) {
+                                if (!modulePath.empty()) modulePath += "/";
+                                modulePath += id->getText();
+                            }
+                    } else if (auto* group = dynamic_cast<LucisParser::UseGroupContext*>(ud)) {
+                        if (group->modulePath())
+                            for (auto* id : group->modulePath()->IDENTIFIER()) {
+                                if (!modulePath.empty()) modulePath += "/";
+                                modulePath += id->getText();
+                            }
+                    } else { continue; }
+                    if (modulePath.empty()) continue;
+                    if (projectContext_.registry().hasModule(modulePath)) continue;
+                    auto tryRegister = [&](const std::string& dir) {
+                        auto candidate = fs::path(dir) / (modulePath + ".lc");
+                        std::error_code ec;
+                        if (!fs::exists(candidate, ec) || ec) return false;
+                        auto pr = std::make_shared<ParseResult>(Parser::parse(candidate.string()));
+                        if (!pr->tree) return false;
+                        auto* modReg = const_cast<ModuleRegistry*>(&projectContext_.registry());
+                        modReg->registerFile(modulePath, candidate.string(), pr->tree, pr);
+                        return true;
+                    };
+                    if (!rootPath_.empty() && tryRegister(rootPath_)) continue;
+                    for (auto& dir : ImportResolver::stdlibSearchPaths())
+                        if (tryRegister(dir)) break;
+                }
+            }
+        } catch (...) {}
+
         publishDiagnostics(uri, text);
     } catch (const std::exception& e) {
         std::cerr << "[lucis-lsp] didOpen error: " << e.what() << "\n";
