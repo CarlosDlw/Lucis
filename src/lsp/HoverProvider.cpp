@@ -1042,6 +1042,47 @@ std::optional<HoverResult> HoverProvider::hoverIdent(
         return makeResult(token, withDoc(formatUnionDecl(unionDecl), unionDecl->getStart()->getLine() - 1, unionDecl->attributeList()));
     }
 
+    // 14.5) Trait declaration
+    for (auto* tld : tree->topLevelDecl()) {
+        auto* td = tld->traitDecl();
+        if (!td || !td->IDENTIFIER() || safeText(td->IDENTIFIER()) != name) continue;
+        std::string md = "```lucis\ntrait " + name;
+        if (td->typeParamList()) {
+            md += "<";
+            bool first = true;
+            for (auto* tp : td->typeParamList()->typeParam()) {
+                if (!first) md += ", ";
+                auto ids = tp->IDENTIFIER();
+                if (!ids.empty()) md += ids[0]->getText();
+                if (tp->COLON() && ids.size() >= 2)
+                    md += ": " + ids[1]->getText();
+                first = false;
+            }
+            md += ">";
+        }
+        md += " {\n";
+        for (auto* m : td->traitMethod()) {
+            md += "  fn " + safeIdAt(m, 0) + "(";
+            if (m->AMPERSAND()) md += "&self";
+            bool firstParam = (m->AMPERSAND() == nullptr);
+            if (m->AMPERSAND()) {
+                for (auto* p : m->param()) {
+                    md += ", " + typeSpecToString(p->typeSpec());
+                }
+            } else if (auto* pl = m->paramList()) {
+                bool first = true;
+                for (auto* p : pl->param()) {
+                    if (!first) md += ", ";
+                    md += typeSpecToString(p->typeSpec());
+                    first = false;
+                }
+            }
+            md += ") " + typeSpecToString(m->typeSpec()) + ";\n";
+        }
+        md += "}\n```";
+        return makeResult(token, md);
+    }
+
     // 15) Type alias
     auto* aliasDecl = findTypeAliasDecl(tree, name);
     if (aliasDecl) {

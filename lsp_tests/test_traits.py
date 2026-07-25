@@ -76,6 +76,19 @@ class LspClient:
         })
         return self._recv(timeout=timeout)
 
+    def hover(self, source, line, col, timeout=10):
+        uri = "file:///tmp/_lsp_test.lc"
+        self._send({
+            "jsonrpc": "2.0", "id": 1, "method": "textDocument/didOpen",
+            "params": {"textDocument": {"uri": uri, "languageId": "lucis", "version": 1, "text": source}}
+        })
+        time.sleep(0.1)
+        self._send({
+            "jsonrpc": "2.0", "id": 2, "method": "textDocument/hover",
+            "params": {"textDocument": {"uri": uri}, "position": {"line": line, "character": col}}
+        })
+        return self._recv(timeout=timeout)
+
     def close(self):
         try:
             self._send({"jsonrpc": "2.0", "id": 99, "method": "shutdown", "params": {}})
@@ -114,6 +127,31 @@ def test_completion(description, source, line, col, expect_any=None):
         missing = [e for e in expect_any if e not in labels]
         print(f"       missing: {missing}")
         print(f"       got: {labels[:30]}")
+        failed += 1
+
+
+def test_hover(description, source, line, col, expect_contains):
+    global passed, failed
+    client = LspClient()
+    try:
+        resp = client.hover(source, line, col, timeout=8)
+    finally:
+        client.close()
+
+    raw = ""
+    if resp and "result" in resp and resp["result"]:
+        c = resp["result"]["contents"]
+        if isinstance(c, dict):
+            raw = c.get("value", "")
+        else:
+            raw = c or ""
+    ok = expect_contains in raw
+    if ok:
+        print(f"  OK   {description}")
+        passed += 1
+    else:
+        print(f"  FAIL {description}")
+        print(f"       expected '{expect_contains}' in '{raw[:200]}'")
         failed += 1
 
 
@@ -186,6 +224,25 @@ def main():
             "}\n")
     test_completion("s.| completes 'foo' and 'bar' from multiple traits",
                     src5, 7, 6, ["foo", "bar"])
+
+    # ── Trait hover tests ─────────────────────────────────────────
+    print("── Trait hover ──")
+
+    src_h1 = ("trait Hashable {\n"
+              "    fn hash(&self) int32;\n"
+              "}\n")
+    test_hover("hover on trait name 'Hashable'",
+               src_h1, 0, 8, "trait Hashable")
+    test_hover("hover on trait name shows method 'hash'",
+               src_h1, 0, 8, "fn hash")
+
+    src_h2 = ("trait From<T> {\n"
+              "    fn from(T value) int32;\n"
+              "}\n")
+    test_hover("hover on generic trait 'From'",
+               src_h2, 0, 8, "trait From<T>")
+    test_hover("hover on generic trait shows 'fn from'",
+               src_h2, 0, 8, "fn from")
 
     total = passed + failed
     print(f"\n{'='*50}")
