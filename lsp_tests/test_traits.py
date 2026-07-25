@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Test trait LSP features: completions and hover — both local and cross-file."""
+"""Test trait LSP features: completions and hover — local and cross-file."""
 
 import subprocess
 import json
@@ -14,6 +14,7 @@ PROJECT_DIR = os.path.join(os.path.dirname(__file__), "traits", "project")
 
 passed = 0
 failed = 0
+VIRTUAL_URI = "file:///tmp/_lsp_test.lc"
 
 
 class LspClient:
@@ -25,10 +26,6 @@ class LspClient:
             stderr=self.log, text=True, bufsize=0,
         )
         time.sleep(0.15)
-        self.msgId = 0
-        self._init(root_uri)
-
-    def _init(self, root_uri=None):
         params = {"processId": None, "capabilities": {}}
         if root_uri:
             params["rootUri"] = root_uri
@@ -38,7 +35,10 @@ class LspClient:
         })
         self._recv(timeout=3)
         self._send({"jsonrpc": "2.0", "method": "initialized", "params": {}})
-        time.sleep(0.5)
+        if root_uri:
+            time.sleep(0.5)
+        else:
+            time.sleep(0.1)
 
     def _send(self, obj):
         body = json.dumps(obj, ensure_ascii=False)
@@ -68,47 +68,33 @@ class LspClient:
             body += chunk
         return json.loads(body)
 
-    def _nextId(self):
-        self.msgId += 1
-        return self.msgId
-
-    def openFile(self, uri, source):
+    def complete(self, source, line, col, timeout=10):
         self._send({
-            "jsonrpc": "2.0", "id": self._nextId(), "method": "textDocument/didOpen",
-            "params": {"textDocument": {"uri": uri, "languageId": "lucis", "version": 1, "text": source}}
+            "jsonrpc": "2.0", "id": 1, "method": "textDocument/didOpen",
+            "params": {"textDocument": {"uri": VIRTUAL_URI, "languageId": "lucis", "version": 1, "text": source}}
         })
-        time.sleep(0.15)
-
-    def completions(self, uri, line, col, timeout=10):
+        time.sleep(0.3)
+        # Drain any diagnostic notifications
+        self._recv(timeout=2)
         self._send({
-            "jsonrpc": "2.0", "id": self._nextId(), "method": "textDocument/completion",
-            "params": {"textDocument": {"uri": uri}, "position": {"line": line, "character": col}}
+            "jsonrpc": "2.0", "id": 2, "method": "textDocument/completion",
+            "params": {"textDocument": {"uri": VIRTUAL_URI}, "position": {"line": line, "character": col}}
         })
-        resp = self._recv(timeout=timeout)
-        labels = []
-        if resp and "result" in resp and resp["result"]:
-            items = resp["result"]
-            if isinstance(items, list):
-                labels = [i.get("label", "") for i in items]
-            elif isinstance(items, dict) and "items" in items:
-                labels = [i.get("label", "") for i in items["items"]]
-        return labels
+        return self._recv(timeout=timeout)
 
-    def hover(self, uri, line, col, timeout=10):
+    def hover(self, source, line, col, timeout=10):
         self._send({
-            "jsonrpc": "2.0", "id": self._nextId(), "method": "textDocument/hover",
-            "params": {"textDocument": {"uri": uri}, "position": {"line": line, "character": col}}
+            "jsonrpc": "2.0", "id": 1, "method": "textDocument/didOpen",
+            "params": {"textDocument": {"uri": VIRTUAL_URI, "languageId": "lucis", "version": 1, "text": source}}
         })
-        resp = self._recv(timeout=timeout)
-        if resp and "result" in resp and resp["result"]:
-            c = resp["result"]["contents"]
-            if isinstance(c, dict):
-                return c.get("value", "")
-            elif isinstance(c, list) and len(c) > 0:
-                if isinstance(c[0], dict):
-                    return c[0].get("value", "")
-            return c if isinstance(c, str) else ""
-        return ""
+        time.sleep(0.3)
+        # Drain any diagnostic notifications
+        self._recv(timeout=2)
+        self._send({
+            "jsonrpc": "2.0", "id": 2, "method": "textDocument/hover",
+            "params": {"textDocument": {"uri": VIRTUAL_URI}, "position": {"line": line, "character": col}}
+        })
+        return self._recv(timeout=timeout)
 
     def close(self):
         try:
@@ -121,175 +107,187 @@ class LspClient:
         self.log.close()
 
 
-def check_completion(desc, labels, expect_any):
+def test_completion(description, source, line, col, expect_any=None, root_uri=None):
     global passed, failed
+    expect_any = expect_any or []
+    client = LspClient(root_uri=root_uri)
+    try:
+        resp = client.complete(source, line, col, timeout=8)
+    finally:
+        client.close()
+    labels = [i["label"] for i in resp["result"]] if resp and "result" in resp else []
     ok = all(e in labels for e in expect_any) if expect_any else True
     if ok:
-        print(f"  OK   {desc}")
+        print(f"  OK   {description}")
         passed += 1
     else:
-        print(f"  FAIL {desc}")
+        print(f"  FAIL {description}")
         missing = [e for e in expect_any if e not in labels]
         print(f"       missing: {missing}")
         print(f"       got: {labels[:30]}")
         failed += 1
 
 
-def check_hover(desc, text, expect_contains):
+def test_hover(description, source, line, col, expect_contains, root_uri=None):
     global passed, failed
-    ok = expect_contains in text
+    client = LspClient(root_uri=root_uri)
+    try:
+        resp = client.hover(source, line, col, timeout=8)
+    finally:
+        client.close()
+    raw = ""
+    if resp and "result" in resp and resp["result"]:
+        c = resp["result"]["contents"]
+        if isinstance(c, dict):
+            raw = c.get("value", "")
+        elif isinstance(c, list) and len(c) > 0:
+            raw = c[0].get("value", "") if isinstance(c[0], dict) else ""
+        else:
+            raw = str(c) if c else ""
+    ok = expect_contains in raw
     if ok:
-        print(f"  OK   {desc}")
+        print(f"  OK   {description}")
         passed += 1
     else:
-        print(f"  FAIL {desc}")
-        print(f"       expected '{expect_contains}' in '{text[:200]}'")
+        print(f"  FAIL {description}")
+        print(f"       expected '{expect_contains}' in '{raw[:200]}'")
         failed += 1
-
-
-# ── inline source helper ──────────────────────────────────────────────
-
-VIRTUAL_URI = "file:///tmp/_lsp_test.lc"
-
-def inline_completions(client, source, line, col):
-    client.openFile(VIRTUAL_URI, source)
-    return client.completions(VIRTUAL_URI, line, col)
-
-def inline_hover(client, source, line, col):
-    client.openFile(VIRTUAL_URI, source)
-    return client.hover(VIRTUAL_URI, line, col)
 
 
 def main():
     global passed, failed
     os.system("pkill -f 'lucis lsp' 2>/dev/null")
     time.sleep(0.2)
-    try:
-        os.remove(SERVER_LOG)
-    except OSError:
-        pass
+    try: os.remove(SERVER_LOG)
+    except OSError: pass
 
     # ══════════════════════════════════════════════════════════════
-    #  LOCAL TESTS (inline source, no project)
+    #  LOCAL TESTS — fresh client per test, no project
     # ══════════════════════════════════════════════════════════════
 
-    client = LspClient()
-    try:
-        print("═══ Local completions ═══")
+    print("═══ Local completions ═══")
 
-        src = ("trait Hashable { fn hash(&self) int32; }\n"
-               "trait Default { fn default() int32; }\n"
-               "struct S {}\n"
-               "impl H\n")
-        labels = inline_completions(client, src, 3, 5)
-        check_completion("local: impl| completes trait names",
-                         labels, ["Hashable", "Default"])
+    test_completion(
+        "local: impl| completes trait names",
+        "trait Hashable { fn hash(&self) int32; }\n"
+        "trait Default { fn default() int32; }\n"
+        "struct S {}\n"
+        "impl H\n",
+        3, 5, ["Hashable", "Default"])
 
-        src = ("trait Greeter { fn greet(&self) int32; }\n"
-               "Gre\n")
-        labels = inline_completions(client, src, 1, 3)
-        check_completion("local: type position completes trait name",
-                         labels, ["Greeter"])
+    test_completion(
+        "local: type position completes trait name",
+        "trait Greeter { fn greet(&self) int32; }\n"
+        "Gre\n",
+        1, 3, ["Greeter"])
 
-        src = ("trait Greeter { fn greet(&self) int32; }\n"
-               "struct Person {}\n"
-               "impl Greeter for Person {\n"
-               "    fn greet(&self) int32 { ret 42; }\n"
-               "}\n"
-               "fn main() int32 {\n"
-               "    Person p;\n"
-               "    p.gr\n"
-               "    ret 0;\n"
-               "}\n")
-        labels = inline_completions(client, src, 7, 6)
-        check_completion("local: p.gr| completes trait method 'greet'",
-                         labels, ["greet"])
+    test_completion(
+        "local: p.gr| completes trait method 'greet'",
+        "trait Greeter { fn greet(&self) int32; }\n"
+        "struct Person {}\n"
+        "impl Greeter for Person {\n"
+        "    fn greet(&self) int32 { ret 42; }\n"
+        "}\n"
+        "fn main() int32 {\n"
+        "    Person p;\n"
+        "    p.gr\n"
+        "    ret 0;\n"
+        "}\n",
+        7, 6, ["greet"])
 
-        src = ("trait A { fn foo(&self) int32; }\n"
-               "trait B { fn bar(&self) int32; }\n"
-               "struct S {}\n"
-               "impl A for S { fn foo(&self) int32 { ret 1; } }\n"
-               "impl B for S { fn bar(&self) int32 { ret 2; } }\n"
-               "fn main() int32 {\n"
-               "    S s;\n"
-               "    s.\n"
-               "    ret 0;\n"
-               "}\n")
-        labels = inline_completions(client, src, 7, 6)
-        check_completion("local: s.| completes 'foo' and 'bar'",
-                         labels, ["foo", "bar"])
+    test_completion(
+        "local: s.| completes 'foo' and 'bar'",
+        "trait A { fn foo(&self) int32; }\n"
+        "trait B { fn bar(&self) int32; }\n"
+        "struct S {}\n"
+        "impl A for S { fn foo(&self) int32 { ret 1; } }\n"
+        "impl B for S { fn bar(&self) int32 { ret 2; } }\n"
+        "fn main() int32 {\n"
+        "    S s;\n"
+        "    s.\n"
+        "    ret 0;\n"
+        "}\n",
+        7, 6, ["foo", "bar"])
 
-        print("═══ Local hover ═══")
+    print("═══ Local hover ═══")
 
-        src = ("trait Hashable {\n"
-               "    fn hash(&self) int32;\n"
-               "}\n")
-        h = inline_hover(client, src, 0, 8)
-        check_hover("local: hover on trait name 'Hashable'", h, "trait Hashable")
-        check_hover("local: hover shows method 'hash'", h, "fn hash")
+    test_hover(
+        "local: hover on trait name 'Hashable'",
+        "trait Hashable {\n"
+        "    fn hash(&self) int32;\n"
+        "}\n",
+        0, 8, "trait Hashable")
 
-        src = ("trait From<T> {\n"
-               "    fn from(T value) int32;\n"
-               "}\n")
-        h = inline_hover(client, src, 0, 8)
-        check_hover("local: hover on generic trait 'From'", h, "trait From<T>")
-        check_hover("local: hover shows 'fn from'", h, "fn from")
-    finally:
-        client.close()
+    test_hover(
+        "local: hover shows method 'hash'",
+        "trait Hashable {\n"
+        "    fn hash(&self) int32;\n"
+        "}\n",
+        0, 8, "fn hash")
+
+    test_hover(
+        "local: hover on generic trait 'From'",
+        "trait From<T> {\n"
+        "    fn from(T value) int32;\n"
+        "}\n",
+        0, 8, "trait From<T>")
+
+    test_hover(
+        "local: hover shows 'fn from'",
+        "trait From<T> {\n"
+        "    fn from(T value) int32;\n"
+        "}\n",
+        0, 8, "fn from")
 
     # ══════════════════════════════════════════════════════════════
-    #  CROSS-FILE TESTS (project with traits.lc + main.lc)
+    #  CROSS-FILE TESTS — fresh client with project rootUri
     # ══════════════════════════════════════════════════════════════
 
-    root_uri = "file://" + PROJECT_DIR
-    main_uri = "file://" + os.path.join(PROJECT_DIR, "src", "main.lc")
-    traits_uri = "file://" + os.path.join(PROJECT_DIR, "src", "traits.lc")
+    ROOT_URI = "file://" + PROJECT_DIR
 
-    client = LspClient(root_uri=root_uri)
-    for path, uri in [
-        (os.path.join(PROJECT_DIR, "src", "main.lc"), main_uri),
-        (os.path.join(PROJECT_DIR, "src", "traits.lc"), traits_uri),
-    ]:
-        with open(path) as f:
-            client.openFile(uri, f.read())
-    time.sleep(0.5)
-    for _ in range(20):
-        client._recv(timeout=0.3)
+    print("═══ Cross-file completions ═══")
 
-    try:
-        print("═══ Cross-file completions ═══")
+    test_completion(
+        "cross: impl| completes cross-file 'Hashable'",
+        "use traits::Hashable;\n"
+        "struct Val {}\n"
+        "impl Ha\n",
+        2, 5, ["Hashable"], root_uri=ROOT_URI)
 
-        # Trait name in type position — cross-file trait
-        src = ("use traits::{ Hashable, Counter };\n"
-               "struct Val {}\n"
-               "impl Co\n")
-        labels = inline_completions(client, src, 2, 5)
-        check_completion("cross: impl| completes cross-file 'Counter'",
-                         labels, ["Counter"])
+    test_completion(
+        "cross: impl| completes cross-file 'Counter'",
+        "use traits::Counter;\n"
+        "struct Val {}\n"
+        "impl Co\n",
+        2, 5, ["Counter"], root_uri=ROOT_URI)
 
-        # Trait name in type position — cross-file generic trait
-        src = ("use traits::{ From };\n"
-               "struct Val {}\n"
-               "impl Fr\n")
-        labels = inline_completions(client, src, 2, 5)
-        check_completion("cross: impl| completes cross-file 'From'",
-                         labels, ["From"])
+    test_completion(
+        "cross: impl| completes cross-file 'From' (generic)",
+        "use traits::From;\n"
+        "struct Val {}\n"
+        "impl Fr\n",
+        2, 5, ["From"], root_uri=ROOT_URI)
 
-        print("═══ Cross-file hover ═══")
+    print("═══ Cross-file hover ═══")
 
-        # Hover on cross-file trait name in impl declaration
-        src = ("use traits::{ Hashable, Counter };\n"
-               "struct Val {}\n"
-               "impl Hashable for Val {\n"
-               "    fn hash(&self) int32 { ret 42; }\n"
-               "}\n")
-        h = inline_hover(client, src, 2, 5)
-        check_hover("cross: hover on 'Hashable' in impl",
-                    h, "trait Hashable")
+    test_hover(
+        "cross: hover on 'Hashable' in impl",
+        "use traits::Hashable;\n"
+        "struct Val {}\n"
+        "impl Hashable for Val {\n"
+        "    fn hash(&self) int32 { ret 42; }\n"
+        "}\n",
+        2, 5, "trait Hashable", root_uri=ROOT_URI)
 
-    finally:
-        client.close()
-        os.system("pkill -f 'lucis lsp' 2>/dev/null")
+    test_hover(
+        "cross: hover on 'Counter' in impl",
+        "use traits::Counter;\n"
+        "struct Val {}\n"
+        "impl Counter for Val {\n"
+        "    fn count(&self) int32 { ret 0; }\n"
+        "    fn incr(&self) void {}\n"
+        "}\n",
+        2, 5, "trait Counter", root_uri=ROOT_URI)
 
     total = passed + failed
     print(f"\n{'='*50}")

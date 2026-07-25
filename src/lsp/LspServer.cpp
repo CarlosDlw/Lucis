@@ -243,7 +243,9 @@ std::string LspServer::findMainFile(const std::string& projectRoot) {
 // switches between tabs (VS Code does not re-fire didOpen for already-
 // opened documents).
 void LspServer::rebuildContext(const std::string& filePath, bool force) {
-    std::string projectRoot = ProjectContext::findProjectRoot(filePath);
+    std::string projectRoot = !rootPath_.empty()
+        ? rootPath_
+        : ProjectContext::findProjectRoot(filePath);
     if (projectRoot.empty()) return;
 
     // (Re-)discover the main file if we don't know it yet, or if this file

@@ -1083,6 +1083,48 @@ std::optional<HoverResult> HoverProvider::hoverIdent(
         return makeResult(token, md);
     }
 
+    // 14.6) Trait declaration — cross-file (project registry)
+    if (project && project->isValid()) {
+        for (auto &ns : project->registry().allModules()) {
+            auto* sym = project->registry().findSymbol(ns, name);
+            if (!sym || sym->kind != ExportedSymbol::TraitDecl) continue;
+            auto* td = dynamic_cast<LucisParser::TraitDeclContext*>(sym->decl);
+            if (!td) continue;
+            std::string md = "```lucis\ntrait " + name;
+            if (td->typeParamList()) {
+                md += "<";
+                bool fst = true;
+                for (auto* tp : td->typeParamList()->typeParam()) {
+                    if (!fst) md += ", ";
+                    auto ids = tp->IDENTIFIER();
+                    if (!ids.empty()) md += ids[0]->getText();
+                    if (tp->COLON() && ids.size() >= 2) md += ": " + ids[1]->getText();
+                    fst = false;
+                }
+                md += ">";
+            }
+            md += " {\n";
+            for (auto* m : td->traitMethod()) {
+                md += "  fn " + safeIdAt(m, 0) + "(";
+                if (m->AMPERSAND()) md += "&self";
+                auto* args = m->AMPERSAND() ? nullptr : m->paramList();
+                if (m->AMPERSAND()) {
+                    for (auto* p : m->param()) md += ", " + typeSpecToString(p->typeSpec());
+                } else if (args) {
+                    bool fst2 = true;
+                    for (auto* p : args->param()) {
+                        if (!fst2) md += ", ";
+                        md += typeSpecToString(p->typeSpec());
+                        fst2 = false;
+                    }
+                }
+                md += ") " + typeSpecToString(m->typeSpec()) + ";\n";
+            }
+            md += "}\n```\n[" + ns + "]";
+            return makeResult(token, md);
+        }
+    }
+
     // 15) Type alias
     auto* aliasDecl = findTypeAliasDecl(tree, name);
     if (aliasDecl) {
