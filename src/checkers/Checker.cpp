@@ -4417,6 +4417,15 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
             }
             return sm->returnType;
         }
+        auto* tm = findMethodInTraits(pointee, methodName);
+        if (tm && !tm->isStatic) {
+            if (argTypes.size() != tm->paramTypes.size()) {
+                error(expr, "method '" + methodName + "' expects " +
+                    std::to_string(tm->paramTypes.size()) +
+                    " arguments, got " + std::to_string(argTypes.size()));
+            }
+            return tm->returnType;
+        }
         error(expr, "struct '" + pointee->name +
                     "' has no method '" + methodName + "'");
         return nullptr;
@@ -5712,6 +5721,12 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
                         for (auto* a : argList->expression()) resolveExprType(a);
                     return sm->returnType;
                 }
+                auto* tm = findMethodInTraits(ti, methodName2);
+                if (tm && tm->isStatic) {
+                    if (auto* argList = smc->argList())
+                        for (auto* a : argList->expression()) resolveExprType(a);
+                    return tm->returnType;
+                }
                 error(expr, "type '" + nsName + "::" + typeName +
                              "' has no static method '" + methodName2 + "'");
                 return nullptr;
@@ -5916,6 +5931,16 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
 
                 auto* sm = findMethodInChain(instanceTI, methodName);
                 if (!sm || !sm->isStatic) {
+                    auto* tm = findMethodInTraits(instanceTI, methodName);
+                    if (tm && tm->isStatic) {
+                        if (argTypes.size() != tm->paramTypes.size()) {
+                            error(expr, "static method '" + structName + "::" + methodName +
+                                "' expects " + std::to_string(tm->paramTypes.size()) +
+                                " arguments, got " + std::to_string(argTypes.size()));
+                            return nullptr;
+                        }
+                        return tm->returnType;
+                    }
                     error(expr, "struct '" + instanceTI->name + "' has no static method '" + methodName + "'");
                     return nullptr;
                 }
@@ -5950,7 +5975,17 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
         }
 
         auto* sm = findMethodInChain(structType, methodName);
-        if (!sm || !sm->isStatic) {
+        if ((!sm || !sm->isStatic) && !(sm && sm->isStatic)) {
+            // Fallback: trait impl static methods
+            auto* tm = findMethodInTraits(structType, methodName);
+            if (tm && tm->isStatic) {
+                if (argTypes.size() != tm->paramTypes.size()) {
+                    error(expr, "static method '" + structName + "::" + methodName +
+                        "' expects " + std::to_string(tm->paramTypes.size()) +
+                        " arguments, got " + std::to_string(argTypes.size()));
+                }
+                return tm->returnType;
+            }
             if (auto* argList = smc->argList())
                 for (auto* argExpr : argList->expression())
                     resolveExprType(argExpr);
@@ -6135,6 +6170,12 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
             if (auto* argList = gsmc->argList())
                 for (auto* a : argList->expression()) resolveExprType(a);
             return sm->returnType;
+        }
+        auto* tm = findMethodInTraits(instanceTI, methodName);
+        if (tm && tm->isStatic) {
+            if (auto* argList = gsmc->argList())
+                for (auto* a : argList->expression()) resolveExprType(a);
+            return tm->returnType;
         }
 
         error(expr, "struct '" + mangledName + "' has no static method '" + methodName + "'");

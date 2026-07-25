@@ -1,0 +1,34 @@
+
+use std::log::println;
+use std::test::{ assertEqual };
+
+trait Math {
+    fn add(&self, int32 a, int32 b) int32;
+    fn mul(&self, int32 a) int32;
+}
+
+struct TestMath {
+    int32 base;
+}
+
+impl Math for TestMath {
+    fn add(&self, int32 a, int32 b) int32 {
+        ret self.base + a + b;
+    }
+
+    fn mul(&self, int32 a) int32 {
+        ret self.base * a;
+    }
+}
+
+fn testTraitMethods() int32 {
+    println("[Testing traits: instance methods with arguments...]");
+
+    TestMath m = TestMath { base: 10 };
+
+    assertEqual(m.add(5, 3), 18);
+    assertEqual(m.mul(4), 40);
+
+    println("[traits methods: OK]");
+    ret 0;
+}

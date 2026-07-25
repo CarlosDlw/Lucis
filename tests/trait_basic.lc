@@ -37,11 +37,9 @@ fn testTraitBasic() int32 {
 
     TestPerson p = TestPerson { id: 100, visitCount: 0 };
 
-    // Test Greeter trait
     auto g = p.greet();
     assertEqual(g, 100);
 
-    // Test Counter trait
     assertEqual(p.count(), 0);
     p.incr();
     assertEqual(p.count(), 1);

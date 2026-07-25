@@ -1,0 +1,29 @@
+
+use std::log::println;
+use std::test::{ assertEqual };
+
+trait DefaultPoint {
+    fn make(int32 x, int32 y) TestPoint;
+}
+
+struct TestPoint {
+    int32 x;
+    int32 y;
+}
+
+impl DefaultPoint for TestPoint {
+    fn make(int32 x, int32 y) TestPoint {
+        ret TestPoint { x: x, y: y };
+    }
+}
+
+fn testTraitStatic() int32 {
+    println("[Testing traits: static methods with args...]");
+
+    TestPoint p = TestPoint::make(10, 20);
+    assertEqual(p.x, 10);
+    assertEqual(p.y, 20);
+
+    println("[traits static: OK]");
+    ret 0;
+}

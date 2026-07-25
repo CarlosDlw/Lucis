@@ -14212,54 +14212,56 @@ std::any IRGen::visitStaticMethodCallExpr(
     }
 
     auto smIt = staticStructMethods_.find(structName);
-    if (smIt == staticStructMethods_.end()) {
-        std::cerr << "lucis: struct '" << structName << "' has no static methods\n";
-        return static_cast<llvm::Value*>(
-            llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
-    }
-    auto mIt = smIt->second.find(methodName);
-    if (mIt == smIt->second.end()) {
-        std::cerr << "lucis: struct '" << structName
-                  << "' has no static method '" << methodName << "'\n";
-        return static_cast<llvm::Value*>(
-            llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
-    }
-
-    auto* fn = mIt->second.fn;
-
-    // Collect arguments
-    std::vector<llvm::Value*> callArgs;
-    std::vector<LucisParser::ExpressionContext*> argExprs;
-    if (auto* argList = ctx->argList()) {
-        argExprs = argList->expression();
-        auto* fnType = fn->getFunctionType();
-        size_t paramIdx = 0;
-        for (auto* argExpr : argExprs) {
-            auto* argVal = castValue(visit(argExpr));
-            if (paramIdx < fnType->getNumParams()) {
-                auto* paramTy = fnType->getParamType(paramIdx);
-                if (argVal->getType() != paramTy) {
-                    if (argVal->getType()->isIntegerTy() && paramTy->isIntegerTy())
-                        argVal = builder_->CreateIntCast(argVal, paramTy, true);
-                    else if (argVal->getType()->isFloatingPointTy() && paramTy->isFloatingPointTy())
-                        argVal = builder_->CreateFPCast(argVal, paramTy);
-                }
+    if (smIt != staticStructMethods_.end()) {
+        auto mIt = smIt->second.find(methodName);
+        if (mIt != smIt->second.end()) {
+            auto* fn = mIt->second.fn;
+            // Collect arguments
+            std::vector<llvm::Value*> callArgs;
+            std::vector<LucisParser::ExpressionContext*> argExprs;
+            if (auto* argList = ctx->argList()) {
+                argExprs = argList->expression();
+                for (auto* argExpr : argExprs)
+                    callArgs.push_back(castValue(visit(argExpr)));
             }
-            callArgs.push_back(argVal);
-            paramIdx++;
+            auto* retTy = fn->getReturnType();
+            if (retTy->isVoidTy()) {
+                builder_->CreateCall(fn, callArgs);
+                return static_cast<llvm::Value*>(
+                    llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
+            }
+            auto* genResult = builder_->CreateCall(fn, callArgs, "static_call");
+            return static_cast<llvm::Value*>(genResult);
         }
     }
 
-    auto* retTy = fn->getReturnType();
-    if (retTy->isVoidTy()) {
-        builder_->CreateCall(fn, callArgs);
-        for (auto* e : argExprs) consumeExprIfOwnedLocal(e);
-        return static_cast<llvm::Value*>(
-            llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
+    // Trait impl static method fallback
+    const TypeInfo* structTI = typeRegistry_.lookup(structName);
+    if (structTI) {
+        for (const auto& traitName : structTI->implementedTraits) {
+            std::string fnName = mangleImplMethodName(traitName, structName, methodName);
+            auto it = loweredImplMethods_.find(fnName);
+            if (it == loweredImplMethods_.end()) continue;
+            auto* fn = it->second;
+            std::vector<llvm::Value*> callArgs;
+            if (auto* argList = ctx->argList()) {
+                for (auto* argExpr : argList->expression())
+                    callArgs.push_back(castValue(visit(argExpr)));
+            }
+            auto* retTy = fn->getReturnType();
+            if (retTy->isVoidTy()) {
+                builder_->CreateCall(fn, callArgs);
+                return static_cast<llvm::Value*>(
+                    llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
+            }
+            auto* genResult = builder_->CreateCall(fn, callArgs, "trait_static");
+            return static_cast<llvm::Value*>(genResult);
+        }
     }
-    auto* result = builder_->CreateCall(fn, callArgs, "static_call");
-    for (auto* e : argExprs) consumeExprIfOwnedLocal(e);
-    return static_cast<llvm::Value*>(result);
+
+    std::cerr << "lucis: struct '" << structName << "' has no static methods\n";
+    return static_cast<llvm::Value*>(
+        llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
 }
 
 std::any IRGen::visitTypeSpec(LucisParser::TypeSpecContext* ctx) {
@@ -20103,6 +20105,8 @@ const TypeInfo* IRGen::resolveTypeInfo(LucisParser::TypeSpecContext* ctx) {
                     visitTypeAliasDecl(static_cast<LucisParser::TypeAliasDeclContext*>(sym->decl));
                 } else if (sym->kind == ExportedSymbol::BitStruct) {
                     visitBitstructDecl(static_cast<LucisParser::BitstructDeclContext*>(sym->decl));
+                } else if (sym->kind == ExportedSymbol::TraitDecl) {
+                    visitTraitDecl(static_cast<LucisParser::TraitDeclContext*>(sym->decl));
                 }
             };
 
@@ -20144,7 +20148,8 @@ const TypeInfo* IRGen::resolveTypeInfo(LucisParser::TypeSpecContext* ctx) {
 
         // Generic template placeholders may appear transiently in IR-only paths.
         // Checker already validates user-facing unknown-type errors.
-        if (!(name.size() == 1 && std::isupper(static_cast<unsigned char>(name[0]))))
+        if (!(name.size() == 1 && std::isupper(static_cast<unsigned char>(name[0])))
+            && !traitRegistry_.lookup(name))
             std::cerr << "lucis: unknown type '" << name << "'\n";
         return typeRegistry_.lookup("int32");
     }

@@ -70,6 +70,8 @@ use tests::vec_features::testVecFeatures;
 use tests::map_features::testMapFeatures;
 use tests::set_features::testSetFeatures;
 use tests::trait_basic::testTraitBasic;
+use tests::trait_static::testTraitStatic;
+use tests::trait_methods::testTraitMethods;
 use tests::void_types::testVoidTypes;
 use tests::stdstr::testStdstr;
 use tests::stdconv::testStdConv;
@@ -152,5 +154,7 @@ fn main() int32 {
     testStdConv();
     testStdFmt();
     testTraitBasic();
+    testTraitStatic();
+    testTraitMethods();
     ret 0;
 }
