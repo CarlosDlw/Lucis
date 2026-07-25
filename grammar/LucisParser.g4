@@ -74,6 +74,8 @@ topLevelDecl
     | unionDecl
     | enumDecl
     | extendDecl
+    | traitDecl
+    | implDecl
     | externDecl
     | functionDecl
     | constDeclStmt
@@ -166,7 +168,7 @@ typeParamList
     ;
 
 typeParam
-    : IDENTIFIER (COLON IDENTIFIER)?  // T or T: constraint
+    : IDENTIFIER (COLON IDENTIFIER (PLUS IDENTIFIER)*)?  // T or T: constraint or T: A + B
     ;
 
 extendMethod
@@ -205,6 +207,28 @@ operatorName
     | DECR
     | LBRACKET RBRACKET
     | LPAREN RPAREN
+    ;
+
+// trait Hashable { fn hash(&self) uint64; }
+// trait From<T> { fn from(value: T) Self; }
+traitDecl
+    : attributeList TRAIT IDENTIFIER typeParamList? LBRACE traitMethod* RBRACE
+    ;
+
+traitMethod
+    : FN IDENTIFIER LPAREN AMPERSAND IDENTIFIER (COMMA param)* RPAREN typeSpec SEMI
+    | FN IDENTIFIER LPAREN paramList? RPAREN typeSpec SEMI
+    ;
+
+// impl Hashable for Point { fn hash(&self) uint64 { ... } }
+// impl<T: Hashable> Hashable for Vec<T> { fn hash(&self) uint64 { ... } }
+implDecl
+    : attributeList IMPL typeParamList? typeSpec FOR typeSpec LBRACE implMethod* RBRACE
+    ;
+
+implMethod
+    : FN IDENTIFIER LPAREN AMPERSAND IDENTIFIER (COMMA param)* RPAREN typeSpec block
+    | FN IDENTIFIER LPAREN paramList? RPAREN typeSpec block
     ;
 
 paramList
@@ -709,6 +733,7 @@ expression
 // Type specifiers (recursive for array types: []int32, [10]int32, [][]char)
 typeSpec
     : VOLATILE typeSpec                // Volatile qualifier: volatile int32, volatile *Uart
+    | DYN typeSpec                     // Trait object: dyn Hashable (deferred)
     | STAR typeSpec                    // Pointer type: *int32, *[]char
     | typeSpec STAR                    // Error: C-style pointer (int32*)
     | LBRACKET (INT_LIT | IDENTIFIER) RBRACKET typeSpec  // Fixed-size array: [10]int32, [SOME_CONST]float64

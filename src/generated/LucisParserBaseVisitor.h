@@ -147,6 +147,22 @@ public:
     return visitChildren(ctx);
   }
 
+  virtual std::any visitTraitDecl(LucisParser::TraitDeclContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual std::any visitTraitMethod(LucisParser::TraitMethodContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual std::any visitImplDecl(LucisParser::ImplDeclContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual std::any visitImplMethod(LucisParser::ImplMethodContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
   virtual std::any visitParamList(LucisParser::ParamListContext *ctx) override {
     return visitChildren(ctx);
   }
