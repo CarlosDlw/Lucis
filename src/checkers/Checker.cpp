@@ -1817,10 +1817,37 @@ VarInfo vi{typeRegistry_.lookup("int32"), 0, {}, true, false, nullptr};
         }
     }
 
+    // Pass 3.6: register trait declarations
+    for (auto* decl : tree->topLevelDecl()) {
+        if (auto* td = decl->traitDecl()) {
+            checkTraitDecl(td);
+        }
+    }
+
+    if (hasErrors())
+        return false;
+
+    // Pass 3.7: register impl declarations
+    for (auto* decl : tree->topLevelDecl()) {
+        if (auto* id = decl->implDecl()) {
+            checkImplDecl(id);
+        }
+    }
+
+    if (hasErrors())
+        return false;
+
     // Pass 5.5: check extend method bodies
     for (auto* decl : tree->topLevelDecl()) {
         if (auto* ext = decl->extendDecl()) {
             checkExtendMethodBodies(ext);
+        }
+    }
+
+    // Pass 5.6: check impl method bodies
+    for (auto* decl : tree->topLevelDecl()) {
+        if (auto* id = decl->implDecl()) {
+            checkImplMethodBodies(id);
         }
     }
 
@@ -7841,6 +7868,329 @@ locals_[paramName] = {pType, pDims, {}, true, true, nullptr};
     }
 }
 
+// ── Trait declaration checking ──────────────────────────────────────────────
+
+void Checker::checkTraitDecl(LucisParser::TraitDeclContext* decl)
+{
+    auto name = decl->IDENTIFIER()->getText();
+
+    if (traitRegistry_.lookup(name) || genericTraitTemplates_.count(name)) {
+        error(decl, "trait '" + name + "' already defined");
+        return;
+    }
+
+    // Handle generic trait (e.g., `trait From<T>`)
+    if (auto* tpl = decl->typeParamList()) {
+        GenericTraitTemplate tmpl;
+        for (auto* tp : tpl->typeParam())
+            tmpl.typeParams.push_back(tp->IDENTIFIER(0)->getText());
+        tmpl.decl = decl;
+        genericTraitTemplates_[name] = std::move(tmpl);
+        syncToSemanticDB_GenericTrait(name, tmpl.typeParams, decl);
+        return;
+    }
+
+    TraitInfo ti;
+    ti.name = name;
+    ti.modulePath = currentModulePath_;
+    ti.decl = decl;
+
+    for (auto* method : decl->traitMethod()) {
+        TraitMethodInfo mi;
+        mi.name = method->IDENTIFIER(0)->getText();
+        mi.hasSelfReceiver = (method->AMPERSAND() != nullptr);
+        mi.isStatic = !mi.hasSelfReceiver;
+
+        unsigned retDims = 0;
+        mi.returnType = resolveTypeSpec(method->typeSpec(), retDims);
+
+        if (mi.isStatic) {
+            if (auto* pl = method->paramList()) {
+                for (auto* p : pl->param()) {
+                    unsigned dims = 0;
+                    mi.paramTypes.push_back(resolveTypeSpec(p->typeSpec(), dims));
+                }
+            }
+        } else {
+            for (auto* p : method->param()) {
+                unsigned dims = 0;
+                mi.paramTypes.push_back(resolveTypeSpec(p->typeSpec(), dims));
+            }
+        }
+
+        ti.methods.push_back(std::move(mi));
+    }
+
+    traitRegistry_.registerTrait(std::move(ti));
+    syncToSemanticDB_Trait(name, decl);
+}
+
+// ── Impl declaration checking ────────────────────────────────────────────────
+
+void Checker::checkImplDecl(LucisParser::ImplDeclContext* decl)
+{
+    // If generic impl, store as template
+    if (auto* tpl = decl->typeParamList()) {
+        GenericImplTemplate tmpl;
+        for (auto* tp : tpl->typeParam()) {
+            tmpl.typeParams.push_back(tp->IDENTIFIER(0)->getText());
+            if (tp->COLON()) {
+                // Extract constraint names (e.g. T: Hashable + Comparable)
+                for (size_t i = 1; i < tp->IDENTIFIER().size(); ++i)
+                    tmpl.typeParamConstraints.push_back(tp->IDENTIFIER()[i]->getText());
+            }
+        }
+        tmpl.decl = decl;
+        // Key by the implementing type base name
+        auto implTypeName = decl->typeSpec(1)->getText();
+        genericImplTemplates_[implTypeName] = std::move(tmpl);
+
+        std::vector<std::string> savedParams;
+        for (const auto& tp : tmpl.typeParams) savedParams.push_back(tp);
+        syncToSemanticDB_GenericImpl(implTypeName, savedParams, decl);
+        return;
+    }
+
+    // Step 1: resolve trait type spec
+    unsigned traitDims = 0;
+    const TypeInfo* traitTI = resolveTypeSpec(decl->typeSpec(0), traitDims);
+    if (!traitTI) {
+        error(decl, "unknown trait type in impl declaration");
+        return;
+    }
+
+    // Look up the trait definition
+    const TraitInfo* trait = traitRegistry_.lookup(traitTI->name);
+    if (!trait) {
+        error(decl, "'" + traitTI->name + "' is not a trait");
+        return;
+    }
+
+    // Step 2: resolve the implementing type
+    unsigned implDims = 0;
+    const TypeInfo* implTI = resolveTypeSpec(decl->typeSpec(1), implDims);
+    if (!implTI) {
+        error(decl, "unknown type in impl declaration");
+        return;
+    }
+
+    // Validate impl type is a struct/union/enum
+    if (implTI->kind != TypeKind::Struct &&
+        implTI->kind != TypeKind::Union &&
+        implTI->kind != TypeKind::Enum) {
+        error(decl, "cannot implement trait for primitive type '" +
+                   implTI->name + "'");
+        return;
+    }
+
+    // Step 3: verify each impl method matches a trait method
+    ImplInfo implInfo;
+    implInfo.traitName = trait->name;
+    implInfo.typeName = implTI->name;
+    implInfo.decl = decl;
+    implInfo.modulePath = currentModulePath_;
+
+    // Build Self -> impl type substitution
+    std::unordered_map<std::string, const TypeInfo*> subst;
+    subst["Self"] = implTI;
+
+    for (auto* method : decl->implMethod()) {
+        auto methodName = method->IDENTIFIER(0)->getText();
+
+        // Find matching trait method
+        const TraitMethodInfo* traitMethod = nullptr;
+        for (auto& tm : trait->methods) {
+            if (tm.name == methodName) {
+                traitMethod = &tm;
+                break;
+            }
+        }
+
+        if (!traitMethod) {
+            error(method, "method '" + methodName + "' not found in trait '" +
+                          trait->name + "'");
+            continue;
+        }
+
+        // Verify static/instance consistency
+        bool isStatic = (method->AMPERSAND() == nullptr);
+        if (isStatic != traitMethod->isStatic) {
+            error(method, "method '" + methodName + "' should be " +
+                          (traitMethod->isStatic ? "static" : "instance") +
+                          " to match trait '" + trait->name + "'");
+            continue;
+        }
+
+        // Register the impl method info (body checked in later pass)
+        TraitMethodInfo implMethod;
+        implMethod.name = methodName;
+        implMethod.isStatic = isStatic;
+        implMethod.hasSelfReceiver = !isStatic;
+
+        unsigned retDims = 0;
+        implMethod.returnType = resolveTypeSpec(method->typeSpec(), retDims);
+
+        if (isStatic) {
+            if (auto* pl = method->paramList()) {
+                for (auto* p : pl->param()) {
+                    unsigned dims = 0;
+                    implMethod.paramTypes.push_back(resolveTypeSpec(p->typeSpec(), dims));
+                }
+            }
+        } else {
+            for (auto* p : method->param()) {
+                unsigned dims = 0;
+                implMethod.paramTypes.push_back(resolveTypeSpec(p->typeSpec(), dims));
+            }
+        }
+
+        implInfo.methodBodies.push_back(std::move(implMethod));
+    }
+
+    // Mark the type as implementing this trait
+    auto* mutableTI = typeRegistry_.lookupMutable(implTI->name);
+    if (mutableTI)
+        mutableTI->implementedTraits.insert(trait->name);
+
+    traitRegistry_.registerImpl(std::move(implInfo));
+    syncToSemanticDB_Impl(trait->name, implTI->name, decl);
+}
+
+// ── Impl method body checking ─────────────────────────────────────────────────
+
+void Checker::checkImplMethodBodies(LucisParser::ImplDeclContext* decl)
+{
+    // Skip generic impls — bodies checked during monomorphization
+    if (decl->typeParamList()) return;
+
+    // Resolve the impl type
+    unsigned implDims = 0;
+    const TypeInfo* implTI = resolveTypeSpec(decl->typeSpec(1), implDims);
+    if (!implTI) return;
+
+    const TypeInfo* prevImplType = currentImplType_;
+    currentImplType_ = implTI;
+
+    for (auto* method : decl->implMethod()) {
+        locals_.clear();
+        for (auto& [name, vi] : globalVars_)
+            locals_[name] = vi;
+
+        auto methodName = method->IDENTIFIER(0)->getText();
+        bool isStatic = (method->AMPERSAND() == nullptr);
+
+        // Resolve return type
+        unsigned retDims = 0;
+        auto* retType = resolveTypeSpec(method->typeSpec(), retDims);
+
+        // Set up &self for instance methods
+        if (!isStatic) {
+            auto* ptrType = getPointerType(implTI);
+            locals_["self"] = {ptrType, 0, {}, true, true, nullptr};
+        }
+
+        // Register params as locals
+        if (isStatic) {
+            if (auto* pl = method->paramList()) {
+                for (auto* p : pl->param()) {
+                    if (p->SPREAD()) continue;
+                    auto paramName = p->IDENTIFIER()->getText();
+                    unsigned dims = 0;
+                    auto* pType = resolveTypeSpec(p->typeSpec(), dims);
+                    if (!pType) continue;
+                    if (locals_.count(paramName)) {
+                        error(p, "duplicate parameter name '" + paramName + "'");
+                        continue;
+                    }
+                    locals_[paramName] = {pType, dims, {}, true, false, nullptr};
+                }
+            }
+        } else {
+            for (auto* p : method->param()) {
+                if (p->SPREAD()) continue;
+                auto paramName = p->IDENTIFIER()->getText();
+                unsigned dims = 0;
+                auto* pType = resolveTypeSpec(p->typeSpec(), dims);
+                if (!pType) continue;
+                if (locals_.count(paramName)) {
+                    error(p, "duplicate parameter name '" + paramName + "'");
+                    continue;
+                }
+                locals_[paramName] = {pType, dims, {}, true, false, nullptr};
+            }
+        }
+
+        // Check the body
+        auto* prevReturnType = currentReturnType_;
+        currentReturnType_ = retType;
+        checkBlock(method->block(), retType, nullptr);
+        currentReturnType_ = prevReturnType;
+
+        warnUnusedLocals(method);
+    }
+
+    currentImplType_ = prevImplType;
+}
+
+// ── Trait constraint resolution ──────────────────────────────────────────────
+
+const TraitInfo* Checker::resolveTraitConstraint(const std::string& name,
+                                                   antlr4::ParserRuleContext* ctx)
+{
+    if (auto* trait = traitRegistry_.lookup(name))
+        return trait;
+
+    error(ctx, "unknown constraint '" + name +
+               "': not a trait or built-in constraint");
+    return nullptr;
+}
+
+bool Checker::typeSatisfiesTraitConstraint(const TypeInfo* type,
+                                             const TraitInfo* trait,
+                                             const std::string& paramName,
+                                             antlr4::ParserRuleContext* ctx)
+{
+    if (!trait) return true;
+
+    if (trait->isBuiltin && trait->builtinValidator) {
+        if (!trait->builtinValidator(type)) {
+            error(ctx, "type '" + type->name + "' does not satisfy '" +
+                       trait->name + "' constraint for parameter '" +
+                       paramName + "'");
+            return false;
+        }
+        return true;
+    }
+
+    if (!traitRegistry_.typeSatisfiesTrait(type, trait)) {
+        error(ctx, "type '" + type->name + "' does not implement trait '" +
+                   trait->name + "' (required by parameter '" + paramName + "')");
+        return false;
+    }
+    return true;
+}
+
+const ImplInfo* Checker::findTraitImpl(const std::string& traitName,
+                                         const TypeInfo* type) const
+{
+    return traitRegistry_.findImpl(traitName, type->name);
+}
+
+const TraitMethodInfo* Checker::findTraitMethodImpl(
+    const std::string& traitName,
+    const TypeInfo* type,
+    const std::string& methodName) const
+{
+    auto* impl = findTraitImpl(traitName, type);
+    if (!impl) return nullptr;
+
+    for (auto& m : impl->methodBodies) {
+        if (m.name == methodName)
+            return &m;
+    }
+    return nullptr;
+}
+
 void Checker::registerFunctionSignature(LucisParser::FunctionDeclContext* func) {
     if (!func || func->IDENTIFIER().empty()) {
         error(func, "function must have a valid name");
@@ -11459,6 +11809,14 @@ const TypeInfo* Checker::resolveTypeParamConstraint(const std::string& constrain
     if (constraintName == "string" || constraintName == "String")
         return &stringConstraint;
 
+    // Try user-defined traits via TraitRegistry
+    if (traitRegistry_.lookup(constraintName)) {
+        static TypeInfo traitConstraint;
+        traitConstraint.name = constraintName;
+        traitConstraint.kind = TypeKind::Trait;
+        return &traitConstraint;
+    }
+
     auto* ti = typeRegistry_.lookup(constraintName);
     if (!ti) {
         error(ctx, "unknown type constraint '" + constraintName + "'");
@@ -11515,6 +11873,15 @@ bool Checker::satisfiesConstraint(const TypeInfo* typeArg,
                        typeArg->name + "'");
             return false;
         }
+    } else if (constraint->kind == TypeKind::Trait) {
+        // Delegate to TraitRegistry for user-defined and built-in traits
+        auto* trait = traitRegistry_.lookup(constraint->name);
+        if (!trait) {
+            error(ctx, "unknown trait constraint '" + constraint->name + "'");
+            return false;
+        }
+        if (!typeSatisfiesTraitConstraint(typeArg, trait, paramName, ctx))
+            return false;
     }
     return true;
 }
@@ -12639,4 +13006,153 @@ void Checker::syncToSemanticDB_GenericInstantiation(
         decl->name = mangledName;
         semanticDB_->registerType(std::move(decl));
     }
+}
+
+// ── Trait / Impl SemanticDB synchronization ──────────────────────────────────
+
+void Checker::syncToSemanticDB_GenericTrait(const std::string& name,
+    const std::vector<std::string>& typeParams,
+    LucisParser::TraitDeclContext* decl) {
+    if (!semanticDB_) return;
+    auto tmpl = std::make_unique<semantic::GenericTemplateDecl>();
+    tmpl->name       = name;
+    tmpl->modulePath = currentModulePath_;
+    tmpl->loc        = toSemanticLoc(decl);
+    tmpl->typeParams = typeParams;
+    auto pattern = std::make_unique<semantic::TraitDecl>();
+    pattern->name = name;
+    pattern->genericParams = typeParams;
+    tmpl->pattern = std::move(pattern);
+    semanticDB_->registerGeneric(std::move(tmpl));
+}
+
+void Checker::syncToSemanticDB_GenericImpl(const std::string& name,
+    const std::vector<std::string>& typeParams,
+    LucisParser::ImplDeclContext* decl) {
+    if (!semanticDB_) return;
+    auto tmpl = std::make_unique<semantic::GenericTemplateDecl>();
+    tmpl->name       = name;
+    tmpl->modulePath = currentModulePath_;
+    tmpl->loc        = toSemanticLoc(decl);
+    tmpl->typeParams = typeParams;
+    auto pattern = std::make_unique<semantic::ImplDecl>();
+    pattern->name = name;
+    pattern->implTypeParams = typeParams;
+    tmpl->pattern = std::move(pattern);
+    semanticDB_->registerGeneric(std::move(tmpl));
+}
+
+void Checker::syncToSemanticDB_Trait(const std::string& name,
+                                      LucisParser::TraitDeclContext* decl) {
+    if (!semanticDB_) return;
+    auto td = std::make_unique<semantic::TraitDecl>();
+    td->name       = name;
+    td->modulePath = currentModulePath_;
+    td->loc        = toSemanticLoc(decl);
+
+    // Convert trait methods to semantic MethodInfo
+    for (auto* m : decl->traitMethod()) {
+        semantic::MethodInfo mi;
+        mi.name     = m->IDENTIFIER(0)->getText();
+        mi.isStatic = (m->AMPERSAND() == nullptr);
+
+        unsigned retDims = 0;
+        auto* retType = resolveTypeSpec(m->typeSpec(), retDims);
+        if (retType) {
+            auto decl = typeInfoToDecl(*retType);
+            if (decl)
+                mi.returnType = decl.get();
+        }
+
+        if (mi.isStatic) {
+            if (auto* pl = m->paramList()) {
+                for (auto* p : pl->param()) {
+                    if (p->SPREAD()) continue;
+                    semantic::ParamInfo pi;
+                    pi.name = p->IDENTIFIER()->getText();
+                    unsigned dims = 0;
+                    auto* pt = resolveTypeSpec(p->typeSpec(), dims);
+                    if (pt) {
+                        auto pdecl = typeInfoToDecl(*pt);
+                        if (pdecl) pi.type = pdecl.get();
+                    }
+                    mi.params.push_back(pi);
+                }
+            }
+        } else {
+            for (auto* p : m->param()) {
+                if (p->SPREAD()) continue;
+                semantic::ParamInfo pi;
+                pi.name = p->IDENTIFIER()->getText();
+                unsigned dims = 0;
+                auto* pt = resolveTypeSpec(p->typeSpec(), dims);
+                if (pt) {
+                    auto pdecl = typeInfoToDecl(*pt);
+                    if (pdecl) pi.type = pdecl.get();
+                }
+                mi.params.push_back(pi);
+            }
+        }
+        td->methods.push_back(std::move(mi));
+    }
+
+    semanticDB_->registerTrait(std::move(td));
+}
+
+void Checker::syncToSemanticDB_Impl(const std::string& traitName,
+                                     const std::string& typeName,
+                                     LucisParser::ImplDeclContext* decl) {
+    if (!semanticDB_) return;
+    auto id = std::make_unique<semantic::ImplDecl>();
+    id->name       = traitName + ":" + typeName;
+    id->traitName  = traitName;
+    id->typeName   = typeName;
+    id->modulePath = currentModulePath_;
+    id->loc        = toSemanticLoc(decl);
+
+    for (auto* m : decl->implMethod()) {
+        semantic::MethodInfo mi;
+        mi.name     = m->IDENTIFIER(0)->getText();
+        mi.isStatic = (m->AMPERSAND() == nullptr);
+
+        unsigned retDims = 0;
+        auto* retType = resolveTypeSpec(m->typeSpec(), retDims);
+        if (retType) {
+            auto rdecl = typeInfoToDecl(*retType);
+            if (rdecl) mi.returnType = rdecl.get();
+        }
+
+        if (mi.isStatic) {
+            if (auto* pl = m->paramList()) {
+                for (auto* p : pl->param()) {
+                    if (p->SPREAD()) continue;
+                    semantic::ParamInfo pi;
+                    pi.name = p->IDENTIFIER()->getText();
+                    unsigned dims = 0;
+                    auto* pt = resolveTypeSpec(p->typeSpec(), dims);
+                    if (pt) {
+                        auto pdecl = typeInfoToDecl(*pt);
+                        if (pdecl) pi.type = pdecl.get();
+                    }
+                    mi.params.push_back(pi);
+                }
+            }
+        } else {
+            for (auto* p : m->param()) {
+                if (p->SPREAD()) continue;
+                semantic::ParamInfo pi;
+                pi.name = p->IDENTIFIER()->getText();
+                unsigned dims = 0;
+                auto* pt = resolveTypeSpec(p->typeSpec(), dims);
+                if (pt) {
+                    auto pdecl = typeInfoToDecl(*pt);
+                    if (pdecl) pi.type = pdecl.get();
+                }
+                mi.params.push_back(pi);
+            }
+        }
+        id->methods.push_back(std::move(mi));
+    }
+
+    semanticDB_->registerImpl(std::move(id));
 }

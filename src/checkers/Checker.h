@@ -8,6 +8,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include "generated/LucisParser.h"
+#include "types/TraitRegistry.h"
 #include "imports/ImportResolver.h"
 #include "types/TypeRegistry.h"
 #include "types/MethodRegistry.h"
@@ -73,6 +74,7 @@ private:
     IntrinsicRegistry        intrinsicRegistry_;
     ComptimeRegistry         comptimeRegistry_;
     AttributeRegistry        attrRegistry_;
+    TraitRegistry            traitRegistry_;
 
     // Variable info tracked per-function scope
     struct VarInfo {
@@ -124,6 +126,7 @@ private:
 
     unsigned scopeDepth_ = 0;     // current block nesting depth
     const TypeInfo* currentReturnType_ = nullptr;
+    const TypeInfo* currentImplType_ = nullptr;  // current impl's target type
     unsigned unwrapCatchItDepth_ = 0;
     unsigned recursionDepth_ = 0;  // recursion depth guard (max 1000 levels)
     static constexpr unsigned MAX_RECURSION_DEPTH = 1000;
@@ -387,6 +390,12 @@ private:
     bool isKnownFunction(const std::string& name) const;
     bool isKnownType(const std::string& name) const;
 
+    // ── Trait / impl checking ────────────────────────────────────────
+
+    void checkTraitDecl(LucisParser::TraitDeclContext* decl);
+    void checkImplDecl(LucisParser::ImplDeclContext* decl);
+    void checkImplMethodBodies(LucisParser::ImplDeclContext* decl);
+
     // ── User-defined generics (monomorphization) ─────────────────────
     struct GenericStructTemplate {
         std::vector<std::string>      typeParams;  // e.g. {"T"} or {"K", "V"}
@@ -413,6 +422,20 @@ private:
     std::unordered_map<std::string, GenericEnumTemplate>    genericEnumTemplates_;
     std::unordered_map<std::string, GenericFuncTemplate>    genericFuncTemplates_;
     std::unordered_map<std::string, GenericExtendTemplate>  genericExtendTemplates_;
+
+    struct GenericTraitTemplate {
+        std::vector<std::string>       typeParams;
+        LucisParser::TraitDeclContext* decl;
+    };
+    std::unordered_map<std::string, GenericTraitTemplate> genericTraitTemplates_;
+
+    struct GenericImplTemplate {
+        std::vector<std::string>       typeParams;
+        std::vector<std::string>       typeParamConstraints;
+        LucisParser::ImplDeclContext*  decl;
+    };
+    std::unordered_map<std::string, GenericImplTemplate> genericImplTemplates_;
+
     // Tracks instantiations in progress for cycle detection
     std::unordered_set<std::string> instantiatingGenerics_;
     // Active type-parameter substitution while checking an instantiated generic body.
@@ -484,6 +507,25 @@ private:
                              const std::string& paramName,
                              antlr4::ParserRuleContext* ctx);
 
+    // Resolve a constraint name to a trait (user-defined or built-in).
+    const TraitInfo* resolveTraitConstraint(const std::string& name,
+                                            antlr4::ParserRuleContext* ctx);
+
+    // Check if a concrete type satisfies a trait constraint.
+    bool typeSatisfiesTraitConstraint(const TypeInfo* type,
+                                      const TraitInfo* trait,
+                                      const std::string& paramName,
+                                      antlr4::ParserRuleContext* ctx);
+
+    // Look up the impl for a trait+type combination.
+    const ImplInfo* findTraitImpl(const std::string& traitName,
+                                  const TypeInfo* type) const;
+
+    // Find a specific trait method implementation for a type.
+    const TraitMethodInfo* findTraitMethodImpl(const std::string& traitName,
+                                                const TypeInfo* type,
+                                                const std::string& methodName) const;
+
     // ── Phase 1: SemanticDB parallel population helpers ──────────────
 
     // Initialize builtins (primitives, extended types) in the SemanticDB.
@@ -535,6 +577,17 @@ private:
     void syncToSemanticDB_GenericExtend(const std::string& name,
                                         const std::vector<std::string>& typeParams,
                                         LucisParser::ExtendDeclContext* decl);
+    void syncToSemanticDB_GenericTrait(const std::string& name,
+                                       const std::vector<std::string>& typeParams,
+                                       LucisParser::TraitDeclContext* decl);
+    void syncToSemanticDB_GenericImpl(const std::string& name,
+                                       const std::vector<std::string>& typeParams,
+                                       LucisParser::ImplDeclContext* decl);
+    void syncToSemanticDB_Trait(const std::string& name,
+                                LucisParser::TraitDeclContext* decl);
+    void syncToSemanticDB_Impl(const std::string& traitName,
+                               const std::string& typeName,
+                               LucisParser::ImplDeclContext* decl);
     void syncToSemanticDB_GenericInstantiation(const std::string& mangledName,
                                                const TypeInfo& concreteTI);
 
