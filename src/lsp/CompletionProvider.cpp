@@ -5288,6 +5288,10 @@ void CompletionProvider::addUseCompletions(std::vector<CompletionItem> &items,
         ci.kind = CompletionKind::Constant;
         ci.detail = "constant";
         break;
+      case ExportedSymbol::TraitDecl:
+        ci.kind = CompletionKind::Interface;
+        ci.detail = "trait " + sym->name;
+        break;
       case ExportedSymbol::ExtendBlock:
         continue;
       }
