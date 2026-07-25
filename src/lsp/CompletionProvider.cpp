@@ -3077,6 +3077,28 @@ CompletionProvider::analyzeContext(const std::string &source, size_t line,
       req.prefix.clear();
       return req;
     }
+
+    // After "impl Trait for " — type name position
+    if (trimmed.size() >= 4 && trimmed.find("impl ") != std::string::npos &&
+        trimmed.rfind("for ") == trimmed.size() - 4) {
+      req.context = CompletionContext::TypePosition;
+      req.prefix.clear();
+      return req;
+    }
+
+    // After ":" in type param constraint: fn foo<T: |
+    auto colonPos = trimmed.rfind(": ");
+    if (colonPos != std::string::npos && colonPos > 0) {
+      // Check if this ":" is inside angle brackets <T: |
+      auto beforeColon = trimmed.substr(0, colonPos);
+      auto lastLt = beforeColon.rfind('<');
+      auto lastGt = beforeColon.rfind('>');
+      if (lastLt != std::string::npos && (lastGt == std::string::npos || lastLt > lastGt)) {
+        req.context = CompletionContext::TypePosition;
+        req.prefix.clear();
+        return req;
+      }
+    }
   }
 
   // Detect match body context: scan source backwards from cursor for "match <var> {"
