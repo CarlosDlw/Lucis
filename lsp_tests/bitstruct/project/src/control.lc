@@ -1,0 +1,14 @@
+bitstruct Control : uint16 {
+    enable  : 1;
+    counter : 10;
+}
+
+struct Atc {
+    Control reg;
+}
+
+extend Atc {
+    fn test(&self) int32 {
+        return 10;
+    }
+}

@@ -1201,6 +1201,19 @@ bool Checker::check(LucisParser::ProgramContext* tree) {
                     semanticDB_->forwardDeclare(sym->name, semantic::DeclKind::Union,
                                                 sym->modulePath,
                                                 toSemanticLoc(sym->decl));
+            } else if (sym->kind == ExportedSymbol::BitStruct &&
+                       !typeRegistry_.lookup(sym->name)) {
+                // Check if the bitstruct is generic (has type parameters)
+                if (auto* bd = dynamic_cast<LucisParser::BitstructDeclContext*>(sym->decl)) {
+                    if (bd->typeParamList())
+                        continue;
+                }
+                TypeInfo skeleton;
+                skeleton.name = sym->name;
+                skeleton.kind = TypeKind::BitStruct;
+                skeleton.bitWidth = 0;
+                skeleton.isSigned = false;
+                typeRegistry_.registerType(std::move(skeleton));
             }
         }
         for (auto& [symName, ns] : userImports_) {
@@ -1231,6 +1244,18 @@ bool Checker::check(LucisParser::ProgramContext* tree) {
                 TypeInfo skeleton;
                 skeleton.name = sym->name;
                 skeleton.kind = TypeKind::Union;
+                skeleton.bitWidth = 0;
+                skeleton.isSigned = false;
+                typeRegistry_.registerType(std::move(skeleton));
+            } else if (sym->kind == ExportedSymbol::BitStruct &&
+                       !typeRegistry_.lookup(sym->name)) {
+                if (auto* bd = dynamic_cast<LucisParser::BitstructDeclContext*>(sym->decl)) {
+                    if (bd->typeParamList())
+                        continue;
+                }
+                TypeInfo skeleton;
+                skeleton.name = sym->name;
+                skeleton.kind = TypeKind::BitStruct;
                 skeleton.bitWidth = 0;
                 skeleton.isSigned = false;
                 typeRegistry_.registerType(std::move(skeleton));
@@ -1279,6 +1304,9 @@ bool Checker::check(LucisParser::ProgramContext* tree) {
                     needsProc = true;
                 if (existingTI && existingTI->kind == TypeKind::Enum &&
                     existingTI->enumVariantInfos.empty())
+                    needsProc = true;
+                if (existingTI && existingTI->kind == TypeKind::BitStruct &&
+                    existingTI->bitFields.empty())
                     needsProc = true;
 
                 if (depSym->kind == ExportedSymbol::Enum &&
@@ -1338,6 +1366,14 @@ bool Checker::check(LucisParser::ProgramContext* tree) {
                     for (auto* field : ud->unionField())
                         self(self, field->typeSpec(), ns);
                     checkUnionDecl(ud);
+                    return;
+                }
+                if (depSym->kind == ExportedSymbol::BitStruct &&
+                    needsProc &&
+                    !genericStructTemplates_.count(baseName)) {
+                    if (!seenDeps.insert(baseName).second) return;
+                    auto* bd = static_cast<LucisParser::BitstructDeclContext*>(depSym->decl);
+                    checkBitStructDecl(bd);
                     return;
                 }
                 if (depSym->kind == ExportedSymbol::TypeAlias && needsProc) {
@@ -4658,6 +4694,11 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
         // Resolve return type
         if (desc->returnType == "_self")
             return receiverType;
+        if (desc->returnType == "_backing") {
+            if (receiverType->kind == TypeKind::BitStruct && receiverType->backingType)
+                return receiverType->backingType;
+            return receiverType;
+        }
         if (desc->returnType == "_elem") {
             if (receiverType->kind == TypeKind::Extended && receiverType->elementType)
                 return receiverType->elementType;

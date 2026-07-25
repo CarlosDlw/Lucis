@@ -247,6 +247,7 @@ private:
     void checkStructDecl(LucisParser::StructDeclContext* decl);
     void checkUnionDecl(LucisParser::UnionDeclContext* decl);
     void checkEnumDecl(LucisParser::EnumDeclContext* decl);
+    void checkBitStructDecl(LucisParser::BitstructDeclContext* decl);
     void checkExtendDecl(LucisParser::ExtendDeclContext* decl);
     void checkExtendMethodBodies(LucisParser::ExtendDeclContext* decl);
     void checkExternDecl(LucisParser::ExternDeclContext* decl);

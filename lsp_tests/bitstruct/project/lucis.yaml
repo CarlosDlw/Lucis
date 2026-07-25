@@ -1,0 +1,45 @@
+name: bitstruct_test
+version: 0.0.1
+binary: bitstruct_test
+out_dir: build
+source:
+  - src/
+build:
+  target: ""
+  opt_level: O2
+  no_std: false
+  lto: false
+  static: false
+  shared: false
+  fpic: true
+  code_model: ""
+  include_paths: []
+  defines: {}
+inputs:
+  objects: []
+  static_libs: []
+  shared_libs: []
+linker:
+  program: ""
+  script: ""
+  entry: ""
+  libs: []
+  lib_paths: []
+  flags: []
+  args: []
+output:
+  path: ""
+  strip: false
+  emit_bin: false
+  emit_llvm: false
+  emit_asm: false
+  emit_bc: false
+  emit_obj: false
+scripts:
+  env: {}
+  pre: []
+  pos: []
+run:
+  opt_level: O0
+  lto: false
+  args: []

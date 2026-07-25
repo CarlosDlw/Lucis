@@ -306,7 +306,8 @@ private:
     // Find struct/enum/extend declarations by name.
     LucisParser::StructDeclContext*
     findStructDecl(LucisParser::ProgramContext* tree, const std::string& name);
-
+    LucisParser::BitstructDeclContext*
+    findBitstructDecl(LucisParser::ProgramContext* tree, const std::string& name);
     LucisParser::UnionDeclContext*
     findUnionDecl(LucisParser::ProgramContext* tree, const std::string& name);
 
@@ -342,4 +343,8 @@ private:
 
     // Build a stable key from include declarations for C binding cache.
     static std::string buildIncludeFingerprint(LucisParser::ProgramContext* tree);
+
+public:
+    // Resolve the actual backing type of a bitstruct, handling auto → uint{8,16,32,64}.
+    static std::string bitstructBackingType(LucisParser::BitstructDeclContext* bd);
 };

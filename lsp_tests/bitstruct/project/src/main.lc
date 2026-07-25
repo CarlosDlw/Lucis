@@ -1,0 +1,23 @@
+use stdio::printf;
+use control::{ Atc, Control };
+
+fn main() int32 {
+    Atc atc = Atc {};
+
+    atc.reg.counter = 42;
+    atc.reg.enable = 1;
+
+    printf("raw={d}\n", atc.reg.raw());
+
+    atc.reg.clearAll();
+    printf("after clearAll raw={d}\n", atc.reg.raw());
+
+    auto raw = atc.reg.raw();
+    auto x = atc.test();
+
+    atc.reg.counter = 7;
+    atc.reg.setAll();
+    printf("after setAll raw={d}\n", atc.reg.raw());
+
+    ret 0;
+}

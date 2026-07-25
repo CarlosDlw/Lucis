@@ -21,3 +21,4 @@ bugs.md
 *.log
 lsp_stderr.log
 
+__pycache__/

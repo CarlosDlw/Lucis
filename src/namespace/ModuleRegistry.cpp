@@ -63,6 +63,7 @@ void ModuleRegistry::registerFile(const std::string& modulePath,
         auto getAttrs = [](LucisParser::TopLevelDeclContext* tl) -> LucisParser::AttributeListContext* {
             if (auto* f = tl->functionDecl())     return f->attributeList();
             if (auto* s = tl->structDecl())        return s->attributeList();
+            if (auto* b = tl->bitstructDecl())     return b->attributeList();
             if (auto* u = tl->unionDecl())         return u->attributeList();
             if (auto* e = tl->enumDecl())          return e->attributeList();
             if (auto* t = tl->typeAliasDecl())     return t->attributeList();
@@ -122,6 +123,19 @@ void ModuleRegistry::registerFile(const std::string& modulePath,
             sym.line       = static_cast<unsigned>(enumDecl->getStart()->getLine());
             sym.column     = static_cast<unsigned>(enumDecl->getStart()->getCharPositionInLine());
             sym.decl       = enumDecl;
+            sym.treeAnchor = anchor;
+            symbols.push_back(std::move(sym));
+        }
+        else if (auto* bitstructDecl = topLevel->bitstructDecl()) {
+            ExportedSymbol sym;
+            sym.kind       = ExportedSymbol::BitStruct;
+            sym.name       = bitstructDecl->IDENTIFIER()->getText();
+            sym.modulePath = modulePath;
+            sym.sourceFile = filePath;
+            sym.isStdlib   = isStdlib;
+            sym.line       = static_cast<unsigned>(bitstructDecl->getStart()->getLine());
+            sym.column     = static_cast<unsigned>(bitstructDecl->getStart()->getCharPositionInLine());
+            sym.decl       = bitstructDecl;
             sym.treeAnchor = anchor;
             symbols.push_back(std::move(sym));
         }

@@ -19591,6 +19591,8 @@ const TypeInfo* IRGen::resolveTypeInfo(LucisParser::TypeSpecContext* ctx) {
                     visitStructDecl(static_cast<LucisParser::StructDeclContext*>(sym->decl));
                 } else if (sym->kind == ExportedSymbol::Union) {
                     visitUnionDecl(static_cast<LucisParser::UnionDeclContext*>(sym->decl));
+                } else if (sym->kind == ExportedSymbol::BitStruct) {
+                    visitBitstructDecl(static_cast<LucisParser::BitstructDeclContext*>(sym->decl));
                 } else {
                     return nullptr;
                 }
@@ -19742,6 +19744,8 @@ const TypeInfo* IRGen::resolveTypeInfo(LucisParser::TypeSpecContext* ctx) {
                     visitUnionDecl(static_cast<LucisParser::UnionDeclContext*>(sym->decl));
                 } else if (sym->kind == ExportedSymbol::TypeAlias) {
                     visitTypeAliasDecl(static_cast<LucisParser::TypeAliasDeclContext*>(sym->decl));
+                } else if (sym->kind == ExportedSymbol::BitStruct) {
+                    visitBitstructDecl(static_cast<LucisParser::BitstructDeclContext*>(sym->decl));
                 }
             };
 
@@ -25728,6 +25732,8 @@ IRGen::visitMethodCallExpr(LucisParser::MethodCallExprContext* ctx) {
             auto it = locals_.find(receiverVarName);
             if (it != locals_.end())
                 targetPtr = it->second.alloca;
+        } else {
+            targetPtr = resolveMethodReceiverAddress(ctx->expression());
         }
         if (targetPtr) {
             auto* backTy = receiverTI->backingType->toLLVMType(*context_, module_->getDataLayout());

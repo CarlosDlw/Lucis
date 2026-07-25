@@ -66,6 +66,22 @@ static std::string safeText(antlr4::ParserRuleContext *ctx) {
     return ctx ? ctx->getText() : "";
 }
 
+static std::string bitstructBackingType(LucisParser::BitstructDeclContext *bd) {
+    if (!bd || !bd->typeSpec()) return "";
+    std::string raw = safeText(bd->typeSpec());
+    if (raw != "auto") return raw;
+    unsigned totalBits = 0;
+    for (auto *f : bd->bitstructField()) {
+        auto ints = f->INT_LIT();
+        if (!ints.empty())
+            totalBits += std::stoul(ints.back()->getText());
+    }
+    if (totalBits <= 8)  return "uint8";
+    if (totalBits <= 16) return "uint16";
+    if (totalBits <= 32) return "uint32";
+    return "uint64";
+}
+
 // Check if a type name (possibly generic like "ArrayList<int32>") has auto-drop.
 static bool typeHasAutoDrop(const std::string& typeName,
                             const std::unordered_set<std::string>& dropSet) {
@@ -900,6 +916,14 @@ std::optional<HoverResult> HoverProvider::hoverIdent(
                         return makeResult(token, md);
                     }
                     break;
+                case ExportedSymbol::BitStruct:
+                    if (auto* bd = dynamic_cast<LucisParser::BitstructDeclContext*>(sym->decl)) {
+                        std::string crossMd = formatBitStructDecl(bd);
+                        size_t declLine = bd->getStart()->getLine() - 1;
+                        crossMd = appendDocToHover(crossMd, crossDocs, declLine);
+                        return makeResult(token, crossMd);
+                    }
+                    break;
             }
         }
     }
@@ -1235,6 +1259,14 @@ std::optional<HoverResult> HoverProvider::hoverImportedSymbol(
                             typeName = typeSpecToString(cd->typeSpec());
                         std::string md = "```lucis\nconst " + symbolName + ": " + typeName + "\n```";
                         size_t declLine = cd->getStart()->getLine() - 1;
+                        md = appendDocToHover(md, crossDocs, declLine);
+                        return makeResult(token, md);
+                    }
+                    break;
+                case ExportedSymbol::BitStruct:
+                    if (auto* bd = dynamic_cast<LucisParser::BitstructDeclContext*>(sym->decl)) {
+                        std::string md = formatBitStructDecl(bd);
+                        size_t declLine = bd->getStart()->getLine() - 1;
                         md = appendDocToHover(md, crossDocs, declLine);
                         return makeResult(token, md);
                     }
@@ -2815,6 +2847,49 @@ std::optional<HoverResult> HoverProvider::walkStmtForHover(
                         return f.typeInfo->name;
                 }
             }
+            // Cross-file struct (project registry)
+            if (!lookupType.empty() && project && project->isValid()) {
+                for (auto& ns : project->registry().allModules()) {
+                    auto* sym = project->registry().findSymbol(ns, lookupType);
+                    if (!sym) continue;
+                    if (sym->kind == ExportedSymbol::Struct) {
+                        if (auto* sd = dynamic_cast<LucisParser::StructDeclContext*>(sym->decl)) {
+                            for (auto* f : sd->structField()) {
+                                if (safeText(f->IDENTIFIER()) == fieldName)
+                                    return typeSpecToString(f->typeSpec());
+                            }
+                        }
+                    } else if (sym->kind == ExportedSymbol::Union) {
+                        if (auto* ud = dynamic_cast<LucisParser::UnionDeclContext*>(sym->decl)) {
+                            for (auto* f : ud->unionField()) {
+                                if (safeText(f->IDENTIFIER()) == fieldName)
+                                    return typeSpecToString(f->typeSpec());
+                            }
+                        }
+                    }
+                }
+            }
+            // Bitstruct field (same-file)
+            if (auto* bd = findBitStructDecl(tree, lookupType)) {
+                for (auto* f : bd->bitstructField()) {
+                    if (f->IDENTIFIER() && safeText(f->IDENTIFIER()) == fieldName)
+                        return fieldName;
+                }
+            }
+            // Bitstruct field (cross-file)
+            if (!lookupType.empty() && project && project->isValid()) {
+                for (auto& ns : project->registry().allModules()) {
+                    auto* sym = project->registry().findSymbol(ns, lookupType);
+                    if (sym && sym->kind == ExportedSymbol::BitStruct) {
+                        if (auto* bd = dynamic_cast<LucisParser::BitstructDeclContext*>(sym->decl)) {
+                            for (auto* f : bd->bitstructField()) {
+                                if (f->IDENTIFIER() && safeText(f->IDENTIFIER()) == fieldName)
+                                    return fieldName;
+                            }
+                        }
+                    }
+                }
+            }
             return "";
         };
 
@@ -3919,6 +3994,12 @@ std::optional<HoverResult> HoverProvider::hoverTypeName(
                                    + typeSpecToString(tac->typeSpec()) + "\n```";
                     return makeResult(token, md);
                 }
+            } else if (sym->kind == ExportedSymbol::BitStruct) {
+                if (auto* bdc = dynamic_cast<LucisParser::BitstructDeclContext*>(sym->decl)) {
+                    auto md = formatBitStructDecl(bdc);
+                    md = appendDocToHover(md, docCommentsForFile(sym->sourceFile), sym->line - 1);
+                    return makeResult(token, md);
+                }
             }
         }
     }
@@ -4109,6 +4190,44 @@ std::optional<HoverResult> HoverProvider::hoverMethodCall(
             }
             ss << ")\n```";
             return makeResult(ctx->IDENTIFIER()->getSymbol(), ss.str());
+        }
+    }
+
+    // 3c.5) Bitstruct methods — check AST and project registry
+    if (!hasPrimitiveKind && !receiverTypeName.empty()) {
+        auto findBitstructDecl = [&](const std::string& name) -> LucisParser::BitstructDeclContext* {
+            for (auto* tld : tree->topLevelDecl())
+                if (auto* bd = tld->bitstructDecl())
+                    if (safeText(bd->IDENTIFIER()) == name)
+                        return bd;
+            if (project && project->isValid()) {
+                for (auto& ns : project->registry().allModules()) {
+                    auto* sym = project->registry().findSymbol(ns, name);
+                    if (sym && sym->kind == ExportedSymbol::BitStruct)
+                        return dynamic_cast<LucisParser::BitstructDeclContext*>(sym->decl);
+                }
+            }
+            return nullptr;
+        };
+        auto* bd = findBitstructDecl(receiverTypeName);
+        if (bd) {
+            auto* md = methodRegistry_.lookup(TypeKind::BitStruct, methodName);
+            if (md) {
+                std::string retType = md->returnType;
+                if (retType == "_self" && !receiverTypeName.empty())
+                    retType = receiverTypeName;
+                if (retType == "_backing")
+                    retType = bitstructBackingType(bd);
+                std::ostringstream ss;
+                ss << "```lucis\n(" << receiverTypeName
+                   << " method) " << retType << " " << methodName << "(";
+                for (size_t i = 0; i < md->paramTypes.size(); i++) {
+                    if (i > 0) ss << ", ";
+                    ss << md->paramTypes[i];
+                }
+                ss << ")\n```";
+                return makeResult(ctx->IDENTIFIER()->getSymbol(), ss.str());
+            }
         }
     }
 
@@ -4339,6 +4458,29 @@ std::optional<HoverResult> HoverProvider::hoverFieldAccess(
                     std::string md = "```lucis\n(bitfield) " + typeName
                                    + " " + bName + "." + fieldName + " : " + std::to_string(width) + "\n```";
                     return makeResult(token, md);
+                }
+            }
+        }
+    }
+
+    // Cross-file bitstruct field lookup
+    if (!lookupReceiverType.empty() && project && project->isValid()) {
+        for (auto& ns : project->registry().allModules()) {
+            auto* sym = project->registry().findSymbol(ns, lookupReceiverType);
+            if (sym && sym->kind == ExportedSymbol::BitStruct) {
+                if (auto* bd = dynamic_cast<LucisParser::BitstructDeclContext*>(sym->decl)) {
+                    for (auto* f : bd->bitstructField()) {
+                        auto ids = f->IDENTIFIER();
+                        auto ints = f->INT_LIT();
+                        if (ints.empty()) continue;
+                        if (ids && safeText(ids) == fieldName) {
+                            unsigned width = std::stoul(ints.back()->getText());
+                            std::string typeName = "uint" + std::to_string(width <= 8 ? 8 : width <= 16 ? 16 : width <= 32 ? 32 : 64);
+                            std::string md = "```lucis\n(bitfield) " + typeName
+                                           + " " + lookupReceiverType + "." + fieldName + " : " + std::to_string(width) + "\n```";
+                            return makeResult(token, md);
+                        }
+                    }
                 }
             }
         }
@@ -5511,6 +5653,24 @@ static std::string inferExprTypeName(
                 if (!structRet.empty()) return structRet;
             }
 
+            // 1d) Check bitstruct methods (raw, clearAll, setAll)
+            if (flc && flc->tree && flc->methodReg) {
+                for (auto* tld : flc->tree->topLevelDecl()) {
+                    if (auto* bd = tld->bitstructDecl()) {
+                        if (safeText(bd->IDENTIFIER()) != receiverType)
+                            continue;
+                        auto* md = flc->methodReg->lookup(TypeKind::BitStruct, methodName);
+                        if (md) {
+                            if (md->returnType == "_backing")
+                                return bitstructBackingType(bd);
+                            if (md->returnType == "_self")
+                                return receiverType;
+                            return md->returnType;
+                        }
+                    }
+                }
+            }
+
             // 2) Check builtin extended type methods (Vec, Map, Set, etc.)
             if (flc && flc->extTypeReg) {
                 // Extract base name and generic args: "map<string, int32>" → "map", ["string", "int32"]
@@ -5552,6 +5712,29 @@ static std::string inferExprTypeName(
                         if (rt == "_vec_val" && typeArgs.size() >= 2) return "vec<" + typeArgs[1] + ">";
                         if (rt == "_vec_val" && typeArgs.size() == 1) return "vec<" + typeArgs[0] + ">";
                         return rt; // "void", "bool", "usize", etc.
+                    }
+                }
+            }
+
+            // 3) Check primitive type methods via MethodRegistry
+            if (flc && flc->methodReg) {
+                auto kindForType = [](const std::string& t) -> std::optional<TypeKind> {
+                    if (t == "int8" || t == "int16" || t == "int32" || t == "int64" ||
+                        t == "uint8" || t == "uint16" || t == "uint32" || t == "uint64" ||
+                        t == "usize" || t == "isize") return TypeKind::Integer;
+                    if (t == "float32" || t == "float64") return TypeKind::Float;
+                    if (t == "bool")  return TypeKind::Bool;
+                    if (t == "char")  return TypeKind::Char;
+                    if (t == "string") return TypeKind::String;
+                    return std::nullopt;
+                };
+                auto kind = kindForType(receiverType);
+                if (kind) {
+                    auto* md = flc->methodReg->lookup(*kind, methodName);
+                    if (md) {
+                        if (md->returnType == "_self")
+                            return receiverType;
+                        return md->returnType;
                     }
                 }
             }

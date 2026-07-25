@@ -622,7 +622,7 @@ void MethodRegistry::registerBuiltins() {
                           .emitTag = "array.rotate" });
 
     // ── BitStruct methods ────────────────────────────────────────────
-    registerMethod({ "raw",      {TypeKind::BitStruct}, {}, "_self",
+    registerMethod({ "raw",      {TypeKind::BitStruct}, {}, "_backing",
                     .emitTag = "bitstruct.raw" });
     registerMethod({ "clearAll", {TypeKind::BitStruct}, {}, "void",
                     .emitTag = "bitstruct.clearAll" });

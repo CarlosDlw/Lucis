@@ -742,6 +742,50 @@ SignatureHelpProvider::signatureHelp(
             }
         }
 
+        // 3a.5) Bitstruct methods — check AST for user-defined bitstructs
+        if (!recvBase.empty()) {
+            bool isBitStruct = false;
+            std::string backingType;
+            auto resolveBSBacking = [&](LucisParser::BitstructDeclContext* bd) -> std::string {
+                if (!bd || !bd->typeSpec()) return "";
+                std::string raw = safeText(bd->typeSpec());
+                if (raw != "auto") return raw;
+                unsigned bits = 0;
+                for (auto* f : bd->bitstructField()) {
+                    auto ints = f->INT_LIT();
+                    if (!ints.empty()) bits += std::stoul(ints.back()->getText());
+                }
+                if (bits <= 8) return "uint8";
+                if (bits <= 16) return "uint16";
+                if (bits <= 32) return "uint32";
+                return "uint64";
+            };
+            for (auto* tld : parsed.tree->topLevelDecl()) {
+                if (auto* bd = tld->bitstructDecl()) {
+                    if (safeText(bd->IDENTIFIER()) == recvBase) {
+                        isBitStruct = true;
+                        backingType = resolveBSBacking(bd);
+                        break;
+                    }
+                }
+            }
+            if (isBitStruct) {
+                auto* md = methodRegistry_.lookup(TypeKind::BitStruct, name);
+                if (md) {
+                    MethodDescriptor resolvedMd = *md;
+                    if (resolvedMd.returnType == "_backing" && !backingType.empty())
+                        resolvedMd.returnType = backingType;
+                    for (auto& pt : resolvedMd.paramTypes) {
+                        if (pt == "_backing" && !backingType.empty())
+                            pt = backingType;
+                    }
+                    auto sig = buildFromExtMethod(resolvedMd, recvBase);
+                    sig.activeParameter = site->activeParam;
+                    result.signatures.push_back(std::move(sig));
+                }
+            }
+        }
+
         // 3b) Array methods — only when receiver is an array type
         bool isArrayType = !recvType.empty() && recvType.front() == '[';
         if (isArrayType || recvBase.empty()) {

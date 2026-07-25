@@ -1245,6 +1245,24 @@ static std::string inferExprTypeName(
         if (!structRet.empty()) return structRet;
       }
 
+      // 1d) Check bitstruct methods (raw, clearAll, setAll)
+      if (flc && flc->tree && flc->methodReg) {
+        for (auto *tld : flc->tree->topLevelDecl()) {
+          if (auto *bd = tld->bitstructDecl()) {
+            if (safeText(bd->IDENTIFIER()) != receiverType)
+              continue;
+            auto *md = flc->methodReg->lookup(TypeKind::BitStruct, methodName);
+            if (md) {
+              if (md->returnType == "_backing")
+                return CompletionProvider::bitstructBackingType(bd);
+              if (md->returnType == "_self")
+                return receiverType;
+              return md->returnType;
+            }
+          }
+        }
+      }
+
       // 2) Check builtin extended type methods (Vec, Map, Set, etc.)
       if (flc && flc->extTypeReg) {
         std::string baseName = receiverType;
@@ -1295,6 +1313,29 @@ static std::string inferExprTypeName(
             if (rt == "_vec_val" && typeArgs.size() >= 2)
               return "vec<" + typeArgs[1] + ">";
             return rt;
+          }
+        }
+      }
+
+      // 3) Check primitive type methods via MethodRegistry
+      if (flc && flc->methodReg) {
+        auto kindForType = [](const std::string& t) -> std::optional<TypeKind> {
+          if (t == "int8" || t == "int16" || t == "int32" || t == "int64" ||
+              t == "uint8" || t == "uint16" || t == "uint32" || t == "uint64" ||
+              t == "usize" || t == "isize") return TypeKind::Integer;
+          if (t == "float32" || t == "float64") return TypeKind::Float;
+          if (t == "bool")  return TypeKind::Bool;
+          if (t == "char")  return TypeKind::Char;
+          if (t == "string") return TypeKind::String;
+          return std::nullopt;
+        };
+        auto kind = kindForType(receiverType);
+        if (kind) {
+          auto *md = flc->methodReg->lookup(*kind, methodName);
+          if (md) {
+            if (md->returnType == "_self")
+              return receiverType;
+            return md->returnType;
           }
         }
       }
@@ -3314,6 +3355,25 @@ void CompletionProvider::addLocalDecls(std::vector<CompletionItem> &items,
       items.push_back(std::move(item));
     }
 
+    // Bitstruct types
+    if (auto *bd = tld->bitstructDecl()) {
+      if (!bd->IDENTIFIER())
+        continue;
+      std::string name = safeText(bd->IDENTIFIER());
+      if (!matchesPrefix(name, prefix))
+        continue;
+      CompletionItem item;
+      item.label = name;
+      item.kind = CompletionKind::Struct;
+      if (bd->typeSpec()) {
+        std::string backing = typeSpecToString(bd->typeSpec());
+        item.detail = "bitstruct " + name + " : " + backing;
+      } else {
+        item.detail = "bitstruct " + name;
+      }
+      items.push_back(std::move(item));
+    }
+
     // Type aliases
     if (auto *ta = tld->typeAliasDecl()) {
       if (!ta->IDENTIFIER())
@@ -3516,6 +3576,12 @@ void CompletionProvider::addImportedSymbols(std::vector<CompletionItem> &items,
                 ci.kind = CompletionKind::Struct; ci.detail = "union";
                 items.push_back(std::move(ci)); return;
               }
+            } else if (auto* bd = tld->bitstructDecl()) {
+              if (safeText(bd->IDENTIFIER()) == symName) {
+                CompletionItem ci; ci.label = symName;
+                ci.kind = CompletionKind::Struct; ci.detail = "bitstruct";
+                items.push_back(std::move(ci)); return;
+              }
             } else if (auto* ta = tld->typeAliasDecl()) {
               if (safeText(ta->IDENTIFIER()) == symName) {
                 CompletionItem ci; ci.label = symName;
@@ -3659,6 +3725,10 @@ void CompletionProvider::addImportedSymbols(std::vector<CompletionItem> &items,
         break;
       case ExportedSymbol::ExtendBlock:
         continue; // extend blocks not directly completable
+      case ExportedSymbol::BitStruct:
+        ci.kind = CompletionKind::Struct;
+        ci.detail = "bitstruct " + symName;
+        break;
       }
 
       items.push_back(std::move(ci));
@@ -3923,6 +3993,10 @@ void CompletionProvider::addProjectSymbols(std::vector<CompletionItem> &items,
       case ExportedSymbol::Constant:
         ci.kind = CompletionKind::Constant;
         ci.detail = "constant " + sym->name + " [" + currentModPath + "]";
+        break;
+      case ExportedSymbol::BitStruct:
+        ci.kind = CompletionKind::Struct;
+        ci.detail = "bitstruct " + sym->name + " [" + currentModPath + "]";
         break;
       default:
         continue;
@@ -4284,6 +4358,38 @@ void CompletionProvider::addStructFields(std::vector<CompletionItem> &items,
         }
         return;
       }
+      if (sym->kind == ExportedSymbol::BitStruct) {
+        auto *bd = dynamic_cast<LucisParser::BitstructDeclContext *>(sym->decl);
+        if (!bd)
+          continue;
+        for (auto *f : bd->bitstructField()) {
+          auto ids = f->IDENTIFIER();
+          auto ints = f->INT_LIT();
+          if (!ids || ints.empty()) continue;
+          unsigned width = std::stoul(ints.back()->getText());
+          CompletionItem item;
+          item.label = safeText(ids);
+          item.kind = CompletionKind::Field;
+          item.detail = "bitfield : " + std::to_string(width) + " bits";
+          items.push_back(std::move(item));
+        }
+        // Bitstruct methods
+        auto methods = methodRegistry_.methodsFor(TypeKind::BitStruct);
+        for (auto *md : methods) {
+          CompletionItem item;
+          item.label = md->name;
+          item.kind = CompletionKind::Method;
+          std::string ret = md->returnType;
+          if (ret == "_backing") {
+            ret = bd->typeSpec() ? bitstructBackingType(bd) : "?";
+          } else if (ret == "_self") {
+            ret = structName;
+          }
+          item.detail = md->name + "() → " + ret;
+          items.push_back(std::move(item));
+        }
+        return;
+      }
     }
   }
 
@@ -4299,6 +4405,53 @@ void CompletionProvider::addStructFields(std::vector<CompletionItem> &items,
         items.push_back(std::move(ci));
       }
       return;
+    }
+  }
+
+  // Same-file bitstruct fields
+  bool foundBitStruct = false;
+  for (auto *tld : tree->topLevelDecl()) {
+    if (auto *bd = tld->bitstructDecl()) {
+      if (safeText(bd->IDENTIFIER()) != structName)
+        continue;
+      foundBitStruct = true;
+      for (auto *f : bd->bitstructField()) {
+        auto ids = f->IDENTIFIER();
+        auto ints = f->INT_LIT();
+        if (!ids || ints.empty()) continue;
+        unsigned width = std::stoul(ints.back()->getText());
+        CompletionItem item;
+        item.label = safeText(ids);
+        item.kind = CompletionKind::Field;
+        item.detail = "bitfield : " + std::to_string(width) + " bits";
+        items.push_back(std::move(item));
+      }
+    }
+  }
+
+  // Bitstruct methods via MethodRegistry (typeRegistry_ only has built-ins)
+  if (foundBitStruct) {
+    std::string backingType;
+    for (auto *tld : tree->topLevelDecl()) {
+      if (auto *bd = tld->bitstructDecl()) {
+        if (safeText(bd->IDENTIFIER()) == structName) {
+          backingType = bitstructBackingType(bd);
+          break;
+        }
+      }
+    }
+    auto methods = methodRegistry_.methodsFor(TypeKind::BitStruct);
+    for (auto *md : methods) {
+      CompletionItem item;
+      item.label = md->name;
+      item.kind = CompletionKind::Method;
+      std::string ret = md->returnType;
+      if (ret == "_backing" && !backingType.empty())
+        ret = backingType;
+      else if (ret == "_self")
+        ret = structName;
+      item.detail = md->name + "() → " + ret;
+      items.push_back(std::move(item));
     }
   }
 
@@ -4917,6 +5070,8 @@ void CompletionProvider::addUseCompletions(std::vector<CompletionItem> &items,
             name = safeText(ed->IDENTIFIER()); kind = 2;
           } else if (auto* ud = tld->unionDecl()) {
             name = safeText(ud->IDENTIFIER()); kind = 3;
+          } else if (auto* bd = tld->bitstructDecl()) {
+            name = safeText(bd->IDENTIFIER()); kind = 5;
           } else if (auto* ta = tld->typeAliasDecl()) {
             name = safeText(ta->IDENTIFIER()); kind = 4;
           } else if (auto* ext = tld->extendDecl()) {
@@ -4943,6 +5098,7 @@ void CompletionProvider::addUseCompletions(std::vector<CompletionItem> &items,
           case 2: ci.kind = CompletionKind::Enum;     ci.detail = "enum";     break;
           case 3: ci.kind = CompletionKind::Struct;   ci.detail = "union";    break;
           case 4: ci.kind = CompletionKind::Class;    ci.detail = "type alias"; break;
+          case 5: ci.kind = CompletionKind::Struct;   ci.detail = "bitstruct"; break;
           default: continue;
           }
           items.push_back(std::move(ci));
@@ -4974,6 +5130,8 @@ void CompletionProvider::addUseCompletions(std::vector<CompletionItem> &items,
                 name = safeText(ed->IDENTIFIER()); kind = 2;
               } else if (auto* ud = tld->unionDecl()) {
                 name = safeText(ud->IDENTIFIER()); kind = 3;
+              } else if (auto* bd = tld->bitstructDecl()) {
+                name = safeText(bd->IDENTIFIER()); kind = 5;
               } else if (auto* ta = tld->typeAliasDecl()) {
                 name = safeText(ta->IDENTIFIER()); kind = 4;
               } else if (auto* ext = tld->extendDecl()) {
@@ -5000,6 +5158,7 @@ void CompletionProvider::addUseCompletions(std::vector<CompletionItem> &items,
               case 2: ci.kind = CompletionKind::Enum;     ci.detail = "enum";     break;
               case 3: ci.kind = CompletionKind::Struct;   ci.detail = "union";    break;
               case 4: ci.kind = CompletionKind::Class;    ci.detail = "type alias"; break;
+              case 5: ci.kind = CompletionKind::Struct;   ci.detail = "bitstruct"; break;
               default: continue;
               }
               items.push_back(std::move(ci));
@@ -5451,6 +5610,13 @@ void CompletionProvider::addTypeNames(std::vector<CompletionItem> &items,
       }
       items.push_back(std::move(item));
     }
+    if (auto *bd = tld->bitstructDecl()) {
+      std::string name = safeText(bd->IDENTIFIER());
+      if (!matchesPrefix(name, prefix))
+        continue;
+      std::string backing = bd->typeSpec() ? typeSpecToString(bd->typeSpec()) : "auto";
+      items.push_back({name, CompletionKind::Struct, "bitstruct " + name + " : " + backing});
+    }
     if (auto *ta = tld->typeAliasDecl()) {
       std::string name = safeText(ta->IDENTIFIER());
       if (!matchesPrefix(name, prefix))
@@ -5484,7 +5650,8 @@ void CompletionProvider::addTypeNames(std::vector<CompletionItem> &items,
         if (sym->kind != ExportedSymbol::Struct &&
             sym->kind != ExportedSymbol::Enum &&
             sym->kind != ExportedSymbol::Union &&
-            sym->kind != ExportedSymbol::TypeAlias)
+            sym->kind != ExportedSymbol::TypeAlias &&
+            sym->kind != ExportedSymbol::BitStruct)
           continue;
         if (!matchesPrefix(sym->name, prefix))
           continue;
@@ -5493,6 +5660,8 @@ void CompletionProvider::addTypeNames(std::vector<CompletionItem> &items,
           k = CompletionKind::Struct;
         else if (sym->kind == ExportedSymbol::Enum)
           k = CompletionKind::Enum;
+        else if (sym->kind == ExportedSymbol::BitStruct)
+          k = CompletionKind::Struct;
         items.push_back({sym->name, k, "[" + ns + "] " + sym->name});
       }
     }
@@ -5617,8 +5786,8 @@ void CompletionProvider::addKeywords(std::vector<CompletionItem> &items,
         "throw",  "bail",   "spawn",     "await",  "lock",    "defer",    "as",
        "match",  "or",     "is",     "in",     "sizeof",    "typeof", "alignof",  "offsetof", "true",     "false",
        "null",   "return", "asm", "asm_b", "c_macro", "volatile",
-        "goto",   "intel", "comptime", "const", "Self",
-        "vec",    "map",   "set"};
+         "goto",   "intel", "comptime", "const", "Self",
+         "vec",    "map",   "set", "bitstruct"};
  
    for (auto *kw : keywords) {
      if (!matchesPrefix(kw, prefix))
@@ -6519,6 +6688,15 @@ std::string CompletionProvider::resolveMethodReturnType(
   auto resolvePlaceholder = [&](const std::string &retType) -> std::string {
     if (retType == "_self")
       return receiverType;
+    if (retType == "_backing") {
+      for (auto *tld : tree->topLevelDecl()) {
+        if (auto *bd = tld->bitstructDecl()) {
+          if (safeText(bd->IDENTIFIER()) == receiverType)
+            return bitstructBackingType(bd);
+        }
+      }
+      return receiverType;
+    }
     if (retType == "_elem") {
       // Array element type
       if (receiverType.size() > 2 && receiverType[0] == '[') {
@@ -6721,7 +6899,7 @@ std::string CompletionProvider::resolveFieldType(
   if (tree) {
     for (auto *tld : tree->topLevelDecl()) {
       if (auto *sd = tld->structDecl()) {
-        if (sd->IDENTIFIER() || safeText(sd->IDENTIFIER()) != receiverLookup)
+        if (!sd->IDENTIFIER() || safeText(sd->IDENTIFIER()) != receiverLookup)
           continue;
         if (!rArgs.empty() && sd->typeParamList()) {
           auto tps = sd->typeParamList()->typeParam();
@@ -6951,7 +7129,19 @@ CompletionProvider::findEnclosingMethod(LucisParser::ProgramContext *tree,
   return nullptr;
 }
 
-LucisParser::StructDeclContext *
+LucisParser::BitstructDeclContext*
+CompletionProvider::findBitstructDecl(LucisParser::ProgramContext *tree,
+                                      const std::string &name) {
+  for (auto *tld : tree->topLevelDecl()) {
+    if (auto *bd = tld->bitstructDecl()) {
+      if (safeText(bd->IDENTIFIER()) == name)
+        return bd;
+    }
+  }
+  return nullptr;
+}
+
+LucisParser::StructDeclContext*
 CompletionProvider::findStructDecl(LucisParser::ProgramContext *tree,
                                    const std::string &name) {
   for (auto *tld : tree->topLevelDecl()) {
@@ -7143,6 +7333,25 @@ std::string CompletionProvider::formatOperatorSignature(
   }
   sig += ") " + typeSpecToString(opDecl->typeSpec());
   return sig;
+}
+
+std::string
+CompletionProvider::bitstructBackingType(LucisParser::BitstructDeclContext *bd) {
+  if (!bd || !bd->typeSpec())
+    return "";
+  std::string raw = safeText(bd->typeSpec());
+  if (raw != "auto")
+    return raw;
+  unsigned totalBits = 0;
+  for (auto *f : bd->bitstructField()) {
+    auto ints = f->INT_LIT();
+    if (!ints.empty())
+      totalBits += std::stoul(ints.back()->getText());
+  }
+  if (totalBits <= 8)  return "uint8";
+  if (totalBits <= 16) return "uint16";
+  if (totalBits <= 32) return "uint32";
+  return "uint64";
 }
 
 std::string
