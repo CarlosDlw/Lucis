@@ -437,16 +437,40 @@ std::optional<HoverResult> HoverProvider::hover(const std::string& source,
 
         // ── Struct declaration name ─────────────────────────────────
         if (auto* sd = tld->structDecl()) {
-            if (sd->IDENTIFIER()) continue;
-            if (sd->IDENTIFIER()->getSymbol() == hoveredToken) {
+            if (sd->IDENTIFIER() && sd->IDENTIFIER()->getSymbol() == hoveredToken) {
                 return makeResult(hoveredToken, withDoc(formatStructDecl(sd), sd->getStart()->getLine() - 1, sd->attributeList()));
             }
-            // Hover on field names inside struct
+            // Hover on field names and their types inside struct
             for (auto* f : sd->structField()) {
-                if (!f->IDENTIFIER()) continue;
-                if (f->IDENTIFIER()->getSymbol() == hoveredToken) {
+                if (!f->typeSpec()) continue;
+                if (f->IDENTIFIER() && f->IDENTIFIER()->getSymbol() == hoveredToken) {
                     std::string md = "```lucis\n(field) " + typeSpecToString(f->typeSpec())
                                    + " " + tokenText + "\n```";
+                    return makeResult(hoveredToken, md);
+                }
+                if (auto* id = f->typeSpec()->IDENTIFIER()) {
+                    if (id->getSymbol() == hoveredToken) {
+                        auto r = hoverTypeName(id->getText(), hoveredToken, parsed.tree, *cBindingsPtr, project);
+                        if (r) return r;
+                    }
+                }
+            }
+        }
+
+        // ── Bitstruct declaration name ─────────────────────────────
+        if (auto* bd = tld->bitstructDecl()) {
+            if (bd->IDENTIFIER() && bd->IDENTIFIER()->getSymbol() == hoveredToken) {
+                return makeResult(hoveredToken, formatBitStructDecl(bd));
+            }
+            // Hover on bitstruct field names
+            for (auto* f : bd->bitstructField()) {
+                auto ids = f->IDENTIFIER();
+                auto ints = f->INT_LIT();
+                if (ints.empty()) continue;
+                unsigned width = std::stoul(ints.back()->getText());
+                if (ids && ids->getSymbol() == hoveredToken) {
+                    std::string md = "```lucis\n(bitfield) uint" + std::to_string(width <= 8 ? 8 : width <= 16 ? 16 : width <= 32 ? 32 : 64)
+                                  + " " + ids->getText() + " : " + std::to_string(width) + "\n```";
                     return makeResult(hoveredToken, md);
                 }
             }
@@ -3793,6 +3817,10 @@ std::optional<HoverResult> HoverProvider::hoverTypeName(
     auto* sd = findStructDecl(tree, name);
     if (sd) return makeResult(token, withDoc(formatStructDecl(sd), sd->getStart()->getLine() - 1, sd->attributeList()));
 
+    // User bitstruct
+    auto* bd = findBitStructDecl(tree, name);
+    if (bd) return makeResult(token, formatBitStructDecl(bd));
+
     // User enum
     auto* ed = findEnumDecl(tree, name);
     if (ed) return makeResult(token, withDoc(formatEnumDecl(ed), ed->getStart()->getLine() - 1, ed->attributeList()));
@@ -4291,6 +4319,25 @@ std::optional<HoverResult> HoverProvider::hoverFieldAccess(
                                    + substituteTypeParams(typeSpecToString(f->typeSpec()), subst)
                                    + " " + sName + "." + fieldName + "\n```";
                     md = appendDocToHover(md, docComments_, f->getStart()->getLine() - 1);
+                    return makeResult(token, md);
+                }
+            }
+        }
+
+        // Search bitstruct types for bitfield access
+        if (auto* bd = tld->bitstructDecl()) {
+            std::string bName = safeText(bd->IDENTIFIER());
+            if (!lookupReceiverType.empty() && bName != lookupReceiverType)
+                continue;
+            for (auto* f : bd->bitstructField()) {
+                auto ids = f->IDENTIFIER();
+                auto ints = f->INT_LIT();
+                if (ints.empty()) continue;
+                if (ids && safeText(ids) == fieldName) {
+                    unsigned width = std::stoul(ints.back()->getText());
+                    std::string typeName = "uint" + std::to_string(width <= 8 ? 8 : width <= 16 ? 16 : width <= 32 ? 32 : 64);
+                    std::string md = "```lucis\n(bitfield) " + typeName
+                                   + " " + bName + "." + fieldName + " : " + std::to_string(width) + "\n```";
                     return makeResult(token, md);
                 }
             }
@@ -6570,6 +6617,18 @@ HoverProvider::findEnumDecl(LucisParser::ProgramContext* tree,
     return nullptr;
 }
 
+LucisParser::BitstructDeclContext*
+HoverProvider::findBitStructDecl(LucisParser::ProgramContext* tree,
+                                 const std::string& name) {
+    for (auto* tld : tree->topLevelDecl()) {
+        if (auto* bd = tld->bitstructDecl()) {
+            if (bd->IDENTIFIER() && safeText(bd->IDENTIFIER()) == name)
+                return bd;
+        }
+    }
+    return nullptr;
+}
+
 LucisParser::UnionDeclContext*
 HoverProvider::findUnionDecl(LucisParser::ProgramContext* tree,
                              const std::string& name) {
@@ -6686,6 +6745,29 @@ std::string HoverProvider::formatStructDecl(LucisParser::StructDeclContext* decl
     if (typeHasAutoDrop(safeText(decl->IDENTIFIER()), typesWithDrop_))
         ss << "\n*auto-dropped on scope exit*";
 
+    return ss.str();
+}
+
+std::string HoverProvider::formatBitStructDecl(LucisParser::BitstructDeclContext* decl) {
+    std::ostringstream ss;
+    ss << "```lucis\nbitstruct " << safeText(decl->IDENTIFIER());
+    if (auto* ts = decl->typeSpec())
+        ss << " : " << typeSpecToString(ts);
+    ss << " {\n";
+    unsigned offset = 0;
+    for (auto* f : decl->bitstructField()) {
+        auto ids = f->IDENTIFIER();
+        auto ints = f->INT_LIT();
+        if (ints.size() >= 1) {
+            unsigned width = std::stoul(ints.back()->getText());
+            if (ids)
+                ss << "    " << safeText(ids) << " : " << width << "  // bits " << offset << "-" << (offset + width - 1) << "\n";
+            else
+                ss << "    _ : " << width << "  // bits " << offset << "-" << (offset + width - 1) << "\n";
+            offset += width;
+        }
+    }
+    ss << "}\n```";
     return ss.str();
 }
 

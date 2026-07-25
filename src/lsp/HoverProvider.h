@@ -94,6 +94,8 @@ private:
     // Find user struct/enum/union/typeAlias declarations.
     LucisParser::StructDeclContext*
     findStructDecl(LucisParser::ProgramContext* tree, const std::string& name);
+    LucisParser::BitstructDeclContext*
+    findBitStructDecl(LucisParser::ProgramContext* tree, const std::string& name);
 
     LucisParser::EnumDeclContext*
     findEnumDecl(LucisParser::ProgramContext* tree, const std::string& name);
@@ -194,6 +196,7 @@ private:
     std::string formatFunctionDecl(LucisParser::FunctionDeclContext* func);
     std::string formatExternDecl(LucisParser::ExternDeclContext* ext);
     std::string formatStructDecl(LucisParser::StructDeclContext* decl);
+    std::string formatBitStructDecl(LucisParser::BitstructDeclContext* decl);
     std::string formatEnumDecl(LucisParser::EnumDeclContext* decl);
     std::string formatUnionDecl(LucisParser::UnionDeclContext* decl);
     std::string formatCFunction(const CFunction& func);
