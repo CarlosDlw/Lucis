@@ -3079,8 +3079,9 @@ CompletionProvider::analyzeContext(const std::string &source, size_t line,
     }
 
     // After "impl Trait for " — type name position
-    if (trimmed.size() >= 4 && trimmed.find("impl ") != std::string::npos &&
-        trimmed.rfind("for ") == trimmed.size() - 4) {
+    auto forPos = trimmed.rfind(" for ");
+    if (forPos != std::string::npos && forPos > 0 &&
+        trimmed.find("impl ") == 0) {
       req.context = CompletionContext::TypePosition;
       req.prefix.clear();
       return req;

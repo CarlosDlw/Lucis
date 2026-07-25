@@ -498,12 +498,10 @@ def main():
     print("═══ Extra completions ═══")
 
     test_completion(
-        "cross: impl Hashable for | completes type names",
+        "cross: T: | constraint completes trait names",
         "use traits::Hashable;\n"
-        "struct Val {}\n"
-        "struct Point {}\n"
-        "impl Hashable for Po\n",
-        3, 17, ["Point"], root_uri=ROOT_URI)
+        "fn foo<T: Ha\n",
+        1, 11, ["Hashable"], root_uri=ROOT_URI)
 
     # ── Hover on imported traits in use declarations ──
     print("═══ Hover on use imports ═══")
