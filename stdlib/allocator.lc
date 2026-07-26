@@ -1,0 +1,413 @@
+use std::mem::{ alloc, free };
+
+/**
+ * A bump/arena allocator - fast linear allocation with no individual frees.
+ *
+ * Allocates from a pre-allocated buffer by bumping a pointer. Excellent for short-lived data with a
+ * shared lifetime (frame data, request context, etc.).
+ *
+ * Use `reset()` to recycle the buffer, `destroy()` to free backing memory.
+ *
+ * @field buffer    Raw backing storage
+ * @field capacity  Total size of the buffer in bytes
+ * @field offset    Current bump pointer position
+ */
+struct Allocator {
+  *uint8  buffer;       // backing memory
+  usize   capacity;     // total size
+  usize   offset;       // current position
+}
+
+extend Allocator {
+  /**
+   * Creates a new arena with the given capacity.
+   *
+   * @param size Number of bytes to allocate for the backing buffer
+   * @return A new Allocator ready for use
+   * @throws if allocation fails (OutOfMemory)
+   *
+   * @example
+    * Allocator arena = Allocator::create(4096) catch {
+    *   printf("{s}\n", it.message);
+    *   return 1;
+    * };
+    *
+    * defer arena.destroy();
+   *
+   */
+  fn create(usize size) !Self {
+    if size < 0 {
+      bail "Size cannot be a negative value!";
+    }
+
+    *uint8 ptr = alloc(size) as *uint8;
+
+    if ptr == null {
+      bail "An error ocurred while creating allocation!";
+    }
+
+    return Allocator { ptr, size, 0 };
+  }
+
+  /**
+   * Allocates a block of memory from the arena
+   *
+   * Bumps the internal offset by `size` bytes and returnrs a pointer
+   * to the start of the allocated region. Returns `null` if the arena
+   * is exhausted.
+   *
+   * @param size Number of bytes to allocate
+   * @return Pointer to the allocated memory, or null if out of space
+   * @warning The retorned memory is uninitialized (may contain garbage)
+   */
+  fn alloc(&self, usize size) *void {
+    if self.offset + size > self.capacity return null;
+    *void ptr = self.buffer + self.offset;
+    self.offset = self.offset + size;
+    return ptr;
+  }
+
+  /**
+   * Resets the arena for reuse.
+   *
+   * Moves the bump pointer back to zero. All previous allocations become
+   * invalid (use-after-free is undefined behavior). The backing buffer
+   * is NOT fred or zeroed.
+   *
+   * @note Calling `reset()` is O(1) - no deallocation cost
+   * @warning All pointers obtained from previous `alloc()` calls are invalidated.
+   */
+  fn reset(&self) void {
+    self.offset = 0;
+  }
+
+  /**
+   * Returns the number of bytes still available.
+   *
+   * @return Remaining space in bytes, 0 if exhausted
+   */
+  fn remaining(&self) usize {
+    if self.offset >= self.capacity return 0;
+    return self.capacity - self.offset;
+  }
+
+  /**
+   * Checks whethe a pointer was allocated from this arena.
+   *
+   * @param ptr The pointer to check
+   * @return `true` if ptr points within this arena's buffer
+   */
+  fn owns(&self, *void ptr) bool {
+    *uint8 p = ptr as *uint8;
+    return p as usize >= self.buffer as usize && p as usize < self.buffer as usize + self.capacity;
+  }
+
+  /**
+   * Resizes an existing allocation.
+   *
+   * If the allocation is at the end of the bump pointer, it is expanded
+   * in-place (zero cost). Otherwise, a new block is allocated and the
+   * old data is copied. The old block is NOT freed (arena limitation);
+   *
+   * @param ptr     Pointer returned by a previous `alloc()` call
+   * @param oldSize Current size of the allocation
+   * @param newSize Desired new size
+   * @return Pointer to the resized memory, or null on failure
+   * @note Shrinking (newSize < oldSize) returns the same pointer
+   */
+  fn realloc(&self, *void ptr, usize oldSize, usize newSize) *void {
+    if ptr == null return self.alloc(newSize);
+    if newSize == 0 return null;
+    if newSize <= oldSize return ptr;
+
+    *uint8 end = ptr as *uint8 + oldSize;
+    if end == self.buffer + self.offset {
+      usize extra = newSize - oldSize;
+      if self.offset + extra <= self.capacity {
+        self.offset = self.offset + extra;
+        return ptr;
+      }
+    }
+
+    *void newPtr = self.alloc(newSize);
+    if newPtr == null return null;
+    lucis::sys::memcpy(newPtr, ptr, oldSize);
+    return newPtr;
+  }
+
+  /**
+   * Frees the backing buffer invalidates the arena.
+   *
+   * After calling `destroy()`, all pointers obtained from this arena
+   * are dangling. Use-after-destroy is undefined behavior.
+   *
+   * @warning Must be called exactly once. Calling twice causes a double-free.
+   */
+  fn destroy(&self) void {
+    if self.buffer != null {
+      free(self.buffer);
+      self.buffer = null;
+      self.capacity = 0;
+      self.offset = 0;
+    }
+  }
+}
+
+/**
+ * A pool allocator for fixed-size blocks.
+ *
+ * Subdivides a buffer into equal-sized blocks. Free blocks form an
+ * intrusive linked list — the pointer to the next free block is stored
+ * inside the free block itself, so there is zero per-block overhead.
+ * Both `alloc()` and `free()` are O(1).
+ *
+ * Ideal for many objects of the same size: list nodes, particles,
+ * game entities, etc.
+ *
+ * @field buffer     Raw backing storage
+ * @field blockSize  Size of each block in bytes
+ * @field blockCount Total number of blocks
+ * @field freeCount  Number of blocks currently available
+ * @field freeList   Head of the intrusive free list
+ */
+struct Pool {
+  *uint8 buffer;
+  usize  blockSize;
+  usize  blockCount;
+  usize  freeCount;
+  *void  freeList;
+}
+
+extend Pool {
+  /**
+   * Creates a new pool for blocks of the given size.
+   *
+   * The buffer is pre-allocated and all blocks are linked into
+   * the free list on creation.
+   *
+   * @param blockSize  Size of each block (minimum sizeof(*void))
+   * @param blockCount Number of blocks to pre-allocate
+   * @return A new Pool ready for use
+   * @throws if allocation fails
+   */
+  fn create(usize blockSize, usize blockCount) !Self {
+    if blockSize < sizeof(*void) {
+      blockSize = sizeof(*void);
+    }
+
+    usize totalSize = blockSize * blockCount;
+    *uint8 buf = alloc(totalSize) as *uint8;
+
+    if buf == null {
+      bail "An error ocurred while creating pool!";
+    }
+
+    // Build the intrusive free list
+    *void head = buf as *void;
+    *void prev = null;
+    usize i = 0;
+    while i < blockCount {
+      *void curr = buf as usize + (i * blockSize) as *void;
+      if prev != null {
+        *(prev as **void) = curr;
+      }
+      prev = curr;
+      i = i + 1;
+    }
+    if prev != null {
+      *(prev as **void) = null;
+    }
+
+    return Pool {
+      buf, blockSize, blockCount, blockCount, head
+    };
+  }
+
+  /**
+   * Pops a free block from the pool.
+   *
+   * @return Pointer to a block, or null if the pool is exhausted
+   *
+   * @example
+   * *Node n = pool.alloc() as *Node;
+   * n.value = 42;
+   */
+  fn alloc(&self) *void {
+    if self.freeCount == 0 || self.freeList == null return null;
+
+    *void block = self.freeList;
+    self.freeList = *(self.freeList as **void);
+    self.freeCount = self.freeCount - 1;
+    return block;
+  }
+
+  /**
+   * Returns a block to the pool.
+   *
+   * The block is pushed onto the front of the free list.
+   * The caller must ensure the block was originally obtained
+   * from this pool via `alloc()`.
+   *
+   * @param ptr Block to free (must be from this pool)
+   * @warning Passing a pointer not owned by this pool corrupts the free list
+   */
+  fn free(&self, *void ptr) void {
+    if ptr == null return;
+
+    *(ptr as **void) = self.freeList as *void;
+    self.freeList = ptr;
+    self.freeCount = self.freeCount + 1;
+  }
+
+  /**
+   * Returns the number of blocks still available.
+   *
+   * @return Free block count, 0 if exhausted
+   */
+  fn remaining(&self) usize {
+    return self.freeCount;
+  }
+
+  /**
+   * Returns true if the given pointer belongs to this pool.
+   *
+   * @param ptr The pointer to check
+   * @return true if ptr is within this pool's buffer range
+   */
+  fn owns(&self, *void ptr) bool {
+    *uint8 p = ptr as *uint8;
+    usize totalSize = self.blockSize * self.blockCount;
+    return p as usize >= self.buffer as usize &&
+           p as usize < self.buffer as usize + totalSize;
+  }
+
+  /**
+   * Frees the backing buffer and invalidates the pool.
+   *
+   * @warning Must be called exactly once
+   */
+  fn destroy(&self) void {
+    if self.buffer != null {
+      free(self.buffer);
+      self.buffer = null;
+      self.blockSize = 0;
+      self.blockCount = 0;
+      self.freeCount = 0;
+      self.freeList = null;
+    }
+  }
+}
+
+/**
+ * A general-purpose free list allocator (malloc/free replacement).
+ *
+ * Supports variable-size allocations with individual frees. Free blocks
+ * are linked in address order. On free(), adjacent blocks are coalesced.
+ * On alloc(), first-fit search with block splitting.
+ *
+ * Block layout: [ usize size | *uint8 next | ... user data ... ]
+ *
+ * @field buffer   Raw backing storage
+ * @field capacity Total buffer size in bytes
+ */
+struct FreeList {
+  *uint8  buffer;
+  usize   capacity;
+  *uint8  head;       // free list head (first free block)
+}
+
+const FL_HDR     : usize = sizeof(usize) + sizeof(*uint8);
+const FL_SZ_OFF  : usize = 0;
+const FL_NX_OFF  : usize = sizeof(usize);
+
+extend FreeList {
+  fn create(usize size) !Self {
+    if size < FL_HDR + sizeof(usize) {
+      bail "Buffer too small for free list allocator";
+    }
+
+    *uint8 buf = alloc(size) as *uint8;
+    if buf == null {
+      bail "An error ocurred while creating free list!";
+    }
+
+    *(buf as *usize) = size;
+    *((buf + FL_NX_OFF) as **uint8) = null;
+
+    return FreeList { buf, size, buf };
+  }
+
+  fn alloc(&self, usize size) *void {
+    if size == 0 return null;
+
+    usize needed = size + FL_HDR;
+    *uint8 prev = null;
+    *uint8 curr = self.head;
+
+    while curr != null {
+      usize bsz = *(curr as *usize);
+
+      if bsz >= needed {
+        if bsz >= needed + FL_HDR + sizeof(usize) {
+          *(curr as *usize) = needed;
+          *uint8 nxt = curr + needed;
+          *(nxt as *usize) = bsz - needed;
+          *((nxt + FL_NX_OFF) as **uint8) = *((curr + FL_NX_OFF) as **uint8);
+          *((curr + FL_NX_OFF) as **uint8) = nxt;
+        }
+
+        if prev != null {
+          *((prev + FL_NX_OFF) as **uint8) = *((curr + FL_NX_OFF) as **uint8);
+        } else {
+          self.head = *((curr + FL_NX_OFF) as **uint8);
+        }
+
+        *((curr + FL_NX_OFF) as **uint8) = null;
+        return (curr + FL_HDR) as *void;
+      }
+
+      prev = curr;
+      curr = *((curr + FL_NX_OFF) as **uint8);
+    }
+
+    return null;
+  }
+
+  fn free(&self, *void ptr) void {
+    if ptr == null return;
+
+    *uint8 blk = ptr as *uint8 - FL_HDR;
+
+    *uint8 prev = null;
+    *uint8 curr = self.head;
+
+    while curr != null && curr < blk {
+      prev = curr;
+      curr = *((curr + FL_NX_OFF) as **uint8);
+    }
+
+    *((blk + FL_NX_OFF) as **uint8) = curr;
+    if prev != null {
+      *((prev + FL_NX_OFF) as **uint8) = blk;
+    }
+
+    *uint8 nxt = *((blk + FL_NX_OFF) as **uint8);
+    if nxt != null && blk + *(blk as *usize) == nxt {
+      *(blk as *usize) = *(blk as *usize) + *(nxt as *usize);
+      *((blk + FL_NX_OFF) as **uint8) = *((nxt + FL_NX_OFF) as **uint8);
+    }
+
+    if prev != null && prev + *(prev as *usize) == blk {
+      *(prev as *usize) = *(prev as *usize) + *(blk as *usize);
+      *((prev + FL_NX_OFF) as **uint8) = *((blk + FL_NX_OFF) as **uint8);
+    }
+  }
+
+  fn destroy(&self) void {
+    if self.buffer != null {
+      free(self.buffer);
+      self.buffer = null;
+      self.capacity = 0;
+    }
+  }
+}
