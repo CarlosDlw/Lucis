@@ -1600,14 +1600,15 @@ std::any IRGen::visitExtendDecl(LucisParser::ExtendDeclContext* ctx) {
     auto* structLLTy = structTI->toLLVMType(*context_, module_->getDataLayout());
     auto* ptrTy = llvm::PointerType::getUnqual(*context_);
 
-    struct ExtendMethodLoweringInfo {
+     struct ExtendMethodLoweringInfo {
         LucisParser::ExtendMethodContext* method;
-        LucisParser::BlockContext* block;   // body to lower (may differ from method->block() for operators)
+        LucisParser::BlockContext* block;
         bool isStatic;
-        std::string methodName;             // for diagnostics
+        std::string methodName;
         std::vector<LucisParser::ParamContext*> params;
         std::vector<const TypeInfo*> paramTIs;
         std::vector<llvm::Type*> paramLLTypes;
+        const TypeInfo* retTI = nullptr;
         llvm::Type* retLLTy = nullptr;
         llvm::Function* fn = nullptr;
     };
@@ -1660,12 +1661,13 @@ std::any IRGen::visitExtendDecl(LucisParser::ExtendDeclContext* ctx) {
 
             loweringInfos.push_back(ExtendMethodLoweringInfo{
                 method,
-                opDecl->block(),      // body
-                !isInstance,          // isStatic
-                internalName,         // methodName
+                opDecl->block(),
+                !isInstance,
+                internalName,
                 std::move(params),
                 std::move(paramTIs),
                 std::move(paramLLTypes),
+                retTI,
                 retLLTy,
                 fn
             });
@@ -1726,6 +1728,7 @@ std::any IRGen::visitExtendDecl(LucisParser::ExtendDeclContext* ctx) {
             std::move(params),
             std::move(paramTIs),
             std::move(paramLLTypes),
+            retTI,
             retLLTy,
             fn
         });
@@ -1785,11 +1788,14 @@ std::any IRGen::visitExtendDecl(LucisParser::ExtendDeclContext* ctx) {
 
         // Visit the method body statements directly
         auto* body = info.block ? info.block : method->block();
+        auto savedRetType = currentFnReturnType_;
+        currentFnReturnType_ = info.retTI;
         if (body) {
             for (auto* stmt : body->statement()) {
                 visit(stmt);
             }
         }
+        currentFnReturnType_ = savedRetType;
 
         // If no terminator, add implicit return
         if (!builder_->GetInsertBlock()->getTerminator()) {
