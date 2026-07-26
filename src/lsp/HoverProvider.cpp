@@ -441,6 +441,16 @@ std::optional<HoverResult> HoverProvider::hover(const std::string& source,
                     auto* pName = p->IDENTIFIER()->getSymbol();
                     if (pName == hoveredToken) {
                         std::string typeStr = typeSpecToString(p->typeSpec());
+                        // Check if the type is a generic type param with constraint
+                        if (func->typeParamList()) {
+                            for (auto* tp : func->typeParamList()->typeParam()) {
+                                auto ids = tp->IDENTIFIER();
+                                if (!ids.empty() && ids[0]->getText() == typeStr && tp->COLON() && ids.size() >= 2) {
+                                    typeStr = ids[1]->getText() + " " + typeStr;
+                                    break;
+                                }
+                            }
+                        }
                         std::string md = formatTypedHover("parameter", typeStr,
                                                           tokenText, *cBindingsPtr);
                         return makeResult(hoveredToken, md);

@@ -537,6 +537,24 @@ def main():
         "fn main() int32 { Val::fr\n}\n",
         3, 23, ["from"], root_uri=ROOT_URI)
 
+    # ── Constrained generic completions + hover ──
+    print("═══ Constrained generic ═══")
+
+    test_completion(
+        "local: val.| on constrained generic completes trait methods",
+        "trait Hashable { fn hash(&self) int32; }\n"
+        "fn printHash<T: Hashable>(T val) void {\n"
+        "    val.h\n"
+        "}\n",
+        2, 8, ["hash"])
+
+    test_hover(
+        "local: hover on constrained param shows constraint",
+        "trait Hashable { fn hash(&self) int32; }\n"
+        "fn printHash<T: Hashable>(T val) void {\n"
+        "}\n",
+        1, 30, "Hashable T")
+
     total = passed + failed
     print(f"\n{'='*50}")
     print(f"  {passed} passed, {failed} failed out of {total}")

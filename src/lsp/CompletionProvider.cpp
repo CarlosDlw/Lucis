@@ -2310,6 +2310,34 @@ CompletionProvider::complete(const std::string &source, size_t line, size_t col,
                     project);
     addExtendMethods(items, receiverType, parsed->tree, project);
     addTraitMethods(items, receiverType, parsed->tree, req.prefix, project);
+    // If receiver is a generic type param with trait constraint,
+    // add the constraint's trait methods
+    if (!receiverType.empty()) {
+      auto* func = findEnclosingFunction(parsed->tree, line);
+      if (func && func->typeParamList()) {
+        for (auto* tp : func->typeParamList()->typeParam()) {
+          auto ids = tp->IDENTIFIER();
+          if (ids.empty() || ids[0]->getText() != receiverType) continue;
+          if (!tp->COLON() || ids.size() < 2) continue;
+          std::string traitName = ids[1]->getText();
+          // Find the trait locally
+          for (auto* tld : parsed->tree->topLevelDecl()) {
+            auto* td = tld->traitDecl();
+            if (!td || !td->IDENTIFIER() || safeText(td->IDENTIFIER()) != traitName) continue;
+            for (auto* m : td->traitMethod()) {
+              if (m->AMPERSAND() == nullptr) continue;
+              std::string mName = safeIdAt(m, 0);
+              if (!matchesPrefix(mName, req.prefix)) continue;
+              CompletionItem ci;
+              ci.label = mName;
+              ci.kind = CompletionKind::Method;
+              ci.detail = "trait method: " + traitName + "." + mName + "(...)";
+              items.push_back(std::move(ci));
+            }
+          }
+        }
+      }
+    }
     addTypeMethods(items, receiverType, req.prefix);
     break;
   }
