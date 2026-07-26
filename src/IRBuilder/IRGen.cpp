@@ -14252,8 +14252,22 @@ std::any IRGen::visitStaticMethodCallExpr(
             std::vector<LucisParser::ExpressionContext*> argExprs;
             if (auto* argList = ctx->argList()) {
                 argExprs = argList->expression();
-                for (auto* argExpr : argExprs)
-                    callArgs.push_back(castValue(visit(argExpr)));
+                auto* fnType = fn->getFunctionType();
+                size_t paramIdx = 0;
+                for (auto* argExpr : argExprs) {
+                    auto* argVal = castValue(visit(argExpr));
+                    if (paramIdx < fnType->getNumParams()) {
+                        auto* paramTy = fnType->getParamType(paramIdx);
+                        if (argVal->getType() != paramTy) {
+                            if (argVal->getType()->isIntegerTy() && paramTy->isIntegerTy())
+                                argVal = builder_->CreateIntCast(argVal, paramTy, true);
+                            else if (argVal->getType()->isFloatingPointTy() && paramTy->isFloatingPointTy())
+                                argVal = builder_->CreateFPCast(argVal, paramTy);
+                        }
+                    }
+                    callArgs.push_back(argVal);
+                    paramIdx++;
+                }
             }
             auto* retTy = fn->getReturnType();
             if (retTy->isVoidTy()) {
