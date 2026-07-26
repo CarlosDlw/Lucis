@@ -172,6 +172,27 @@ static std::string normalizeHoverMarkdown(std::string contents) {
     return contents;
 }
 
+static std::string substituteSelfToken(const std::string& typeName,
+                                        const std::string& concreteType) {
+    if (concreteType.empty()) return typeName;
+    std::string result;
+    result.reserve(typeName.size());
+    for (size_t i = 0; i < typeName.size(); ) {
+        if (typeName.compare(i, 4, "Self") == 0) {
+            bool leftOk  = (i == 0 || !isalnum(static_cast<unsigned char>(typeName[i-1])));
+            bool rightOk = (i+4 >= typeName.size() || !isalnum(static_cast<unsigned char>(typeName[i+4])));
+            if (leftOk && rightOk) {
+                result += concreteType;
+                i += 4;
+                continue;
+            }
+        }
+        result += typeName[i];
+        ++i;
+    }
+    return result;
+}
+
 // ═══════════════════════════════════════════════════════════════════════
 //  Doc-comment helper
 // ═══════════════════════════════════════════════════════════════════════
@@ -606,7 +627,7 @@ std::optional<HoverResult> HoverProvider::hover(const std::string& source,
                     std::string structName = ext->IDENTIFIER() ? safeText(ext->IDENTIFIER()) : "?";
                     bool isStatic = (method->AMPERSAND() == nullptr);
                     auto resolveSelf = [&](const std::string& t) -> std::string {
-                        return (t == "Self") ? structName : t;
+                        return substituteSelfToken(t, structName);
                     };
                     std::string retType = resolveSelf(typeSpecToString(method->typeSpec()));
                     std::string md = "```lucis\n(" + std::string(isStatic ? "static method" : "method")
@@ -4446,13 +4467,10 @@ std::optional<HoverResult> HoverProvider::hoverMethodCall(
         }
         auto substOrSelf = [&](const std::string& t) -> std::string {
             auto r = substituteTypeParams(t, subst);
-            if (r == "Self") {
-                auto base = receiverTypeName;
-                auto lt = base.find('<');
-                if (lt != std::string::npos) base = base.substr(0, lt);
-                return base;
-            }
-            return r;
+            auto base = receiverTypeName;
+            auto lt = base.find('<');
+            if (lt != std::string::npos) base = base.substr(0, lt);
+            return substituteSelfToken(r, base);
         };
         std::ostringstream ss;
         ss << "```lucis\n(" << safeText(ext->IDENTIFIER())
@@ -4928,7 +4946,7 @@ std::optional<HoverResult> HoverProvider::hoverStaticMethodCall(
         for (auto* m : ext->extendMethod()) {
             if (safeIdAt(m, 0) == methodName) {
                 auto resolveSelf = [&](const std::string& t) -> std::string {
-                    return (t == "Self") ? typeName : t;
+                    return substituteSelfToken(t, typeName);
                 };
                 std::ostringstream ss;
                 ss << "```lucis\n(static method) " << resolveSelf(typeSpecToString(m->typeSpec()))
@@ -5689,7 +5707,7 @@ static std::string inferExprTypeName(
                         if (safeIdAt(m, 0) != methodName) continue;
 
                         auto resolve = [&](const std::string& t) -> std::string {
-                            return (t == "Self") ? typeName : t;
+                            return substituteSelfToken(t, typeName);
                         };
 
                         if (!ext->typeParamList())
@@ -5745,7 +5763,7 @@ static std::string inferExprTypeName(
                         for (auto* m : ext->extendMethod()) {
                             if (safeIdAt(m, 0) == methodName) {
                                 auto ret = safeText(m->typeSpec());
-                                return (ret == "Self") ? typeName : ret;
+                                return substituteSelfToken(ret, typeName);
                             }
                         }
                     }
@@ -5799,7 +5817,7 @@ static std::string inferExprTypeName(
                     for (auto* m : ext->extendMethod()) {
                         if (safeIdAt(m, 0) == methodName) {
                             auto ret = safeText(m->typeSpec());
-                            return (ret == "Self") ? receiverType : ret;
+                            return substituteSelfToken(ret, receiverType);
                         }
                     }
                 }
@@ -5816,7 +5834,7 @@ static std::string inferExprTypeName(
                         for (auto* m : ext->extendMethod()) {
                             if (safeIdAt(m, 0) == methodName) {
                                 auto ret = safeText(m->typeSpec());
-                                return (ret == "Self") ? receiverType : ret;
+                                return substituteSelfToken(ret, receiverType);
                             }
                         }
                     }

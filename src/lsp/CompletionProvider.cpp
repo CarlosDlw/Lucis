@@ -636,22 +636,48 @@ unifyGenericType(const std::string &formalRaw, const std::string &actualRaw,
   return formal == actual;
 }
 
+// Substitute all occurrences of "Self" as a complete word boundary token.
+// Handles prefixes like !Self, *Self, ?Self, [N]Self, []Self, Self<T>, etc.
+static std::string substituteSelfToken(const std::string& typeName,
+                                        const std::string& concreteType) {
+    if (concreteType.empty()) return typeName;
+    std::string result;
+    result.reserve(typeName.size());
+    for (size_t i = 0; i < typeName.size(); ) {
+        if (typeName.compare(i, 4, "Self") == 0) {
+            bool leftOk  = (i == 0 || !isalnum(static_cast<unsigned char>(typeName[i-1])));
+            bool rightOk = (i+4 >= typeName.size() || !isalnum(static_cast<unsigned char>(typeName[i+4])));
+            if (leftOk && rightOk) {
+                result += concreteType;
+                i += 4;
+                continue;
+            }
+        }
+        result += typeName[i];
+        ++i;
+    }
+    return result;
+}
+
 // Look up the return type of a function by name.
 // Resolve Self to the enclosing extend block's struct name.
 static std::string resolveSelfType(const std::string& typeName,
                                     LucisParser::ExtendDeclContext* ext) {
-    if (typeName == "Self" && ext && ext->IDENTIFIER())
-        return ext->IDENTIFIER()->getText();
+    if (ext && ext->IDENTIFIER()) {
+        auto structName = safeText(ext->IDENTIFIER());
+        if (!structName.empty())
+            return substituteSelfToken(typeName, structName);
+    }
     return typeName;
 }
 
 static std::string resolveSelfType(const std::string& typeName,
                                     LucisParser::ProgramContext* tree,
                                     antlr4::ParserRuleContext* fnCtx) {
-    if (typeName != "Self" || !fnCtx) return typeName;
+    if (!fnCtx) return typeName;
     for (auto* p = fnCtx->parent; p; p = p->parent) {
         if (auto* ext = dynamic_cast<LucisParser::ExtendDeclContext*>(p))
-            return ext->IDENTIFIER()->getText();
+            return substituteSelfToken(typeName, safeText(ext->IDENTIFIER()));
     }
     return typeName;
 }
