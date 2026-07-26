@@ -553,7 +553,7 @@ def main():
         "trait Hashable { fn hash(&self) int32; }\n"
         "fn printHash<T: Hashable>(T val) void {\n"
         "}\n",
-        1, 30, "Hashable T")
+        1, 30,         "(parameter Hashable) T")
 
     total = passed + failed
     print(f"\n{'='*50}")
