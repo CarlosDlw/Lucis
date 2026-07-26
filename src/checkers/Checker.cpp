@@ -4123,6 +4123,10 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
         // ── User-defined operator overload ──
         if (auto* opRet = resolveOpOverload(lhs, rhs, opText)) return opRet;
 
+        // Pointer comparison: ptr < ptr2, ptr > ptr2, etc.
+        if (lhs && rhs && lhs->kind == TypeKind::Pointer && rhs->kind == TypeKind::Pointer)
+            return typeRegistry_.lookup("bool");
+
         if (lhs && !isNumeric(lhs))
             error(expr, "operator '" + opText +
                              "' requires numeric operands, got '" + lhs->name + "'");

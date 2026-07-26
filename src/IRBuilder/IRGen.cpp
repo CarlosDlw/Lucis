@@ -19474,6 +19474,24 @@ std::any IRGen::visitRelExpr(LucisParser::RelExprContext* ctx) {
         }
     }
 
+    // Pointer comparison: ptr < ptr2 → ptrtoint + unsigned icmp
+    if (lhs->getType()->isPointerTy() && rhs->getType()->isPointerTy()) {
+        auto* i64Ty = llvm::Type::getInt64Ty(*context_);
+        auto* lInt = builder_->CreatePtrToInt(lhs, i64Ty, "l.ptr2int");
+        auto* rInt = builder_->CreatePtrToInt(rhs, i64Ty, "r.ptr2int");
+        switch (ctx->op->getType()) {
+        case LucisLexer::LT:
+            return static_cast<llvm::Value*>(builder_->CreateICmpULT(lInt, rInt, "lt"));
+        case LucisLexer::GT:
+            return static_cast<llvm::Value*>(builder_->CreateICmpUGT(lInt, rInt, "gt"));
+        case LucisLexer::LTE:
+            return static_cast<llvm::Value*>(builder_->CreateICmpULE(lInt, rInt, "lte"));
+        case LucisLexer::GTE:
+            return static_cast<llvm::Value*>(builder_->CreateICmpUGE(lInt, rInt, "gte"));
+        default: break;
+        }
+    }
+
     auto [l, r] = promoteArithmetic(lhs, rhs);
     bool isFloat = l->getType()->isFloatingPointTy();
     bool useSignedIntCmp = true;
