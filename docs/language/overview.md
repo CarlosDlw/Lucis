@@ -22,6 +22,7 @@ Lucis is a compiled systems programming language that targets LLVM IR. It is des
 | C FFI | `extern`, `#include`, `c"..."` literals, struct ABI compatibility |
 | Generics | `vec<T>`, `map<K, V>`, `set<T>`, `Task<T>` |
 | Concurrency | `spawn`, `await`, `Mutex`, `lock` statement |
+| Traits | `trait` + `impl` with compile-time monomorphization, cross-file support |
 | Error handling | `try`/`catch`/`finally`, `throw`, built-in `Error` type |
 | Memory control | Manual allocation, `defer` cleanup, auto-cleanup for collections |
 | Type methods | Methods on all primitive types via dot notation |

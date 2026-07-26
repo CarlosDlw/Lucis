@@ -57,6 +57,7 @@ The complete guide to T's syntax and semantics, from basics to advanced features
 
 - [Type Aliases](language/type-aliases.md) — The `type` keyword and aliasing rules
 - [Generics](language/generics.md) — Generic type parameters (`vec<T>`, `map<K, V>`)
+- [Traits](language/traits.md) — Behavioural contracts (`trait` + `impl`), compile-time monomorphization
 - [Expressions](language/expressions.md) — Expression types, ternary, null coalescing, cast (`as`), type check (`is`), `sizeof`, `typeof`
 
 ### Modules
