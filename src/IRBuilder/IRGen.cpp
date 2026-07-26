@@ -18340,7 +18340,12 @@ std::any IRGen::visitAddSubExpr(LucisParser::AddSubExprContext* ctx) {
             return static_cast<llvm::Value*>(
                 builder_->CreateGEP(elemTy, rhs, lhs, "ptradd"));
         }
-        // ptr - ptr → ptrdiff (i64)
+        // ptr - ptr → ptrdiff (i64) — only for subtraction
+        if (ctx->op->getType() != LucisLexer::MINUS) {
+            std::cerr << "lucis: cannot add two pointers\n";
+            return static_cast<llvm::Value*>(
+                llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
+        }
         auto* elemTy = getPointeeTy(ctx->expression(0));
         auto* i64Ty = llvm::Type::getInt64Ty(*context_);
         auto* lhsInt = builder_->CreatePtrToInt(lhs, i64Ty, "ptr2int");
