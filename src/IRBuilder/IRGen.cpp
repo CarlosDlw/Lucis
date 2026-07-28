@@ -3063,7 +3063,7 @@ void IRGen::registerCrossFileSymbols(LucisParser::ProgramContext* ctx) {
             for (auto& [name, p] : pending)
                 for (auto* field : p.decl->structField())
                     addFieldDeps(field->typeSpec(), p.ns);
-            // Add newly discovered deps and register skeletons
+            // Add newly discovered deps and register skeletons + LLVM opaque types
             for (auto& [depName, dep] : newPendings) {
                 if (pending.count(depName) || genericStructTemplates_.count(depName))
                     continue;
@@ -3074,6 +3074,8 @@ void IRGen::registerCrossFileSymbols(LucisParser::ProgramContext* ctx) {
                     sk.kind = TypeKind::Struct;
                     typeRegistry_.registerType(std::move(sk));
                 }
+                if (!llvm::StructType::getTypeByName(*context_, depName))
+                    llvm::StructType::create(*context_, depName);
             }
         }
         // Process in dependency order
@@ -3088,6 +3090,25 @@ void IRGen::registerCrossFileSymbols(LucisParser::ProgramContext* ctx) {
                     auto* parentTI = resolveTypeInfo(p.decl->typeSpec());
                     if (!parentTI || parentTI->kind != TypeKind::Struct || parentTI->fields.empty())
                         continue;
+                }
+                // Check field-type dependencies: if any field is a struct whose
+                // LLVM body hasn't been set yet, defer this struct. Prevents
+                // SIGSEGV in llvm::StructType::setBody when a field type is
+                // still opaque (e.g. Terminal has field TerminalState, both in
+                // the same cross-file module).
+                {
+                    bool fieldsReady = true;
+                    for (auto* field : p.decl->structField()) {
+                        auto* fieldTI = resolveTypeInfo(field->typeSpec());
+                        if (!fieldTI || fieldTI->kind != TypeKind::Struct) continue;
+                        if (fieldTI->name == name) continue;
+                        auto* fieldLL = llvm::StructType::getTypeByName(*context_, fieldTI->name);
+                        if (!fieldLL || fieldLL->isOpaque()) {
+                            fieldsReady = false;
+                            break;
+                        }
+                    }
+                    if (!fieldsReady) continue;
                 }
                 visitStructDecl(p.decl);
                 done.insert(name);
