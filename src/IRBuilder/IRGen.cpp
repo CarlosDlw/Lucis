@@ -28120,6 +28120,9 @@ const TypeInfo* IRGen::instantiateGenericStruct(
         }
     }
 
+    // ★ Self must resolve to the concrete instantiated type, not the opaque generic template
+    subst["Self"] = result;
+
     // Instantiate extend methods for this struct, if any (only once per concrete type)
     if (loweredGenericExtendTypes_.insert(mangledName).second) {
     auto extendIt = genericExtendTemplates_.find(baseName);
