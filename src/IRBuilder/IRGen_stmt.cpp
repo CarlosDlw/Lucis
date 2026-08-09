@@ -6883,6 +6883,13 @@ void IRGen::consumeExprIfOwnedLocal(LucisParser::ExpressionContext* expr) {
         consumeLocalByName(ident->IDENTIFIER()->getText());
         return;
     }
+    // Tuple literal: (a, b, ...) — consume owned elements recursively so
+    // auto-cleanup does not free strings that are part of the return value.
+    if (auto* tup = dynamic_cast<LucisParser::TupleLitExprContext*>(expr)) {
+        for (auto* elem : tup->expression())
+            consumeExprIfOwnedLocal(elem);
+        return;
+    }
     // Field access: token.lexeme → null out the string field in the source struct
     if (auto* fa = dynamic_cast<LucisParser::FieldAccessExprContext*>(expr)) {
         auto fieldName = fa->IDENTIFIER()->getText();
