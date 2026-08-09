@@ -21206,9 +21206,17 @@ const TypeInfo* IRGen::resolveExprTypeInfo(LucisParser::ExpressionContext* ctx) 
                 if (retTy->isDoubleTy())     return typeRegistry_.lookup("float64");
                 if (retTy->isVoidTy())       return typeRegistry_.lookup("void");
                 if (retTy->isPointerTy())    return typeRegistry_.lookup("*void");
-                if (auto* st = llvm::dyn_cast<llvm::StructType>(retTy))
+                if (auto* st = llvm::dyn_cast<llvm::StructType>(retTy)) {
                     if (st->hasName())
                         return typeRegistry_.lookup(st->getName().str());
+                    // Lucis string is an unnamed {ptr, len} fat pointer —
+                    // map it back so method calls on string-returning
+                    // user functions resolve (e.g. f().padRight(...)).
+                    if (st->getNumElements() == 2 &&
+                        st->getElementType(0)->isPointerTy() &&
+                        st->getElementType(1)->isIntegerTy())
+                        return typeRegistry_.lookup("string");
+                }
             }
 
             // Builtin string-returning functions (cwd, tempDir)
