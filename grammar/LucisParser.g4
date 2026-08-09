@@ -85,7 +85,7 @@ topLevelDecl
 
 // type BinOp = fn(int32, int32) -> int32;
 typeAliasDecl
-    : attributeList TYPE IDENTIFIER ASSIGN typeSpec SEMI
+    : attributeList typeKw IDENTIFIER ASSIGN typeSpec SEMI
     ;
 
 // enum Color { Red, Green, Blue }
@@ -149,11 +149,22 @@ externParam
     : typeSpec IDENTIFIER?
     ;
 
+// ── Contextual (soft) keywords ─────────────────────────────────────────────
+// 'ret'/'return', 'fn', 'type' and 'match' are lexed as IDENTIFIER and
+// recognized as keywords only in these gated positions, so they can also be
+// used as identifiers (field names, variable names, params, function names).
+// Statement-start positions keep the keyword meaning.
+retKw    : {_input->LT(1)->getText() == "ret"}?    IDENTIFIER ;
+returnKw : {_input->LT(1)->getText() == "return"}? IDENTIFIER ;
+fnKw     : {_input->LT(1)->getText() == "fn"}?     IDENTIFIER ;
+typeKw   : {_input->LT(1)->getText() == "type"}?   IDENTIFIER ;
+matchKw  : {_input->LT(1)->getText() == "match"}?  IDENTIFIER ;
+
 // fn main() int32 { ... }
 // fn max<T>(T a, T b) T { ... }
 // fn makePoint() LIB::Point { ... }
 functionDecl
-    : attributeList COMPTIME? FN IDENTIFIER typeParamList? LPAREN paramList? RPAREN (IDENTIFIER SCOPE)? typeSpec block
+    : attributeList COMPTIME? fnKw IDENTIFIER typeParamList? LPAREN paramList? RPAREN (IDENTIFIER SCOPE)? typeSpec block
     ;
 
 // extend Point { ... }
@@ -172,14 +183,14 @@ typeParam
     ;
 
 extendMethod
-    : FN IDENTIFIER LPAREN AMPERSAND IDENTIFIER (COMMA param)* RPAREN typeSpec block
-    | FN IDENTIFIER LPAREN paramList? RPAREN typeSpec block
+    : fnKw IDENTIFIER LPAREN AMPERSAND IDENTIFIER (COMMA param)* RPAREN typeSpec block
+    | fnKw IDENTIFIER LPAREN paramList? RPAREN typeSpec block
     | operatorDecl
     ;
 
 operatorDecl
-    : FN operatorName LPAREN paramList RPAREN typeSpec block
-    | FN operatorName LPAREN AMPERSAND IDENTIFIER (COMMA param)* RPAREN typeSpec block
+    : fnKw operatorName LPAREN paramList RPAREN typeSpec block
+    | fnKw operatorName LPAREN AMPERSAND IDENTIFIER (COMMA param)* RPAREN typeSpec block
     ;
 
 operatorName
@@ -216,8 +227,8 @@ traitDecl
     ;
 
 traitMethod
-    : FN IDENTIFIER LPAREN AMPERSAND IDENTIFIER (COMMA param)* RPAREN typeSpec SEMI
-    | FN IDENTIFIER LPAREN paramList? RPAREN typeSpec SEMI
+    : fnKw IDENTIFIER LPAREN AMPERSAND IDENTIFIER (COMMA param)* RPAREN typeSpec SEMI
+    | fnKw IDENTIFIER LPAREN paramList? RPAREN typeSpec SEMI
     ;
 
 // impl Hashable for Point { fn hash(&self) uint64 { ... } }
@@ -227,8 +238,8 @@ implDecl
     ;
 
 implMethod
-    : FN IDENTIFIER LPAREN AMPERSAND IDENTIFIER (COMMA param)* RPAREN typeSpec block
-    | FN IDENTIFIER LPAREN paramList? RPAREN typeSpec block
+    : fnKw IDENTIFIER LPAREN AMPERSAND IDENTIFIER (COMMA param)* RPAREN typeSpec block
+    | fnKw IDENTIFIER LPAREN paramList? RPAREN typeSpec block
     ;
 
 paramList
@@ -251,6 +262,7 @@ statement
     : labelDef
     | useDecl
     | constDeclStmt
+    | returnStmt
     | varDeclStmt
     | assignStmt
     | compoundAssignStmt
@@ -266,7 +278,6 @@ statement
     | arrowAnyCompoundAssignStmt
     | callStmt
     | exprStmt
-    | returnStmt
     | ifStmt
     | forStmt
     | loopStmt
@@ -455,7 +466,7 @@ argList
 
 // ret <expr>; or ret;
 returnStmt
-    : RET expression? SEMI
+    : (retKw | returnKw) expression? SEMI
     ;
 
 // if (cond) { ... } else if (cond) { ... } else { ... }
@@ -686,7 +697,7 @@ expression
     // Try expression (wraps sub-expression in setjmp/longjmp)
     | TRY expression                                           # tryExpr
     // Match expression: match expr { pattern -> body, ... }
-    | MATCH expression LBRACE matchArm (COMMA matchArm)* COMMA? RBRACE  # matchExpr
+    | matchKw expression LBRACE matchArm (COMMA matchArm)* COMMA? RBRACE  # matchExpr
     // Atoms
     | LPAREN expression COMMA expression (COMMA expression)* RPAREN  # tupleLitExpr
     | LPAREN expression RPAREN                                 # parenExpr
@@ -758,7 +769,7 @@ bangEntry
 
 // fn(int32, int32) -> int32
 fnTypeSpec
-    : FN LPAREN (typeSpec (COMMA typeSpec)*)? RPAREN ARROW typeSpec
+    : fnKw LPAREN (typeSpec (COMMA typeSpec)*)? RPAREN ARROW typeSpec
     ;
 
 primitiveType

@@ -26,29 +26,12 @@ ParseResult Parser::parse(const std::string& filePath) {
     result.parser->removeErrorListeners();
     result.parser->addErrorListener(&errorListener);
 
-    fixContextualKeywords(result.tokens.get());
-
     result.tree = result.parser->program();
 
     result.hasErrors = result.parser->getNumberOfSyntaxErrors() > 0
                     || result.lexer->getNumberOfSyntaxErrors()  > 0;
 
     return result;
-}
-
-void Parser::fixContextualKeywords(antlr4::CommonTokenStream* tokens) {
-    tokens->fill();
-    auto allTokens = tokens->getTokens();
-    for (size_t i = 1; i < allTokens.size(); i++) {
-        auto* curr = allTokens[i];
-        if (curr->getType() != LucisLexer::TYPE) continue;
-        auto* prev = allTokens[i - 1];
-        if (prev->getType() == LucisLexer::DOT || prev->getType() == LucisLexer::ARROW) {
-            if (auto* w = dynamic_cast<antlr4::WritableToken*>(curr)) {
-                w->setType(LucisLexer::IDENTIFIER);
-            }
-        }
-    }
 }
 
 ParseResult Parser::parseString(const std::string& source) {
@@ -70,8 +53,6 @@ ParseResult Parser::parseString(const std::string& source) {
     result.lexer->addErrorListener(errorListener.get());
     result.parser->removeErrorListeners();
     result.parser->addErrorListener(errorListener.get());
-
-    fixContextualKeywords(result.tokens.get());
 
     result.tree = result.parser->program();
 

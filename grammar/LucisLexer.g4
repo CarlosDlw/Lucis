@@ -1,16 +1,16 @@
 lexer grammar LucisLexer;
 
 // Keywords
+// Note: 'ret'/'return', 'fn', 'type' and 'match' are contextual (soft)
+// keywords — lexed as IDENTIFIER and recognized by the parser via text
+// predicates, so they can also be used as identifiers (see LucisParser.g4).
 USE : 'use';
-RET       : 'ret' | 'return';
 STRUCT    : 'struct';
 UNION     : 'union';
 ENUM      : 'enum';
 NULL_LIT  : 'null';
-FN        : 'fn';
 COMPTIME  : 'comptime' | 'cmpt';
 CONST     : 'const';
-TYPE      : 'type';
 AS        : 'as';
 IS        : 'is';
 SIZEOF    : 'sizeof';
@@ -43,7 +43,6 @@ FINALLY   : 'finally';
 THROW     : 'throw';
 BAIL      : 'bail';
 DEFER     : 'defer';
-MATCH     : 'match';
 OR        : 'or';
 EXTERN    : 'extern';
 ASM       : 'asm';

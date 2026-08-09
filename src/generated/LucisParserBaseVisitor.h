@@ -119,6 +119,26 @@ public:
     return visitChildren(ctx);
   }
 
+  virtual std::any visitRetKw(LucisParser::RetKwContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual std::any visitReturnKw(LucisParser::ReturnKwContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual std::any visitFnKw(LucisParser::FnKwContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual std::any visitTypeKw(LucisParser::TypeKwContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual std::any visitMatchKw(LucisParser::MatchKwContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
   virtual std::any visitFunctionDecl(LucisParser::FunctionDeclContext *ctx) override {
     return visitChildren(ctx);
   }

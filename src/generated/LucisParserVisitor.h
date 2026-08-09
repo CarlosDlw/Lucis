@@ -71,6 +71,16 @@ public:
 
     virtual std::any visitExternParam(LucisParser::ExternParamContext *context) = 0;
 
+    virtual std::any visitRetKw(LucisParser::RetKwContext *context) = 0;
+
+    virtual std::any visitReturnKw(LucisParser::ReturnKwContext *context) = 0;
+
+    virtual std::any visitFnKw(LucisParser::FnKwContext *context) = 0;
+
+    virtual std::any visitTypeKw(LucisParser::TypeKwContext *context) = 0;
+
+    virtual std::any visitMatchKw(LucisParser::MatchKwContext *context) = 0;
+
     virtual std::any visitFunctionDecl(LucisParser::FunctionDeclContext *context) = 0;
 
     virtual std::any visitExtendDecl(LucisParser::ExtendDeclContext *context) = 0;

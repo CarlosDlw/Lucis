@@ -60,7 +60,7 @@ static inline void emit(std::vector<RawSemanticToken>& out,
 static bool isKeyword(size_t tokenType) {
     switch (tokenType) {
         case LucisLexer::STRUCT: case LucisLexer::BITSTRUCT: case LucisLexer::UNION: case LucisLexer::ENUM:
-        case LucisLexer::FN: case LucisLexer::TYPE: case LucisLexer::AS:
+        case LucisLexer::AS:
         case LucisLexer::IS: case LucisLexer::SIZEOF: case LucisLexer::TYPEOF:
         case LucisLexer::ALIGNOF: case LucisLexer::OFFSETOF:
         case LucisLexer::IF: case LucisLexer::ELSE: case LucisLexer::FOR:
@@ -71,8 +71,8 @@ static bool isKeyword(size_t tokenType) {
         case LucisLexer::EXTEND: case LucisLexer::TRY: case LucisLexer::CATCH:
         case LucisLexer::FINALLY: case LucisLexer::THROW: case LucisLexer::BAIL: case LucisLexer::DEFER:
         case LucisLexer::EXTERN: case LucisLexer::AUTO: case LucisLexer::NULL_LIT:
-        case LucisLexer::RET:    case LucisLexer::OR:
-        case LucisLexer::MATCH:  case LucisLexer::WILDCARD:
+        case LucisLexer::OR:
+        case LucisLexer::WILDCARD:
         case LucisLexer::INLINE_BLOCK: case LucisLexer::SCOPE_BLOCK:
         case LucisLexer::ASM:    case LucisLexer::VOLATILE: case LucisLexer::GOTO:
         case LucisLexer::INTEL:  case LucisLexer::COMPTIME: case LucisLexer::CONST:
