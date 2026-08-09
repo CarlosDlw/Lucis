@@ -665,6 +665,9 @@ private:
         const std::vector<antlr4::tree::TerminalNode*>& dots,
         const std::vector<antlr4::tree::TerminalNode*>& arrows,
         const std::vector<LucisParser::ExpressionContext*>& indexExprs);
+    void emitExtendedIndexAssign(
+        llvm::Value* containerPtr, const TypeInfo* extTI,
+        const std::vector<LucisParser::ExpressionContext*>& expressions);
     llvm::Value*        buildEnumVariantValue(const TypeInfo* enumType,
                                              const EnumVariantInfo& variantInfo,
                                              const std::vector<llvm::Value*>& payloadValues);

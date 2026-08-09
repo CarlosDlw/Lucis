@@ -1944,6 +1944,106 @@ std::any IRGen::visitIndexFieldAssignStmt(
 // obj.field[i] = value;   ts.buf[3] = t;
 
 
+void IRGen::emitExtendedIndexAssign(
+    llvm::Value* containerPtr, const TypeInfo* extTI,
+    const std::vector<LucisParser::ExpressionContext*>& expressions) {
+    auto* ptrTy   = llvm::PointerType::getUnqual(*context_);
+    auto* usizeTy = module_->getDataLayout().getIntPtrType(*context_);
+    auto suffix   = extTI->builtinSuffix;
+
+    if (extTI->extendedKind == "Map") {
+        // Map<K,V> subscript assignment: m[key] = val → lucis_map_set_<suffix>
+        auto* keyLLTy = extTI->keyType->toLLVMType(*context_, module_->getDataLayout());
+        auto* valLLTy = extTI->valueType->toLLVMType(*context_, module_->getDataLayout());
+
+        auto* keyVal = castValue(visit(expressions[0]));
+        if (keyVal->getType() != keyLLTy) {
+            if (keyVal->getType()->isIntegerTy() && keyLLTy->isIntegerTy())
+                keyVal = builder_->CreateIntCast(keyVal, keyLLTy, extTI->keyType->isSigned);
+        }
+
+        auto* val = castValue(visit(expressions[expressions.size() - 1]));
+
+        // Handle raw value types: pass by pointer
+        bool isRawVal = suffix.size() > 4 && suffix.substr(suffix.size() - 3) == "raw";
+
+        if (isRawVal) {
+            auto* valAlloca = builder_->CreateAlloca(valLLTy, nullptr, "map_set_val");
+            builder_->CreateStore(val, valAlloca);
+            auto callee = declareBuiltin(
+                "lucis_map_set_" + suffix,
+                llvm::Type::getVoidTy(*context_),
+                { ptrTy, keyLLTy, ptrTy });
+            builder_->CreateCall(callee, { containerPtr, keyVal, valAlloca });
+        } else {
+            if (val->getType() != valLLTy) {
+                if (val->getType()->isIntegerTy() && valLLTy->isIntegerTy())
+                    val = builder_->CreateIntCast(val, valLLTy, extTI->valueType->isSigned);
+                else if (val->getType()->isFloatingPointTy() && valLLTy->isFloatingPointTy()) {
+                    if (val->getType()->getPrimitiveSizeInBits() > valLLTy->getPrimitiveSizeInBits())
+                        val = builder_->CreateFPTrunc(val, valLLTy);
+                    else
+                        val = builder_->CreateFPExt(val, valLLTy);
+                }
+            }
+            auto callee = declareBuiltin(
+                "lucis_map_set_" + suffix,
+                llvm::Type::getVoidTy(*context_),
+                { ptrTy, keyLLTy, valLLTy });
+            builder_->CreateCall(callee, { containerPtr, keyVal, val });
+        }
+        return;
+    }
+
+    // Vec<T> or Set<T> index assignment
+    auto* elemLLTy = extTI->elementType->toLLVMType(*context_, module_->getDataLayout());
+    auto vecSuffix = getVecSuffix(extTI->elementType);
+
+    auto* idx = castValue(visit(expressions[0]));
+    if (idx->getType() != usizeTy)
+        idx = builder_->CreateIntCast(idx, usizeTy, false);
+
+    auto* val = castValue(visit(expressions[expressions.size() - 1]));
+    if (val->getType() != elemLLTy) {
+        if (val->getType()->isIntegerTy() && elemLLTy->isIntegerTy())
+            val = builder_->CreateIntCast(val, elemLLTy, extTI->elementType->isSigned);
+        else if (val->getType()->isFloatingPointTy() && elemLLTy->isFloatingPointTy()) {
+            if (val->getType()->getPrimitiveSizeInBits() > elemLLTy->getPrimitiveSizeInBits())
+                val = builder_->CreateFPTrunc(val, elemLLTy);
+            else
+                val = builder_->CreateFPExt(val, elemLLTy);
+        }
+    }
+
+    if (extTI->extendedKind == "Set") {
+        auto callee = declareBuiltin(
+            "lucis_set_add_" + suffix,
+            llvm::Type::getInt32Ty(*context_),
+            { ptrTy, elemLLTy });
+        builder_->CreateCall(callee, { containerPtr, val });
+        return;
+    }
+
+    // Vec<T> index assignment: v[i] = x → lucis_vec_set_<suffix>
+    if (vecSuffix == "raw") {
+        auto& dl     = module_->getDataLayout();
+        auto  elemSz = dl.getTypeAllocSize(elemLLTy);
+        auto* elemSzVal = llvm::ConstantInt::get(usizeTy, elemSz);
+        auto ptrFn = declareBuiltin("lucis_vec_ptr_raw", ptrTy,
+                                    {ptrTy, usizeTy, usizeTy});
+        auto* elemPtr = builder_->CreateCall(ptrFn,
+            { containerPtr, idx, elemSzVal }, "vec_elem_ptr");
+        builder_->CreateStore(val, elemPtr);
+        return;
+    }
+
+    auto callee = declareBuiltin(
+        "lucis_vec_set_" + vecSuffix,
+        llvm::Type::getVoidTy(*context_),
+        { ptrTy, usizeTy, elemLLTy });
+    builder_->CreateCall(callee, { containerPtr, idx, val });
+}
+
 std::any IRGen::visitFieldIndexAssignStmt(LucisParser::FieldIndexAssignStmtContext* ctx) {
         SET_DBG_LOC(ctx);
     auto identifiers = ctx->IDENTIFIER();
@@ -2025,101 +2125,7 @@ std::any IRGen::visitFieldIndexAssignStmt(LucisParser::FieldIndexAssignStmtConte
     // Handle Extended types (Vec, Map, Set) for field index assignment
     // e.g., struct.field[idx] = val where field is Vec/Map/Set
     if (currentTI && currentTI->kind == TypeKind::Extended) {
-        auto* ptrTy   = llvm::PointerType::getUnqual(*context_);
-        auto* usizeTy = module_->getDataLayout().getIntPtrType(*context_);
-        auto suffix   = currentTI->builtinSuffix;
-
-        if (currentTI->extendedKind == "Map") {
-            // Map<K,V> subscript assignment: m[key] = val → lucis_map_set_<suffix>
-            auto* keyLLTy = currentTI->keyType->toLLVMType(*context_, module_->getDataLayout());
-            auto* valLLTy = currentTI->valueType->toLLVMType(*context_, module_->getDataLayout());
-
-            auto* keyVal = castValue(visit(expressions[0]));
-            if (keyVal->getType() != keyLLTy) {
-                if (keyVal->getType()->isIntegerTy() && keyLLTy->isIntegerTy())
-                    keyVal = builder_->CreateIntCast(keyVal, keyLLTy, currentTI->keyType->isSigned);
-            }
-
-            auto* val = castValue(visit(expressions[expressions.size() - 1]));
-
-            // Handle raw value types: pass by pointer
-            bool isRawVal = suffix.size() > 4 && suffix.substr(suffix.size() - 3) == "raw";
-
-            if (isRawVal) {
-                auto* valAlloca = builder_->CreateAlloca(valLLTy, nullptr, "map_set_val");
-                builder_->CreateStore(val, valAlloca);
-                auto callee = declareBuiltin(
-                    "lucis_map_set_" + suffix,
-                    llvm::Type::getVoidTy(*context_),
-                    { ptrTy, keyLLTy, ptrTy });
-                builder_->CreateCall(callee, { currentPtr, keyVal, valAlloca });
-            } else {
-                if (val->getType() != valLLTy) {
-                    if (val->getType()->isIntegerTy() && valLLTy->isIntegerTy())
-                        val = builder_->CreateIntCast(val, valLLTy, currentTI->valueType->isSigned);
-                    else if (val->getType()->isFloatingPointTy() && valLLTy->isFloatingPointTy()) {
-                        if (val->getType()->getPrimitiveSizeInBits() > valLLTy->getPrimitiveSizeInBits())
-                            val = builder_->CreateFPTrunc(val, valLLTy);
-                        else
-                            val = builder_->CreateFPExt(val, valLLTy);
-                    }
-                }
-                auto callee = declareBuiltin(
-                    "lucis_map_set_" + suffix,
-                    llvm::Type::getVoidTy(*context_),
-                    { ptrTy, keyLLTy, valLLTy });
-                builder_->CreateCall(callee, { currentPtr, keyVal, val });
-            }
-            return {};
-        }
-
-        // Vec<T> or Set<T> index assignment
-        auto* elemLLTy = currentTI->elementType->toLLVMType(*context_, module_->getDataLayout());
-        auto vecSuffix = getVecSuffix(currentTI->elementType);
-
-        auto* idx = castValue(visit(expressions[0]));
-        if (idx->getType() != usizeTy)
-            idx = builder_->CreateIntCast(idx, usizeTy, false);
-
-        auto* val = castValue(visit(expressions[expressions.size() - 1]));
-        if (val->getType() != elemLLTy) {
-            if (val->getType()->isIntegerTy() && elemLLTy->isIntegerTy())
-                val = builder_->CreateIntCast(val, elemLLTy, currentTI->elementType->isSigned);
-            else if (val->getType()->isFloatingPointTy() && elemLLTy->isFloatingPointTy()) {
-                if (val->getType()->getPrimitiveSizeInBits() > elemLLTy->getPrimitiveSizeInBits())
-                    val = builder_->CreateFPTrunc(val, elemLLTy);
-                else
-                    val = builder_->CreateFPExt(val, elemLLTy);
-            }
-        }
-
-        if (currentTI->extendedKind == "Set") {
-            auto callee = declareBuiltin(
-                "lucis_set_add_" + suffix,
-                llvm::Type::getInt32Ty(*context_),
-                { ptrTy, elemLLTy });
-            builder_->CreateCall(callee, { currentPtr, val });
-            return {};
-        }
-
-        // Vec<T> index assignment: v[i] = x → lucis_vec_set_<suffix>
-        if (vecSuffix == "raw") {
-            auto& dl     = module_->getDataLayout();
-            auto  elemSz = dl.getTypeAllocSize(elemLLTy);
-            auto* elemSzVal = llvm::ConstantInt::get(usizeTy, elemSz);
-            auto ptrFn = declareBuiltin("lucis_vec_ptr_raw", ptrTy,
-                                        {ptrTy, usizeTy, usizeTy});
-            auto* elemPtr = builder_->CreateCall(ptrFn,
-                { currentPtr, idx, elemSzVal }, "vec_elem_ptr");
-            builder_->CreateStore(val, elemPtr);
-            return {};
-        }
-
-        auto callee = declareBuiltin(
-            "lucis_vec_set_" + vecSuffix,
-            llvm::Type::getVoidTy(*context_),
-            { ptrTy, usizeTy, elemLLTy });
-        builder_->CreateCall(callee, { currentPtr, idx, val });
+        emitExtendedIndexAssign(currentPtr, currentTI, expressions);
         return {};
     }
 
@@ -2827,9 +2833,15 @@ IRGen::ArrowLValue IRGen::resolveArrowAnyLValue(
         destPtr = builder_->CreateStructGEP(curTy, basePtr, fieldIdx, fieldName + "_ptr");
     }
 
-    // Extended types (Map/Vec/Set) are handled by the caller — skip
-    if (fieldTI && fieldTI->kind == TypeKind::Extended)
-        return {};
+    // Extended types (Map/Vec/Set) are handled by the caller — expose the
+    // container header pointer so callers can emit the subscript assignment
+    if (fieldTI && fieldTI->kind == TypeKind::Extended) {
+        ArrowLValue lv;
+        lv.ptr = destPtr;
+        lv.ty = fieldTy;
+        lv.fieldTI = fieldTI;
+        return lv;
+    }
 
     // Pointer field: load pointer and index via pointer arithmetic
     if (fieldTI && fieldTI->kind == TypeKind::Pointer && fieldTI->pointeeType) {
@@ -2886,6 +2898,12 @@ std::any IRGen::visitArrowAnyAssignStmt(LucisParser::ArrowAnyAssignStmtContext* 
     auto* rhsExpr = expressions[numIndexExprs];
 
     auto lv = resolveArrowAnyLValue(identifiers, dots, arrows, indexExprs);
+
+    // Extended container (Vec/Map/Set) subscript assignment: ptr->vec[i] = v
+    if (lv.fieldTI && lv.fieldTI->kind == TypeKind::Extended) {
+        emitExtendedIndexAssign(lv.ptr, lv.fieldTI, expressions);
+        return {};
+    }
     if (!lv.ptr) return {};
 
     auto* val = castValue(visit(rhsExpr));
