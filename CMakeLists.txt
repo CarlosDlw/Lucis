@@ -239,7 +239,14 @@ set(SOURCES
     src/cli/CheckCommand.cpp
     src/cli/HelpCommand.cpp
     src/parser/Parser.cpp
-    src/checkers/Checker.cpp
+    src/checkers/Checker_driver.cpp
+    src/checkers/Checker_semantic.cpp
+    src/checkers/Checker_type.cpp
+    src/checkers/Checker_stmt.cpp
+    src/checkers/Checker_assign.cpp
+    src/checkers/Checker_decl.cpp
+    src/checkers/Checker_safety.cpp
+    src/checkers/Checker_generic.cpp
     src/attributes/AttributeRegistry.cpp
     src/attributes/CfgPredicate.cpp
     src/attributes/TargetInfo.cpp
@@ -248,7 +255,16 @@ set(SOURCES
     src/comptime/ComptimeEngine.cpp
     src/comptime/ComptimeInterpreter.cpp
     src/comptime/ComptimeBuiltinRegistry.cpp
-    src/IRBuilder/IRGen.cpp
+    src/IRBuilder/IRGen_driver.cpp
+    src/IRBuilder/IRGen_decl.cpp
+    src/IRBuilder/IRGen_stmt.cpp
+    src/IRBuilder/IRGen_expr.cpp
+    src/IRBuilder/IRGen_access.cpp
+    src/IRBuilder/IRGen_call.cpp
+    src/IRBuilder/IRGen_method.cpp
+    src/IRBuilder/IRGen_type.cpp
+    src/IRBuilder/IRGen_flow.cpp
+    src/IRBuilder/IRGen_generic.cpp
     src/LLVM_IR/IRModule.cpp
     src/LLVM_Optimizer/Optimizer.cpp
     src/machine_code/CodeGen.cpp
