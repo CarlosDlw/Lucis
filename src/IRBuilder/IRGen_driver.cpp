@@ -7,6 +7,9 @@
 #include <llvm/IR/Intrinsics.h>
 #include <llvm/IR/Verifier.h>
 #include <llvm/IR/InlineAsm.h>
+#include <llvm/MC/TargetRegistry.h>
+#include <llvm/Support/TargetSelect.h>
+#include <llvm/Target/TargetMachine.h>
 #include <llvm/IR/DebugInfo.h>
 #include <llvm/Transforms/Utils/ModuleUtils.h>
 
@@ -194,6 +197,28 @@ std::unique_ptr<IRModule> IRGen::generate(LucisParser::ProgramContext* tree,
         ? llvm::sys::getDefaultTargetTriple()
         : targetTriple_;
     mod->setTargetTriple(llvm::Triple(triple));
+
+    // Set the data layout from the triple so all size computations during IR
+    // generation (vec/map element sizes, struct layouts) use the real target
+    // layout. Without this, getDataLayout() falls back to a packed default,
+    // producing sizes inconsistent with the backend layout (e.g. {i32, i64}
+    // sized 12 instead of 16), which corrupts raw vec elements.
+    {
+        llvm::InitializeNativeTarget();
+        std::string dlErr;
+        if (auto* dlTarget = llvm::TargetRegistry::lookupTarget(
+                llvm::Triple(triple), dlErr)) {
+            llvm::TargetOptions dlOpt;
+            std::unique_ptr<llvm::TargetMachine> dlMachine(
+                dlTarget->createTargetMachine(llvm::Triple(triple),
+                    llvm::sys::getHostCPUName(), llvm::StringRef(""),
+                    dlOpt, llvm::Reloc::PIC_));
+            if (dlMachine)
+                mod->setDataLayout(dlMachine->createDataLayout());
+        } else {
+            std::cerr << "lucis: lookupTarget failed: " << dlErr << "\n";
+        }
+    }
     
     llvm::IRBuilder<> builder(*ctx);
 
