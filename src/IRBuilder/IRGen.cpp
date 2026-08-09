@@ -1087,6 +1087,12 @@ std::any IRGen::visitProgram(LucisParser::ProgramContext* ctx) {
         if (auto* constDecl = decl->constDeclStmt())
             visit(constDecl);
     }
+    // Forward-declare all user functions (signatures only) BEFORE extend
+    // blocks so methods can call module-level functions directly.
+    for (auto* decl : ctx->topLevelDecl()) {
+        if (decl->functionDecl())
+            forwardDeclareFunction(decl->functionDecl());
+    }
     // Register struct methods via `extend` blocks
     for (auto* decl : ctx->topLevelDecl()) {
         if (decl->extendDecl())
@@ -1113,11 +1119,6 @@ std::any IRGen::visitProgram(LucisParser::ProgramContext* ctx) {
             visitAsmBBlock(ab);
     }
 
-    // Forward-declare all user functions (signatures only)
-    for (auto* decl : ctx->topLevelDecl()) {
-        if (decl->functionDecl())
-            forwardDeclareFunction(decl->functionDecl());
-    }
     // Then process functions (generate bodies)
     for (auto* decl : ctx->topLevelDecl()) {
         if (decl->functionDecl())
@@ -22794,6 +22795,32 @@ IRGen::visitMethodCallExpr(LucisParser::MethodCallExprContext* ctx) {
         }
 
         auto callee = declareBuiltin(cFuncName, cRetTy, paramLLTypes);
+
+        // ── Vec<T> raw accessors (struct elements) ─────────────────────
+        // The C runtime has no lucis_vec_at_raw / first_raw / last_raw
+        // (C cannot return arbitrary structs by value). Use
+        // lucis_vec_ptr_raw + load, matching the for-in and subscript
+        // codegen paths. ptr_raw bounds-checks and aborts on OOB.
+        if (receiverTI->extendedKind == "Vec" && suffix == "raw" &&
+            (methodName == "at" || methodName == "first" || methodName == "last")) {
+            auto& dl = module_->getDataLayout();
+            auto* elemSzVal = llvm::ConstantInt::get(usizeTy, dl.getTypeAllocSize(elemLLTy));
+            llvm::Value* idx = llvm::ConstantInt::get(usizeTy, 0);
+            if (methodName == "at") {
+                idx = args[0];
+                if (idx->getType() != usizeTy)
+                    idx = builder_->CreateIntCast(idx, usizeTy, false);
+            } else if (methodName == "last") {
+                auto lenCallee = declareBuiltin("lucis_vec_len_raw", usizeTy, {ptrTy});
+                auto* len = builder_->CreateCall(lenCallee, {recvPtr}, "vec.len");
+                idx = builder_->CreateSub(len,
+                    llvm::ConstantInt::get(usizeTy, 1), "vec.last.idx");
+            }
+            auto ptrCallee = declareBuiltin("lucis_vec_ptr_raw", ptrTy, {ptrTy, usizeTy, usizeTy});
+            auto* elemPtr = builder_->CreateCall(ptrCallee, {recvPtr, idx, elemSzVal}, "vec_elem_ptr");
+            for (auto* e : extArgExprs) consumeExprIfOwnedLocal(e);
+            return static_cast<llvm::Value*>(builder_->CreateLoad(elemLLTy, elemPtr, "vec_at"));
+        }
 
         if (retTy->isVoidTy()) {
             builder_->CreateCall(callee, callArgs);
