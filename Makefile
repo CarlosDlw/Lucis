@@ -2,13 +2,17 @@
 BUILD_DIR  := build
 BINARY     := $(BUILD_DIR)/lucis
 NPROC      := $(shell nproc 2>/dev/null || getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)
-BUILD_TYPE ?= Debug
-SANITIZERS ?= ON
+BUILD_TYPE ?= Release
+SANITIZERS ?= OFF
 GENERATOR  ?=
 CMAKE_FLAGS ?=
 ANTLR_JAR ?= antlr-4.13.2-complete.jar
 GRAMMAR_DIR ?= grammar
 GENERATED_DIR ?= src/generated
+
+# ccache (reuse of compiled objects) and lld (fast linking) when available
+CCACHE_FLAG := $(shell command -v ccache >/dev/null 2>&1 && echo "-DCMAKE_CXX_COMPILER_LAUNCHER=ccache" || echo "")
+LLD_FLAG := $(shell (command -v lld >/dev/null 2>&1 || command -v ld.lld >/dev/null 2>&1) && echo "-DCMAKE_EXE_LINKER_FLAGS=-fuse-ld=lld" || echo "")
 
 .PHONY: all build configure clean rebuild run grammar help install
 
@@ -21,20 +25,22 @@ configure:
 		cmake -S . -B $(BUILD_DIR) -G "$(GENERATOR)" \
 			-DCMAKE_BUILD_TYPE=$(BUILD_TYPE) \
 			-DLUCIS_ENABLE_SANITIZERS=$(SANITIZERS) \
+			$(CCACHE_FLAG) $(LLD_FLAG) \
 			$(CMAKE_FLAGS); \
 	else \
 		cmake -S . -B $(BUILD_DIR) \
 			-DCMAKE_BUILD_TYPE=$(BUILD_TYPE) \
 			-DLUCIS_ENABLE_SANITIZERS=$(SANITIZERS) \
+			$(CCACHE_FLAG) $(LLD_FLAG) \
 			$(CMAKE_FLAGS); \
 	fi
 
-## build  — compila o projeto
+## build  — compila o projeto (paralelo)
 build:
 	@if [ ! -f "$(BUILD_DIR)/Makefile" ] && [ ! -f "$(BUILD_DIR)/build.ninja" ]; then \
 		$(MAKE) configure; \
 	fi
-	@cmake --build $(BUILD_DIR)
+	@cmake --build $(BUILD_DIR) --parallel $(NPROC)
 
 ## install  — instala o compilador e a stdlib no sistema
 install: build
