@@ -1350,11 +1350,15 @@ bool Checker::check(LucisParser::ProgramContext* tree) {
                         auto* parentDecl = static_cast<LucisParser::StructDeclContext*>(parentSym->decl);
                         for (auto* pf : parentDecl->structField())
                             self(self, pf->typeSpec(), parentSym->modulePath);
+                        registeringImported_ = true;
                         checkStructDecl(parentDecl);
+                        registeringImported_ = false;
                     }
                 }
             }
+                    registeringImported_ = true;
                     checkStructDecl(sd);
+                    registeringImported_ = false;
                     return;
                 }
                 if (depSym->kind == ExportedSymbol::Union &&
@@ -1365,7 +1369,9 @@ bool Checker::check(LucisParser::ProgramContext* tree) {
                     // Pre-resolve field types before checking the union
                     for (auto* field : ud->unionField())
                         self(self, field->typeSpec(), ns);
+                    registeringImported_ = true;
                     checkUnionDecl(ud);
+                    registeringImported_ = false;
                     return;
                 }
                 if (depSym->kind == ExportedSymbol::BitStruct &&
@@ -1373,7 +1379,9 @@ bool Checker::check(LucisParser::ProgramContext* tree) {
                     !genericStructTemplates_.count(baseName)) {
                     if (!seenDeps.insert(baseName).second) return;
                     auto* bd = static_cast<LucisParser::BitstructDeclContext*>(depSym->decl);
+                    registeringImported_ = true;
                     checkBitStructDecl(bd);
+                    registeringImported_ = false;
                     return;
                 }
                 if (depSym->kind == ExportedSymbol::TypeAlias && needsProc) {
@@ -7277,9 +7285,10 @@ void Checker::checkStructDecl(LucisParser::StructDeclContext* decl) {
     auto* existing = typeRegistry_.lookup(name);
     if (existing) {
         bool canUpgradeSkeleton =
-            existing->kind == TypeKind::Struct &&
-            existing->fields.empty() &&
-            existing->bitWidth == 0;
+            (existing->kind == TypeKind::Struct &&
+             existing->fields.empty() &&
+             existing->bitWidth == 0) ||
+            existing->fromDependencyWalk;
         if (!canUpgradeSkeleton) {
             error(decl, "type '" + name + "' already defined");
             return;
@@ -7293,6 +7302,7 @@ void Checker::checkStructDecl(LucisParser::StructDeclContext* decl) {
     skeleton.kind = TypeKind::Struct;
     skeleton.bitWidth = 0;
     skeleton.isSigned = false;
+    skeleton.fromDependencyWalk = registeringImported_;
     if (!existing)
         typeRegistry_.registerType(skeleton);
 
@@ -7369,9 +7379,10 @@ void Checker::checkUnionDecl(LucisParser::UnionDeclContext* decl) {
     bool canUpgradeSkeleton = false;
     if (existing) {
         canUpgradeSkeleton =
-            existing->kind == TypeKind::Union &&
-            existing->fields.empty() &&
-            existing->bitWidth == 0;
+            (existing->kind == TypeKind::Union &&
+             existing->fields.empty() &&
+             existing->bitWidth == 0) ||
+            existing->fromDependencyWalk;
         if (!canUpgradeSkeleton) {
             error(decl, "type '" + name + "' already defined");
             return;
@@ -7383,6 +7394,7 @@ void Checker::checkUnionDecl(LucisParser::UnionDeclContext* decl) {
     ti.kind = TypeKind::Union;
     ti.bitWidth = 0;
     ti.isSigned = false;
+    ti.fromDependencyWalk = registeringImported_;
 
     std::unordered_set<std::string> seen;
     for (auto* field : decl->unionField()) {

@@ -323,6 +323,33 @@ static bool isBorrowedStringExpr(LucisParser::ExpressionContext* expr) {
     return false;
 }
 
+// True when the expression is a struct literal (owns its string fields).
+bool IRGen::isStructLiteralExpr(LucisParser::ExpressionContext* expr) {
+    if (!expr) return false;
+    return dynamic_cast<LucisParser::StructLitExprContext*>(expr) != nullptr ||
+           dynamic_cast<LucisParser::GenericStructLitExprContext*>(expr) != nullptr;
+}
+
+// True when the expression yields a shallow copy of a Vec element
+// (at()/first()/last()/subscript). The vec owns the element memory —
+// including any string fields — so locals copied from it must not
+// auto-free those fields.
+bool IRGen::isBorrowedStructValueExpr(LucisParser::ExpressionContext* expr) {
+    if (!expr) return false;
+    if (auto* mc = dynamic_cast<LucisParser::MethodCallExprContext*>(expr)) {
+        auto name = mc->IDENTIFIER()->getText();
+        if (name != "at" && name != "first" && name != "last") return false;
+        auto* recvTI = resolveExprTypeInfo(mc->expression());
+        return recvTI && recvTI->kind == TypeKind::Extended && recvTI->extendedKind == "Vec";
+    }
+    if (auto* ix = dynamic_cast<LucisParser::IndexExprContext*>(expr)) {
+        if (ix->expression().empty()) return false;
+        auto* recvTI = resolveExprTypeInfo(ix->expression(0));
+        return recvTI && recvTI->kind == TypeKind::Extended && recvTI->extendedKind == "Vec";
+    }
+    return false;
+}
+
 llvm::Function* IRGen::declareCFunction(const std::string& name) {
     // Already declared in this module?
     if (auto* fn = module_->getFunction(name))
@@ -4111,8 +4138,14 @@ std::any IRGen::visitVarDeclStmt(LucisParser::VarDeclStmtContext* ctx) {
             auto* alloca = builder_->CreateAlloca(type, nullptr, name);
             builder_->CreateStore(val, alloca);
             VarInfo vi{ alloca, ti2, exprDims };
+            // Structs own their string fields only when built from a
+            // literal; any other source (at(), function returns, copies)
+            // is a shallow copy — freeing the fields double-frees the
+            // original owner's buffers.
             vi.isBorrowed = (ti2 && ti2->kind == TypeKind::String &&
-                     isBorrowedStringValueExpr(d->expression()));
+                     isBorrowedStringValueExpr(d->expression())) ||
+                    (ti2 && ti2->kind == TypeKind::Struct &&
+                     !isStructLiteralExpr(d->expression()));
             locals_[name] = std::move(vi);
             emitDbgDeclare(alloca, name, vi.typeInfo, d->IDENTIFIER()->getSymbol() ? d->IDENTIFIER()->getSymbol()->getLine() : 0);
             continue;
@@ -4470,7 +4503,9 @@ std::any IRGen::visitVarDeclStmt(LucisParser::VarDeclStmtContext* ctx) {
             }
             VarInfo vi{ alloca, ti, trackedDims };
             vi.isBorrowed = (ti && ti->kind == TypeKind::String &&
-                     isBorrowedStringValueExpr(d->expression()));
+                     isBorrowedStringValueExpr(d->expression())) ||
+                    (ti && ti->kind == TypeKind::Struct &&
+                     !isStructLiteralExpr(d->expression()));
             vi.fixedArraySizes = std::move(pointerArraySizes);
             locals_[name] = std::move(vi);
             emitDbgDeclare(alloca, name, vi.typeInfo, d->IDENTIFIER()->getSymbol() ? d->IDENTIFIER()->getSymbol()->getLine() : 0);
@@ -9389,8 +9424,13 @@ std::any IRGen::visitForInStmt(LucisParser::ForInStmtContext* ctx) {
         auto* idxAlloca = builder_->CreateAlloca(idxType, nullptr, "idx");
         builder_->CreateStore(llvm::ConstantInt::get(idxType, 0), idxAlloca);
 
-        auto* elemAlloca = builder_->CreateAlloca(varType, nullptr, varName);
-        locals_[varName] = {elemAlloca, typeInfo, 0};
+            auto* elemAlloca = builder_->CreateAlloca(varType, nullptr, varName);
+            VarInfo elemVI{ elemAlloca, typeInfo, 0 };
+            // Elements are shallow copies owned by the vec — never auto-free
+            // their string fields.
+            if (typeInfo && typeInfo->kind == TypeKind::Struct)
+                elemVI.isBorrowed = true;
+            locals_[varName] = std::move(elemVI);
 
         auto* condBB   = llvm::BasicBlock::Create(*context_, "for.cond", currentFunction_);
         auto* bodyBB   = llvm::BasicBlock::Create(*context_, "for.body", currentFunction_);
@@ -22250,6 +22290,9 @@ void IRGen::emitCleanupForLocal(const std::string& name, const VarInfo& info) {
 
     // ── Struct cleanup: free owned string fields and Extended type fields ─────
     if (info.typeInfo->kind == TypeKind::Struct) {
+        // Structs copied from a Vec element (at()/for-in) are shallow copies
+        // — the vec owns the field memory; freeing here double-frees.
+        if (info.isBorrowed) return;
         auto* structLLTy = info.typeInfo->toLLVMType(*context_, module_->getDataLayout());
         for (size_t fieldIdx = 0; fieldIdx < info.typeInfo->fields.size(); fieldIdx++) {
             auto& field = info.typeInfo->fields[fieldIdx];

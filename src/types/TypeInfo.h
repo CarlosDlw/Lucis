@@ -95,6 +95,7 @@ struct TypeInfo {
     std::vector<const TypeInfo*> tupleElements; // non-empty only for Tuple
     bool dropTracked = false;                   // ownership/autodrop relevant type
     bool moveOnly = false;                      // value should move instead of implicit copy
+    bool fromDependencyWalk = false;  // registered from another unit's import walk; owner may re-register
     std::unordered_set<std::string> implementedTraits;  // trait basenames this type implements
 
     // User-defined generic instance metadata (set by Checker during monomorphization)

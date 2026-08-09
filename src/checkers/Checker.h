@@ -68,6 +68,9 @@ private:
     std::vector<Diagnostic>  diagnostics_;
     ImportResolver           imports_;
     TypeRegistry             typeRegistry_;
+    // True while the cross-file dependency walk is registering imported
+    // struct/union/bitstruct types; the owner unit may re-register them.
+    bool                     registeringImported_ = false;
     MethodRegistry           methodRegistry_;
     ExtendedTypeRegistry     extTypeRegistry_;
     BuiltinRegistry          builtinRegistry_;
