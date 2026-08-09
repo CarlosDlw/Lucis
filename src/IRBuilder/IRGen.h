@@ -682,7 +682,8 @@ private:
                             const TypeInfo* vecType,
                             const std::string& tempNameHint = "vec_lit");
     void                emitBlockExitCleanups(const std::unordered_map<std::string, VarInfo>& savedLocals);
-    bool                isDropTrackedLocal(const VarInfo& info) const;
+    bool isDropTrackedLocal(const VarInfo& info) const;
+    bool isOwningFieldType(const TypeInfo* ti);
     bool                isBorrowedStringValueExpr(LucisParser::ExpressionContext* expr) const;
     void                consumeLocalByName(const std::string& name);
     void                consumeExprIfOwnedLocal(LucisParser::ExpressionContext* expr);

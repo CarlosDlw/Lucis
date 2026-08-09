@@ -360,6 +360,8 @@ int BuildCommand::run(const ArgParser& parser) {
 
     auto buildFlagHash = [&]() -> std::string {
         std::string buf;
+        buf += "input:" + pipeOpts.inputFile + ";";
+        for (auto& sp : pipeOpts.sourcePaths) buf += "src:" + sp + ";";
         buf += "opt:" + parser.get("opt") + ";";
         buf += "target:" + pipeOpts.targetTriple + ";";
         buf += "noStd:" + std::to_string(pipeOpts.noStd) + ";";

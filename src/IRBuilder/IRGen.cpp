@@ -5048,6 +5048,11 @@ std::any IRGen::visitFieldAssignStmt(LucisParser::FieldAssignStmtContext* ctx) {
             builder_->CreateStore(val, currentPtr, true);
         else
             builder_->CreateStore(val, currentPtr);
+
+        // Ownership: the field now owns the stored value — consume the RHS
+        // local so its auto-cleanup doesn't free the same buffer.
+        if (currentTI && isOwningFieldType(currentTI))
+            consumeExprIfOwnedLocal(ctx->expression());
         return {};
     }
 
@@ -5187,6 +5192,11 @@ std::any IRGen::visitFieldAssignStmt(LucisParser::FieldAssignStmtContext* ctx) {
         builder_->CreateStore(val, currentPtr, true);
     else
         builder_->CreateStore(val, currentPtr);
+
+    // Ownership: the field now owns the stored value — consume the RHS
+    // local so its auto-cleanup doesn't free the same buffer.
+    if (currentTI && isOwningFieldType(currentTI))
+        consumeExprIfOwnedLocal(ctx->expression());
     return {};
 }
 
@@ -14765,7 +14775,12 @@ std::any IRGen::visitFnCallExpr(LucisParser::FnCallExprContext* ctx) {
                               llvm::Value* argVal,
                               llvm::Type* expectedParamTy) {
         if (!argExpr || !argVal) return;
+        // Ident: the caller's local owns the string — never free here.
         if (dynamic_cast<LucisParser::IdentExprContext*>(argExpr)) return;
+        // Field access (a.b) and index (v[i]) produce views owned by the
+        // containing struct/vec — freeing here dangles the field/element.
+        if (dynamic_cast<LucisParser::FieldAccessExprContext*>(argExpr)) return;
+        if (dynamic_cast<LucisParser::IndexExprContext*>(argExpr)) return;
 
         auto* argTI = resolveExprTypeInfo(argExpr);
         if (resolveExprArrayDims(argExpr) > 0) return;
@@ -22196,6 +22211,10 @@ void IRGen::emitAutoCleanups(const std::string& skipVar) {
 
 void IRGen::emitCleanupForLocal(const std::string& name, const VarInfo& info) {
     if (info.consumed) return;
+    // Parameters are shallow copies borrowed from the caller — the caller
+    // owns the data (strings, Vec/Map/Set buffers, struct string fields)
+    // and frees it at its own scope exit. Freeing here double-frees.
+    if (info.isParam) return;
     if (!info.typeInfo) return;
     if (info.arrayDims > 0) return;
     auto* voidTy = llvm::Type::getVoidTy(*context_);
@@ -22492,6 +22511,22 @@ void IRGen::consumeLocalByName(const std::string& name) {
             }
         }
     }
+}
+
+// True when a struct field of this type owns heap data that must be
+// transferred on assignment (string buffers, Vec/Map/Set, or structs
+// containing such fields).
+bool IRGen::isOwningFieldType(const TypeInfo* ti) {
+    if (!ti) return false;
+    if (ti->kind == TypeKind::String || ti->kind == TypeKind::Extended)
+        return true;
+    if (ti->kind == TypeKind::Struct) {
+        for (auto& f : ti->fields) {
+            if (f.typeInfo && isOwningFieldType(f.typeInfo))
+                return true;
+        }
+    }
+    return false;
 }
 
 void IRGen::consumeExprIfOwnedLocal(LucisParser::ExpressionContext* expr) {
