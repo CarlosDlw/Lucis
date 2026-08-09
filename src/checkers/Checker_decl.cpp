@@ -757,7 +757,7 @@ void Checker::checkExtendDecl(LucisParser::ExtendDeclContext* decl) {
             continue;
         }
 
-        auto methodName = method->IDENTIFIER(0)->getText();
+        auto methodName = method->name->getText();
 
         unsigned retDims = 0;
         auto* retType = resolveTypeSpec(method->typeSpec(), retDims);
@@ -967,7 +967,7 @@ locals_[paramName] = {pType, pDims, {}, true, true, nullptr};
 
         if (retType->kind != TypeKind::Void) {
             if (!blockAlwaysReturns(method->block())) {
-                auto methodName = method->IDENTIFIER(0)->getText();
+                auto methodName = method->name->getText();
                 error(method, "method '" + structName + "." + methodName +
                               "' must return a value of type '" + retType->name +
                               "' on all code paths");
@@ -1009,7 +1009,7 @@ void Checker::checkTraitDecl(LucisParser::TraitDeclContext* decl)
 
     for (auto* method : decl->traitMethod()) {
         TraitMethodInfo mi;
-        mi.name = method->IDENTIFIER(0)->getText();
+        mi.name = method->name->getText();
         mi.hasSelfReceiver = (method->AMPERSAND() != nullptr);
         mi.isStatic = !mi.hasSelfReceiver;
 
@@ -1096,7 +1096,7 @@ void Checker::checkImplDecl(LucisParser::ImplDeclContext* decl)
 
         for (auto* method : gtmpl.decl->traitMethod()) {
             TraitMethodInfo mi;
-            mi.name = method->IDENTIFIER(0)->getText();
+            mi.name = method->name->getText();
             mi.hasSelfReceiver = (method->AMPERSAND() != nullptr);
             mi.isStatic = !mi.hasSelfReceiver;
 
@@ -1165,7 +1165,7 @@ void Checker::checkImplDecl(LucisParser::ImplDeclContext* decl)
     subst["Self"] = implTI;
 
     for (auto* method : decl->implMethod()) {
-        auto methodName = method->IDENTIFIER(0)->getText();
+        auto methodName = method->name->getText();
 
         // Find matching trait method
         const TraitMethodInfo* traitMethod = nullptr;
@@ -1248,7 +1248,7 @@ void Checker::checkImplMethodBodies(LucisParser::ImplDeclContext* decl)
         for (auto& [name, vi] : globalVars_)
             locals_[name] = vi;
 
-        auto methodName = method->IDENTIFIER(0)->getText();
+        auto methodName = method->name->getText();
         bool isStatic = (method->AMPERSAND() == nullptr);
 
         // Resolve return type
@@ -1379,7 +1379,7 @@ void Checker::registerFunctionSignature(LucisParser::FunctionDeclContext* func) 
         return;
     }
     if (!isDeclActive(func->attributeList())) return;
-    auto funcName = func->IDENTIFIER(0)->getText();
+    auto funcName = func->name->getText();
 
     // Comptime functions: register in comptime registry, skip normal registration
     if (func->COMPTIME()) {
@@ -1516,7 +1516,7 @@ void Checker::checkFunction(LucisParser::FunctionDeclContext* func) {
 
     // Comptime functions: register (if not already) and type-check the body
     if (func->COMPTIME()) {
-        auto funcName = func->IDENTIFIER(0)->getText();
+        auto funcName = func->name->getText();
         if (!comptimeRegistry_.isComptime(funcName))
             comptimeRegistry_.registerFunction(funcName, func);
         // Fall through to type-check the body for error reporting
@@ -1576,7 +1576,7 @@ void Checker::checkFunction(LucisParser::FunctionDeclContext* func) {
                 error(func, "function must return a value of type '" + retType->name +
                             "' on all code paths");
             } else {
-                error(func, "function '" + func->IDENTIFIER(0)->getText() +
+                error(func, "function '" + func->name->getText() +
                             "' must return a value of type '" + retType->name +
                             "' on all code paths");
             }

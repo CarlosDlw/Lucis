@@ -79,7 +79,7 @@ void ModuleRegistry::registerFile(const std::string& modulePath,
         if (auto* funcDecl = topLevel->functionDecl()) {
             ExportedSymbol sym;
             sym.kind       = ExportedSymbol::Function;
-            sym.name       = funcDecl->IDENTIFIER(0)->getText();
+            sym.name       = funcDecl->name->getText();
             sym.modulePath = modulePath;
             sym.sourceFile = filePath;
             sym.isStdlib   = isStdlib;

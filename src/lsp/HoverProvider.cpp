@@ -329,7 +329,7 @@ std::optional<HoverResult> HoverProvider::hover(const std::string& source,
             if (!ext->IDENTIFIER()) continue;
             for (auto* method : ext->extendMethod()) {
                 if (method->IDENTIFIER().empty()) continue;
-                if (method->IDENTIFIER(0)->getText() == "drop" &&
+                if (method->name->getText() == "drop" &&
                     method->AMPERSAND() != nullptr) {
                     typesWithDrop_.insert(safeText(ext->IDENTIFIER()));
                     break;
@@ -346,7 +346,7 @@ std::optional<HoverResult> HoverProvider::hover(const std::string& source,
                 if (!extDecl || !extDecl->IDENTIFIER()) continue;
                 for (auto* method : extDecl->extendMethod()) {
                     if (method->IDENTIFIER().empty()) continue;
-                    if (method->IDENTIFIER(0)->getText() == "drop" &&
+                    if (method->name->getText() == "drop" &&
                         method->AMPERSAND() != nullptr) {
                         typesWithDrop_.insert(safeText(extDecl->IDENTIFIER()));
                         break;
@@ -451,7 +451,7 @@ std::optional<HoverResult> HoverProvider::hover(const std::string& source,
     for (auto* tld : parsed.tree->topLevelDecl()) {
         if (auto* func = tld->functionDecl()) {
             if (func->IDENTIFIER().empty()) continue;
-            auto* nameToken = func->IDENTIFIER(0)->getSymbol();
+            auto* nameToken = func->name;
             if (nameToken == hoveredToken) {
                 return makeResult(nameToken, withDoc(formatFunctionDecl(func), func->getStart()->getLine() - 1, func->attributeList()));
             }
@@ -623,7 +623,7 @@ std::optional<HoverResult> HoverProvider::hover(const std::string& source,
                     continue;
 
                 // Method name
-                if (method->IDENTIFIER(0) && method->IDENTIFIER(0)->getSymbol() == hoveredToken) {
+                if (method->name && method->name == hoveredToken) {
                     std::string structName = ext->IDENTIFIER() ? safeText(ext->IDENTIFIER()) : "?";
                     bool isStatic = (method->AMPERSAND() == nullptr);
                     auto resolveSelf = [&](const std::string& t) -> std::string {

@@ -115,7 +115,7 @@ int RunCommand::run(const ArgParser& parser) {
         for (auto* tld : unit.parseResult->tree->topLevelDecl()) {
             if (auto* func = tld->functionDecl()) {
                 if (func->COMPTIME()) {
-                    auto name = func->IDENTIFIER(0)->getText();
+                    auto name = func->name->getText();
                     comptimeEngine.registry().registerFunction(
                         name, func, func->typeParamList() != nullptr);
                 }

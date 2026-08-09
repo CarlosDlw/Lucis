@@ -454,7 +454,7 @@ std::any IRGen::visitExtendDecl(LucisParser::ExtendDeclContext* ctx) {
             continue;
         }
 
-        auto methodName = method->IDENTIFIER(0)->getText();
+        auto methodName = method->name->getText();
         auto* retTI = resolveTypeInfo(method->typeSpec());
         if (!retTI) return {};
         auto* retLLTy = retTI->toLLVMType(*context_, module_->getDataLayout());
@@ -621,7 +621,7 @@ std::any IRGen::visitTraitDecl(LucisParser::TraitDeclContext* ctx)
 
     for (auto* method : ctx->traitMethod()) {
         TraitMethodInfo mi;
-        mi.name = method->IDENTIFIER(0)->getText();
+        mi.name = method->name->getText();
         mi.hasSelfReceiver = (method->AMPERSAND() != nullptr);
         mi.isStatic = !mi.hasSelfReceiver;
 
@@ -684,7 +684,7 @@ std::any IRGen::visitImplDecl(LucisParser::ImplDeclContext* ctx)
         }
         for (auto* m : gtmpl.decl->traitMethod()) {
             TraitMethodInfo mi;
-            mi.name = m->IDENTIFIER(0)->getText();
+            mi.name = m->name->getText();
             mi.hasSelfReceiver = (m->AMPERSAND() != nullptr);
             mi.isStatic = !mi.hasSelfReceiver;
             mi.returnType = subst.empty() ? resolveTypeInfo(m->typeSpec())
@@ -730,7 +730,7 @@ std::any IRGen::visitImplDecl(LucisParser::ImplDeclContext* ctx)
 
     // Generate LLVM functions for each impl method
     for (auto* method : ctx->implMethod()) {
-        auto methodName = method->IDENTIFIER(0)->getText();
+        auto methodName = method->name->getText();
         bool isStatic = (method->AMPERSAND() == nullptr);
 
         auto mangledFnName = mangleImplMethodName(
@@ -987,7 +987,7 @@ void IRGen::forwardDeclareFunction(LucisParser::FunctionDeclContext* ctx) {
             std::cerr << "lucis: function must have a name\n";
             return;
         }
-        auto funcName = ctx->IDENTIFIER(0)->getText();
+        auto funcName = ctx->name->getText();
         GenericFuncTemplate tmpl;
         for (auto* tp : ctx->typeParamList()->typeParam()) {
             if (tp->IDENTIFIER().empty()) continue;
@@ -1006,7 +1006,7 @@ void IRGen::forwardDeclareFunction(LucisParser::FunctionDeclContext* ctx) {
         std::cerr << "lucis: function must have a name\n";
         return;
     }
-    auto  funcName   = ctx->IDENTIFIER(0)->getText();
+    auto  funcName   = ctx->name->getText();
 
     bool isMainWithArgs = (funcName == "main" && ctx->paramList() != nullptr);
 
@@ -1092,7 +1092,7 @@ std::any IRGen::visitFunctionDecl(LucisParser::FunctionDeclContext* ctx) {
         std::cerr << "lucis: function must have a name\n";
         return {};
     }
-    auto  funcName   = ctx->IDENTIFIER(0)->getText();
+    auto  funcName   = ctx->name->getText();
 
     // ── Special handling: main(Vec<string> args) ────────────────────────
     // When main has parameters, we generate:
@@ -2055,7 +2055,7 @@ void IRGen::registerCrossFileSymbols(LucisParser::ProgramContext* ctx) {
 
             auto structName = sym->name;
             for (auto* method : extCtx->extendMethod()) {
-                auto methodName = method->IDENTIFIER(0)->getText();
+                auto methodName = method->name->getText();
                 auto funcName = structName + "__" + methodName;
 
                 // Skip if already declared
@@ -2169,7 +2169,7 @@ void IRGen::registerCrossFileSymbols(LucisParser::ProgramContext* ctx) {
 
             // Forward-declare LLVM functions for each impl method
             for (auto* method : implCtx->implMethod()) {
-                auto methodName = method->IDENTIFIER(0)->getText();
+                auto methodName = method->name->getText();
                 auto mangledFnName = mangleImplMethodName(
                     trait->name, implTI->name, methodName);
 

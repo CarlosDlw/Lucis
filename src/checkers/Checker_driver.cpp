@@ -1081,7 +1081,7 @@ bool Checker::check(LucisParser::ProgramContext* tree) {
                 error(func, "function must have a name");
                 continue;
             }
-            auto funcName = func->IDENTIFIER(0)->getText();
+            auto funcName = func->name->getText();
             if (!moduleRegistry_ || !functions_.count(funcName) || globalBuiltins_.count(funcName)) {
                 registerFunctionSignature(func);
             }

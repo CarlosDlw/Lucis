@@ -415,7 +415,7 @@ const TypeInfo* IRGen::instantiateGenericStruct(
                 continue;
             }
 
-            auto methodName = method->IDENTIFIER(0)->getText();
+            auto methodName = method->name->getText();
             auto* retTI = resolveTypeInfoWithSubst(method->typeSpec(), subst);
             auto* retLLTy = retTI->toLLVMType(*context_, module_->getDataLayout());
 
@@ -559,7 +559,7 @@ const TypeInfo* IRGen::instantiateGenericStruct(
 
             // Generate LLVM functions for each generic impl method
             for (auto* method : implCtx->implMethod()) {
-                auto methodName = method->IDENTIFIER(0)->getText();
+                auto methodName = method->name->getText();
                 auto fnName = mangleImplMethodName(
                     trait->name, mangledName, methodName);
 

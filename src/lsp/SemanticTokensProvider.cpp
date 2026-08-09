@@ -252,9 +252,17 @@ static bool isInactive(const InactiveRanges& ranges, uint32_t line, uint32_t col
 }
 
 static void classifyIdent(IdentMap& map, antlr4::tree::TerminalNode* node,
-                           SemanticTokenType type, uint32_t modifiers = 0) {
+                          SemanticTokenType type, uint32_t modifiers = 0) {
     if (!node) return;
     map[key(node)] = {type, modifiers};
+}
+
+// Overload for labeled tokens (Token* fields generated from name=IDENTIFIER
+// grammar labels).
+static void classifyIdent(IdentMap& map, antlr4::Token* token,
+                          SemanticTokenType type, uint32_t modifiers = 0) {
+    if (!token) return;
+    map[key(token)] = {type, modifiers};
 }
 
 // Walk the parse tree to classify IDENTIFIER tokens by their context.
@@ -387,13 +395,19 @@ static void walkTree(IdentMap& map, InactiveRanges& inactiveRanges,
 
     // ── type alias ──
     else if (auto* ctx = dynamic_cast<LucisParser::TypeAliasDeclContext*>(node)) {
-        classifyIdent(map, ctx->IDENTIFIER(), SemanticTokenType::Type,
+        // "type" is a soft keyword here — color it as a keyword.
+        if (ctx->typeKw() && ctx->typeKw()->IDENTIFIER())
+            classifyIdent(map, ctx->typeKw()->IDENTIFIER(), SemanticTokenType::Keyword);
+        classifyIdent(map, ctx->name, SemanticTokenType::Type,
                       static_cast<uint32_t>(SemanticTokenMod::Declaration));
     }
 
     // ── function decl ──
     else if (auto* ctx = dynamic_cast<LucisParser::FunctionDeclContext*>(node)) {
-        if (!ctx->IDENTIFIER().empty()) {
+        // "fn" is a soft keyword here — color it as a keyword.
+        if (ctx->fnKw() && ctx->fnKw()->IDENTIFIER())
+            classifyIdent(map, ctx->fnKw()->IDENTIFIER(), SemanticTokenType::Keyword);
+        if (ctx->name) {
             uint32_t mods = static_cast<uint32_t>(SemanticTokenMod::Declaration) |
                             static_cast<uint32_t>(SemanticTokenMod::Definition);
             if (ctx->COMPTIME())
@@ -405,7 +419,7 @@ static void walkTree(IdentMap& map, InactiveRanges& inactiveRanges,
                     attrStart ? attrStart : ctx->getStart(),
                     ctx->getStop());
             }
-            classifyIdent(map, ctx->IDENTIFIER(0), SemanticTokenType::Function, mods);
+            classifyIdent(map, ctx->name, SemanticTokenType::Function, mods);
         }
         // Generic type params
         if (ctx->typeParamList()) {
@@ -416,6 +430,20 @@ static void walkTree(IdentMap& map, InactiveRanges& inactiveRanges,
                                   static_cast<uint32_t>(SemanticTokenMod::Declaration));
             }
         }
+    }
+
+    // ── ret / return statement — "ret"/"return" is a soft keyword ──
+    else if (auto* ctx = dynamic_cast<LucisParser::ReturnStmtContext*>(node)) {
+        if (ctx->retKw() && ctx->retKw()->IDENTIFIER())
+            classifyIdent(map, ctx->retKw()->IDENTIFIER(), SemanticTokenType::Keyword);
+        else if (ctx->returnKw() && ctx->returnKw()->IDENTIFIER())
+            classifyIdent(map, ctx->returnKw()->IDENTIFIER(), SemanticTokenType::Keyword);
+    }
+
+    // ── match expression — "match" is a soft keyword ──
+    else if (auto* ctx = dynamic_cast<LucisParser::MatchExprContext*>(node)) {
+        if (ctx->matchKw() && ctx->matchKw()->IDENTIFIER())
+            classifyIdent(map, ctx->matchKw()->IDENTIFIER(), SemanticTokenType::Keyword);
     }
 
     // ── extern decl ──
@@ -507,17 +535,18 @@ static void walkTree(IdentMap& map, InactiveRanges& inactiveRanges,
         else if (ctx->GT().size() == 1) classifyOpToken(ctx->GT(0));
     }
     else if (auto* ctx = dynamic_cast<LucisParser::ExtendMethodContext*>(node)) {
-        auto ids = ctx->IDENTIFIER();
-        if (!ids.empty()) {
-            // extendMethod grammar always places the method name at IDENTIFIER[0]
-            classifyIdent(map, ids[0], SemanticTokenType::Method,
+        // "fn" is a soft keyword here — color it as a keyword.
+        if (ctx->fnKw() && ctx->fnKw()->IDENTIFIER())
+            classifyIdent(map, ctx->fnKw()->IDENTIFIER(), SemanticTokenType::Keyword);
+        if (ctx->name) {
+            classifyIdent(map, ctx->name, SemanticTokenType::Method,
                           static_cast<uint32_t>(SemanticTokenMod::Declaration) |
                           static_cast<uint32_t>(SemanticTokenMod::Definition));
 
-            // Instance method form: type name(&self, ...)
+            // Instance method form: fn name(&self, ...)
             // Mark the self identifier as a parameter declaration.
-            if (ctx->AMPERSAND() && ids.size() >= 2) {
-                classifyIdent(map, ids[1], SemanticTokenType::Parameter,
+            if (ctx->AMPERSAND() && ctx->selfParam) {
+                classifyIdent(map, ctx->selfParam, SemanticTokenType::Parameter,
                               static_cast<uint32_t>(SemanticTokenMod::Declaration));
             }
         }

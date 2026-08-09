@@ -548,7 +548,7 @@ const TypeInfo* Checker::instantiateGenericStruct(
                 continue;
             }
 
-            auto methodName = method->IDENTIFIER(0)->getText();
+            auto methodName = method->name->getText();
 
             unsigned retDims = 0;
             auto* retType = resolveTypeSpecWithSubst(method->typeSpec(), subst, retDims);

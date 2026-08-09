@@ -376,7 +376,7 @@ void Checker::syncToSemanticDB_Trait(const std::string& name,
     // Convert trait methods to semantic MethodInfo
     for (auto* m : decl->traitMethod()) {
         semantic::MethodInfo mi;
-        mi.name     = m->IDENTIFIER(0)->getText();
+        mi.name     = m->name->getText();
         mi.isStatic = (m->AMPERSAND() == nullptr);
 
         unsigned retDims = 0;
@@ -435,7 +435,7 @@ void Checker::syncToSemanticDB_Impl(const std::string& traitName,
 
     for (auto* m : decl->implMethod()) {
         semantic::MethodInfo mi;
-        mi.name     = m->IDENTIFIER(0)->getText();
+        mi.name     = m->name->getText();
         mi.isStatic = (m->AMPERSAND() == nullptr);
 
         unsigned retDims = 0;

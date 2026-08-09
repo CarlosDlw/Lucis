@@ -2762,7 +2762,7 @@ std::any IRGen::visitStaticMethodCallExpr(
     if (extIt != genericExtendTemplates_.end() && structIt != genericStructTemplates_.end()) {
         for (auto* method : extIt->second.decl->extendMethod()) {
             if (method->AMPERSAND()) continue;
-            if (method->IDENTIFIER(0)->getText() != methodName) continue;
+            if (method->name->getText() != methodName) continue;
 
             std::vector<LucisParser::ParamContext*> formalParams;
             if (auto* paramList = method->paramList())

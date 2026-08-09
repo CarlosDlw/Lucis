@@ -7014,7 +7014,7 @@ std::string CompletionProvider::resolveMethodReturnType(
       }
 
       for (auto *m : ext->extendMethod()) {
-        if (!m->IDENTIFIER(0))
+        if (!m->name)
           continue;
         if (safeIdAt(m, 0) == methodName) {
           if (m->typeSpec())
@@ -7048,7 +7048,7 @@ std::string CompletionProvider::resolveMethodReturnType(
         }
 
         for (auto *m : ext->extendMethod()) {
-          if (!m->IDENTIFIER(0))
+          if (!m->name)
             continue;
           if (safeIdAt(m, 0) == methodName) {
             if (m->typeSpec())

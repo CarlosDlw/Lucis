@@ -351,7 +351,7 @@ std::optional<DefinitionResult> DefinitionProvider::resolveAtPosition(
     for (auto* tld : tree->topLevelDecl()) {
         // Function name → jump to self
         if (auto* func = tld->functionDecl()) {
-            if (!func->IDENTIFIER().empty() && func->IDENTIFIER(0)->getSymbol() == hoveredToken)
+            if (!func->IDENTIFIER().empty() && func->name && func->name->getTokenIndex() == hoveredToken->getTokenIndex())
                 return makeResult(hoveredToken, filePath);
             // Parameter type spec → resolve type name
             if (auto* params = func->paramList()) {
@@ -560,8 +560,8 @@ std::optional<DefinitionResult> DefinitionProvider::resolveIdent(
 
     // 2) User-defined function
     auto* funcDecl = findFunctionDecl(tree, name);
-    if (funcDecl)
-        return makeResult(funcDecl->IDENTIFIER(0)->getSymbol(), filePath);
+    if (funcDecl && funcDecl->name)
+        return makeResult(funcDecl->name, filePath);
 
     // 3) Extern declaration
     auto* externDecl = findExternDecl(tree, name);
@@ -943,7 +943,7 @@ std::optional<DefinitionResult> DefinitionProvider::walkExprForDef(
                         continue;
                     for (auto* m : ext->extendMethod()) {
                         if (safeIdAt(m, 0) == methodName)
-                            return makeResult(m->IDENTIFIER(0)->getSymbol(), filePath);
+                            return makeResult(m->name, filePath);
                     }
                 }
 
@@ -960,7 +960,7 @@ std::optional<DefinitionResult> DefinitionProvider::walkExprForDef(
                                 continue;
                             for (auto* m : ext->extendMethod()) {
                                 if (safeIdAt(m, 0) == methodName)
-                                    return makeResult(m->IDENTIFIER(0)->getSymbol(),
+                                    return makeResult(m->name,
                                                       filePath, sym->sourceFile);
                             }
                         }
@@ -1126,7 +1126,7 @@ std::optional<DefinitionResult> DefinitionProvider::walkExprForDef(
                 if (!ext || safeText(ext->IDENTIFIER()) != typeName) continue;
                 for (auto* m : ext->extendMethod()) {
                     if (safeIdAt(m, 0) == methodName)
-                        return makeResult(m->IDENTIFIER(0)->getSymbol(), filePath);
+                        return makeResult(m->name, filePath);
                 }
             }
 
@@ -1140,7 +1140,7 @@ std::optional<DefinitionResult> DefinitionProvider::walkExprForDef(
                         if (!ext || safeText(ext->IDENTIFIER()) != typeName) continue;
                         for (auto* m : ext->extendMethod()) {
                             if (safeIdAt(m, 0) == methodName)
-                                return makeResult(m->IDENTIFIER(0)->getSymbol(),
+                                return makeResult(m->name,
                                                   filePath, sym->sourceFile);
                         }
                     }

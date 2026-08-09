@@ -1685,6 +1685,19 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
         auto* matchedType = resolveExprType(me->expression());
         if (!matchedType) return nullptr;
 
+        // A match must have at least one arm; an arm must have a body
+        // (syntactically tolerated while typing).
+        if (me->matchArm().empty()) {
+            error(expr, "match expression requires at least one arm");
+            return nullptr;
+        }
+        for (auto* arm : me->matchArm()) {
+            if (arm->expression().empty() && !arm->block()) {
+                error(arm, "match arm is missing its body (expression or block after '->')");
+                return nullptr;
+            }
+        }
+
         // Check if this is a literal match (patterns are literals, not enum variants)
         bool hasLiteralPattern = false;
         bool hasEnumPattern = false;
@@ -4076,7 +4089,7 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
         if (extIt != genericExtendTemplates_.end() && structIt != genericStructTemplates_.end()) {
             for (auto* method : extIt->second.decl->extendMethod()) {
                 if (method->AMPERSAND()) continue;
-                if (method->IDENTIFIER(0)->getText() != methodName) continue;
+                if (method->name->getText() != methodName) continue;
 
                 std::vector<LucisParser::ParamContext*> formalParams;
                 if (auto* paramList = method->paramList())

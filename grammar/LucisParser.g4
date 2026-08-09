@@ -85,7 +85,7 @@ topLevelDecl
 
 // type BinOp = fn(int32, int32) -> int32;
 typeAliasDecl
-    : attributeList typeKw IDENTIFIER ASSIGN typeSpec SEMI
+    : attributeList typeKw name=IDENTIFIER ASSIGN typeSpec SEMI
     ;
 
 // enum Color { Red, Green, Blue }
@@ -163,8 +163,11 @@ matchKw  : {_input->LT(1)->getText() == "match"}?  IDENTIFIER ;
 // fn main() int32 { ... }
 // fn max<T>(T a, T b) T { ... }
 // fn makePoint() LIB::Point { ... }
+// Note: name=IDENTIFIER labels give the function name a stable accessor
+// (the fnKw subrule consumes the "fn" keyword as an IDENTIFIER token, so
+// bare IDENTIFIER(n) indices in this rule are shifted by one).
 functionDecl
-    : attributeList COMPTIME? fnKw IDENTIFIER typeParamList? LPAREN paramList? RPAREN (IDENTIFIER SCOPE)? typeSpec block
+    : attributeList COMPTIME? fnKw name=IDENTIFIER typeParamList? LPAREN paramList? RPAREN (IDENTIFIER SCOPE)? typeSpec block
     ;
 
 // extend Point { ... }
@@ -183,8 +186,8 @@ typeParam
     ;
 
 extendMethod
-    : fnKw IDENTIFIER LPAREN AMPERSAND IDENTIFIER (COMMA param)* RPAREN typeSpec block
-    | fnKw IDENTIFIER LPAREN paramList? RPAREN typeSpec block
+    : fnKw name=IDENTIFIER LPAREN AMPERSAND selfParam=IDENTIFIER (COMMA param)* RPAREN typeSpec block
+    | fnKw name=IDENTIFIER LPAREN paramList? RPAREN typeSpec block
     | operatorDecl
     ;
 
@@ -227,8 +230,8 @@ traitDecl
     ;
 
 traitMethod
-    : fnKw IDENTIFIER LPAREN AMPERSAND IDENTIFIER (COMMA param)* RPAREN typeSpec SEMI
-    | fnKw IDENTIFIER LPAREN paramList? RPAREN typeSpec SEMI
+    : fnKw name=IDENTIFIER LPAREN AMPERSAND selfParam=IDENTIFIER (COMMA param)* RPAREN typeSpec SEMI
+    | fnKw name=IDENTIFIER LPAREN paramList? RPAREN typeSpec SEMI
     ;
 
 // impl Hashable for Point { fn hash(&self) uint64 { ... } }
@@ -238,8 +241,8 @@ implDecl
     ;
 
 implMethod
-    : fnKw IDENTIFIER LPAREN AMPERSAND IDENTIFIER (COMMA param)* RPAREN typeSpec block
-    | fnKw IDENTIFIER LPAREN paramList? RPAREN typeSpec block
+    : fnKw name=IDENTIFIER LPAREN AMPERSAND selfParam=IDENTIFIER (COMMA param)* RPAREN typeSpec block
+    | fnKw name=IDENTIFIER LPAREN paramList? RPAREN typeSpec block
     ;
 
 paramList
@@ -573,6 +576,7 @@ defaultClause
 matchArm
     : pattern (PIPE pattern)* (IF expression)? ARROW expression
     | pattern (PIPE pattern)* (IF expression)? ARROW block
+    | pattern (PIPE pattern)* (IF expression)? ARROW
     ;
 
 // Patterns for match arms
@@ -697,7 +701,7 @@ expression
     // Try expression (wraps sub-expression in setjmp/longjmp)
     | TRY expression                                           # tryExpr
     // Match expression: match expr { pattern -> body, ... }
-    | matchKw expression LBRACE matchArm (COMMA matchArm)* COMMA? RBRACE  # matchExpr
+    | matchKw expression LBRACE (matchArm (COMMA matchArm)*)? COMMA? RBRACE  # matchExpr
     // Atoms
     | LPAREN expression COMMA expression (COMMA expression)* RPAREN  # tupleLitExpr
     | LPAREN expression RPAREN                                 # parenExpr
