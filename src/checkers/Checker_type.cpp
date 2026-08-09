@@ -1513,6 +1513,19 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
             return nullptr;
         }
 
+        // Hint: is this an unimported function from another module?
+        if (moduleRegistry_) {
+            for (auto& ns : moduleRegistry_->allModules()) {
+                auto* sym = moduleRegistry_->findSymbol(ns, name);
+                if (sym && sym->kind == ExportedSymbol::Function &&
+                    sym->sourceFile != currentFile_) {
+                    error(expr, "undefined variable '" + name +
+                                "'. Did you forget 'use " + ns + "::" + name + ";'?");
+                    return nullptr;
+                }
+            }
+        }
+
         error(expr, "undefined variable '" + name + "'");
         return nullptr;
     }
