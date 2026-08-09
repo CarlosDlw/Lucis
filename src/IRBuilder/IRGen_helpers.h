@@ -264,6 +264,11 @@ inline bool isBorrowedStringExpr(LucisParser::ExpressionContext* expr) {
             return name == "fromCStr" || name == "fromCStrLen";
         }
     }
+    // Field (a.b), arrow (p->b) and index (v[i]) access yield views owned
+    // by the containing struct/vec — never auto-free them.
+    if (dynamic_cast<LucisParser::FieldAccessExprContext*>(expr)) return true;
+    if (dynamic_cast<LucisParser::ArrowAccessExprContext*>(expr)) return true;
+    if (dynamic_cast<LucisParser::IndexExprContext*>(expr)) return true;
     return false;
 }
 
