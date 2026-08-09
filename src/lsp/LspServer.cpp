@@ -1,6 +1,7 @@
 #include "lsp/LspServer.h"
 #include "lsp/ProjectContext.h"
 #include "imports/ImportResolver.h"
+#include "config/LucisConfig.h"
 
 #include <filesystem>
 #include <fstream>
@@ -212,29 +213,54 @@ void LspServer::handleShutdown(const json& msg) {
 //  Main file discovery
 // ═══════════════════════════════════════════════════════════════════════
 
-// Quick text-based search for the file that has `namespace Main` and a `main`
-// function. Avoids full parsing — just looks for the two markers in source text.
+// Text-based search for the file that has a `fn main(` function. Avoids
+// full parsing — just looks for the marker in source text. Prefers the
+// source paths from lucis.yaml (search stays inside the project's own
+// source dirs); without a yaml, searches `src/` if present; otherwise
+// returns empty so the opened file becomes the anchor. Never scans the
+// whole project root — arbitrary .lc files (tests, leftovers) can carry a
+// `fn main(` and poison the anchor.
 std::string LspServer::findMainFile(const std::string& projectRoot) {
     if (projectRoot.empty()) return {};
-    try {
-        for (auto& entry : fs::recursive_directory_iterator(
-                 projectRoot, fs::directory_options::skip_permission_denied)) {
-            std::error_code ec;
-            if (!entry.is_regular_file(ec) || ec) continue;
-            if (entry.path().extension() != ".lc") continue;
 
-            std::ifstream f(entry.path());
-            if (!f) continue;
-
-            std::string content((std::istreambuf_iterator<char>(f)),
-                                 std::istreambuf_iterator<char>());
-
-            // Must have a main() function
-            if (content.find("fn main(") == std::string::npos) continue;
-
-            return entry.path().string();
+    auto searchDirs = [&]() -> std::vector<std::string> {
+        std::vector<std::string> dirs;
+        if (auto config = LucisConfig::load(projectRoot + "/lucis.yaml")) {
+            if (!config->sourcePaths.empty()) {
+                for (auto& sp : config->sourcePaths)
+                    dirs.push_back((fs::path(projectRoot) / sp).string());
+                return dirs;
+            }
         }
-    } catch (...) {}
+        auto srcDir = fs::path(projectRoot) / "src";
+        std::error_code sec;
+        if (fs::is_directory(srcDir, sec) && !sec)
+            dirs.push_back(srcDir.string());
+        return dirs;
+    }();
+
+    for (auto& dir : searchDirs) {
+        std::error_code sec;
+        try {
+            for (auto& entry : fs::recursive_directory_iterator(
+                     dir, fs::directory_options::skip_permission_denied, sec)) {
+                std::error_code ec;
+                if (!entry.is_regular_file(ec) || ec) continue;
+                if (entry.path().extension() != ".lc") continue;
+
+                std::ifstream f(entry.path());
+                if (!f) continue;
+
+                std::string content((std::istreambuf_iterator<char>(f)),
+                                     std::istreambuf_iterator<char>());
+
+                // Must have a main() function
+                if (content.find("fn main(") == std::string::npos) continue;
+
+                return entry.path().string();
+            }
+        } catch (...) {}
+    }
     return {};
 }
 
@@ -279,7 +305,28 @@ void LspServer::rebuildContext(const std::string& filePath, bool force) {
         return;
     }
 
-    if (projectContext_.build(anchorFile)) {
+    // A build failure must never kill the caller (didOpen/didSave/didChange)
+    // before diagnostics are published — the editor always needs an update.
+    bool built = false;
+    try {
+        if (anchorFile == filePath) {
+            // The anchor is the opened document: parse its in-memory text
+            // (the editor's source is fresher than disk — unsaved changes).
+            std::string anchorText = documents_.get(DocumentStore::pathToUri(filePath));
+            if (!anchorText.empty())
+                built = projectContext_.buildFromText(anchorFile, anchorText);
+            else
+                built = projectContext_.build(anchorFile);
+        } else {
+            built = projectContext_.build(anchorFile);
+        }
+    } catch (const std::exception& e) {
+        std::cerr << "[lucis-lsp] project build exception: " << e.what() << "\n";
+    } catch (...) {
+        std::cerr << "[lucis-lsp] project build unknown exception\n";
+    }
+
+    if (built) {
         contextProjectRoot_ = projectRoot;
         contextAnchorPath_ = anchorFile;
         std::cerr << "[lucis-lsp] project root: "
@@ -310,10 +357,11 @@ void LspServer::handleDidOpen(const json& msg) {
         rebuildContext(filePath, true);
 
         // Belt-and-suspenders: register modules from use declarations
-        // directly, in case the full rebuild above failed silently.
+        // directly, even if the full rebuild failed — so the registry still
+        // knows this file's imports (hover/completion benefit too).
         try {
             auto parseResult = Parser::parseString(text);
-            if (parseResult.tree && projectContext_.isValid()) {
+            if (parseResult.tree) {
                 for (auto* pre : parseResult.tree->preambleDecl()) {
                     auto* ud = pre->useDecl();
                     if (!ud) continue;
@@ -406,7 +454,7 @@ void LspServer::handleDidChange(const json& msg) {
         // before save. Full rebuild happens on didSave.
         try {
             auto parseResult = Parser::parseString(text);
-            if (parseResult.tree && projectContext_.isValid()) {
+            if (parseResult.tree) {
                 for (auto* pre : parseResult.tree->preambleDecl()) {
                     auto* ud = pre->useDecl();
                     if (!ud) continue;

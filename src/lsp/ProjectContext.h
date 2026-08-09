@@ -19,6 +19,11 @@ public:
     // starting from the entry point file.
     // Returns false if no project could be determined.
     bool build(const std::string& filePath);
+    // Like build(), but parses the anchor file from the given in-memory
+    // source (the editor's opened document) instead of from disk. Used for
+    // unsaved/in-memory documents; imported modules are still read from disk.
+    bool buildFromText(const std::string& filePath, const std::string& source);
+    bool buildImpl(const std::string& filePath, const std::string* anchorSource);
 
     ModuleRegistry& registry() { return registry_; }
     const ModuleRegistry& registry() const { return registry_; }

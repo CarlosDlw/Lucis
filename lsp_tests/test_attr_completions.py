@@ -49,6 +49,16 @@ class LspClient:
         self.proc.stdin.flush()
 
     def _recv(self, timeout=5):
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            msg = self._recv_one(deadline - time.monotonic())
+            if msg is None:
+                return None
+            if "id" in msg:
+                return msg
+        return None
+
+    def _recv_one(self, timeout=5):
         """Read one JSON-RPC message."""
         raw = self.proc.stdout.buffer
         deadline = time.monotonic() + timeout

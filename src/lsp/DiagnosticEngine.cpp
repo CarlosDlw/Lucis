@@ -106,12 +106,32 @@ std::vector<Diagnostic> DiagnosticEngine::run(const std::string& source,
 //  Project-aware diagnostics
 // ═══════════════════════════════════════════════════════════════════════
 
+namespace {
+// Parse-only diagnostics: syntax errors are always valid without a project
+// context; semantic checks are skipped (see comment at the run() fallback).
+std::vector<Diagnostic> runParseOnly(const std::string& source,
+                                     ParseResult* preParsed) {
+    std::vector<Diagnostic> result;
+    ParseResult localParseStorage;
+    auto& parsed = preParsed ? *preParsed
+                             : (localParseStorage = Parser::parseString(source),
+                                localParseStorage);
+    for (auto& d : parsed.diagnostics)
+        result.push_back(d);
+    return result;
+}
+} // namespace
+
 std::vector<Diagnostic> DiagnosticEngine::run(const std::string& source,
                                                const std::string& filePath,
                                                const ProjectContext* project,
                                                ParseResult* preParsed) {
+    // No (or broken) project context: publish only parse/syntax diagnostics.
+    // Running the semantic checker without the module registry produces
+    // false "unknown symbol / unknown type" reports for every cross-file
+    // symbol — worse than no semantic feedback.
     if (!project || !project->isValid())
-        return run(source, filePath, preParsed);
+        return runParseOnly(source, preParsed);
 
     std::vector<Diagnostic> result;
 

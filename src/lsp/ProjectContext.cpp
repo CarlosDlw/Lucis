@@ -49,6 +49,16 @@ static void processCMacroBlocks(LucisParser::ProgramContext* tree,
 // ═══════════════════════════════════════════════════════════════════════
 
 bool ProjectContext::build(const std::string& filePath) {
+    return buildImpl(filePath, nullptr);
+}
+
+bool ProjectContext::buildFromText(const std::string& filePath,
+                                   const std::string& source) {
+    return buildImpl(filePath, &source);
+}
+
+bool ProjectContext::buildImpl(const std::string& filePath,
+                               const std::string* anchorSource) {
     valid_ = false;
     units_.clear();
     fileModulePaths_.clear();
@@ -88,7 +98,14 @@ bool ProjectContext::build(const std::string& filePath) {
         unit.modulePath  = modPath;
 
         // Use persistent stdlib cache to avoid re-parsing stdlib on every rebuild.
-        unit.parseResult = getStdlibParse(curPath);
+        // The anchor file parses from the editor's in-memory text when given
+        // (unsaved changes / in-memory documents).
+        if (anchorSource && curPath == filePath) {
+            unit.parseResult = std::make_shared<ParseResult>(
+                Parser::parseString(*anchorSource));
+        } else {
+            unit.parseResult = getStdlibParse(curPath);
+        }
         if (!unit.parseResult) {
             try {
                 unit.parseResult = std::make_shared<ParseResult>(Parser::parse(curPath));
@@ -202,7 +219,8 @@ bool ProjectContext::build(const std::string& filePath) {
 
         for (auto& dir : scanDirs) {
             std::error_code ec;
-            for (auto& entry : fs::recursive_directory_iterator(dir, ec)) {
+            for (auto& entry : fs::recursive_directory_iterator(
+                     dir, fs::directory_options::skip_permission_denied, ec)) {
                 if (ec) break;
                 if (!entry.is_regular_file()) continue;
                 if (entry.path().extension() != ".lc") continue;

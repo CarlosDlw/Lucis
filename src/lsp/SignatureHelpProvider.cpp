@@ -820,7 +820,11 @@ SignatureHelpProvider::signatureHelp(
 
         // 4) Cross-file extend methods (filtered by receiver type)
         if (project && project->isValid()) {
+            // The current file's extends are already collected in section 1 —
+            // skip its module to avoid duplicate signatures.
+            std::string curMod = project->modulePathFor(filePath);
             for (auto& ns : project->registry().allModules()) {
+                if (!curMod.empty() && ns == curMod) continue;
                 auto syms = project->registry().getModuleSymbols(ns);
                 for (auto* sym : syms) {
                     if (sym->kind != ExportedSymbol::ExtendBlock) continue;
