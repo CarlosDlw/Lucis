@@ -122,6 +122,34 @@ static std::string unwrapIndexedType(std::string typeName,
       }
     }
 
+    // Extended/collection types: vec<T>/set<T> → T, map<K,V> → V
+    {
+      auto ltPos = typeName.find('<');
+      if (ltPos != std::string::npos) {
+        auto gtPos = typeName.rfind('>');
+        if (gtPos != std::string::npos) {
+          std::string baseName = typeName.substr(0, ltPos);
+          std::string inner = typeName.substr(ltPos + 1, gtPos - ltPos - 1);
+          std::string normalized = normalizeExtBaseName(baseName);
+          if (normalized == "Vec" || normalized == "Set") {
+            typeName = trim(inner);
+            continue;
+          }
+          if (normalized == "Map") {
+            int depth = 0;
+            size_t last = inner.size();
+            for (size_t i = 0; i < inner.size(); i++) {
+              if (inner[i] == '<') depth++;
+              else if (inner[i] == '>') depth--;
+              else if (inner[i] == ',' && depth == 0) last = i;
+            }
+            typeName = trim(inner.substr(last + 1));
+            continue;
+          }
+        }
+      }
+    }
+
     // Unknown shape: cannot unwrap further.
     break;
   }
@@ -2303,6 +2331,11 @@ CompletionProvider::complete(const std::string &source, size_t line, size_t col,
       // Resolve member chain: x.field.method().| → walk each step
       if (!req.methodChain.empty() && !varType.empty()) {
         for (auto &memberName : req.methodChain) {
+          if (memberName == "[idx]") {
+            // Index access mid-chain: unwrap one level ([]T, vec<T>, *T, ...)
+            varType = unwrapIndexedType(varType, 1);
+            continue;
+          }
           // Unwrap pointer for field lookup (e.g. *Buffer → Buffer)
           std::string lookupType = varType;
           while (!lookupType.empty() && lookupType[0] == '*')
@@ -2877,6 +2910,10 @@ CompletionProvider::analyzeContext(const std::string &source, size_t line,
           if (recEnd > 0 && before[recEnd - 1] == '.') {
             chain.push_back(methodName);
             --recEnd;
+          } else if (recEnd >= 2 && before[recEnd - 1] == '>' &&
+                     before[recEnd - 2] == '-') {
+            chain.push_back(methodName);
+            recEnd -= 2;
           } else {
             req.receiverCall = methodName;
             break;
@@ -2895,7 +2932,7 @@ CompletionProvider::analyzeContext(const std::string &source, size_t line,
           if (depth != 0)
             break;
           recEnd = p;
-          ++indexDepth;
+          chain.push_back("[idx]");
         } else if (std::isalnum(
                        static_cast<unsigned char>(before[recEnd - 1])) ||
                    before[recEnd - 1] == '_') {
@@ -2913,6 +2950,10 @@ CompletionProvider::analyzeContext(const std::string &source, size_t line,
           if (nameStart > 0 && before[nameStart - 1] == '.') {
             chain.push_back(before.substr(nameStart, nameEnd - nameStart));
             recEnd = nameStart - 1;
+          } else if (nameStart >= 2 && before[nameStart - 1] == '>' &&
+                     before[nameStart - 2] == '-') {
+            chain.push_back(before.substr(nameStart, nameEnd - nameStart));
+            recEnd = nameStart - 2;
           } else {
             break;
           }
@@ -2990,6 +3031,11 @@ CompletionProvider::analyzeContext(const std::string &source, size_t line,
           if (recEnd > 0 && before[recEnd - 1] == '.') {
             chain.push_back(methodName);
             --recEnd; // skip the dot and continue chain walk
+          } else if (recEnd >= 2 && before[recEnd - 1] == '>' &&
+                     before[recEnd - 2] == '-') {
+            // arrow method call: ptr->method() — part of the chain
+            chain.push_back(methodName);
+            recEnd -= 2;
           } else {
             // Base receiver is a function call, e.g. foo().bar().|
             req.receiverCall = methodName;
@@ -3011,7 +3057,7 @@ CompletionProvider::analyzeContext(const std::string &source, size_t line,
           if (depth != 0)
             break;
           recEnd = p;
-          ++indexDepth;
+          chain.push_back("[idx]");
         }
         // Try: ...field_name
         else if (std::isalnum(static_cast<unsigned char>(before[recEnd - 1])) ||

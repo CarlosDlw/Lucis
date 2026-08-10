@@ -1138,13 +1138,18 @@ const TypeInfo* Checker::resolveLambdaBlockExpr(LucisParser::LambdaBlockExprCont
 const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
     if (!expr) return nullptr;
 
-    // Guard against infinite recursion in pathological type expressions
-    recursionDepth_++;
+    // Guard against infinite recursion in pathological type expressions.
+    // RAII: decrements on EVERY exit path (early returns included), so the
+    // counter reflects the real nesting depth instead of leaking +1 per call.
+    struct DepthGuard {
+        unsigned& d;
+        explicit DepthGuard(unsigned& depth) : d(depth) { ++d; }
+        ~DepthGuard() { --d; }
+    } depthGuard_(recursionDepth_);
     if (recursionDepth_ > MAX_RECURSION_DEPTH) {
-        recursionDepth_--;
         error(expr, "type expression nesting exceeds maximum recursion depth of " +
                     std::to_string(MAX_RECURSION_DEPTH));
-        return typeRegistry_.lookup("int64");  // fallback type
+        return nullptr;  // never fall back to a fake type — it poisons the file
     }
 
     auto resolveTypeSpecInContext = [&](LucisParser::TypeSpecContext* ts,
@@ -4824,7 +4829,7 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
 
         if (baseName.empty()) {
             error(expr, "bang-initializer requires a type name before '!'");
-            recursionDepth_--;
+            ;
             return nullptr;
         }
 
@@ -4832,7 +4837,7 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
         auto* extDesc = extTypeRegistry_.lookup(baseName);
         if (!extDesc) {
             error(expr, "type '" + baseName + "' does not support bang-initialization");
-            recursionDepth_--;
+            ;
             return nullptr;
         }
 
@@ -4846,17 +4851,17 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
                 auto* firstEntry = entries[0];
                 if (firstEntry->COLON()) {
                     error(firstEntry, "'" + baseName + "' initializer does not accept key:value pairs");
-                    recursionDepth_--;
+                    ;
                     return nullptr;
                 }
                 elemType = resolveExprType(firstEntry->expression(0));
-                if (!elemType) { recursionDepth_--; return nullptr; }
+                if (!elemType) { ; return nullptr; }
 
                 for (size_t i = 1; i < entries.size(); i++) {
                     auto* entry = entries[i];
                     if (entry->COLON()) {
                         error(entry, "'" + baseName + "' initializer does not accept key:value pairs");
-                        recursionDepth_--;
+                        ;
                         return nullptr;
                     }
                     auto* et = resolveExprType(entry->expression(0));
@@ -4876,13 +4881,13 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
                 ti->extendedKind = baseName;
                 const TypeInfo* raw = ti.get();
                 dynamicTypes_.push_back(std::move(ti));
-                recursionDepth_--;
+                ;
                 return raw;
             }
 
             std::string fullName = baseName + "<" + elemType->name + ">";
             for (auto& dt : dynamicTypes_) {
-                if (dt->name == fullName) { recursionDepth_--; return dt.get(); }
+                if (dt->name == fullName) { ; return dt.get(); }
             }
             auto ti = std::make_unique<TypeInfo>();
             ti->name = fullName;
@@ -4894,7 +4899,7 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
             ti->extendedKind = baseName;
             const TypeInfo* raw = ti.get();
             dynamicTypes_.push_back(std::move(ti));
-            recursionDepth_--;
+            ;
             return raw;
 
         } else if (extDesc->genericArity == 2) {
@@ -4906,12 +4911,12 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
                 auto* entry = entries[i];
                 if (!entry->COLON()) {
                     error(entry, "'" + baseName + "' initializer requires key:value pairs");
-                    recursionDepth_--;
+                    ;
                     return nullptr;
                 }
                 auto* kt = resolveExprType(entry->expression(0));
                 auto* vt = resolveExprType(entry->expression(1));
-                if (!kt || !vt) { recursionDepth_--; return nullptr; }
+                if (!kt || !vt) { ; return nullptr; }
 
                 if (i == 0) {
                     keyType = kt;
@@ -4936,13 +4941,13 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
                 ti->extendedKind = baseName;
                 const TypeInfo* raw = ti.get();
                 dynamicTypes_.push_back(std::move(ti));
-                recursionDepth_--;
+                ;
                 return raw;
             }
 
             std::string fullName = baseName + "<" + keyType->name + ", " + valType->name + ">";
             for (auto& dt : dynamicTypes_) {
-                if (dt->name == fullName) { recursionDepth_--; return dt.get(); }
+                if (dt->name == fullName) { ; return dt.get(); }
             }
             auto ti = std::make_unique<TypeInfo>();
             ti->name = fullName;
@@ -4955,11 +4960,11 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
             ti->extendedKind = baseName;
             const TypeInfo* raw = ti.get();
             dynamicTypes_.push_back(std::move(ti));
-            recursionDepth_--;
+            ;
             return raw;
         } else {
             error(expr, "type '" + baseName + "' is not a recognized collection type");
-            recursionDepth_--;
+            ;
             return nullptr;
         }
     }
@@ -5012,11 +5017,11 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
         else
             locals_.erase(varName);
 
-        recursionDepth_--;
+        ;
         return elemType;
     }
 
-    recursionDepth_--;
+    ;
     return nullptr;
 }
 

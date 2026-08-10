@@ -1,6 +1,8 @@
 #include "lsp/SignatureHelpProvider.h"
+#include <iostream>
 #include "lsp/ProjectContext.h"
 #include "lsp/DocComment.h"
+#include "lsp/TypeChainResolver.h"
 #include "parser/Parser.h"
 #include "ffi/CHeaderResolver.h"
 #include "namespace/ModuleRegistry.h"
@@ -140,7 +142,6 @@ SignatureHelpProvider::analyzeCallSite(const std::string& source,
     size_t nameEnd = openParen;
     while (nameEnd > 0 && source[nameEnd - 1] == ' ') nameEnd--;
 
-    // If preceded by '>', this is a generic call — skip back over <type args>
     bool isGenericCall = (nameEnd > 0 && source[nameEnd - 1] == '>');
     if (isGenericCall) {
         size_t pos = nameEnd - 1; // points at '>'
@@ -221,13 +222,15 @@ SignatureHelpProvider::analyzeCallSite(const std::string& source,
                 site.staticTypeName = source.substr(scopeStart, scopeEnd - scopeStart);
         }
     }
-    // Check for method call: obj.method(...)
+    // Check for method call: obj.method(...) or ptr->method(...)
     else if (checkPos > 0 && source[checkPos - 1] == '.') {
         site.isMethodCall = true;
         // Extract receiver expression text (everything before the '.')
         size_t exprEnd = checkPos - 1;
         while (exprEnd > 0 && source[exprEnd - 1] == ' ') exprEnd--;
-        // Walk backwards over the receiver expression (identifiers, brackets, parens, etc.)
+        // Walk backwards over the receiver expression. Chains of dot access,
+        // arrow access and index access are part of the receiver: `a.b.c(`
+        // → receiver "a.b", `x->y.z(` → "x->y.z", `m[k].x->y(` → "m[k].x->y".
         int parenDepth = 0;
         int bracketDepth = 0;
         size_t exprStart = exprEnd;
@@ -245,7 +248,50 @@ SignatureHelpProvider::analyzeCallSite(const std::string& source,
                 if (bracketDepth == 0) break;
                 bracketDepth--;
                 exprStart--;
-            } else if ((c == '>' || c == '.' || c == '-' || c == ':') && (parenDepth > 0 || bracketDepth > 0)) {
+            } else if (c == '.') {
+                exprStart--;  // dot access continues the chain
+            } else if (c == '-' && exprStart > 0 && source[exprStart - 2] == '>') {
+                exprStart -= 2;  // arrow access continues the chain
+            } else if ((c == '>' || c == ':') && (parenDepth > 0 || bracketDepth > 0)) {
+                exprStart--;
+            } else {
+                break;
+            }
+        }
+        if (exprStart < exprEnd)
+            site.receiverExpr = source.substr(exprStart, exprEnd - exprStart);
+    }
+
+    // Arrow method call: ptr->method(...)
+    else if (checkPos >= 2 && source[checkPos - 1] == '>' &&
+             source[checkPos - 2] == '-') {
+        site.isMethodCall = true;
+        // Extract receiver expression text (everything before the '->')
+        size_t exprEnd = checkPos - 2;
+        while (exprEnd > 0 && source[exprEnd - 1] == ' ') exprEnd--;
+        // Walk backwards over the receiver expression (same rules as dot).
+        int parenDepth = 0;
+        int bracketDepth = 0;
+        size_t exprStart = exprEnd;
+        while (exprStart > 0) {
+            char c = source[exprStart - 1];
+            if (std::isalnum(static_cast<unsigned char>(c)) || c == '_' || c == '>' || c == ')' || c == ']') {
+                if (c == ')') parenDepth++;
+                else if (c == ']') bracketDepth++;
+                exprStart--;
+            } else if (c == '(') {
+                if (parenDepth == 0) break;
+                parenDepth--;
+                exprStart--;
+            } else if (c == '[') {
+                if (bracketDepth == 0) break;
+                bracketDepth--;
+                exprStart--;
+            } else if (c == '.') {
+                exprStart--;
+            } else if (c == '-' && exprStart > 1 && source[exprStart - 2] == '>') {
+                exprStart -= 2;
+            } else if (c == ':' && (parenDepth > 0 || bracketDepth > 0)) {
                 exprStart--;
             } else {
                 break;
@@ -579,6 +625,123 @@ static std::optional<std::vector<std::pair<std::string, std::string>>>
 extractLambdaParams(LucisParser::ExpressionContext* expr);
 
 // Resolve the type string of a receiver variable from the source text.
+// Collect local variables (params + var decls before the cursor line) as
+// name → type-text pairs, for chain resolution.
+static void collectChainLocals(
+    LucisParser::ProgramContext* tree, size_t line,
+    std::unordered_map<std::string, std::string>& locals) {
+    if (!tree) return;
+
+    auto collectFn = [&](LucisParser::FunctionDeclContext* fn,
+                         const std::string& selfType) {
+        if (!fn || !fn->block()) return;
+        auto* start = fn->block()->getStart();
+        auto* stop = fn->block()->getStop();
+        if (!start || !stop) return;
+        // 0-based line comparison: ANTLR lines are 1-based.
+        if (line + 1 < static_cast<size_t>(start->getLine()) ||
+            line + 1 > static_cast<size_t>(stop->getLine())) {
+            return;
+        }
+        if (!selfType.empty())
+            locals["self"] = selfType;
+        if (fn->paramList()) {
+            for (auto* p : fn->paramList()->param()) {
+                if (p->IDENTIFIER() && p->typeSpec())
+                    locals[p->IDENTIFIER()->getText()] = p->typeSpec()->getText();
+            }
+        }
+        for (auto* stmt : fn->block()->statement()) {
+            if (stmt->getStart() &&
+                static_cast<size_t>(stmt->getStart()->getLine()) > line + 1)
+                break;
+            if (auto* vd = stmt->varDeclStmt()) {
+                if (!vd->typeSpec()) continue;
+                auto typeName = vd->typeSpec()->getText();
+                for (auto* d : vd->varDeclarator()) {
+                    auto name = d->IDENTIFIER();
+                    if (name)
+                        locals[name->getText()] = typeName;
+                }
+            }
+        }
+    };
+
+    for (auto* tld : tree->topLevelDecl()) {
+        if (auto* fn = tld->functionDecl()) collectFn(fn, "");
+        if (auto* eb = tld->extendDecl()) {
+            std::string selfType = "";
+            if (eb->IDENTIFIER()) selfType = eb->IDENTIFIER()->getText();
+            // Locate the method whose body contains the cursor line.
+            for (auto* m : eb->extendMethod()) {
+                if (!m->block()) continue;
+                auto* ms = m->block()->getStart();
+                auto* me = m->block()->getStop();
+                if (!ms || !me) continue;
+                if (line + 1 < static_cast<size_t>(ms->getLine()) ||
+                    line + 1 > static_cast<size_t>(me->getLine()))
+                    continue;
+                locals["self"] = selfType;
+                for (auto* stmt : m->block()->statement()) {
+                    if (stmt->getStart() &&
+                        static_cast<size_t>(stmt->getStart()->getLine()) > line + 1)
+                        break;
+                    if (auto* vd = stmt->varDeclStmt()) {
+                        if (!vd->typeSpec()) continue;
+                        auto typeName = vd->typeSpec()->getText();
+                        for (auto* d : vd->varDeclarator()) {
+                            auto name = d->IDENTIFIER();
+                            if (name)
+                                locals[name->getText()] = typeName;
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// Resolve a receiver expression (which may be a deep chain: a.b.c,
+// x->y[0].m(), etc.) to its type name, using the parsed AST.
+static std::string resolveReceiverTypeAst(
+    const std::string& receiverExpr, LucisParser::ProgramContext* tree,
+    size_t line, const ProjectContext* project, const CBindings* bindings,
+    BuiltinRegistry* builtinReg, TypeRegistry* typeReg,
+    MethodRegistry* methodReg, ExtendedTypeRegistry* extTypeReg) {
+    if (receiverExpr.empty()) return {};
+
+    // 1) Fast path: bare identifier → find its declaration type.
+    bool isBareId = true;
+    for (char c : receiverExpr) {
+        if (!(std::isalnum(static_cast<unsigned char>(c)) || c == '_')) {
+            isBareId = false;
+            break;
+        }
+    }
+    if (isBareId) {
+        std::unordered_map<std::string, std::string> locals;
+        collectChainLocals(tree, line, locals);
+        auto it = locals.find(receiverExpr);
+        if (it != locals.end()) return it->second;
+        return {};
+    }
+
+    // 2) Chain: parse the receiver as an expression and walk it.
+    auto parsed = Parser::parseExpression(receiverExpr);
+    if (!parsed.exprTree) return {};
+
+    ChainResolveCtx ctx;
+    ctx.tree = tree;
+    ctx.project = project;
+    ctx.bindings = bindings;
+    ctx.typeReg = typeReg;
+    ctx.builtinReg = builtinReg;
+    ctx.methodReg = methodReg;
+    ctx.extTypeReg = extTypeReg;
+    collectChainLocals(tree, line, ctx.locals);
+    return resolveChainType(parsed.exprTree, ctx);
+}
+
 static std::string resolveReceiverType(const std::string& receiverExpr,
                                         const std::string& source) {
     std::string varName = receiverExpr;
@@ -668,15 +831,21 @@ SignatureHelpProvider::signatureHelp(
 
     // ── Method calls (obj.method(...)) ──────────────────────────────
     if (site->isMethodCall) {
-        // Resolve the receiver type for filtering.
-        std::string recvType = resolveReceiverType(
-            site->receiverExpr, source);
+        // Resolve the receiver type for filtering (deep chains supported:
+        // a.b.c, x->y[0].m, etc.).
+        std::string recvType = resolveReceiverTypeAst(
+            site->receiverExpr, parsed.tree, line, project, cBindingsPtr,
+            &builtinRegistry_, &typeRegistry_, &methodRegistry_,
+            &extTypeRegistry_);
         // Strip array prefix: [N]T → T (the method is on the element type)
         while (recvType.size() > 2 && recvType.front() == '[') {
             auto close = recvType.find(']');
             if (close == std::string::npos) break;
             recvType = recvType.substr(close + 1);
         }
+        // Strip pointer prefix: *T → T (ptr->method() is on the pointee)
+        while (recvType.size() > 1 && recvType.front() == '*')
+            recvType = recvType.substr(1);
         // Extract the base type name (without generic params) for matching.
         std::string recvBase = recvType;
         auto ltPos = recvType.find('<');

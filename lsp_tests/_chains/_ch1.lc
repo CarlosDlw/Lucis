@@ -1,0 +1,10 @@
+struct C { int32 z; }
+struct B { C c; }
+struct A { B b; }
+extend C { fn run(&self, int32 v) void { } }
+
+fn main() int32 {
+  A a;
+  a.b.c.run(7);
+  return 0;
+}

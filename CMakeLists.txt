@@ -306,6 +306,7 @@ set(SOURCES
     src/lsp/SignatureHelpProvider.cpp
     src/lsp/SemanticTokensProvider.cpp
     src/lsp/TypeInferrer.cpp
+    src/lsp/TypeChainResolver.cpp
     src/lsp/ProjectContext.cpp
     src/config/LucisConfig.cpp
 )

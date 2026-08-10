@@ -767,8 +767,13 @@ void LspServer::handleSignatureHelp(const json& msg) {
             return;
         }
 
+        // Deduplicate identical signatures (e.g. the same extend method
+        // found both in the current file and via the project registry).
         json sigs = json::array();
+        std::unordered_set<std::string> seenLabels;
         for (auto& si : result->signatures) {
+            if (!seenLabels.insert(si.label).second)
+                continue;
             json params_arr = json::array();
             for (auto& pi : si.parameters) {
                 json p = {{"label", pi.label}};

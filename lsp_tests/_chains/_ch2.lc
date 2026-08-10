@@ -1,0 +1,8 @@
+struct Node { int32 next; }
+extend Node { fn go(&self, int32 x) void { } }
+
+fn main() int32 {
+  *Node n;
+  n->go(1);
+  return 0;
+}

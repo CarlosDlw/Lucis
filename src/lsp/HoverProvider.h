@@ -158,6 +158,17 @@ private:
         LucisParser::ProgramContext* tree, const CBindings& bindings,
         size_t cursorLine, const ProjectContext* project);
 
+    std::optional<HoverResult> hoverArrowMethodCall(
+        LucisParser::ArrowMethodCallExprContext* ctx,
+        LucisParser::ProgramContext* tree, const CBindings& bindings,
+        size_t cursorLine, const ProjectContext* project);
+
+    std::optional<HoverResult> hoverMethodCallImpl(
+        LucisParser::ExpressionContext* receiver,
+        const std::string& methodName, antlr4::Token* methodToken,
+        LucisParser::ProgramContext* tree, const CBindings& bindings,
+        size_t cursorLine, const ProjectContext* project);
+
     std::optional<HoverResult> hoverFieldAccess(
         LucisParser::FieldAccessExprContext* ctx,
         LucisParser::ProgramContext* tree, const CBindings& bindings,

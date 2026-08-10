@@ -1,0 +1,8 @@
+struct Item { int32 v; }
+extend Item { fn tag(&self, int32 t) void { } }
+
+fn main() int32 {
+  vec<Item> items;
+  items[0].tag(3);
+  return 0;
+}

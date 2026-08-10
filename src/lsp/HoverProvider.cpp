@@ -1715,6 +1715,26 @@ std::optional<HoverResult> HoverProvider::walkExprForHover(
         return std::nullopt;
     }
 
+    // ── Arrow method call: ptr->method(args) ────────────────────────
+    if (auto* amc = dynamic_cast<LucisParser::ArrowMethodCallExprContext*>(expr)) {
+        auto* methodId = amc->IDENTIFIER();
+        if (methodId && methodId->getSymbol() == hoveredToken) {
+            return hoverArrowMethodCall(amc, tree, bindings, cursorLine, project);
+        }
+        // Recurse into receiver and args
+        auto r = walkExprForHover(amc->expression(), hoveredToken, tokenText,
+                                   tree, bindings, cursorLine, project);
+        if (r) return r;
+        if (auto* al = amc->argList()) {
+            for (auto* a : al->expression()) {
+                r = walkExprForHover(a, hoveredToken, tokenText,
+                                      tree, bindings, cursorLine, project);
+                if (r) return r;
+            }
+        }
+        return std::nullopt;
+    }
+
     // ── Field access: expr.field ────────────────────────────────────
     if (auto* fa = dynamic_cast<LucisParser::FieldAccessExprContext*>(expr)) {
         auto* fieldId = fa->IDENTIFIER();
@@ -4178,8 +4198,30 @@ std::optional<HoverResult> HoverProvider::hoverMethodCall(
         const CBindings& bindings,
         size_t cursorLine,
         const ProjectContext* project) {
-    std::string methodName = safeText(ctx->IDENTIFIER());
-    auto* receiver = ctx->expression();
+    return hoverMethodCallImpl(ctx->expression(), safeText(ctx->IDENTIFIER()),
+                               ctx->IDENTIFIER()->getSymbol(),
+                               tree, bindings, cursorLine, project);
+}
+
+std::optional<HoverResult> HoverProvider::hoverArrowMethodCall(
+        LucisParser::ArrowMethodCallExprContext* ctx,
+        LucisParser::ProgramContext* tree,
+        const CBindings& bindings,
+        size_t cursorLine,
+        const ProjectContext* project) {
+    return hoverMethodCallImpl(ctx->expression(), safeText(ctx->IDENTIFIER()),
+                               ctx->IDENTIFIER()->getSymbol(),
+                               tree, bindings, cursorLine, project);
+}
+
+std::optional<HoverResult> HoverProvider::hoverMethodCallImpl(
+        LucisParser::ExpressionContext* receiver,
+        const std::string& methodName,
+        antlr4::Token* methodToken,
+        LucisParser::ProgramContext* tree,
+        const CBindings& bindings,
+        size_t cursorLine,
+        const ProjectContext* project) {
 
     // ── Step 1: Resolve the receiver's type FIRST (like the Checker does) ──
     std::string receiverTypeName;
@@ -4315,7 +4357,7 @@ std::optional<HoverResult> HoverProvider::hoverMethodCall(
                         ss << substituteGeneric(m.paramTypes[i]);
                     }
                     ss << ")\n```";
-                    return makeResult(ctx->IDENTIFIER()->getSymbol(), ss.str());
+                    return makeResult(methodToken, ss.str());
                 }
             }
         }
@@ -4332,7 +4374,7 @@ std::optional<HoverResult> HoverProvider::hoverMethodCall(
                 ss << arrayMd->paramTypes[i];
             }
             ss << ")\n```";
-            return makeResult(ctx->IDENTIFIER()->getSymbol(), ss.str());
+            return makeResult(methodToken, ss.str());
         }
     }
 
@@ -4350,7 +4392,7 @@ std::optional<HoverResult> HoverProvider::hoverMethodCall(
                 ss << md->paramTypes[i];
             }
             ss << ")\n```";
-            return makeResult(ctx->IDENTIFIER()->getSymbol(), ss.str());
+            return makeResult(methodToken, ss.str());
         }
     }
 
@@ -4387,7 +4429,7 @@ std::optional<HoverResult> HoverProvider::hoverMethodCall(
                     ss << md->paramTypes[i];
                 }
                 ss << ")\n```";
-                return makeResult(ctx->IDENTIFIER()->getSymbol(), ss.str());
+                return makeResult(methodToken, ss.str());
             }
         }
     }
@@ -4412,7 +4454,7 @@ std::optional<HoverResult> HoverProvider::hoverMethodCall(
                         ss << m.paramTypes[i];
                     }
                     ss << ")\n```";
-                    return makeResult(ctx->IDENTIFIER()->getSymbol(), ss.str());
+                    return makeResult(methodToken, ss.str());
                 }
             }
         }
@@ -4429,7 +4471,7 @@ std::optional<HoverResult> HoverProvider::hoverMethodCall(
                     ss << md->paramTypes[i];
                 }
                 ss << ")\n```";
-                return makeResult(ctx->IDENTIFIER()->getSymbol(), ss.str());
+                return makeResult(methodToken, ss.str());
             }
         }
 
@@ -4443,7 +4485,7 @@ std::optional<HoverResult> HoverProvider::hoverMethodCall(
                 ss << arrayMd->paramTypes[i];
             }
             ss << ")\n```";
-            return makeResult(ctx->IDENTIFIER()->getSymbol(), ss.str());
+            return makeResult(methodToken, ss.str());
         }
     }
 
@@ -4498,7 +4540,7 @@ std::optional<HoverResult> HoverProvider::hoverMethodCall(
         std::string md = ss.str();
         size_t declLine = m->getStart()->getLine() - 1;
         md = appendDocToHover(md, docs, declLine);
-        return makeResult(ctx->IDENTIFIER()->getSymbol(), md);
+        return makeResult(methodToken, md);
     };
 
     // Local file extend blocks
@@ -4542,7 +4584,7 @@ std::optional<HoverResult> HoverProvider::hoverMethodCall(
                 for (auto* p : m->param())
                     md += (m->AMPERSAND() ? ", " : "") + typeSpecToString(p->typeSpec());
                 md += ") " + typeSpecToString(m->typeSpec()) + "\n```";
-                return makeResult(ctx->IDENTIFIER()->getSymbol(), md);
+                return makeResult(methodToken, md);
             }
         }
         if (project && project->isValid()) {
@@ -4559,7 +4601,7 @@ std::optional<HoverResult> HoverProvider::hoverMethodCall(
                         for (auto* p : m->param())
                             md += (m->AMPERSAND() ? ", " : "") + typeSpecToString(p->typeSpec());
                         md += ") " + typeSpecToString(m->typeSpec()) + "\n```\n[" + ns + "]";
-                        return makeResult(ctx->IDENTIFIER()->getSymbol(), md);
+                        return makeResult(methodToken, md);
                     }
                 }
             }
@@ -5784,10 +5826,9 @@ static std::string inferExprTypeName(
     }
 
     // Method call: resolve receiver type, then look up method return type
-    if (auto* mc = dynamic_cast<LucisParser::MethodCallExprContext*>(expr)) {
-        auto receiverType = inferExprTypeName(mc->expression(), locals, flc);
+    auto resolveMethodType = [&](const std::string& receiverType,
+                             const std::string& methodName) -> std::string {
         if (!receiverType.empty()) {
-            std::string methodName = safeText(mc->IDENTIFIER());
 
             if (!receiverType.empty() && receiverType[0] == '[' && flc && flc->methodReg) {
                 auto* md = flc->methodReg->lookupArrayMethod(methodName);
@@ -5935,13 +5976,28 @@ static std::string inferExprTypeName(
             }
         }
         return "";
+    };
+
+    // Method call: a.b(...)
+    if (auto* mc = dynamic_cast<LucisParser::MethodCallExprContext*>(expr)) {
+        auto receiverType = inferExprTypeName(mc->expression(), locals, flc);
+        if (receiverType.empty()) return "";
+        return resolveMethodType(receiverType, safeText(mc->IDENTIFIER()));
+    }
+
+    // Arrow method call: a->b(...)
+    if (auto* amc = dynamic_cast<LucisParser::ArrowMethodCallExprContext*>(expr)) {
+        auto receiverType = inferExprTypeName(amc->expression(), locals, flc);
+        if (!receiverType.empty() && receiverType[0] == '*')
+            receiverType = receiverType.substr(1);
+        if (receiverType.empty()) return "";
+        return resolveMethodType(receiverType, safeText(amc->IDENTIFIER()));
     }
 
     // Dereference: *expr → remove one *
     if (auto* deref = dynamic_cast<LucisParser::DerefExprContext*>(expr)) {
         auto inner = inferExprTypeName(deref->expression(), locals, flc);
         if (inner.size() > 1 && inner[0] == '*') return inner.substr(1);
-        return "";
     }
 
     // Negation: -expr → same type
@@ -6248,6 +6304,22 @@ static std::string inferExprTypeName(
                 auto close = baseType.find(']');
                 if (close != std::string::npos && close + 1 < baseType.size())
                     return baseType.substr(close + 1);
+            }
+            // Extended/collection: vec<T> → T, set<T> → T, map<K,V> → V
+            auto lt = baseType.find('<');
+            if (lt != std::string::npos) {
+                auto gt = baseType.rfind('>');
+                if (gt != std::string::npos) {
+                    std::string inner = baseType.substr(lt + 1, gt - lt - 1);
+                    std::string base;
+                    std::vector<std::string> args;
+                    parseGenericInstance(baseType, base, args);
+                    if (!args.empty()) {
+                        if (base == "map" || base == "Map")
+                            return args.back();
+                        return args[0];
+                    }
+                }
             }
         }
         return "";

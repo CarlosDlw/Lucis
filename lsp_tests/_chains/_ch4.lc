@@ -1,0 +1,11 @@
+struct C { int32 z; }
+struct B { C c; }
+struct A { B b; }
+extend B { fn mid(&self, int32 v) C { ret self->c; } }
+extend C { fn run(&self, int32 v) void { } }
+
+fn main() int32 {
+  A a;
+  a.b.mid(1).run(2);
+  return 0;
+}

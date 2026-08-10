@@ -15,6 +15,7 @@ struct ParseResult {
     std::unique_ptr<antlr4::CommonTokenStream> tokens;
     std::unique_ptr<LucisParser>              parser;
     LucisParser::ProgramContext*              tree      = nullptr;
+    LucisParser::ExpressionContext*           exprTree  = nullptr;  // parseExpression()
     bool                                       hasErrors = false;
     std::vector<Diagnostic>                    diagnostics;  // populated in LSP mode
 };
@@ -26,4 +27,7 @@ public:
 
     // Parse from a string in memory (LSP mode — errors collected in result.diagnostics).
     static ParseResult parseString(const std::string& source);
+
+    // Parse a single expression (LSP mode — for resolving receiver chains).
+    static ParseResult parseExpression(const std::string& source);
 };

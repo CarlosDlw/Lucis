@@ -69,3 +69,28 @@ ParseResult Parser::parseString(const std::string& source) {
 
     return result;
 }
+
+ParseResult Parser::parseExpression(const std::string& source) {
+    ParseResult result;
+
+    result.input  = std::make_unique<antlr4::ANTLRInputStream>(source);
+    result.lexer  = std::make_unique<LucisLexer>(result.input.get());
+    result.tokens = std::make_unique<antlr4::CommonTokenStream>(result.lexer.get());
+    result.parser = std::make_unique<LucisParser>(result.tokens.get());
+
+    auto errorListener = std::make_unique<DiagnosticErrorListener>();
+    errorListener->setCollectMode(true);
+
+    result.lexer->removeErrorListeners();
+    result.lexer->addErrorListener(errorListener.get());
+    result.parser->removeErrorListeners();
+    result.parser->addErrorListener(errorListener.get());
+
+    result.exprTree = result.parser->expression();
+
+    result.hasErrors = result.parser->getNumberOfSyntaxErrors() > 0
+                    || result.lexer->getNumberOfSyntaxErrors()  > 0;
+    result.diagnostics = errorListener->takeDiagnostics();
+
+    return result;
+}

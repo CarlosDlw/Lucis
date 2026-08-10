@@ -1,0 +1,15 @@
+struct D { int32 n; }
+struct C { D d; }
+struct B { C c; }
+struct A { B b; }
+extend D { fn run(&self, int32 v) int32 { ret v; } }
+extend B { fn mid(&self, int32 v) C { ret self->c; } }
+
+fn main() int32 {
+  A a;
+  vec<B> items;
+  a.b.mid(1).d.run(2);
+  items[0].c.d.n;
+  items[0].mid(3).d.run(4);
+  return 0;
+}

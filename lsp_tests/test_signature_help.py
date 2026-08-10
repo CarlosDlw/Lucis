@@ -207,6 +207,77 @@ def main():
         test2_root, test2_uri,
     ))
 
+    # ── Deep chain tests (dot/arrow/index nesting) ─────────────────
+    # Self-contained files in a dedicated dir (not /tmp) so the LSP
+    # project build stays small and deterministic.
+    chains_dir = os.path.join(os.path.dirname(__file__), "_chains")
+    os.makedirs(chains_dir, exist_ok=True)
+    chains_root = "file://" + chains_dir
+
+    def chain_case(name, fname, src, line, col, expect):
+        fpath = os.path.join(chains_dir, fname)
+        with open(fpath, "w") as f:
+            f.write(src)
+        return (name, src, line, col, 1, expect, ["Vec"],
+                chains_root, "file://" + fpath)
+
+    tests.append(chain_case(
+        "deep dot chain a.b.c.run shows C's run only",
+        "_ch1.lc",
+        ("struct C { int32 z; }\n"
+         "struct B { C c; }\n"
+         "struct A { B b; }\n"
+         "extend C { fn run(&self, int32 v) void { } }\n"
+         "\n"
+         "fn main() int32 {\n"
+         "  A a;\n"
+         "  a.b.c.run(7);\n"
+         "  return 0;\n"
+         "}\n"),
+        7, 12, ["(C) fn run"]))
+
+    tests.append(chain_case(
+        "arrow method n->go shows Node's go only",
+        "_ch2.lc",
+        ("struct Node { int32 next; }\n"
+         "extend Node { fn go(&self, int32 x) void { } }\n"
+         "\n"
+         "fn main() int32 {\n"
+         "  *Node n;\n"
+         "  n->go(1);\n"
+         "  return 0;\n"
+         "}\n"),
+        5, 9, ["(Node) fn go"]))
+
+    tests.append(chain_case(
+        "index chain items[0].tag shows Item's tag only",
+        "_ch3.lc",
+        ("struct Item { int32 v; }\n"
+         "extend Item { fn tag(&self, int32 t) void { } }\n"
+         "\n"
+         "fn main() int32 {\n"
+         "  vec<Item> items;\n"
+         "  items[0].tag(3);\n"
+         "  return 0;\n"
+         "}\n"),
+        5, 16, ["(Item) fn tag"]))
+
+    tests.append(chain_case(
+        "method mid-chain a.b.mid().run shows C's run only",
+        "_ch4.lc",
+        ("struct C { int32 z; }\n"
+         "struct B { C c; }\n"
+         "struct A { B b; }\n"
+         "extend B { fn mid(&self, int32 v) C { ret self->c; } }\n"
+         "extend C { fn run(&self, int32 v) void { } }\n"
+         "\n"
+         "fn main() int32 {\n"
+         "  A a;\n"
+         "  a.b.mid(1).run(2);\n"
+         "  return 0;\n"
+         "}\n"),
+         8, 17, ["(C) fn run"]))
+
     print(f"Running {len(tests)} signature help test(s) …\n")
     for args in tests:
         test(*args)
