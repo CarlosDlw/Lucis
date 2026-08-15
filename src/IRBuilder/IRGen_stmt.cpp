@@ -979,6 +979,53 @@ std::any IRGen::visitAssignStmt(LucisParser::AssignStmtContext* ctx) {
         return {};
     }
 
+    // ── Slice index assignment: arr[i] = val  ([]T param/local) ─────
+    // Slice params and slice-from-slice locals are stored as {ptr, len}
+    // structs (not LLVM arrays), so they need this path instead of the
+    // ArrayType path below (which would crash on a bad cast). Mirrors
+    // the slice read path in IRGen_access.cpp.
+    if (it->second.arrayDims == 1 && allocType->isStructTy() &&
+        exprs.size() == 2) {
+        if (!elemTI) {
+            std::cerr << "lucis: internal error: slice element type unknown for '"
+                      << varName << "'\n";
+            return {};
+        }
+        auto* sliceVal = builder_->CreateLoad(allocType, alloca, varName);
+        auto* dataPtr  = builder_->CreateExtractValue(sliceVal, 0, "slice_ptr");
+        auto* lenVal   = builder_->CreateExtractValue(sliceVal, 1, "slice_len");
+
+        auto* i64Ty = llvm::Type::getInt64Ty(*context_);
+        auto* idx = castValue(visit(exprs[0]));
+        if (idx->getType() != i64Ty)
+            idx = builder_->CreateIntCast(idx, i64Ty, true);
+
+        // Bounds check (same pattern as the slice read path)
+        auto* usizeTy = module_->getDataLayout().getIntPtrType(*context_);
+        auto* idxU = builder_->CreateIntCast(idx, usizeTy, false, "bnd.idx");
+        auto* lenU = builder_->CreateIntCast(lenVal, usizeTy, false, "bnd.len");
+        emitBoundsCheck(idxU, lenU, "slice_idx_assign");
+
+        auto* elemTy = elemTI->toLLVMType(*context_, module_->getDataLayout());
+        auto* elemPtr = builder_->CreateInBoundsGEP(
+            elemTy, dataPtr, idx, varName + "_elem");
+
+        auto* val = castValue(visit(exprs.back()));
+        if (val->getType() != elemTy) {
+            if (val->getType()->isIntegerTy() && elemTy->isIntegerTy())
+                val = builder_->CreateIntCast(val, elemTy, elemTI->isSigned);
+            else if (val->getType()->isFloatingPointTy() && elemTy->isFloatingPointTy()) {
+                if (val->getType()->getPrimitiveSizeInBits() > elemTy->getPrimitiveSizeInBits())
+                    val = builder_->CreateFPTrunc(val, elemTy);
+                else
+                    val = builder_->CreateFPExt(val, elemTy);
+            }
+        }
+
+        builder_->CreateStore(val, elemPtr);
+        return {};
+    }
+
     // ── Array index assignment (original path) ──────────────────────
     auto* val = castValue(visit(exprs.back()));
 
@@ -3677,7 +3724,51 @@ std::any IRGen::visitCallStmt(LucisParser::CallStmtContext* ctx) {
                 if (sretAlloca) llvmIdx++;
                 if (llvmIdx < fnType->getNumParams() && argVal->getType() != fnType->getParamType(llvmIdx)) {
                     auto* expectedTy = fnType->getParamType(llvmIdx);
-                    if (argVal->getType()->isArrayTy() && expectedTy->isPointerTy()) {
+                    if (argVal->getType()->isArrayTy() && expectedTy->isStructTy()) {
+                        // Array-to-slice lowering for []T-style params:
+                        // pass {ptr to first element, len}. Mirrors the
+                        // same conversion in visitFnCallExpr (IRGen_call.cpp).
+                        auto* dstST = llvm::cast<llvm::StructType>(expectedTy);
+                        if (dstST->getNumElements() == 2 &&
+                            dstST->getElementType(0)->isPointerTy() &&
+                            dstST->getElementType(1)->isIntegerTy()) {
+                            auto* srcArrTy = llvm::cast<llvm::ArrayType>(argVal->getType());
+
+                            llvm::Value* srcAlloca = nullptr;
+                            llvm::LoadInst* deadLoad = nullptr;
+                            if (auto* li = llvm::dyn_cast<llvm::LoadInst>(argVal)) {
+                                srcAlloca = li->getPointerOperand();
+                                deadLoad = li;
+                            }
+                            if (!srcAlloca) {
+                                srcAlloca = builder_->CreateAlloca(argVal->getType(), nullptr, "arr.slice");
+                                builder_->CreateStore(argVal, srcAlloca);
+                            }
+
+                            auto* i64Ty = llvm::Type::getInt64Ty(*context_);
+                            auto* zero = llvm::ConstantInt::get(i64Ty, 0);
+                            auto* elemPtr = builder_->CreateGEP(argVal->getType(), srcAlloca,
+                                                                 {zero, zero}, "arr.slice.ptr");
+
+                            auto* ptrFieldTy = dstST->getElementType(0);
+                            llvm::Value* ptrField = elemPtr;
+                            if (elemPtr->getType() != ptrFieldTy)
+                                ptrField = builder_->CreateBitCast(elemPtr, ptrFieldTy, "arr.slice.cast");
+
+                            auto* lenFieldTy = dstST->getElementType(1);
+                            auto* lenField = llvm::ConstantInt::get(
+                                llvm::cast<llvm::IntegerType>(lenFieldTy),
+                                srcArrTy->getNumElements());
+
+                            llvm::Value* slice = llvm::UndefValue::get(dstST);
+                            slice = builder_->CreateInsertValue(slice, ptrField, {0}, "arr.slice.ins.ptr");
+                            slice = builder_->CreateInsertValue(slice, lenField, {1}, "arr.slice.ins.len");
+                            argVal = slice;
+
+                            if (deadLoad && deadLoad->use_empty())
+                                deadLoad->eraseFromParent();
+                        }
+                    } else if (argVal->getType()->isArrayTy() && expectedTy->isPointerTy()) {
                         // Reuse the source alloca if the value came from a load —
                         // avoids a full array copy that would hang the LLVM backend.
                         llvm::Value* srcAlloca = nullptr;
