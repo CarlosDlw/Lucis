@@ -609,7 +609,8 @@ const TypeInfo* Checker::getPointerType(const TypeInfo* pointee) {
 const TypeInfo* Checker::makeFunctionType(const TypeInfo* returnType,
                                            const std::vector<const TypeInfo*>& paramTypes,
                                            bool isVariadic,
-                                           const TypeInfo* variadicElementType) {
+                                           const TypeInfo* variadicElementType,
+                                           const std::vector<unsigned>* paramDims) {
     auto ti = std::make_unique<TypeInfo>();
     ti->kind = TypeKind::Function;
     ti->bitWidth = 0;
@@ -617,6 +618,8 @@ const TypeInfo* Checker::makeFunctionType(const TypeInfo* returnType,
     ti->builtinSuffix = "ptr";
     ti->returnType = returnType;
     ti->paramTypes = paramTypes;
+    if (paramDims)
+        ti->paramDims = *paramDims;
     ti->isVariadic = isVariadic;
     ti->variadicElementType = variadicElementType;
 
@@ -3471,6 +3474,16 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
         auto* derefType = baseType;
         if (derefType && derefType->kind == TypeKind::Pointer && derefType->pointeeType)
             derefType = derefType->pointeeType;
+
+        // Set<T> supports no indexing — reject it instead of letting codegen
+        // emit vec builtins against the set header (memory garbage).
+        if (derefType && derefType->kind == TypeKind::Extended &&
+            derefType->extendedKind == "Set") {
+            error(expr, "set<" + (derefType->elementType ?
+                       derefType->elementType->name : "?") +
+                       "> does not support indexing");
+            return nullptr;
+        }
 
         // Vec<T>[i] returns T
         if (derefType && derefType->kind == TypeKind::Extended && derefType->elementType)

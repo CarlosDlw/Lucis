@@ -1097,14 +1097,29 @@ const TypeInfo* IRGen::resolveExprTypeInfo(LucisParser::ExpressionContext* ctx) 
             if (!elemTI) return nullptr;
             std::string fullName = baseName + "<" + elemTI->name + ">";
             if (auto* existing = typeRegistry_.lookup(fullName)) return existing;
-            return typeRegistry_.lookup(elemTI->name); // partial fallback
+            // Create the extended type instead of falling back to the element
+            // type, which silently corrupts collection typing downstream.
+            auto ext = std::make_unique<TypeInfo>();
+            ext->name = fullName;
+            ext->kind = TypeKind::Extended;
+            ext->extendedKind = baseName;
+            ext->elementType = elemTI;
+            typeRegistry_.registerType(*ext);
+            return typeRegistry_.lookup(fullName);
         } else if (baseName == "Map") {
             auto* keyTI = resolveExprTypeInfo(entries[0]->expression(0));
             auto* valTI = resolveExprTypeInfo(entries[0]->expression(1));
             if (!keyTI || !valTI) return nullptr;
             std::string fullName = baseName + "<" + keyTI->name + ", " + valTI->name + ">";
             if (auto* existing = typeRegistry_.lookup(fullName)) return existing;
-            return typeRegistry_.lookup(keyTI->name); // partial fallback
+            auto ext = std::make_unique<TypeInfo>();
+            ext->name = fullName;
+            ext->kind = TypeKind::Extended;
+            ext->extendedKind = baseName;
+            ext->keyType = keyTI;
+            ext->valueType = valTI;
+            typeRegistry_.registerType(*ext);
+            return typeRegistry_.lookup(fullName);
         }
         return typeRegistry_.lookup(baseName);
     }
@@ -1436,8 +1451,28 @@ const TypeInfo* IRGen::resolveExprTypeInfo(LucisParser::ExpressionContext* ctx) 
                 if (retTy->isVoidTy())       return typeRegistry_.lookup("void");
                 if (retTy->isPointerTy())    return typeRegistry_.lookup("*void");
                 if (auto* st = llvm::dyn_cast<llvm::StructType>(retTy)) {
-                    if (st->hasName())
-                        return typeRegistry_.lookup(st->getName().str());
+                    if (st->hasName()) {
+                        auto nm = st->getName().str();
+                        if (nm == "lucis_vec_header" || nm == "lucis_map_header" ||
+                            nm == "lucis_set_header") {
+                            // Extended-type return from a cross-file function:
+                            // resolve the declared type through the registry.
+                            auto impIt = userImports_.find(fname);
+                            if (impIt != userImports_.end())
+                                if (auto* sym = moduleRegistry_->findSymbol(impIt->second, fname))
+                                    if (sym->kind == ExportedSymbol::Function && sym->decl) {
+                                        auto* fnDecl = static_cast<LucisParser::FunctionDeclContext*>(sym->decl);
+                                        if (auto* retTI = resolveTypeInfo(fnDecl->typeSpec())) {
+                                            exprTypeCache_[ctx] = retTI;
+                                            return retTI;
+                                        }
+                                    }
+                            // Unknown collection return: never fall back to the
+                            // raw header struct (wrong type corrupts codegen).
+                            return nullptr;
+                        }
+                        return typeRegistry_.lookup(nm);
+                    }
                     // Lucis string is an unnamed {ptr, len} fat pointer —
                     // map it back so method calls on string-returning
                     // user functions resolve (e.g. f().padRight(...)).

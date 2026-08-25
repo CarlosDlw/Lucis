@@ -3364,83 +3364,23 @@ generic_template_handled:
                     }
                 }
 
-                // Standard type coercion (non-struct)
+                // Standard type coercion (non-struct, plus array ABI lowering)
                 if (i < fnType->getNumParams() && argVal->getType() != fnType->getParamType(i)) {
                     // Compute actual param index (accounting for sret offset)
                     unsigned llvmIdx = static_cast<unsigned>(i);
                     if (sretAlloca) llvmIdx++;
                     if (llvmIdx < fnType->getNumParams()) {
                         auto* expectedTy = fnType->getParamType(llvmIdx);
-                        if (argVal->getType()->isArrayTy() && expectedTy->isStructTy()) {
-                            // Array-to-slice lowering for []T-style params:
-                            // pass {ptr to first element, len}.
-                            auto* dstST = llvm::cast<llvm::StructType>(expectedTy);
-                            if (dstST->getNumElements() == 2 &&
-                                dstST->getElementType(0)->isPointerTy() &&
-                                dstST->getElementType(1)->isIntegerTy()) {
-                                auto* srcArrTy = llvm::cast<llvm::ArrayType>(argVal->getType());
-
-                                llvm::Value* srcAlloca = nullptr;
-                                llvm::LoadInst* deadLoad = nullptr;
-                                if (auto* li = llvm::dyn_cast<llvm::LoadInst>(argVal)) {
-                                    srcAlloca = li->getPointerOperand();
-                                    deadLoad = li;
-                                }
-                                if (!srcAlloca) {
-                                    srcAlloca = builder_->CreateAlloca(argVal->getType(), nullptr, "arr.slice");
-                                    builder_->CreateStore(argVal, srcAlloca);
-                                }
-
-                                auto* i64Ty = llvm::Type::getInt64Ty(*context_);
-                                auto* zero = llvm::ConstantInt::get(i64Ty, 0);
-                                auto* elemPtr = builder_->CreateGEP(argVal->getType(), srcAlloca,
-                                                                     {zero, zero}, "arr.slice.ptr");
-
-                                auto* ptrFieldTy = dstST->getElementType(0);
-                                llvm::Value* ptrField = elemPtr;
-                                if (elemPtr->getType() != ptrFieldTy)
-                                    ptrField = builder_->CreateBitCast(elemPtr, ptrFieldTy, "arr.slice.cast");
-
-                                auto* lenFieldTy = dstST->getElementType(1);
-                                auto* lenField = llvm::ConstantInt::get(
-                                    llvm::cast<llvm::IntegerType>(lenFieldTy),
-                                    srcArrTy->getNumElements());
-
-                                llvm::Value* slice = llvm::UndefValue::get(dstST);
-                                slice = builder_->CreateInsertValue(slice, ptrField, {0}, "arr.slice.ins.ptr");
-                                slice = builder_->CreateInsertValue(slice, lenField, {1}, "arr.slice.ins.len");
-                                argVal = slice;
-
-                                if (deadLoad && deadLoad->use_empty())
-                                    deadLoad->eraseFromParent();
-                            }
-                        }
-
-                        if (argVal->getType()->isArrayTy() && expectedTy->isPointerTy()) {
-                            // Reuse the source alloca if the value came from a load —
-                            // avoids a full array copy that would hang the LLVM backend.
-                            llvm::Value* srcAlloca = nullptr;
-                            llvm::LoadInst* deadLoad = nullptr;
-                            if (auto* li = llvm::dyn_cast<llvm::LoadInst>(argVal)) {
-                                srcAlloca = li->getPointerOperand();
-                                deadLoad = li;
-                            }
-                            if (!srcAlloca) {
-                                srcAlloca = builder_->CreateAlloca(argVal->getType(), nullptr, "arr.decay");
-                                builder_->CreateStore(argVal, srcAlloca);
-                            }
-                            auto* zero = llvm::ConstantInt::get(llvm::Type::getInt64Ty(*context_), 0);
-                            argVal = builder_->CreateGEP(argVal->getType(), srcAlloca, {zero, zero}, "arr.ptr");
-                            if (deadLoad && deadLoad->use_empty())
-                                deadLoad->eraseFromParent();
-                        } else if (argVal->getType()->isIntegerTy() && expectedTy->isIntegerTy())
-                            argVal = builder_->CreateIntCast(argVal, expectedTy, true);
-                        else if (argVal->getType()->isFloatingPointTy() && expectedTy->isFloatingPointTy()) {
-                            if (argVal->getType()->getPrimitiveSizeInBits() > expectedTy->getPrimitiveSizeInBits())
-                                argVal = builder_->CreateFPTrunc(argVal, expectedTy);
-                            else
-                                argVal = builder_->CreateFPExt(argVal, expectedTy);
-                        } else if (argVal->getType()->isStructTy() && expectedTy->isStructTy()) {
+                        argVal = coerceArrayArg(argVal, expectedTy);
+                        if (argVal->getType() != expectedTy) {
+                            if (argVal->getType()->isIntegerTy() && expectedTy->isIntegerTy())
+                                argVal = builder_->CreateIntCast(argVal, expectedTy, true);
+                            else if (argVal->getType()->isFloatingPointTy() && expectedTy->isFloatingPointTy()) {
+                                if (argVal->getType()->getPrimitiveSizeInBits() > expectedTy->getPrimitiveSizeInBits())
+                                    argVal = builder_->CreateFPTrunc(argVal, expectedTy);
+                                else
+                                    argVal = builder_->CreateFPExt(argVal, expectedTy);
+                            } else if (argVal->getType()->isStructTy() && expectedTy->isStructTy()) {
                             // Tuple/struct element-wise coercion (e.g. {i256, i256} → {i32, i32})
                             auto* srcST = llvm::cast<llvm::StructType>(argVal->getType());
                             auto* dstST = llvm::cast<llvm::StructType>(expectedTy);
@@ -3466,6 +3406,7 @@ generic_template_handled:
                                     result = builder_->CreateInsertValue(result, elem, {e}, "tup_ins");
                                 }
                                 argVal = result;
+                                }
                             }
                         }
                     }
@@ -3553,8 +3494,16 @@ generic_template_handled:
     // Build LLVM FunctionType from TypeInfo
     auto* retLLVM = fnTI->returnType->toLLVMType(*context_, module_->getDataLayout());
     std::vector<llvm::Type*> paramLLVM;
-    for (auto* pti : fnTI->paramTypes) {
-        paramLLVM.push_back(pti->toLLVMType(*context_, module_->getDataLayout()));
+    for (size_t pi = 0; pi < fnTI->paramTypes.size(); pi++) {
+        auto* pti = fnTI->paramTypes[pi];
+        if (pi < fnTI->paramDims.size() && fnTI->paramDims[pi] > 0) {
+            // []T param: lower to the { ptr, usize } slice ABI.
+            auto* ptrTy = llvm::PointerType::getUnqual(*context_);
+            auto* usizeTy = module_->getDataLayout().getIntPtrType(*context_);
+            paramLLVM.push_back(llvm::StructType::get(*context_, {ptrTy, usizeTy}));
+        } else {
+            paramLLVM.push_back(pti->toLLVMType(*context_, module_->getDataLayout()));
+        }
     }
     // For closures, the first hidden param is the context pointer
     auto* ptrTy = llvm::PointerType::getUnqual(*context_);
@@ -3575,14 +3524,17 @@ generic_template_handled:
             // Cast if needed (offset by 1 for closure context)
             size_t paramIdx = contextPtr ? i + 1 : i;
             if (paramIdx < paramLLVM.size() && argVal->getType() != paramLLVM[paramIdx]) {
-                if (argVal->getType()->isIntegerTy() && paramLLVM[paramIdx]->isIntegerTy())
-                    argVal = builder_->CreateIntCast(argVal, paramLLVM[paramIdx],
-                                                     contextPtr ? false : fnTI->paramTypes[i]->isSigned);
-                else if (argVal->getType()->isFloatingPointTy() && paramLLVM[paramIdx]->isFloatingPointTy()) {
-                    if (argVal->getType()->getPrimitiveSizeInBits() > paramLLVM[paramIdx]->getPrimitiveSizeInBits())
-                        argVal = builder_->CreateFPTrunc(argVal, paramLLVM[paramIdx]);
-                    else
-                        argVal = builder_->CreateFPExt(argVal, paramLLVM[paramIdx]);
+                argVal = coerceArrayArg(argVal, paramLLVM[paramIdx]);
+                if (argVal->getType() != paramLLVM[paramIdx]) {
+                    if (argVal->getType()->isIntegerTy() && paramLLVM[paramIdx]->isIntegerTy())
+                        argVal = builder_->CreateIntCast(argVal, paramLLVM[paramIdx],
+                                                         contextPtr ? false : fnTI->paramTypes[i]->isSigned);
+                    else if (argVal->getType()->isFloatingPointTy() && paramLLVM[paramIdx]->isFloatingPointTy()) {
+                        if (argVal->getType()->getPrimitiveSizeInBits() > paramLLVM[paramIdx]->getPrimitiveSizeInBits())
+                            argVal = builder_->CreateFPTrunc(argVal, paramLLVM[paramIdx]);
+                        else
+                            argVal = builder_->CreateFPExt(argVal, paramLLVM[paramIdx]);
+                    }
                 }
             }
             args.push_back(argVal);
@@ -3606,6 +3558,76 @@ generic_template_handled:
     }
 
     return static_cast<llvm::Value*>(result);
+}
+
+llvm::Value* IRGen::coerceArrayArg(llvm::Value* argVal, llvm::Type* expectedTy) {
+    if (!argVal || !expectedTy) return argVal;
+    if (!argVal->getType()->isArrayTy()) return argVal;
+
+    // []T param: lower an array to a { ptr, len } slice (shares the array's
+    // stack storage; the callee must not outlive the call).
+    if (expectedTy->isStructTy()) {
+        auto* dstST = llvm::cast<llvm::StructType>(expectedTy);
+        if (dstST->getNumElements() == 2 &&
+            dstST->getElementType(0)->isPointerTy() &&
+            dstST->getElementType(1)->isIntegerTy()) {
+            auto* srcArrTy = llvm::cast<llvm::ArrayType>(argVal->getType());
+
+            llvm::Value* srcAlloca = nullptr;
+            llvm::LoadInst* deadLoad = nullptr;
+            if (auto* li = llvm::dyn_cast<llvm::LoadInst>(argVal)) {
+                srcAlloca = li->getPointerOperand();
+                deadLoad = li;
+            }
+            if (!srcAlloca) {
+                srcAlloca = builder_->CreateAlloca(argVal->getType(), nullptr, "arr.slice");
+                builder_->CreateStore(argVal, srcAlloca);
+            }
+
+            auto* i64Ty = llvm::Type::getInt64Ty(*context_);
+            auto* zero = llvm::ConstantInt::get(i64Ty, 0);
+            auto* elemPtr = builder_->CreateGEP(argVal->getType(), srcAlloca,
+                                                 {zero, zero}, "arr.slice.ptr");
+
+            auto* ptrFieldTy = dstST->getElementType(0);
+            llvm::Value* ptrField = elemPtr;
+            if (elemPtr->getType() != ptrFieldTy)
+                ptrField = builder_->CreateBitCast(elemPtr, ptrFieldTy, "arr.slice.cast");
+
+            auto* lenFieldTy = dstST->getElementType(1);
+            auto* lenField = llvm::ConstantInt::get(llvm::cast<llvm::IntegerType>(lenFieldTy),
+                                                    srcArrTy->getNumElements());
+
+            llvm::Value* slice = llvm::UndefValue::get(dstST);
+            slice = builder_->CreateInsertValue(slice, ptrField, {0}, "arr.slice.ins.ptr");
+            slice = builder_->CreateInsertValue(slice, lenField, {1}, "arr.slice.ins.len");
+
+            if (deadLoad && deadLoad->use_empty())
+                deadLoad->eraseFromParent();
+            return slice;
+        }
+    }
+
+    // *T param: decay an array to a pointer to its first element.
+    if (expectedTy->isPointerTy()) {
+        llvm::Value* srcAlloca = nullptr;
+        llvm::LoadInst* deadLoad = nullptr;
+        if (auto* li = llvm::dyn_cast<llvm::LoadInst>(argVal)) {
+            srcAlloca = li->getPointerOperand();
+            deadLoad = li;
+        }
+        if (!srcAlloca) {
+            srcAlloca = builder_->CreateAlloca(argVal->getType(), nullptr, "arr.decay");
+            builder_->CreateStore(argVal, srcAlloca);
+        }
+        auto* zero = llvm::ConstantInt::get(llvm::Type::getInt64Ty(*context_), 0);
+        auto* ptr = builder_->CreateGEP(argVal->getType(), srcAlloca, {zero, zero}, "arr.ptr");
+        if (deadLoad && deadLoad->use_empty())
+            deadLoad->eraseFromParent();
+        return ptr;
+    }
+
+    return argVal;
 }
 
 

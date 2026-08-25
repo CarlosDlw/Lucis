@@ -520,6 +520,11 @@ private:
     
     std::string resolveCallTarget(const std::string& name) const;
 
+    // Lower an array argument to the expected ABI shape: []T params get a
+    // {ptr, len} slice, *T params get a pointer to the first element.
+    // Returns argVal unchanged when no lowering applies.
+    llvm::Value* coerceArrayArg(llvm::Value* argVal, llvm::Type* expectedTy);
+
     // Recursively coerce scalars/aggregates to a target LLVM type.
     llvm::Value* coerceValueToType(llvm::Value* value,
                                    llvm::Type* targetType,

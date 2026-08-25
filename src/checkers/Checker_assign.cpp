@@ -75,6 +75,14 @@ void Checker::checkAssignStmt(LucisParser::AssignStmtContext* stmt) {
         }
     }
 
+    // set<T> has no subscript assignment (its API is add/contains).
+    if (varType && varType->kind == TypeKind::Extended &&
+        varType->extendedKind == "Set" && !indexExprs.empty()) {
+        error(stmt, "set<" + (varType->elementType ? varType->elementType->name : "?") +
+                     "> does not support indexing");
+        return;
+    }
+
     // For Map<K,V>, subscript assignment: m[key] = val
     if (indexExprs.size() == 2 && varType &&
         varType->kind == TypeKind::Extended && varType->keyType) {

@@ -2317,6 +2317,41 @@ std::pair<llvm::Value*, llvm::Type*>
 IRGen::resolveIncrDecrTarget(LucisParser::ExpressionContext* expr) {
     std::pair<llvm::Value*, llvm::Type*> undef = { nullptr, nullptr };
 
+    // Vec element raw pointer helper (vecElemPtr[index]), shared by the
+    // indexed cases below.
+    auto vecElemPtr = [&](LucisParser::ExpressionContext* base,
+                          LucisParser::ExpressionContext* idxExpr,
+                          const TypeInfo** outElemTI,
+                          llvm::Type** outElemLLTy) -> llvm::Value* {
+        auto* ident = dynamic_cast<LucisParser::IdentExprContext*>(base);
+        if (!ident) return nullptr;
+        auto varName = ident->IDENTIFIER()->getText();
+        auto it = locals_.find(varName);
+        if (it == locals_.end()) return nullptr;
+        auto* baseTI = it->second.typeInfo;
+        if (!baseTI || baseTI->kind != TypeKind::Extended ||
+            baseTI->extendedKind != "Vec") {
+            std::cerr << "lucis: ++/-- index requires a vec<T>\n";
+            return nullptr;
+        }
+        const TypeInfo* elemTI = baseTI->elementType;
+        auto* elemLLTy = elemTI->toLLVMType(*context_, module_->getDataLayout());
+        auto* ptrTy = llvm::PointerType::getUnqual(*context_);
+        auto* usizeTy = module_->getDataLayout().getIntPtrType(*context_);
+        auto& dl = module_->getDataLayout();
+        auto* elemSz = llvm::ConstantInt::get(
+            usizeTy, dl.getTypeAllocSize(elemLLTy));
+        auto ptrFn = declareBuiltin("lucis_vec_ptr_raw", ptrTy,
+                                    {ptrTy, usizeTy, usizeTy});
+        auto* idxVal = castValue(visit(idxExpr));
+        if (idxVal->getType() != usizeTy)
+            idxVal = builder_->CreateIntCast(idxVal, usizeTy, false);
+        *outElemTI = elemTI;
+        *outElemLLTy = elemLLTy;
+        return builder_->CreateCall(ptrFn, {it->second.alloca, idxVal, elemSz},
+                                    varName + "_incr_elem");
+    };
+
     // Case 1: bare variable (x++ / ++x)
     if (auto* ident = dynamic_cast<LucisParser::IdentExprContext*>(expr)) {
         auto name = ident->IDENTIFIER()->getText();
@@ -2334,6 +2369,41 @@ IRGen::resolveIncrDecrTarget(LucisParser::ExpressionContext* expr) {
         auto fieldName = fa->IDENTIFIER()->getText();
         auto* baseIdent = dynamic_cast<LucisParser::IdentExprContext*>(fa->expression());
         if (!baseIdent) {
+            // v[i].field++ — increment a field of a vec element.
+            if (auto* idxBase =
+                    dynamic_cast<LucisParser::IndexExprContext*>(fa->expression())) {
+                const TypeInfo* elemTI = nullptr;
+                llvm::Type* elemLLTy = nullptr;
+                auto* elemPtr = vecElemPtr(idxBase->expression(0),
+                                           idxBase->expression(1),
+                                           &elemTI, &elemLLTy);
+                if (!elemPtr) return undef;
+                if (!elemTI || (elemTI->kind != TypeKind::Struct &&
+                                elemTI->kind != TypeKind::Union)) {
+                    std::cerr << "lucis: ++/-- field access requires a "
+                              << "struct element\n";
+                    return undef;
+                }
+                auto f2 = fa->IDENTIFIER()->getText();
+                int fIdx = -1;
+                const TypeInfo* fTI = nullptr;
+                for (size_t f3 = 0; f3 < elemTI->fields.size(); f3++) {
+                    if (elemTI->fields[f3].name == f2) {
+                        fIdx = static_cast<int>(f3);
+                        fTI = elemTI->fields[f3].typeInfo;
+                        break;
+                    }
+                }
+                if (fIdx < 0) {
+                    std::cerr << "lucis: '" << elemTI->name << "' has no "
+                              << "field '" << f2 << "'\n";
+                    return undef;
+                }
+                auto* fLLTy = fTI->toLLVMType(*context_, module_->getDataLayout());
+                auto* gep = builder_->CreateStructGEP(
+                    elemLLTy, elemPtr, fIdx, f2 + "_incr_ptr");
+                return { gep, fLLTy };
+            }
             std::cerr << "lucis: ++/-- on nested field access not supported\n";
             return undef;
         }
@@ -2416,6 +2486,22 @@ IRGen::resolveIncrDecrTarget(LucisParser::ExpressionContext* expr) {
         auto* elemTy = recvTI->elementType->toLLVMType(*context_,
                                                          module_->getDataLayout());
         return { ptrVal, elemTy };
+    }
+
+    // Case 4: indexed collection element (tokens[i]++ / v[i].field++).
+    if (auto* idx = dynamic_cast<LucisParser::IndexExprContext*>(expr)) {
+        const TypeInfo* elemTI = nullptr;
+        llvm::Type* elemLLTy = nullptr;
+        auto* elemPtr = vecElemPtr(idx->expression(0), idx->expression(1),
+                                   &elemTI, &elemLLTy);
+        if (!elemPtr) return undef;
+        if (elemTI && (elemTI->kind == TypeKind::Struct ||
+                       elemTI->kind == TypeKind::Union)) {
+            std::cerr << "lucis: ++/-- on a struct/union element is not "
+                      << "supported (use a field)\n";
+            return undef;
+        }
+        return { elemPtr, elemLLTy };
     }
 
     std::cerr << "lucis: ++/-- requires a variable (lvalue)\n";

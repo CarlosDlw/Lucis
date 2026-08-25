@@ -1262,6 +1262,47 @@ std::any IRGen::visitFieldAccessExpr(LucisParser::FieldAccessExprContext* ctx) {
             (structTI->pointeeType->kind == TypeKind::Struct ||
              structTI->pointeeType->kind == TypeKind::Union);
 
+        // Collection<T> element: tokens[idx].field / m[key].field — resolve the
+        // element through the normal index path (which already handles
+        // Vec/Map) and GEP into it, mirroring the dynamic-base branch.
+        if (structTI && structTI->kind == TypeKind::Extended &&
+            (structTI->extendedKind == "Vec" || structTI->extendedKind == "Map")) {
+            const TypeInfo* elemTI = structTI->extendedKind == "Vec"
+                ? structTI->elementType
+                : structTI->valueType;
+            if (elemTI && (elemTI->kind == TypeKind::Struct ||
+                           elemTI->kind == TypeKind::Union)) {
+                int fieldIdx = -1;
+                const TypeInfo* fieldTI = nullptr;
+                for (size_t f = 0; f < elemTI->fields.size(); f++) {
+                    if (elemTI->fields[f].name == fieldName) {
+                        fieldIdx = static_cast<int>(f);
+                        fieldTI = elemTI->fields[f].typeInfo;
+                        break;
+                    }
+                }
+                if (fieldIdx >= 0) {
+                    auto* indexedVal = castValue(visit(baseExpr));
+                    if (indexedVal && indexedVal->getType()->isStructTy()) {
+                        auto* fieldLLTy = buildFieldLLVMType(fieldTI,
+                            elemTI->fields[fieldIdx].arrayDims,
+                            elemTI->fields[fieldIdx].arraySizes);
+                        auto* tmp = builder_->CreateAlloca(indexedVal->getType(), nullptr, "tmp_coll_field");
+                        builder_->CreateStore(indexedVal, tmp);
+                        auto* gep = builder_->CreateStructGEP(
+                            indexedVal->getType(), tmp, fieldIdx, fieldName + "_ptr");
+                        auto* load = builder_->CreateLoad(fieldLLTy, gep, fieldName);
+                        if (fieldTI->isVolatile) load->setVolatile(true);
+                        return static_cast<llvm::Value*>(load);
+                    }
+                }
+                std::cerr << "lucis: '" << elemTI->name << "' has no field '"
+                          << fieldName << "'\n";
+                return static_cast<llvm::Value*>(
+                    llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
+            }
+        }
+
         if (!structTI || ((structTI->kind != TypeKind::Struct && structTI->kind != TypeKind::Union) &&
                           !isPointerToAggregate)) {
             std::cerr << "lucis: elements of '" << varName << "' are not structs\n";

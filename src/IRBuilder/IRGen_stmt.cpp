@@ -1860,6 +1860,13 @@ std::any IRGen::visitIndexFieldAssignStmt(
     llvm::Type* elemTy = nullptr;
     const TypeInfo* currentTI = structTI;
 
+    // Map write-back hook: m[key].field = v patches a value slot and commits
+    // it via map_set so a missing key gets inserted.
+    llvm::FunctionCallee mapSetFn;
+    llvm::Value* mapSetKey = nullptr;
+    llvm::Value* mapSetSlot = nullptr;
+    llvm::Value* mapContainer = nullptr;
+
     if (structTI && structTI->kind == TypeKind::Pointer && structTI->pointeeType) {
         auto* ptrTy = llvm::PointerType::getUnqual(*context_);
         auto* basePtr = builder_->CreateLoad(ptrTy, alloca, varName + "_ptr");
@@ -1893,6 +1900,59 @@ std::any IRGen::visitIndexFieldAssignStmt(
                     varName + "_elem_ptr");
             }
         }
+    } else if (structTI && structTI->kind == TypeKind::Extended &&
+               (structTI->extendedKind == "Vec" ||
+                structTI->extendedKind == "Map")) {
+        // tokens[i].field = v  /  m[key].field = v
+        // The collection builtins take the vec/map HEADER (the variable's
+        // alloca), not the element buffer pointer.
+        auto* ptrTy = llvm::PointerType::getUnqual(*context_);
+        auto* usizeTy = module_->getDataLayout().getIntPtrType(*context_);
+        auto* containerPtr = alloca;
+        const TypeInfo* elemTI = structTI->extendedKind == "Vec"
+            ? structTI->elementType : structTI->valueType;
+        auto* elemLLTy = elemTI->toLLVMType(*context_, module_->getDataLayout());
+
+        if (structTI->extendedKind == "Map") {
+            // Materialize the value slot via map_get, patch the field below,
+            // then commit with map_set so missing keys get inserted.
+            auto suffix = structTI->builtinSuffix;
+            auto* keyLLTy = structTI->keyType->toLLVMType(*context_, module_->getDataLayout());
+            auto* keyVal = castValue(visit(expressions[0]));
+            if (keyVal->getType() != keyLLTy) {
+                if (keyVal->getType()->isIntegerTy() && keyLLTy->isIntegerTy())
+                    keyVal = builder_->CreateIntCast(keyVal, keyLLTy,
+                                                     structTI->keyType->isSigned);
+            }
+            auto getFn = declareBuiltin("lucis_map_get_" + suffix,
+                llvm::Type::getVoidTy(*context_), {ptrTy, keyLLTy, ptrTy});
+            mapSetFn = declareBuiltin("lucis_map_set_" + suffix,
+                llvm::Type::getVoidTy(*context_), {ptrTy, keyLLTy, ptrTy});            mapSetKey = keyVal;
+            mapSetSlot = builder_->CreateAlloca(elemLLTy, nullptr, "map_field_slot");
+            mapContainer = containerPtr;
+            builder_->CreateCall(getFn, {containerPtr, keyVal, mapSetSlot});
+            elemPtr = mapSetSlot;
+        } else {
+            // Vec<T>: raw element pointer inside the buffer.
+            auto suffix = getVecSuffix(elemTI);
+            if (suffix != "raw") {
+                std::cerr << "lucis: index field assignment requires a "
+                          << "struct/union vec element\n";
+                return {};
+            }
+            auto& dl = module_->getDataLayout();
+            auto elemSz = dl.getTypeAllocSize(elemLLTy);
+            auto* elemSzVal = llvm::ConstantInt::get(usizeTy, elemSz);
+            auto ptrFn = declareBuiltin("lucis_vec_ptr_raw", ptrTy,
+                                        {ptrTy, usizeTy, usizeTy});
+            auto* idx = castValue(visit(expressions[0]));
+            if (idx->getType() != usizeTy)
+                idx = builder_->CreateIntCast(idx, usizeTy, false);
+            elemPtr = builder_->CreateCall(ptrFn, {containerPtr, idx, elemSzVal},
+                                           varName + "_elem_ptr");
+        }
+        elemTy = elemLLTy;
+        currentTI = elemTI;
     } else {
         // Build GEP indices for array: [0, idx0, idx1, ...]
         std::vector<llvm::Value*> gepIndices;
@@ -1984,6 +2044,10 @@ std::any IRGen::visitIndexFieldAssignStmt(
     {
         auto* store = builder_->CreateStore(val, currentPtr);
         if (currentTI && currentTI->isVolatile) store->setVolatile(true);
+    }
+    // Commit a patched map slot back into the container.
+    if (mapSetFn && mapSetSlot) {
+        builder_->CreateCall(mapSetFn, {mapContainer, mapSetKey, mapSetSlot});
     }
     return {};
 }
@@ -2986,6 +3050,40 @@ std::any IRGen::visitArrowAnyCompoundAssignStmt(
 
     auto lv = resolveArrowAnyLValue(identifiers, dots, arrows, indexExprs);
     if (!lv.ptr) return {};
+
+    // Extended container element: ptr->vec[i] += x — point the lvalue at the
+    // element (raw buffer slot) so the shared load/modify/store below works.
+    if (lv.fieldTI && lv.fieldTI->kind == TypeKind::Extended) {
+        auto* ptrTy = llvm::PointerType::getUnqual(*context_);
+        auto* usizeTy = module_->getDataLayout().getIntPtrType(*context_);
+        if (lv.fieldTI->extendedKind == "Vec" && !indexExprs.empty()) {
+            auto* elemLLTy = lv.fieldTI->elementType->toLLVMType(
+                *context_, module_->getDataLayout());
+            auto suffix = getVecSuffix(lv.fieldTI->elementType);
+            if (suffix != "raw") {
+                std::cerr << "lucis: compound assignment on a non-struct vec "
+                          << "element is not supported\n";
+                return {};
+            }
+            auto& dl = module_->getDataLayout();
+            auto* elemSz = llvm::ConstantInt::get(
+                usizeTy, dl.getTypeAllocSize(elemLLTy));
+            auto ptrFn = declareBuiltin("lucis_vec_ptr_raw", ptrTy,
+                                        {ptrTy, usizeTy, usizeTy});
+            auto* idx = castValue(visit(indexExprs[0]));
+            if (idx->getType() != usizeTy)
+                idx = builder_->CreateIntCast(idx, usizeTy, false);
+            lv.fieldTI = lv.fieldTI->elementType;
+            lv.ty = elemLLTy;
+            lv.ptr = builder_->CreateCall(ptrFn, {lv.ptr, idx, elemSz},
+                                          "arw_comp_elem_ptr");
+        } else {
+            std::cerr << "lucis: compound assignment on "
+                      << lv.fieldTI->extendedKind
+                      << " element is not supported (use plain '=')\n";
+            return {};
+        }
+    }
 
     auto* oldVal = builder_->CreateLoad(lv.ty, lv.ptr, "arrow_any_old");
     if (lv.fieldTI && lv.fieldTI->isVolatile)

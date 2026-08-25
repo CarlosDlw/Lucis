@@ -1426,6 +1426,7 @@ void Checker::registerFunctionSignature(LucisParser::FunctionDeclContext* func,
     const TypeInfo* variadicElemType = nullptr;
     size_t variadicIndex = 0;
     std::vector<const TypeInfo*> paramTypes;
+    std::vector<unsigned> paramDims;
     if (auto* paramList = func->paramList()) {
         auto params = paramList->param();
         for (size_t i = 0; i < params.size(); i++) {
@@ -1442,6 +1443,7 @@ void Checker::registerFunctionSignature(LucisParser::FunctionDeclContext* func,
             auto* pType = resolveTypeSpec(param->typeSpec(), pDims);
             if (!pType) return;
             paramTypes.push_back(pType);
+            paramDims.push_back(pDims);
 
             if (param->SPREAD()) {
                 // Typed variadic: T ...name
@@ -1466,7 +1468,7 @@ void Checker::registerFunctionSignature(LucisParser::FunctionDeclContext* func,
         }
     }
 
-    auto* funcType = makeFunctionType(retType, paramTypes, isVariadic, variadicElemType);
+    auto* funcType = makeFunctionType(retType, paramTypes, isVariadic, variadicElemType, &paramDims);
     functions_[funcName] = funcType;
     functionDecls_[funcName] = func;
     syncToSemanticDB_Function(funcName, *funcType, currentModulePath_, func);

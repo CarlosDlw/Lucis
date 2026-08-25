@@ -1176,10 +1176,16 @@ void IRGen::declareExternFunction(const std::string& mangledName,
             }
 
             auto* pTI = resolveTypeInfo(param->typeSpec());
+            unsigned pDims = countArrayDims(param->typeSpec());
             if (param->SPREAD()) {
                 variadicIdx = static_cast<int>(i);
                 paramTypes.push_back(llvm::PointerType::getUnqual(*context_));
                 paramTypes.push_back(llvm::Type::getInt64Ty(*context_));
+            } else if (pDims > 0) {
+                // []T param: lower to the { ptr, usize } slice ABI.
+                auto* ptrTy = llvm::PointerType::getUnqual(*context_);
+                auto* usizeTy = module_->getDataLayout().getIntPtrType(*context_);
+                paramTypes.push_back(llvm::StructType::get(*context_, {ptrTy, usizeTy}));
             } else {
                 paramTypes.push_back(pTI ? pTI->toLLVMType(*context_, module_->getDataLayout())
                                          : llvm::Type::getInt32Ty(*context_));

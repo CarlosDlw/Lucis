@@ -243,7 +243,8 @@ private:
     const TypeInfo* makeFunctionType(const TypeInfo* returnType,
                                      const std::vector<const TypeInfo*>& paramTypes,
                                      bool isVariadic = false,
-                                     const TypeInfo* variadicElementType = nullptr);
+                                     const TypeInfo* variadicElementType = nullptr,
+                                     const std::vector<unsigned>* paramDims = nullptr);
     std::string resolveBaseTypeName(LucisParser::TypeSpecContext* ctx);
     const TypeInfo* resolveBuiltinReturnType(const std::string& retName);
 

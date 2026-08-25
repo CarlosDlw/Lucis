@@ -81,6 +81,7 @@ struct TypeInfo {
     const TypeInfo* pointeeType = nullptr;   // non-null only for Pointer
     const TypeInfo* returnType = nullptr;                // non-null only for Function
     std::vector<const TypeInfo*> paramTypes;              // non-empty only for Function
+    std::vector<unsigned> paramDims;                      // [] depth per param (Function only)
     bool isVolatile = false;                             // true for volatile-qualified types
     bool isVariadic = false;                             // true if last param is variadic (...)
     const TypeInfo* variadicElementType = nullptr;       // non-null for typed variadic fn(int32 ...args)
