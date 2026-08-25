@@ -46,6 +46,10 @@ lucis init my-app
 lucis init .
 ```
 
+Creates `src/main.lc`, `lucis.yaml` and a `.gitignore` (build artifacts,
+`.lucis/` caches and `lucis fuzz` outputs) — the `.gitignore` and `main.lc`
+are never overwritten on re-runs.
+
 ## build — Compile to Binary
 
 ### Flags grouped by stage

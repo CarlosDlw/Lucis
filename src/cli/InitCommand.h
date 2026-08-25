@@ -64,6 +64,27 @@ public:
             return 1;
         }
 
+        // Generated .gitignore: build artifacts and pipeline caches should
+        // never be committed. Existing files are left untouched.
+        auto gitignorePath = target / ".gitignore";
+        if (!fs::exists(gitignorePath)) {
+            std::ofstream ofs(gitignorePath);
+            ofs << "# Lucis — build artifacts and pipeline caches\n"
+                << "build/\n"
+                << "dist/\n"
+                << "*.o\n"
+                << "*.out\n"
+                << "*.log\n"
+                << ".lucis/\n"
+                << ".lucisbuild/\n"
+                << ".luciscache/\n"
+                << "\n"
+                << "# lucis fuzz artifacts (generated inputs, crashes, seeds)\n"
+                << "fuzz/crashes/\n"
+                << "fuzz/corpus/id_*\n";
+            std::cout << "created file '.gitignore'\n";
+        }
+
         std::cout << "created file 'lucis.yaml'\n";
         std::cout << "done. Run `lucis build` or `lucis run` from this directory to compile.\n";
         return 0;
