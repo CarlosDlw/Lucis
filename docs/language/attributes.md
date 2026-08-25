@@ -507,6 +507,44 @@ See [CLI usage](../getting-started/cli-usage.md) and [`std::test`](../stdlib/tes
 
 ---
 
+### `#[fuzz]` — fuzz target
+
+Marks a function as the program's fuzz target, run by `lucis fuzz`
+(cargo-fuzz style). The function receives arbitrary input bytes and must
+exercise the code under test; a failing assertion, a crash or a timeout is
+reported with the offending input, minimized to the smallest reproducer.
+
+```lucis
+#[fuzz]
+fn parseMessage([]uint8 data) void {
+    if data.len() < 2 {
+        ret;
+    }
+    // exercise the parser with the input bytes
+}
+```
+
+**Applies to:** Function  
+**Arguments:** none  
+**Checker effect:** validates the target is a plain function taking exactly
+one `[]uint8` parameter and returning `void`; at most one `#[fuzz]` per
+program  
+**IR effect:** instrument every user basic block with coverage hooks and
+synthesize the fuzz harness `main` + `lucis_fuzz_dispatch`
+
+#### Running
+
+```bash
+lucis fuzz init                      # create fuzz/ with an example target
+lucis fuzz run example --iters 50000 # fuzz it (Ctrl+C to stop)
+lucis fuzz repro fuzz/crashes/crash_0_0/input.bin   # reproduce a crash
+lucis fuzz list                      # list targets in fuzz/
+```
+
+See [CLI usage](../getting-started/cli-usage.md).
+
+---
+
 ### `#[cfg(…)]`
 Conditional compilation — the annotated declaration is only compiled when the given predicate evaluates to `true` for the current target.
 

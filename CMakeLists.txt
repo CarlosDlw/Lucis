@@ -209,6 +209,7 @@ add_library(lucis_builtins STATIC
     src/builtins/os/os.c
     src/builtins/test/test.c
     src/builtins/test/test_runner.c
+    src/builtins/fuzz/fuzz_runner.c
     src/builtins/crypto/crypto.c
     src/builtins/compress/compress.c
     src/builtins/net/net.c
@@ -240,6 +241,7 @@ set(SOURCES
     src/cli/CheckCommand.cpp
     src/cli/HelpCommand.cpp
     src/cli/TestCommand.cpp
+    src/cli/FuzzCommand.cpp
     src/cli/BinaryBuilder.cpp
     src/parser/Parser.cpp
     src/checkers/Checker_driver.cpp
@@ -262,6 +264,7 @@ set(SOURCES
     src/IRBuilder/IRGen_driver.cpp
     src/IRBuilder/IRGen_decl.cpp
     src/IRBuilder/IRGen_test.cpp
+    src/IRBuilder/IRGen_fuzz.cpp
     src/IRBuilder/IRGen_stmt.cpp
     src/IRBuilder/IRGen_expr.cpp
     src/IRBuilder/IRGen_access.cpp

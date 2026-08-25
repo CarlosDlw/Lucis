@@ -11,6 +11,7 @@
 #include "types/TypeRegistry.h"
 #include "semantic/SemanticDB.h"
 #include "attributes/TestAttribute.h"
+#include "attributes/FuzzAttribute.h"
 
 struct SourceUnit {
     std::string filePath;
@@ -37,6 +38,9 @@ struct PipelineResult {
 
     // #[test] cases collected from all units (symbolName pre-resolved).
     std::vector<TestCase> testCases;
+
+    // #[fuzz] targets collected from all units (symbolName pre-resolved).
+    std::vector<FuzzTarget> fuzzTargets;
 
     bool hasErrors = false;
 };

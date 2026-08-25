@@ -229,6 +229,43 @@ error, `2` usage error. The attribute reference lives in
 [Attributes](../language/attributes.md); assertion functions in
 [`std::test`](../stdlib/test.md).
 
+## fuzz — Fuzz-Test a Program (cargo-fuzz style)
+
+```
+lucis fuzz init
+lucis fuzz run <target> [--iters N] [--timeout MS] [--seed N] [-j N]
+lucis fuzz list
+lucis fuzz repro <crash-input> [target]
+```
+
+A fuzz target is a plain function marked `#[fuzz]` taking one `[]uint8`
+parameter. `lucis fuzz run` builds it with basic-block coverage
+instrumentation and runs an AFL-style loop: inputs that reveal new coverage
+become seeds, crashes are isolated per input (fork), minimized and saved.
+
+| Flag | Description |
+|------|-------------|
+| `--corpus <DIR>` | Corpus directory (default: `fuzz/corpus`) |
+| `--crash-dir <DIR>` | Crash output directory (default: `fuzz/crashes`) |
+| `--iters <N>` | Max executions (0 = until interrupted) |
+| `--timeout <MS>` | Per-execution timeout in ms (default: 1000) |
+| `--seed <N>` | RNG seed (deterministic runs) |
+| `-j, --jobs <N>` | Parallel fuzz workers |
+| `-v, --verbose` | Echo target output per execution |
+| `-O, --opt <LEVEL>` | Optimization level |
+| `-q, --quiet` | Suppress pipeline logs |
+
+```bash
+lucis fuzz init                      # create fuzz/ with an example target
+lucis fuzz run example --iters 50000 # fuzz the example until interrupted
+lucis fuzz repro fuzz/crashes/crash_0_0/input.bin   # reproduce a crash
+```
+
+Exit codes: `0` run finished without crashes, `1` at least one crash was
+found (or compile error), `2` usage error. New interesting inputs are
+persisted into the corpus directory between runs; crashes land in
+`fuzz/crashes/` with a minimized reproducer.
+
 ## check — Type Checking
 
 ```

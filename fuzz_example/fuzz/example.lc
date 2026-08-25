@@ -1,0 +1,16 @@
+// Validation fuzz target: an input whose first byte is 'C' (0x43) hits a
+// seeded bug (null dereference). `make fuzz-example` runs the fuzzer with a
+// fixed seed and requires the crash to be found and minimized to 1 byte.
+use std::log::println;
+
+#[fuzz]
+fn parseBytes([]uint8 data) void {
+    if data.len() < 1 {
+        ret;
+    }
+    if data[0] == 67 {
+        println("magic byte detected");
+        *int32 p = null;   // seeded bug: crash
+        *p = 1;
+    }
+}

@@ -1,0 +1,9 @@
+# lucis.yaml — validation project for `lucis fuzz`
+name: fuzz_example
+version: 0.0.1
+binary: fuzz_example
+out_dir: build
+source:
+  - fuzz/
+build:
+  opt_level: O2

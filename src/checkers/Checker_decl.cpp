@@ -1504,6 +1504,43 @@ void Checker::registerFunctionSignature(LucisParser::FunctionDeclContext* func,
             }
             testCases_.push_back(std::move(tc));
         }
+
+        // ── #[fuzz] attribute — collect the program's fuzz target ────────
+        if (auto* fuzzAttr = findAttribute(func->attributeList(), "fuzz")) {
+            (void)fuzzAttr;  // argument errors are reported by validateAttributeList
+
+            if (funcName == "main")
+                error(func, "main cannot be marked #[fuzz]");
+            if (retType && retType->name != "void")
+                error(func, "fuzz target '" + funcName + "' must return 'void', got '"
+                      + retType->name + "'");
+
+            bool validSignature = false;
+            if (auto* paramList = func->paramList()) {
+                auto params = paramList->param();
+                if (params.size() == 1 && params[0]->typeSpec()) {
+                    unsigned pDims = 0;
+                    auto* pType = resolveTypeSpec(params[0]->typeSpec(), pDims);
+                    if (pDims == 1 && pType && pType->name == "uint8")
+                        validSignature = true;
+                }
+            }
+            if (!validSignature)
+                error(func, "fuzz target '" + funcName + "' must take exactly one parameter of type '[]uint8'");
+
+            if (!fuzzTargets_.empty())
+                error(func, "only one #[fuzz] target is allowed per program");
+
+            FuzzTarget ft;
+            ft.modulePath = currentModulePath_;
+            ft.funcName = funcName;
+            ft.filePath = currentFile_;
+            if (auto* start = func->getStart()) {
+                ft.line = start->getLine();
+                ft.col = start->getCharPositionInLine();
+            }
+            fuzzTargets_.push_back(std::move(ft));
+        }
     }
 
     // ── Validate main() signature ───────────────────────────────────────

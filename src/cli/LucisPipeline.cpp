@@ -392,6 +392,14 @@ std::unique_ptr<PipelineResult> LucisPipeline::run(const Options& opts) {
                 : t.funcName;
             result->testCases.push_back(std::move(t));
         }
+        // Collect #[fuzz] targets from this unit (resolve the emit symbol name)
+        for (auto& ft : checker.fuzzTargets()) {
+            FuzzTarget t = ft;
+            t.symbolName = unit.isStdlib
+                ? ModuleRegistry::mangle(unit.modulePath, t.funcName)
+                : t.funcName;
+            result->fuzzTargets.push_back(std::move(t));
+        }
         for (auto& err : checker.errors())
             printErrorLine(unit.filePath + ": " + err);
         if (!passed) anyCheckError = true;

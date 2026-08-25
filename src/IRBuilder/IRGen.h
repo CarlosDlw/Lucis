@@ -29,6 +29,7 @@
 #include "semantic/SemanticDB.h"
 #include "ffi/CBindings.h"
 #include "attributes/TestAttribute.h"
+#include "attributes/FuzzAttribute.h"
 class ModuleRegistry;
 class CBindings;
 struct CStructMacro;
@@ -91,6 +92,15 @@ public:
         testVerbose_ = verbose;
     }
     void synthesizeTestMain();
+
+    // ── Fuzz mode (lucis fuzz) ────────────────────────────────────────────
+    // Enabled for every unit (user code is instrumented with coverage hooks);
+    // the target is only provided to the entry unit, which also receives the
+    // synthesized `main` and the `lucis_fuzz_dispatch` bridge.
+    void setFuzzMode(bool v) { fuzzMode_ = v; }
+    void setFuzzTarget(FuzzTarget target) { fuzzTarget_ = std::move(target); }
+    void synthesizeFuzzMain();
+    void injectFuzzCoverage();
 
     // ── Visitor overrides ───────────────────────────────────────────────────
     std::any visitProgram(LucisParser::ProgramContext* ctx)             override;
@@ -396,6 +406,10 @@ private:
     int testJobs_ = 1;
     int64_t testTimeoutMs_ = 0;
     bool testVerbose_ = false;
+
+    // Fuzz mode state (see setFuzzMode above).
+    bool fuzzMode_ = false;
+    std::optional<FuzzTarget> fuzzTarget_;
 
     // Phase 2: authoritative semantic database (populated by Checker)
     const semantic::SemanticDB* semanticDB_ = nullptr;

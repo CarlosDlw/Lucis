@@ -1043,7 +1043,7 @@ void IRGen::forwardDeclareFunction(LucisParser::FunctionDeclContext* ctx) {
     }
 
     std::string emitName = funcName;
-    if (isMainWithArgs || (testMode_ && funcName == "main")) {
+    if (isMainWithArgs || ((testMode_ || fuzzMode_) && funcName == "main")) {
         emitName = "lucis_user_main";
     } else if (funcName != "main") {
         if (isStdlib_)
@@ -1140,10 +1140,11 @@ std::any IRGen::visitFunctionDecl(LucisParser::FunctionDeclContext* ctx) {
     bool noMangle = hasAttribute(ctx->attributeList(), "no_mangle") || isEntry;
     bool isExport = hasAttribute(ctx->attributeList(), "export") || isEntry;
     if (isEntry) entryPoint_ = funcName;
-    if (isMainWithArgs || (testMode_ && funcName == "main")) {
+    if (isMainWithArgs || ((testMode_ || fuzzMode_) && funcName == "main")) {
         emitName = "lucis_user_main";
-        if (testMode_ && funcName == "main")
-            std::cerr << "lucis: [test] ignoring user 'main' (test harness provides its own)\n";
+        if ((testMode_ || fuzzMode_) && funcName == "main")
+            std::cerr << "lucis: [" << (fuzzMode_ ? "fuzz" : "test")
+                      << "] ignoring user 'main' (the harness provides its own)\n";
     } else if (funcName != "main" && !noMangle) {
         bool isStdlib = (currentFile_.rfind("/usr/", 0) == 0);
         if (isStdlib)
@@ -1390,8 +1391,8 @@ std::any IRGen::visitFunctionDecl(LucisParser::FunctionDeclContext* ctx) {
     currentFunction_ = nullptr;
 
     // ── Generate the real main() wrapper ────────────────────────────────
-    // (Skipped in test mode: the harness provides its own `main`.)
-    if (isMainWithArgs && !testMode_) {
+    // (Skipped in test/fuzz mode: the harness provides its own `main`.)
+    if (isMainWithArgs && !testMode_ && !fuzzMode_) {
         auto* i32Ty   = llvm::Type::getInt32Ty(*context_);
         auto* ptrTy   = llvm::PointerType::getUnqual(*context_);
 

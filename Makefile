@@ -100,6 +100,18 @@ test-framework: build
 	done
 	@echo "framework tests: OK"
 
+## fuzz-example  — valida o lucis fuzz (deve encontrar o crash induzido)
+fuzz-example: build
+	@./build/lucis fuzz run fuzz_example/fuzz/example.lc --iters 2000 --seed 7 --timeout 500 -q; \
+	code=$$?; \
+	if [ $$code -eq 1 ]; then \
+		echo "fuzz-example: crash found and minimized — OK"; \
+	elif [ $$code -eq 0 ]; then \
+		echo "fuzz-example: FAIL — no crash found"; exit 1; \
+	else \
+		echo "fuzz-example: FAIL — exit $$code"; exit 1; \
+	fi
+
 ## help  — lista os targets disponíveis
 help:
 	@echo ""

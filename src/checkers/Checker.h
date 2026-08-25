@@ -24,6 +24,7 @@
 #include "ffi/CBindings.h"
 #include "attributes/AttributeRegistry.h"
 #include "attributes/TestAttribute.h"
+#include "attributes/FuzzAttribute.h"
 
 struct CfgPredicate;
 struct TargetInfo;
@@ -41,6 +42,9 @@ public:
 
     // #[test] cases declared in this unit (empty when none).
     const std::vector<TestCase>& testCases() const { return testCases_; }
+
+    // #[fuzz] targets declared in this unit (at most one per unit).
+    const std::vector<FuzzTarget>& fuzzTargets() const { return fuzzTargets_; }
 
     // Set module context for cross-file symbol resolution.
     void setModuleContext(const ModuleRegistry* registry,
@@ -71,6 +75,7 @@ private:
     std::vector<std::string> errors_;
     std::vector<Diagnostic>  diagnostics_;
     std::vector<TestCase>    testCases_;
+    std::vector<FuzzTarget>  fuzzTargets_;
     ImportResolver           imports_;
     TypeRegistry             typeRegistry_;
     // True while the cross-file dependency walk is registering imported

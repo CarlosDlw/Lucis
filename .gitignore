@@ -22,3 +22,7 @@ bugs.md
 lsp_stderr.log
 
 __pycache__/
+
+# lucis fuzz artifacts (validation project)
+fuzz_example/fuzz/crashes/
+fuzz_example/fuzz/corpus/id_*

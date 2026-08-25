@@ -1,5 +1,6 @@
 #include "attributes/AttributeRegistry.h"
 #include "attributes/TestAttribute.h"
+#include "attributes/FuzzAttribute.h"
 
 void AttributeRegistry::registerAttribute(const std::string& name, AttributeHandler handler) {
     handlers_[name] = std::move(handler);
@@ -70,6 +71,21 @@ void registerBuiltinAttributes(AttributeRegistry& reg) {
             }
             TestSpec spec;
             return parseTestSpec(attr, spec, errors);
+        }
+    });
+
+    // ── fuzz: marks a function as the program's fuzz target (lucis fuzz) ─
+    reg.registerAttribute("fuzz", AttributeHandler{
+        .validate = [](const Attribute& attr, const TypeInfo*, std::vector<std::string>& errors) -> bool {
+            if (attr.contextName != "function") {
+                errors.push_back("#[fuzz] can only be applied to a function declaration");
+                return false;
+            }
+            if (!attr.args.empty()) {
+                errors.push_back("#[fuzz] takes no arguments");
+                return false;
+            }
+            return true;
         }
     });
 

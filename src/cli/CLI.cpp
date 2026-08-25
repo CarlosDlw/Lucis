@@ -5,6 +5,7 @@
 #include "cli/RunCommand.h"
 #include "cli/CheckCommand.h"
 #include "cli/TestCommand.h"
+#include "cli/FuzzCommand.h"
 #include "cli/HelpCommand.h"
 #include "cli/VersionCommand.h"
 #include "cli/InitCommand.h"
@@ -28,6 +29,7 @@ CLI::CLI(int argc, char* argv[])
     commands_.push_back(std::make_unique<RunCommand>());
     commands_.push_back(std::make_unique<CheckCommand>());
     commands_.push_back(std::make_unique<TestCommand>());
+    commands_.push_back(std::make_unique<FuzzCommand>());
     commands_.push_back(std::make_unique<VersionCommand>());
     commands_.push_back(std::make_unique<InitCommand>());
 

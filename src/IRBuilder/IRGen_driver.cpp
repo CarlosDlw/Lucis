@@ -243,6 +243,14 @@ std::unique_ptr<IRModule> IRGen::generate(LucisParser::ProgramContext* tree,
     if (testMode_ && !testCases_.empty())
         synthesizeTestMain();
 
+    // Fuzz mode: instrument user code with coverage hooks, then expose the
+    // target and synthesize the runner `main` (entry unit only).
+    if (fuzzMode_) {
+        injectFuzzCoverage();
+        if (fuzzTarget_)
+            synthesizeFuzzMain();
+    }
+
     // Finalize debug info
     if (dbgBuilder_) {
         dbgBuilder_->finalize();

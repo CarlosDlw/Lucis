@@ -33,6 +33,34 @@ All notable changes to the Lucis language and its compiler.
 
 ---
 
+## Unreleased — Fuzzing (`lucis fuzz`)
+
+### Language Features
+
+- **`#[fuzz]` attribute**: marks a function of type `fn([]uint8) void` as
+  the program's fuzz target (cargo-fuzz style); at most one per program.
+
+### CLI
+
+- **`lucis fuzz`**: `init` (scaffold `fuzz/`), `run <target>` (AFL-style
+  loop), `list`, `repro <input>` (replay a saved crash). Flags: `--corpus`,
+  `--crash-dir`, `--iters`, `--timeout`, `--seed`, `-j` (parallel workers),
+  `-v`. Exit codes: `0` no crashes, `1` crash(es) found/compile error,
+  `2` usage.
+
+### Internal
+
+- IRGen fuzz-mode instruments every user basic block with
+  `lucis_fuzz_trace` coverage hooks and synthesizes `main` +
+  `lucis_fuzz_dispatch`; the C runner (`src/builtins/fuzz/fuzz_runner.c`)
+  implements the coverage-guided loop (shared bitmap via fork-inherited
+  mmap, havoc mutation stack, per-input isolation, delta-debugging
+  minimization, crash capture with output).
+- `make fuzz-example` validates end-to-end: a seeded bug must be found and
+  minimized to 1 byte (`fuzz_example/`).
+
+---
+
 ## v0.0.2-beta — Path-Based Imports
 
 ### Breaking Changes
