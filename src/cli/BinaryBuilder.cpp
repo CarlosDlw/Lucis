@@ -221,6 +221,15 @@ bool BinaryBuilder::build(PipelineResult& pipeline,
 
     std::string cacheKeyData = irText;
     cacheKeyData += "\n#builtins=" + CodeGen::builtinsLibraryPath();
+    // Invalidate when the runtime library itself changed (avoids stale
+    // binaries after a compiler rebuild — run/fuzz caches).
+    {
+        std::error_code ec;
+        auto mtime = fs::last_write_time(CodeGen::builtinsLibraryPath(), ec);
+        if (!ec)
+            cacheKeyData += "\n#builtins_mtime=" +
+                std::to_string(mtime.time_since_epoch().count());
+    }
     cacheKeyData += "\n#opt=" + std::to_string(static_cast<int>(opts.optLevel));
     if (opts.useLTO) cacheKeyData += "\n#lto=1";
     for (auto& lf : pipeline.linkerFlags)

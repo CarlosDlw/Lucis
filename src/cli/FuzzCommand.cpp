@@ -176,8 +176,13 @@ int FuzzCommand::run(const ArgParser& parser) {
     }
 
     // The fuzz/ layout belongs to the target's project root (lucis.yaml or
-    // nearest VCS root), not to the current working directory.
-    const std::string root = LucisPipeline::getProjectRoot(targetFile);
+    // nearest VCS root), not to the current working directory. When no
+    // marker exists, getProjectRoot falls back to the target's directory
+    // (<...>/fuzz) — the project is the parent of that fuzz/ folder.
+    auto rootPath = fs::path(LucisPipeline::getProjectRoot(targetFile));
+    if (rootPath.filename() == "fuzz" && fs::exists(rootPath.parent_path()))
+        rootPath = rootPath.parent_path();
+    const std::string root = rootPath.string();
 
     ResolvedInput resolved;
     resolved.filePath = targetFile;

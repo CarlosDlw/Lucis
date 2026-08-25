@@ -32,6 +32,7 @@ static uint64_t g_rng = 0x9E3779B97F4A7C15ull;
 static uint8_t** g_queue = NULL;
 static size_t*   g_queueLen = NULL;
 static size_t    g_queueCount = 0;
+static unsigned char* g_detDone = NULL;   /* deterministic stage per seed */
 
 /* Scratch buffers. */
 static uint8_t  g_input[FUZZ_MAX_INPUT];
@@ -132,7 +133,7 @@ static size_t mutateInteresting(uint8_t* buf, size_t len) {
 static size_t mutateArith(uint8_t* buf, size_t len) {
     if (len == 0) return 0;
     size_t pos = rngBelow(len);
-    int delta = (int)rngBelow(35) - 17;
+    int delta = (int)rngBelow(71) - 35;   /* -35..+35 */
     if (delta == 0) delta = 1;
     buf[pos] = (uint8_t)(buf[pos] + delta);
     return len;
@@ -431,6 +432,105 @@ static void printStats(void) {
 
 static void handleStop(int) { g_stop = 1; }
 
+/* Handle one execution outcome: crashes are saved + minimized, novel
+ * coverage inputs join the queue and persist back into the corpus. */
+static void onExecDone(const uint8_t* input, size_t len, const ExecResult* out) {
+    if (out->termSig) {
+        if (out->termSig == SIGALRM) {
+            g_timeouts += 1;
+            return;
+        }
+        char detail[64];
+        snprintf(detail, sizeof(detail), "%s", signalName(out->termSig));
+        saveCrash("crash", input, len, out,
+                  out->outputLen ? (const char*)out->output : detail);
+
+        /* Minimize and save the minimal reproducer. */
+        uint8_t* minimal = (uint8_t*)malloc(len ? len : 1);
+        size_t minLen = 0, reductions = 0;
+        if (minimal) {
+            minimize(input, len, out->termSig, minimal, &minLen, &reductions);
+            if (minLen) {
+                char dir[512], file[640];
+                snprintf(dir, sizeof(dir), "%s/crash_%u_%u", g_crashDir,
+                         g_workerId, g_crashes);
+                snprintf(file, sizeof(file), "%s/minimal.bin", dir);
+                FILE* f = fopen(file, "wb");
+                if (f) { fwrite(minimal, 1, minLen, f); fclose(f); }
+                fprintf(stderr, "[fuzz] minimized %zu -> %zu bytes (%zu reductions)\n",
+                        len, minLen, reductions);
+            }
+            free(minimal);
+        }
+        g_crashes += 1;
+        if (g_crashes >= 10) g_stop = 1;   /* stop after a handful */
+        return;
+    }
+
+    if (out->newCoverage && out->finished) {
+        queuePush(input, len);
+        g_interesting += 1;
+        /* Persist new seeds into the corpus directory so later runs start
+         * from a richer base (libFuzzer behaviour). */
+        char file[512];
+        snprintf(file, sizeof(file), "%s/id_%llu", g_corpusDir,
+                 (unsigned long long)g_runs);
+        FILE* f = fopen(file, "wb");
+        if (f) { fwrite(input, 1, len, f); fclose(f); }
+    }
+}
+
+/* Run the target with g_input[0..len) and route the outcome. */
+static void runOneAndHandle(size_t len) {
+    ExecResult out;
+    runOne(&out, g_timeoutMs);
+    g_runs += 1;
+    if (g_verbose && out.outputLen)
+        fwrite(out.output, 1, out.outputLen, stderr);
+    onExecDone(g_input, len, &out);
+    free(out.output);
+}
+
+/* Deterministic stage (AFL model): perturb ONE byte of the base at a time
+ * keeping the rest intact, so matched prefixes anchor progressively
+ * (essential for multi-byte magic values and checks). */
+static void deterministicStage(size_t base) {
+    static const uint8_t kInteresting[] = {0x00, 0x01, 0x7F, 0x80, 0xFF};
+    size_t len = g_queueLen[base];
+
+    for (size_t pos = 0; pos < len; ++pos) {
+        /* Single-bit flips. */
+        for (unsigned bit = 0; bit < 8; ++bit) {
+            memcpy(g_input, g_queue[base], len);
+            g_input[pos] ^= (uint8_t)(1u << bit);
+            runOneAndHandle(len);
+        }
+        /* Small arith deltas (both signs, full 8-bit reach: 1..35). */
+        for (unsigned step = 1; step <= 35; ++step) {
+            for (int sign = -1; sign <= 1; sign += 2) {
+                memcpy(g_input, g_queue[base], len);
+                g_input[pos] = (uint8_t)((int)g_input[pos] + (int)step * sign);
+                runOneAndHandle(len);
+            }
+        }
+        /* Interesting values. */
+        for (size_t v = 0; v < sizeof(kInteresting); ++v) {
+            memcpy(g_input, g_queue[base], len);
+            g_input[pos] = kInteresting[v];
+            runOneAndHandle(len);
+        }
+    }
+    /* Shape growth so havoc can extend anchored prefixes. */
+    if (len + 1 < FUZZ_MAX_INPUT) {
+        static const uint8_t kGrowth[] = {0x00, 0xFF, 0x41, 0x52};
+        for (size_t g = 0; g < sizeof(kGrowth); ++g) {
+            memcpy(g_input, g_queue[base], len);
+            g_input[len] = kGrowth[g];
+            runOneAndHandle(len + 1);
+        }
+    }
+}
+
 static void usage(void) {
     fprintf(stderr,
         "usage: <fuzz binary> [--corpus DIR] [--iters N] [--timeout MS]\n"
@@ -493,7 +593,8 @@ int32_t lucis_fuzz_main(int32_t argc, char** argv) {
     /* ── Seed queue from the corpus directory. ───────────────────────── */
     g_queue = (uint8_t**)calloc(MAX_QUEUE, sizeof(uint8_t*));
     g_queueLen = (size_t*)calloc(MAX_QUEUE, sizeof(size_t));
-    if (!g_queue || !g_queueLen) {
+    g_detDone = (unsigned char*)calloc(MAX_QUEUE, 1);
+    if (!g_queue || !g_queueLen || !g_detDone) {
         fprintf(stderr, "[fuzz] out of memory\n");
         return 2;
     }
@@ -547,6 +648,10 @@ int32_t lucis_fuzz_main(int32_t argc, char** argv) {
     for (uint64_t iter = 0; !g_stop && (g_maxIters == 0 || g_runs < g_maxIters); ++iter) {
         size_t base = (size_t)(iter % g_queueCount);
         size_t baseLen = g_queueLen[base];
+        if (!g_detDone[base]) {
+            g_detDone[base] = 1;
+            deterministicStage(base);
+        }
 
         for (unsigned m = 0; m < MAX_MUT_PER_BASE && !g_stop; ++m) {
             /* Start from the base input, mutate into g_input. */
@@ -554,59 +659,7 @@ int32_t lucis_fuzz_main(int32_t argc, char** argv) {
             g_inputLen = baseLen;
             g_inputLen = mutateHavoc();
 
-            ExecResult out;
-            runOne(&out, g_timeoutMs);
-            g_runs += 1;
-            if (g_verbose && out.outputLen)
-                fwrite(out.output, 1, out.outputLen, stderr);
-
-            if (out.termSig) {
-                if (out.termSig == SIGALRM) {
-                    g_timeouts += 1;
-                    free(out.output);
-                } else {
-                    const char* sig = signalName(out.termSig);
-                    char detail[64];
-                    snprintf(detail, sizeof(detail), "%s", sig);
-                    saveCrash("crash", g_input, g_inputLen, &out,
-                              out.outputLen ? (const char*)out.output : detail);
-                    free(out.output);
-
-                    /* Minimize and save the minimal reproducer. */
-                    uint8_t* minimal = (uint8_t*)malloc(g_inputLen ? g_inputLen : 1);
-                    size_t minLen = 0, reductions = 0;
-                    if (minimal) {
-                        minimize(g_input, g_inputLen, out.termSig, minimal, &minLen, &reductions);
-                        if (minLen) {
-                            char dir[512], file[640];
-                            snprintf(dir, sizeof(dir), "%s/crash_%u_%u", g_crashDir,
-                                     g_workerId, g_crashes);
-                            snprintf(file, sizeof(file), "%s/minimal.bin", dir);
-                            FILE* f = fopen(file, "wb");
-                            if (f) { fwrite(minimal, 1, minLen, f); fclose(f); }
-                            fprintf(stderr, "[fuzz] minimized %zu -> %zu bytes (%zu reductions)\n",
-                                    g_inputLen, minLen, reductions);
-                        }
-                        free(minimal);
-                    }
-                    g_crashes += 1;
-                    if (g_crashes >= 10) g_stop = 1;   /* stop after a handful */
-                }
-                continue;
-            }
-
-            if (out.newCoverage && out.finished) {
-                queuePush(g_input, g_inputLen);
-                g_interesting += 1;
-                /* Persist new seeds into the corpus directory so later runs
-                 * start from a richer base (libFuzzer behaviour). */
-                char file[512];
-                snprintf(file, sizeof(file), "%s/id_%llu", g_corpusDir,
-                         (unsigned long long)iter);
-                FILE* f = fopen(file, "wb");
-                if (f) { fwrite(g_input, 1, g_inputLen, f); fclose(f); }
-            }
-            free(out.output);
+            runOneAndHandle(g_inputLen);
 
             if ((g_runs & 0x3FFu) == 0)
                 printStats();
