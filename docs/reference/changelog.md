@@ -4,6 +4,15 @@ All notable changes to the Lucis language and its compiler.
 
 ---
 
+## Unreleased — `[]uint8` ↔ `string` casts
+
+- **Zero-cost byte/string views**: `[]uint8 as string` and `string as []uint8`
+  (ABI-identical `{ptr, len}`) — the natural bridge for `#[fuzz]` targets
+  that parse text. Also fixes `[]T x = <slice>` variable declarations, which
+  silently discarded the initializer (variable became `{null, 0}`).
+
+---
+
 ## Unreleased — Native Test Framework
 
 ### Language Features

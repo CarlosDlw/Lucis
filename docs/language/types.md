@@ -399,6 +399,18 @@ fn main() int32 {
 
 Strings in Lucis are **not** null-terminated. They carry their length and are backed by a `uint8` array. For null-terminated C strings, use [`cstring`](#c-string-type) or `c"..."` literals.
 
+Converting between a byte slice and a string is a **zero-cost view** — both
+share the `{ptr, len}` layout:
+
+```lucis
+[]uint8 raw = [ 104u8, 105u8 ];
+string s    = raw as string;      // bytes -> string
+[]uint8 back = s as []uint8;      // string -> bytes
+```
+
+This is the natural bridge for [`#[fuzz]`](attributes.md) targets, which
+receive arbitrary bytes but often implement parsers over strings.
+
 ```
 
 use std::log::println;

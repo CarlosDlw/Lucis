@@ -627,6 +627,19 @@ std::any IRGen::visitVarDeclStmt(LucisParser::VarDeclStmtContext* ctx) {
                     }
                 }
                 if (sizes.empty() && dims > 0) {
+                    // Initializer is an existing slice view ({ptr, len}) —
+                    // copy it as-is instead of discarding it for {null, 0}.
+                    if (val->getType()->isStructTy() &&
+                        val->getType()->getNumContainedTypes() == 2 &&
+                        val->getType()->getContainedType(0)->isPointerTy()) {
+                        auto* sliceTy = val->getType();
+                        auto* alloca = builder_->CreateAlloca(sliceTy, nullptr, name);
+                        builder_->CreateStore(val, alloca);
+                        locals_[name] = { alloca, ti, dims };
+                        emitDbgDeclare(alloca, name, ti,
+                            d->IDENTIFIER()->getSymbol() ? d->IDENTIFIER()->getSymbol()->getLine() : 0);
+                        continue;
+                    }
                     auto* ptrTy = llvm::PointerType::getUnqual(*context_);
                     auto* i64Ty = llvm::Type::getInt64Ty(*context_);
                     auto* sliceTy = llvm::StructType::get(*context_, {ptrTy, i64Ty});

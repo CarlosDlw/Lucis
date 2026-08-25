@@ -2705,6 +2705,15 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
         auto* dstType = resolveTypeSpecInContext(cast->typeSpec(), dims);
 
         if (srcType && dstType && srcType != dstType) {
+            // []uint8 ↔ string — ABI-identical {ptr, len}, zero-cost view.
+            unsigned srcDims = resolveExprArrayDims(cast->expression());
+            bool srcIsU8Slice = srcDims == 1 && srcType->name == "uint8";
+            bool dstIsU8Slice = dims == 1 && dstType->name == "uint8";
+            if ((srcIsU8Slice && dstType->kind == TypeKind::String) ||
+                (srcType->kind == TypeKind::String && dstIsU8Slice)) {
+                return dstType;
+            }
+
             auto sk = srcType->kind;
             auto dk = dstType->kind;
 

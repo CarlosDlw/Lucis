@@ -2618,6 +2618,13 @@ std::any IRGen::visitCastExpr(LucisParser::CastExprContext* ctx) {
     auto* ti = resolveTypeInfo(ctx->typeSpec());
     if (!ti) return static_cast<llvm::Value*>(val);
     auto* targetTy = ti->toLLVMType(*context_, module_->getDataLayout());
+    // A slice type spec ([]T) resolves to the element type here — rebuild
+    // the slice ABI so `bytes as []uint8` casts to {ptr, len}.
+    if (countArrayDims(ctx->typeSpec()) > 0) {
+        auto* ptrTy = llvm::PointerType::getUnqual(*context_);
+        auto* usizeTy = module_->getDataLayout().getIntPtrType(*context_);
+        targetTy = llvm::StructType::get(*context_, {ptrTy, usizeTy});
+    }
     auto* srcTy = val->getType();
 
     if (srcTy == targetTy)
@@ -2682,6 +2689,38 @@ std::any IRGen::visitCastExpr(LucisParser::CastExprContext* ctx) {
         if (deadLoad && deadLoad->use_empty())
             deadLoad->eraseFromParent();
         return static_cast<llvm::Value*>(gep);
+    }
+    // [N]uint8 → string / []uint8: build the {ptr, len} fat pointer from the
+    // fixed array (reuses the source alloca, like array→pointer above).
+    if (srcTy->isArrayTy() && targetTy->isStructTy() &&
+        targetTy->getNumContainedTypes() == 2 &&
+        targetTy->getContainedType(0)->isPointerTy() &&
+        srcTy->getArrayElementType()->isIntegerTy(8)) {
+        llvm::Value* srcAlloca = nullptr;
+        if (auto* li = llvm::dyn_cast<llvm::LoadInst>(val)) {
+            srcAlloca = li->getPointerOperand();
+        }
+        if (!srcAlloca) {
+            srcAlloca = builder_->CreateAlloca(srcTy, nullptr, "bytes.cast");
+            builder_->CreateStore(val, srcAlloca);
+        }
+        auto* zero = llvm::ConstantInt::get(llvm::Type::getInt64Ty(*context_), 0);
+        auto* ptr = builder_->CreateGEP(srcTy, srcAlloca, {zero, zero}, "bytes.ptr");
+        auto* lenTy = targetTy->getContainedType(1);
+        auto* len = llvm::ConstantInt::get(
+            lenTy, srcTy->getArrayNumElements());
+        llvm::Value* agg = llvm::UndefValue::get(targetTy);
+        agg = builder_->CreateInsertValue(agg, ptr, 0);
+        agg = builder_->CreateInsertValue(agg, len, 1);
+        return static_cast<llvm::Value*>(agg);
+    }
+    // []uint8 <-> string: ABI-identical {ptr, len} fat pointers — coerce
+    // field-by-field (same layout, different struct identity).
+    if (srcTy->isStructTy() && targetTy->isStructTy() &&
+        srcTy->getNumContainedTypes() == targetTy->getNumContainedTypes()) {
+        auto* coerced = coerceValueToType(val, targetTy, srcSigned);
+        if (coerced)
+            return static_cast<llvm::Value*>(coerced);
     }
 
     std::cerr << "lucis: unsupported cast\n";
