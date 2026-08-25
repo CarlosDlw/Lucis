@@ -197,8 +197,16 @@ lucis test [<file>] [-t <SUBSTR>] [--skip <SUBSTR>] [--exact]
             [-I <dir>] [--ignore-config] [-q]
 ```
 
-Discovers every `#[test]` function reachable from the entry file, builds a
-test binary with an isolated process per test, runs it and reports results.
+Discovers `#[test]` functions from the entry file (and the whole project
+when no file is given), builds a test binary with an isolated process per
+test, runs it and reports results.
+
+Test discovery without an explicit file:
+
+- the entry's import graph (everything reachable via `use`),
+- conventional test directories — `tests/`, `test/`, `specs/`, `spec/`,
+  `unit/` — any `.lc` containing `#[test]`,
+- files named `*.test.lc` or `*_test.lc` anywhere in the project.
 
 | Flag | Description |
 |------|-------------|

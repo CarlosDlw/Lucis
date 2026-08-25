@@ -5,12 +5,24 @@
 #include "cli/BinaryBuilder.h"
 #include "config/LucisConfig.h"
 #include "IRBuilder/IRGen.h"
+#include "attributes/TargetInfo.h"
 
+#include <algorithm>
 #include <iostream>
+#include <fstream>
+#include <filesystem>
 #include <cstring>
 #include <cerrno>
 #include <unistd.h>
 #include <sys/wait.h>
+
+namespace fs = std::filesystem;
+
+#ifdef LLVM_VERSION_15_OR_NEWER
+#  include <llvm/TargetParser/Host.h>
+#else
+#  include <llvm/Support/Host.h>
+#endif
 
 void TestCommand::buildArgs(ArgParser& parser) const {
     parser.addPositional("file", "Path to the .lc entrypoint (auto-resolved from lucis.yaml if omitted)", false);
@@ -72,6 +84,61 @@ void printList(const std::vector<TestCase>& tests) {
     }
 }
 
+// ── Project-wide test discovery ────────────────────────────────────────
+// Conventional test directories (tests/, test/, specs/, spec/, unit/) —
+// any .lc inside them is a candidate; elsewhere only *.test.lc / *_test.lc
+// files are. A candidate must actually contain a #[test] attribute.
+
+bool isExcludedScanDir(const std::string& name) {
+    if (!name.empty() && name[0] == '.') return true;
+    static const char* kExcluded[] = {
+        "node_modules", "target", "build", "dist", "out", "bin", "obj",
+    };
+    for (auto e : kExcluded)
+        if (name == e) return true;
+    return false;
+}
+
+bool isConventionalTestDir(const std::string& name) {
+    return name == "tests" || name == "test" ||
+           name == "specs" || name == "spec" || name == "unit";
+}
+
+bool isConventionalTestFile(const std::string& name) {
+    const std::string dotTail = name.size() >= 9 ? name.substr(name.size() - 9) : "";
+    const std::string underTail = name.size() >= 8 ? name.substr(name.size() - 8) : "";
+    return dotTail == ".test.lc" || underTail == "_test.lc";
+}
+
+bool fileHasTestAttribute(const std::string& path) {
+    std::ifstream f(path);
+    if (!f) return false;
+    std::string line;
+    while (std::getline(f, line)) {
+        if (line.find("#[test") != std::string::npos)
+            return true;
+    }
+    return false;
+}
+
+void walkTestCandidates(const fs::path& dir, std::vector<std::string>& out) {
+    std::error_code ec;
+    for (auto& entry : fs::directory_iterator(dir, ec)) {
+        if (ec) break;
+        auto p = entry.path();
+        auto name = p.filename().string();
+        if (entry.is_directory()) {
+            if (isExcludedScanDir(name)) continue;
+            walkTestCandidates(p, out);
+        } else if (entry.is_regular_file()) {
+            bool byDir  = isConventionalTestDir(p.parent_path().filename().string());
+            bool byName = isConventionalTestFile(name);
+            if ((byDir || byName) && fileHasTestAttribute(p.string()))
+                out.push_back(fs::canonical(p).string());
+        }
+    }
+}
+
 }  // namespace
 
 int TestCommand::run(const ArgParser& parser) {
@@ -115,13 +182,104 @@ int TestCommand::run(const ArgParser& parser) {
     auto pipeline = LucisPipeline::run(pipeOpts);
     if (!pipeline || pipeline->hasErrors) return 1;
 
+    // ── Project-wide discovery (`lucis test` without an explicit file) ───
+    // Tests outside the entry's import graph are found through conventional
+    // test directories and *.test.lc / *_test.lc file names.
+    bool explicitEntry = !parser.get("file").empty();
+    bool discoverErrors = false;
+    std::vector<TestCase>  discoveredTests;
+    std::vector<SourceUnit> discoveredUnits;
+    if (!explicitEntry && useConfig) {
+        std::error_code ec;
+        auto root = LucisPipeline::getProjectRoot(pipeOpts.inputFile);
+        std::vector<std::string> candidates;
+        walkTestCandidates(root, candidates);
+
+        // Skip files already covered by the entry's import graph.
+        std::unordered_set<std::string> graphed;
+        for (auto& u : pipeline->units) {
+            auto cu = fs::canonical(u.filePath, ec);
+            auto key = (ec || cu.string().empty()) ? u.filePath : cu.string();
+            graphed.insert(key);
+        }
+
+        std::sort(candidates.begin(), candidates.end());
+        for (auto& cand : candidates) {
+            if (graphed.count(cand)) continue;
+            auto extraOpts = pipeOpts;
+            extraOpts.inputFile = cand;
+            auto extra = LucisPipeline::run(extraOpts);
+            if (!extra || extra->hasErrors) {
+                discoverErrors = true;
+                continue;
+            }
+            for (auto& tc : extra->testCases)
+                discoveredTests.push_back(tc);
+            for (auto& u : extra->units)
+                discoveredUnits.push_back(u);
+        }
+        if (discoveredTests.empty() && !discoverErrors) {
+            std::cerr << "lucis: no tests found in the project or its "
+                      << "conventional test directories\n";
+        }
+    }
+
+    // ── Aggregate: entry pipeline + discovered units/tests ───────────────
+    auto agg = std::make_unique<PipelineResult>();
+    agg->projectRoot = pipeline->projectRoot;
+    agg->buildDir = pipeline->buildDir;
+    agg->cBindings = std::move(pipeline->cBindings);
+    agg->cTypeReg  = std::move(pipeline->cTypeReg);
+    agg->semanticDB = std::make_unique<semantic::SemanticDB>();
+    agg->registry = std::make_unique<ModuleRegistry>();
+    agg->compileTimeValues = pipeline->compileTimeValues;
+    agg->linkerFlags = pipeline->linkerFlags;
+    agg->fuzzTargets = std::move(pipeline->fuzzTargets);
+    agg->hasErrors = pipeline->hasErrors || discoverErrors;
+
+    std::unordered_set<std::string> seenUnits;
+    auto addUnit = [&](const SourceUnit& u) {
+        std::error_code ec2;
+        auto cu = fs::canonical(u.filePath, ec2);
+        auto key = (!ec2 && !cu.string().empty()) ? cu.string() : u.filePath;
+        if (seenUnits.insert(key).second)
+            agg->units.push_back(u);
+    };
+    for (auto& u : pipeline->units) addUnit(u);
+    for (auto& u : discoveredUnits) addUnit(u);
+
+    {
+        TargetInfo tgt(
+            pipeOpts.targetTriple.empty()
+                ? llvm::sys::getDefaultTargetTriple()
+                : pipeOpts.targetTriple,
+            pipeOpts.emitDebugInfo);
+        for (auto& u : agg->units) {
+            if (!u.parseResult || !u.parseResult->tree) continue;
+            agg->registry->registerFile(u.modulePath, u.filePath,
+                                        u.parseResult->tree, u.parseResult,
+                                        u.isStdlib, &tgt);
+        }
+    }
+
+    // Tests: entry graph + discovered, deduplicated by module::function.
+    std::unordered_set<std::string> seenTests;
+    auto addTest = [&](const TestCase& tc) {
+        if (seenTests.insert(tc.modulePath + "::" + tc.funcName).second)
+            agg->testCases.push_back(tc);
+    };
+    for (auto& tc : pipeline->testCases) addTest(tc);
+    for (auto& tc : discoveredTests) addTest(tc);
+
+    if (agg->hasErrors) return 1;
+
     // ── Discovery & filtering (before any IR generation) ─────────────────
     bool exact = parser.has("exact");
     auto includePatterns = parser.getAll("test");
     auto skipPatterns    = parser.getAll("skip");
 
     std::vector<TestCase> tests;
-    for (auto& tc : pipeline->testCases) {
+    for (auto& tc : agg->testCases) {
         if (!testMatches(tc, includePatterns, exact)) continue;
         if (!skipPatterns.empty() && testMatches(tc, skipPatterns, exact)) continue;
         tests.push_back(tc);
@@ -165,7 +323,7 @@ int TestCommand::run(const ArgParser& parser) {
     };
 
     std::string binPath;
-    if (!BinaryBuilder::build(*pipeline, buildOpts, customizeIrGen, binPath))
+    if (!BinaryBuilder::build(*agg, buildOpts, customizeIrGen, binPath))
         return 1;
 
     // ── Execute the test binary ──────────────────────────────────────────

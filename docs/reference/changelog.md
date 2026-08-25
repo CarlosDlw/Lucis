@@ -11,6 +11,15 @@ All notable changes to the Lucis language and its compiler.
   that parse text. Also fixes `[]T x = <slice>` variable declarations, which
   silently discarded the initializer (variable became `{null, 0}`).
 
+## Unreleased — Project-wide test discovery
+
+- **`lucis test` without an explicit file** now discovers tests beyond the
+  entry's import graph: conventional test directories (`tests/`, `test/`,
+  `specs/`, `spec/`, `unit/` — any `.lc` containing `#[test]`) and files
+  named `*.test.lc` / `*_test.lc` anywhere in the project. Discovered files
+  become extra pipeline entries; results are aggregated into a single test
+  binary with deduplicated units and tests.
+
 ---
 
 ## Unreleased — Native Test Framework
