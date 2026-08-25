@@ -185,10 +185,20 @@ int TestCommand::run(const ArgParser& parser) {
     // ── Project-wide discovery (`lucis test` without an explicit file) ───
     // Tests outside the entry's import graph are found through conventional
     // test directories and *.test.lc / *_test.lc file names.
+    //
+    // Every independent root (the entry and each discovered candidate) is a
+    // separate test GROUP with its own binary: merging unrelated files into
+    // one binary would collide the plain (non-mangled) user symbols.
+    struct TestGroup {
+        std::unique_ptr<PipelineResult> pipeline;
+        std::string inputPath;
+        std::vector<TestCase> tests;   // filtered + deduplicated
+    };
+    std::vector<TestGroup> groups;
+    groups.push_back({ std::move(pipeline), resolved.filePath, {} });
+
     bool explicitEntry = !parser.get("file").empty();
     bool discoverErrors = false;
-    std::vector<TestCase>  discoveredTests;
-    std::vector<SourceUnit> discoveredUnits;
     if (!explicitEntry && useConfig) {
         std::error_code ec;
         auto root = LucisPipeline::getProjectRoot(pipeOpts.inputFile);
@@ -197,7 +207,7 @@ int TestCommand::run(const ArgParser& parser) {
 
         // Skip files already covered by the entry's import graph.
         std::unordered_set<std::string> graphed;
-        for (auto& u : pipeline->units) {
+        for (auto& u : groups[0].pipeline->units) {
             auto cu = fs::canonical(u.filePath, ec);
             auto key = (ec || cu.string().empty()) ? u.filePath : cu.string();
             graphed.insert(key);
@@ -213,76 +223,27 @@ int TestCommand::run(const ArgParser& parser) {
                 discoverErrors = true;
                 continue;
             }
-            for (auto& tc : extra->testCases)
-                discoveredTests.push_back(tc);
-            for (auto& u : extra->units)
-                discoveredUnits.push_back(u);
-        }
-        if (discoveredTests.empty() && !discoverErrors) {
-            std::cerr << "lucis: no tests found in the project or its "
-                      << "conventional test directories\n";
+            groups.push_back({ std::move(extra), cand, {} });
         }
     }
+    if (discoverErrors) return 1;
 
-    // ── Aggregate: entry pipeline + discovered units/tests ───────────────
-    auto agg = std::make_unique<PipelineResult>();
-    agg->projectRoot = pipeline->projectRoot;
-    agg->buildDir = pipeline->buildDir;
-    agg->cBindings = std::move(pipeline->cBindings);
-    agg->cTypeReg  = std::move(pipeline->cTypeReg);
-    agg->semanticDB = std::make_unique<semantic::SemanticDB>();
-    agg->registry = std::make_unique<ModuleRegistry>();
-    agg->compileTimeValues = pipeline->compileTimeValues;
-    agg->linkerFlags = pipeline->linkerFlags;
-    agg->fuzzTargets = std::move(pipeline->fuzzTargets);
-    agg->hasErrors = pipeline->hasErrors || discoverErrors;
-
-    std::unordered_set<std::string> seenUnits;
-    auto addUnit = [&](const SourceUnit& u) {
-        std::error_code ec2;
-        auto cu = fs::canonical(u.filePath, ec2);
-        auto key = (!ec2 && !cu.string().empty()) ? cu.string() : u.filePath;
-        if (seenUnits.insert(key).second)
-            agg->units.push_back(u);
-    };
-    for (auto& u : pipeline->units) addUnit(u);
-    for (auto& u : discoveredUnits) addUnit(u);
-
-    {
-        TargetInfo tgt(
-            pipeOpts.targetTriple.empty()
-                ? llvm::sys::getDefaultTargetTriple()
-                : pipeOpts.targetTriple,
-            pipeOpts.emitDebugInfo);
-        for (auto& u : agg->units) {
-            if (!u.parseResult || !u.parseResult->tree) continue;
-            agg->registry->registerFile(u.modulePath, u.filePath,
-                                        u.parseResult->tree, u.parseResult,
-                                        u.isStdlib, &tgt);
-        }
-    }
-
-    // Tests: entry graph + discovered, deduplicated by module::function.
-    std::unordered_set<std::string> seenTests;
-    auto addTest = [&](const TestCase& tc) {
-        if (seenTests.insert(tc.modulePath + "::" + tc.funcName).second)
-            agg->testCases.push_back(tc);
-    };
-    for (auto& tc : pipeline->testCases) addTest(tc);
-    for (auto& tc : discoveredTests) addTest(tc);
-
-    if (agg->hasErrors) return 1;
-
-    // ── Discovery & filtering (before any IR generation) ─────────────────
+    // ── Filtering + dedup; a test runs in the first group that defines it ─
     bool exact = parser.has("exact");
     auto includePatterns = parser.getAll("test");
     auto skipPatterns    = parser.getAll("skip");
 
     std::vector<TestCase> tests;
-    for (auto& tc : agg->testCases) {
-        if (!testMatches(tc, includePatterns, exact)) continue;
-        if (!skipPatterns.empty() && testMatches(tc, skipPatterns, exact)) continue;
-        tests.push_back(tc);
+    std::unordered_set<std::string> seenTests;
+    for (auto& g : groups) {
+        for (auto& tc : g.pipeline->testCases) {
+            std::string key = tc.modulePath + "::" + tc.funcName;
+            if (!seenTests.insert(key).second) continue;
+            if (!testMatches(tc, includePatterns, exact)) continue;
+            if (!skipPatterns.empty() && testMatches(tc, skipPatterns, exact)) continue;
+            g.tests.push_back(tc);
+            tests.push_back(tc);
+        }
     }
 
     if (parser.has("list")) {
@@ -298,61 +259,70 @@ int TestCommand::run(const ArgParser& parser) {
         return 0;
     }
 
-    // ── Build the test binary (harness main is synthesized on the entry) ─
+    // ── Build and run one binary per test group ────────────────────────────
     int jobs = parser.getInt("jobs", 1);
     if (jobs < 1) jobs = 1;
     int64_t timeoutMs = parser.getInt("timeout", 0);
     if (timeoutMs < 0) timeoutMs = 0;
+    bool verbose = parser.has("verbose");
 
-    BinaryBuildOptions buildOpts;
-    buildOpts.optLevel = optLevel;
-    buildOpts.quiet = pipeOpts.quiet;
-    buildOpts.emitDebugInfo = pipeOpts.emitDebugInfo;
-    buildOpts.noStd = pipeOpts.noStd;
-    buildOpts.targetTriple = pipeOpts.targetTriple;
-    buildOpts.entryFilePath = resolved.filePath;
-    buildOpts.cachePrefix = "test";
-    buildOpts.progressStage = "test";
+    int worst = 0;
+    for (auto& g : groups) {
+        if (g.tests.empty()) continue;
 
-    auto customizeIrGen = [&](IRGen& irGen, const SourceUnit&, bool isEntry) {
-        irGen.setTestMode(true);
-        if (isEntry) {
-            irGen.setTestCases(tests);
-            irGen.setTestRunnerOptions(jobs, timeoutMs, parser.has("verbose"));
-        }
-    };
+        if (groups.size() > 1 && !pipeOpts.quiet)
+            std::cerr << "\nlucis: [test] group " << g.inputPath << "\n";
 
-    std::string binPath;
-    if (!BinaryBuilder::build(*agg, buildOpts, customizeIrGen, binPath))
-        return 1;
+        BinaryBuildOptions buildOpts;
+        buildOpts.optLevel = optLevel;
+        buildOpts.quiet = pipeOpts.quiet;
+        buildOpts.emitDebugInfo = pipeOpts.emitDebugInfo;
+        buildOpts.noStd = pipeOpts.noStd;
+        buildOpts.targetTriple = pipeOpts.targetTriple;
+        buildOpts.entryFilePath = g.inputPath;
+        buildOpts.cachePrefix = "test";
+        buildOpts.progressStage = "test";
 
-    // ── Execute the test binary ──────────────────────────────────────────
-    if (!pipeOpts.quiet)
-        std::cerr << "\nlucis: [test] --- test output ---\n\n";
+        auto customizeIrGen = [&](IRGen& irGen, const SourceUnit&, bool isEntry) {
+            irGen.setTestMode(true);
+            if (isEntry) {
+                irGen.setTestCases(g.tests);
+                irGen.setTestRunnerOptions(jobs, timeoutMs, verbose);
+            }
+        };
 
-    pid_t pid = ::fork();
-    if (pid < 0) {
-        std::cerr << "lucis: failed to execute test binary: "
-                  << std::strerror(errno) << "\n";
-        return 1;
-    }
-    if (pid == 0) {
-        std::vector<char*> execArgv;
-        execArgv.push_back(const_cast<char*>(binPath.c_str()));
-        execArgv.push_back(nullptr);
-        ::execv(binPath.c_str(), execArgv.data());
-        ::_exit(127);
-    }
+        std::string binPath;
+        if (!BinaryBuilder::build(*g.pipeline, buildOpts, customizeIrGen, binPath))
+            return 1;
 
-    int status = 0;
-    while (::waitpid(pid, &status, 0) < 0) {
-        if (errno != EINTR) {
-            std::cerr << "lucis: waitpid failed: " << std::strerror(errno) << "\n";
+        if (!pipeOpts.quiet)
+            std::cerr << "\nlucis: [test] --- test output ---\n\n";
+
+        pid_t pid = ::fork();
+        if (pid < 0) {
+            std::cerr << "lucis: failed to execute test binary: "
+                      << std::strerror(errno) << "\n";
             return 1;
         }
-    }
+        if (pid == 0) {
+            std::vector<char*> execArgv;
+            execArgv.push_back(const_cast<char*>(binPath.c_str()));
+            execArgv.push_back(nullptr);
+            ::execv(binPath.c_str(), execArgv.data());
+            ::_exit(127);
+        }
 
-    if (WIFEXITED(status)) return WEXITSTATUS(status);
-    if (WIFSIGNALED(status)) return 128 + WTERMSIG(status);
-    return 1;
+        int status = 0;
+        while (::waitpid(pid, &status, 0) < 0) {
+            if (errno != EINTR) {
+                std::cerr << "lucis: waitpid failed: " << std::strerror(errno) << "\n";
+                return 1;
+            }
+        }
+
+        int code = WIFEXITED(status) ? WEXITSTATUS(status)
+                                    : (WIFSIGNALED(status) ? 128 + WTERMSIG(status) : 1);
+        if (code != 0) worst = code;
+    }
+    return worst;
 }
