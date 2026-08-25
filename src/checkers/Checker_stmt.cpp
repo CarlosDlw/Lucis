@@ -741,35 +741,12 @@ void Checker::validateAttributeList(AttributeListContext* attrs, const std::stri
             error(a, "unknown attribute '" + attrName + "'");
             continue;
         }
-        // TODO: validate arguments per-attribute type via registry handler
         auto* handler = attrRegistry_.lookup(attrName);
         if (handler && handler->validate) {
             // Build Attribute struct from AST node for validation
             Attribute attr;
-            attr.name = attrName;
-            attr.line = a->getStart() ? a->getStart()->getLine() : 0;
-            attr.col  = a->getStart() ? a->getStart()->getCharPositionInLine() : 0;
-            attr.rawCtx = a;
-            if (auto* argList = a->attrArgList()) {
-                for (auto* arg : argList->attrArg()) {
-                    // Key-value and call forms are handled by rawCtx access;
-                    // build flat args only for simple literals.
-                    if (arg->ASSIGN())
-                        continue; // keyValueArg — handled via rawCtx
-                    if (arg->LPAREN())
-                        continue; // callArg — handled via rawCtx
-                    if (arg->IDENTIFIER())
-                        attr.args.push_back({AttributeArg::Ident, arg->getText(), "", 0, 0.0});
-                    else if (arg->STR_LIT() || arg->C_STR_LIT())
-                        attr.args.push_back({AttributeArg::String, "", arg->getText(), 0, 0.0});
-                    else if (arg->INT_LIT() || arg->HEX_LIT() || arg->OCT_LIT() || arg->BIN_LIT())
-                        attr.args.push_back({AttributeArg::Int, "", "", std::stoll(arg->getText()), 0.0});
-                    else if (arg->FLOAT_LIT())
-                        attr.args.push_back({AttributeArg::Float, "", "", 0, std::stod(arg->getText())});
-                    else if (arg->BOOL_LIT())
-                        attr.args.push_back({AttributeArg::Int, "", "", arg->getText() == "true" ? 1 : 0, 0.0});
-                }
-            }
+            populateAttribute(a, attr);
+            attr.contextName = contextName;
             std::vector<std::string> errors;
             if (!handler->validate(attr, nullptr, errors)) {
                 for (auto& err : errors)

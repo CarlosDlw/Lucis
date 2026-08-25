@@ -384,6 +384,14 @@ std::unique_ptr<PipelineResult> LucisPipeline::run(const Options& opts) {
             if (val.kind() == ComptimeValue::Kind::Int)
                 result->compileTimeValues[name] = val.asInt();
         }
+        // Collect #[test] cases from this unit (resolve the emit symbol name)
+        for (auto& tc : checker.testCases()) {
+            TestCase t = tc;
+            t.symbolName = unit.isStdlib
+                ? ModuleRegistry::mangle(unit.modulePath, t.funcName)
+                : t.funcName;
+            result->testCases.push_back(std::move(t));
+        }
         for (auto& err : checker.errors())
             printErrorLine(unit.filePath + ": " + err);
         if (!passed) anyCheckError = true;

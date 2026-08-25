@@ -1050,16 +1050,34 @@ bool Checker::check(LucisParser::ProgramContext* tree) {
 
     // Validate attributes on all top-level declarations
     for (auto* decl : tree->topLevelDecl()) {
-        auto* attrs = decl->functionDecl()    ? static_cast<AttributeListContext*>(decl->functionDecl()->attributeList())
-                    : decl->structDecl()       ? decl->structDecl()->attributeList()
-                    : decl->unionDecl()        ? decl->unionDecl()->attributeList()
-                    : decl->enumDecl()         ? decl->enumDecl()->attributeList()
-                    : decl->typeAliasDecl()    ? decl->typeAliasDecl()->attributeList()
-                    : decl->externDecl()       ? decl->externDecl()->attributeList()
-                    : decl->extendDecl()       ? decl->extendDecl()->attributeList()
-                    : decl->constDeclStmt()    ? decl->constDeclStmt()->attributeList()
-                    : nullptr;
-        validateAttributeList(attrs, "top-level declaration");
+        AttributeListContext* attrs = nullptr;
+        const char* kind = "declaration";
+        if (auto* f = decl->functionDecl()) {
+            attrs = f->attributeList();
+            kind = "function";
+        } else if (auto* s = decl->structDecl()) {
+            attrs = s->attributeList();
+            kind = "struct";
+        } else if (auto* u = decl->unionDecl()) {
+            attrs = u->attributeList();
+            kind = "union";
+        } else if (auto* e = decl->enumDecl()) {
+            attrs = e->attributeList();
+            kind = "enum";
+        } else if (auto* ta = decl->typeAliasDecl()) {
+            attrs = ta->attributeList();
+            kind = "type alias";
+        } else if (auto* x = decl->externDecl()) {
+            attrs = x->attributeList();
+            kind = "extern";
+        } else if (auto* ex = decl->extendDecl()) {
+            attrs = ex->attributeList();
+            kind = "extend";
+        } else if (auto* c = decl->constDeclStmt()) {
+            attrs = c->attributeList();
+            kind = "const";
+        }
+        validateAttributeList(attrs, kind);
         if (auto* ed = decl->enumDecl())
             for (auto* v : ed->enumVariant())
                 validateAttributeList(v->attributeList(), "enum variant");
@@ -1083,7 +1101,8 @@ bool Checker::check(LucisParser::ProgramContext* tree) {
             }
             auto funcName = func->name->getText();
             if (!moduleRegistry_ || !functions_.count(funcName) || globalBuiltins_.count(funcName)) {
-                registerFunctionSignature(func);
+                // Local declarations: test-case collection is only valid here.
+                registerFunctionSignature(func, /*isLocal=*/true);
             }
         }
         if (auto* ext = decl->externDecl()) {

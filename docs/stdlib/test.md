@@ -53,11 +53,34 @@ log("Test passed successfully");
 
 ## Running Tests
 
+The `#[test]` attribute turns a function into a test case:
+
+```lucis
+use std::test::{ assertEqual, assertTrue };
+
+#[test]
+fn testMath() int32 {
+    assertEqual(2 + 2, 4);
+    ret 0;
+}
+
+#[test("custom display name", skip("WIP"))]
+fn testPending() void {
+}
+```
+
 ```bash
 ./build/lucis test examples/my_test.lc
 ```
 
 Tests that call assertion functions will report pass/fail status automatically.
+Failing assertions, crashes and timeouts are isolated per test (each test runs
+in a child process), so the runner always continues. Exit code: `0` when all
+tests pass (skips don't fail), `1` when any test fails.
+
+See the [`#[test]` attribute](../language/attributes.md) reference and
+[CLI usage](../getting-started/cli-usage.md) for filters, `--list`,
+`--timeout`, `-j` and `-v`.
 
 ## See Also
 

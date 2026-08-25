@@ -1,0 +1,11 @@
+// Negative case: a hanging test is killed by the timeout (300 ms).
+// `lucis test tests/framework/negative/timeout.lc` must exit non-zero.
+
+#[test(timeout(300))]
+fn testHang() void {
+    loop {}
+}
+
+fn main() int32 {
+    ret 0;
+}

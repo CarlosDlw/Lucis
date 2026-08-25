@@ -1,0 +1,20 @@
+use std::test::{ assertTrue };
+use std::log::println;
+use test_framework::cases::basic::testEqualPass;
+use test_framework::cases::basic::testEmptyArgs;
+use test_framework::cases::basic::testNamed;
+use test_framework::cases::skips::testSkipBare;
+use test_framework::cases::skips::testSkipReason;
+use test_framework::cases::expected_fail::testExpectedFailPass;
+
+#[test]
+fn testMainLocal() int32 {
+    println("framework: local entry test");
+    assertTrue(10 > 5);
+    ret 0;
+}
+
+fn main() int32 {
+    println("this main is ignored in test mode");
+    ret 0;
+}

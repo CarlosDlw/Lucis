@@ -429,6 +429,84 @@ Priority: `--linker-entry` (CLI) > `#[entry]` > `lucis.yaml → linker.entry`.
 
 ---
 
+### `#[test]` — test case
+
+Marks a function as a test case, collected and run by `lucis test`. Tests run
+in isolated child processes: a failing assertion, a crash or a timeout never
+takes down the runner or leaks state into other tests.
+
+```lucis
+#[test]
+fn shouldPass() int32 {
+    assertEqual(2 + 2, 4);
+    ret 0;
+}
+
+#[test("custom display name")]
+fn shouldPassNamed() void {
+    ret;
+}
+
+#[test(skip("not implemented yet"))]
+fn workInProgress() void {
+}
+
+#[test(expected_fail)]
+fn knownPanic() void {
+    // must fail — a passing test here is reported as a failure
+}
+
+#[test(timeout(2000))]
+fn mustFinishQuickly() void {
+}
+```
+
+**Applies to:** Function  
+**Arguments:** optional display name (string literal) and any of `skip`,
+`skip("reason")`, `expected_fail`, `timeout(N)` / `timeout = N` (ms), combined
+in any order  
+**Checker effect:** validates the target is a plain, non-generic,
+non-comptime, parameterless function returning `void` or `int32`; collects it
+as a test case  
+**IR effect:** a synthesized `main` runs every collected test through the
+test harness runtime (`src/builtins/test/test_runner.c`); the user `main` is
+ignored
+
+#### Function rules
+
+A `#[test]` function must be:
+
+- a plain function — not generic, not `comptime`, not `main`, not `extern`;
+- parameterless;
+- returning `void` or `int32` (the return value is ignored — failures are
+  reported through assertions, `exit` codes, crashes and timeouts).
+
+#### Options
+
+| Form | Meaning |
+|------|---------|
+| `#[test]` / `#[test()]` | Display name defaults to the function name |
+| `#[test("name")]` | Custom display name in logs |
+| `#[test(skip)]` | Skipped, reported as `SKIP` |
+| `#[test(skip("reason"))]` | Skipped with justification |
+| `#[test(expected_fail)]` | Must fail; passing is reported as a failure |
+| `#[test(timeout(2000))]` | Per-test timeout in milliseconds (also `timeout = 2000`) |
+
+Unknown options and duplicate flags are compile errors.
+
+#### Running
+
+```bash
+lucis test                     # from a project with lucis.yaml
+lucis test tests/unit.lc
+lucis test --list              # list discovered tests without building
+lucis test -t "math" -j 4 -v   # filter, 4 parallel children, verbose
+```
+
+See [CLI usage](../getting-started/cli-usage.md) and [`std::test`](../stdlib/test.md).
+
+---
+
 ### `#[cfg(…)]`
 Conditional compilation — the annotated declaration is only compiled when the given predicate evaluates to `true` for the current target.
 

@@ -1,0 +1,18 @@
+use std::test::{ assertEqual, assertTrue };
+
+#[test]
+fn testEqualPass() int32 {
+    assertEqual(2 + 2, 4);
+    ret 0;
+}
+
+#[test()]
+fn testEmptyArgs() void {
+    assertTrue(true);
+}
+
+#[test("custom display name")]
+fn testNamed() int32 {
+    assertEqual("ab", "ab");
+    ret 0;
+}

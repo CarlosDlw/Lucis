@@ -22,6 +22,10 @@ struct Attribute {
     int line = 0;
     int col = 0;
 
+    // Kind of declaration the attribute is attached to ("function", "struct",
+    // "enum variant", ...). Filled by Checker::validateAttributeList.
+    std::string contextName;
+
     // Points to the parse-tree AttributeContext node.
     // Used by complex attributes (e.g., #[cfg(...)]) that need to
     // inspect structured arguments beyond the flat args list above.

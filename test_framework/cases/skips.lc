@@ -1,0 +1,7 @@
+#[test(skip)]
+fn testSkipBare() void {
+}
+
+#[test(skip("ran out of ideas"))]
+fn testSkipReason() void {
+}

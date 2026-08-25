@@ -1,0 +1,13 @@
+// Negative case: a crashing test must be captured and reported as a failure.
+// `lucis test tests/framework/negative/crash.lc` must exit non-zero.
+
+#[test]
+fn testSegv() int32 {
+    *int32 p = null;
+    *p = 42;
+    ret 0;
+}
+
+fn main() int32 {
+    ret 0;
+}

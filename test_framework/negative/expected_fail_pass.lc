@@ -1,0 +1,11 @@
+// Negative case: an expected_fail test that PASSES must be reported as a
+// failure. `lucis test tests/framework/negative/expected_fail_pass.lc` must
+// exit non-zero.
+
+#[test(expected_fail)]
+fn testEfPasses() void {
+}
+
+fn main() int32 {
+    ret 0;
+}

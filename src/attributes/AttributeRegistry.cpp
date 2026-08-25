@@ -1,4 +1,5 @@
 #include "attributes/AttributeRegistry.h"
+#include "attributes/TestAttribute.h"
 
 void AttributeRegistry::registerAttribute(const std::string& name, AttributeHandler handler) {
     handlers_[name] = std::move(handler);
@@ -57,6 +58,18 @@ void registerBuiltinAttributes(AttributeRegistry& reg) {
     reg.registerAttribute("no_mangle", AttributeHandler{
         .validate = [](const Attribute& attr, const TypeInfo*, std::vector<std::string>&) {
             return attr.args.empty();
+        }
+    });
+
+    // ── test: marks a function as a framework test case ───────────────
+    reg.registerAttribute("test", AttributeHandler{
+        .validate = [](const Attribute& attr, const TypeInfo*, std::vector<std::string>& errors) -> bool {
+            if (attr.contextName != "function") {
+                errors.push_back("#[test] can only be applied to a function declaration");
+                return false;
+            }
+            TestSpec spec;
+            return parseTestSpec(attr, spec, errors);
         }
     });
 

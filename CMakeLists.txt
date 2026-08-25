@@ -208,6 +208,7 @@ add_library(lucis_builtins STATIC
     src/builtins/encoding/encoding.c
     src/builtins/os/os.c
     src/builtins/test/test.c
+    src/builtins/test/test_runner.c
     src/builtins/crypto/crypto.c
     src/builtins/compress/compress.c
     src/builtins/net/net.c
@@ -238,6 +239,8 @@ set(SOURCES
     src/cli/RunCommand.cpp
     src/cli/CheckCommand.cpp
     src/cli/HelpCommand.cpp
+    src/cli/TestCommand.cpp
+    src/cli/BinaryBuilder.cpp
     src/parser/Parser.cpp
     src/checkers/Checker_driver.cpp
     src/checkers/Checker_semantic.cpp
@@ -250,6 +253,7 @@ set(SOURCES
     src/attributes/AttributeRegistry.cpp
     src/attributes/CfgPredicate.cpp
     src/attributes/TargetInfo.cpp
+    src/attributes/TestAttribute.cpp
     src/comptime/ComptimeRegistry.cpp
     src/comptime/ComptimeValue.cpp
     src/comptime/ComptimeEngine.cpp
@@ -257,6 +261,7 @@ set(SOURCES
     src/comptime/ComptimeBuiltinRegistry.cpp
     src/IRBuilder/IRGen_driver.cpp
     src/IRBuilder/IRGen_decl.cpp
+    src/IRBuilder/IRGen_test.cpp
     src/IRBuilder/IRGen_stmt.cpp
     src/IRBuilder/IRGen_expr.cpp
     src/IRBuilder/IRGen_access.cpp

@@ -6,11 +6,8 @@ class TestCommand : public Command {
 public:
     std::string name() const override { return "test"; }
     std::string description() const override {
-        return "Run the Lucis test suite";
+        return "Run the Lucis test suite (#[test] functions)";
     }
-    void buildArgs(ArgParser& parser) const override {}
-    int run(const ArgParser& parser) override {
-        std::cout << "lucis test is not yet implemented.\n";
-        return 0;
-    }
+    void buildArgs(ArgParser& parser) const override;
+    int run(const ArgParser& parser) override;
 };

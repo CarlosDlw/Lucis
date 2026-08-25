@@ -4,6 +4,35 @@ All notable changes to the Lucis language and its compiler.
 
 ---
 
+## Unreleased — Native Test Framework
+
+### Language Features
+
+- **`#[test]` attribute**: marks a function as a test case, with optional
+  display name, `skip` / `skip("reason")`, `expected_fail` and per-test
+  `timeout(N)` (ms). Validated at compile time (plain, non-generic,
+  non-comptime, parameterless function returning `void` or `int32`).
+
+### CLI
+
+- **`lucis test`**: discovers `#[test]` functions through the entry import
+  graph, builds a test binary and runs it with process isolation per test.
+  Flags: `-t/--test`, `--skip`, `--exact`, `--list`, `--timeout`, `-j`,
+  `-v`, plus compile flags.
+- Exit codes: `0` pass (or no tests), `1` failure/compile error, `2` usage.
+
+### Internal
+
+- `TestAttribute` (attribute parsing), `BinaryBuilder` (shared
+  pipeline→IR→link core extracted from `RunCommand`), IRGen test-mode
+  (`synthesizeTestMain`) and the C harness `src/builtins/test/test_runner.c`
+  (fork/pipe isolation, output capture, timeouts via `setitimer`, parallel
+  `-j` with deterministic reporting).
+- `make test-framework` validates the framework (positive + negative cases in
+  `test_framework/`).
+
+---
+
 ## v0.0.2-beta — Path-Based Imports
 
 ### Breaking Changes

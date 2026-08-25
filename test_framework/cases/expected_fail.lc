@@ -1,0 +1,7 @@
+use std::test::{ assertEqual };
+
+// The assertion fails on purpose: an expected failure is reported as PASS.
+#[test(expected_fail)]
+fn testExpectedFailPass() void {
+    assertEqual(1, 2);
+}

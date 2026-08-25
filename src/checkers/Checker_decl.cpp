@@ -1373,7 +1373,8 @@ const TraitMethodInfo* Checker::findTraitMethodImpl(
 
 
 
-void Checker::registerFunctionSignature(LucisParser::FunctionDeclContext* func) {
+void Checker::registerFunctionSignature(LucisParser::FunctionDeclContext* func,
+                                        bool isLocal) {
     if (!func || func->IDENTIFIER().empty()) {
         error(func, "function must have a valid name");
         return;
@@ -1469,6 +1470,41 @@ void Checker::registerFunctionSignature(LucisParser::FunctionDeclContext* func) 
     functions_[funcName] = funcType;
     functionDecls_[funcName] = func;
     syncToSemanticDB_Function(funcName, *funcType, currentModulePath_, func);
+
+    // ── #[test] attribute — collect as a test case (local functions only) ──
+    if (isLocal) {
+        if (auto* testAttr = findAttribute(func->attributeList(), "test")) {
+            Attribute attr;
+            populateAttribute(testAttr, attr);
+            TestSpec spec;
+            std::vector<std::string> ignoredErrors;
+            // Argument errors are already reported by validateAttributeList;
+            // on failure keep the default spec (compilation aborts anyway).
+            parseTestSpec(attr, spec, ignoredErrors);
+
+            if (funcName == "main")
+                error(func, "main cannot be marked #[test]");
+            if (auto* paramList = func->paramList()) {
+                if (!paramList->param().empty())
+                    error(func, "test function '" + funcName + "' must not take parameters");
+            }
+            if (!retType || (retType->name != "void" && retType->name != "int32"))
+                error(func, "test function '" + funcName + "' must return 'void' or 'int32', got '"
+                      + (retType ? retType->name : "unknown") + "'");
+
+            TestCase tc;
+            tc.modulePath = currentModulePath_;
+            tc.funcName = funcName;
+            tc.spec = spec;
+            tc.filePath = currentFile_;
+            tc.returnsVoid = retType && retType->name == "void";
+            if (auto* start = func->getStart()) {
+                tc.line = start->getLine();
+                tc.col = start->getCharPositionInLine();
+            }
+            testCases_.push_back(std::move(tc));
+        }
+    }
 
     // ── Validate main() signature ───────────────────────────────────────
     if (funcName == "main" && !func->COMPTIME()) {

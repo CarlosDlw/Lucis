@@ -188,6 +188,47 @@ lucis run --lto -- arg1 arg2
 lucis run -c -q
 ```
 
+## test — Run the Test Suite
+
+```
+lucis test [<file>] [-t <SUBSTR>] [--skip <SUBSTR>] [--exact]
+            [--list] [--timeout <MS>] [-j <N>] [-v]
+            [-O <level>] [--target <TRIPLE>] [--sysroot <PATH>]
+            [-I <dir>] [--ignore-config] [-q]
+```
+
+Discovers every `#[test]` function reachable from the entry file, builds a
+test binary with an isolated process per test, runs it and reports results.
+
+| Flag | Description |
+|------|-------------|
+| `-t, --test <SUBSTR>` | Run only tests matching substring (repeatable) |
+| `--skip <SUBSTR>` | Skip tests matching substring (repeatable) |
+| `--exact` | Filters match the exact name instead of substring |
+| `--list` | List discovered tests without building |
+| `--timeout <MS>` | Global default per-test timeout (0 = none) |
+| `-j, --jobs <N>` | Parallel test children (default 1) |
+| `-v, --verbose` | Echo captured output of every test |
+| `-O, --opt <LEVEL>` | Optimization level |
+| `--target <TRIPLE>` | Target triple (default: host) |
+| `--sysroot <PATH>` | System root for cross-compilation headers/libs |
+| `-I, --include <DIR>` | Add include search path (repeatable) |
+| `--ignore-config` | Ignore `lucis.yaml` |
+| `-q, --quiet` | Suppress pipeline logs |
+
+```bash
+lucis test                      # project entry from lucis.yaml
+lucis test tests/unit.lc        # explicit entry file
+lucis test --list               # what would run?
+lucis test -t "math::"          # only tests matching "math::"
+lucis test --skip slow -j 8     # parallel, excluding slow ones
+```
+
+Exit codes: `0` all tests passed (or none found), `1` any failure or compile
+error, `2` usage error. The attribute reference lives in
+[Attributes](../language/attributes.md); assertion functions in
+[`std::test`](../stdlib/test.md).
+
 ## check — Type Checking
 
 ```

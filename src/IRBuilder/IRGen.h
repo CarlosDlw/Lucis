@@ -28,6 +28,7 @@
 #include "ffi/ABIInfo.h"
 #include "semantic/SemanticDB.h"
 #include "ffi/CBindings.h"
+#include "attributes/TestAttribute.h"
 class ModuleRegistry;
 class CBindings;
 struct CStructMacro;
@@ -78,6 +79,18 @@ public:
 
     // Set debug output mode (--debug flag) for debug_assertions / @cfg("debug")
     void setDebugOutput(bool v) { debugOutput_ = v; }
+
+    // ── Test mode (lucis test) ───────────────────────────────────────────
+    // Enabled for every unit so user `main` is renamed; test cases are only
+    // provided to the entry unit, which receives the synthesized `main`.
+    void setTestMode(bool v) { testMode_ = v; }
+    void setTestCases(std::vector<TestCase> cases) { testCases_ = std::move(cases); }
+    void setTestRunnerOptions(int32_t jobs, int64_t defaultTimeoutMs, bool verbose) {
+        testJobs_ = jobs;
+        testTimeoutMs_ = defaultTimeoutMs;
+        testVerbose_ = verbose;
+    }
+    void synthesizeTestMain();
 
     // ── Visitor overrides ───────────────────────────────────────────────────
     std::any visitProgram(LucisParser::ProgramContext* ctx)             override;
@@ -376,6 +389,13 @@ private:
     std::string currentModulePath_;
     std::string currentFile_;
     bool isStdlib_ = false;
+
+    // Test mode state (see setTestMode above).
+    bool testMode_ = false;
+    std::vector<TestCase> testCases_;
+    int testJobs_ = 1;
+    int64_t testTimeoutMs_ = 0;
+    bool testVerbose_ = false;
 
     // Phase 2: authoritative semantic database (populated by Checker)
     const semantic::SemanticDB* semanticDB_ = nullptr;

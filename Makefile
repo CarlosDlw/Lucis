@@ -86,6 +86,20 @@ grammar:
 test:
 	./build/lucis run tests/main.lc -q
 
+## test-framework  — valida o framework de testes (#[test]) positivo e negativo
+test-framework: build
+	@echo "== framework: positive suite (expect exit 0) =="
+	@./build/lucis test test_framework/main.lc -q || exit 1
+	@echo "== framework: negative cases (expect non-zero exit) =="
+	@for f in test_framework/negative/*.lc; do \
+		./build/lucis test $$f -q >/dev/null 2>&1; \
+		if [ $$? -eq 0 ]; then \
+			echo "FAIL: expected failure for $$f"; \
+			exit 1; \
+		fi; \
+	done
+	@echo "framework tests: OK"
+
 ## help  — lista os targets disponíveis
 help:
 	@echo ""

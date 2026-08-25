@@ -23,6 +23,7 @@
 
 #include "ffi/CBindings.h"
 #include "attributes/AttributeRegistry.h"
+#include "attributes/TestAttribute.h"
 
 struct CfgPredicate;
 struct TargetInfo;
@@ -37,6 +38,9 @@ public:
     const std::unordered_map<std::string, ComptimeValue>& getCompileTimeValues() const {
         return compileTimeValues_;
     }
+
+    // #[test] cases declared in this unit (empty when none).
+    const std::vector<TestCase>& testCases() const { return testCases_; }
 
     // Set module context for cross-file symbol resolution.
     void setModuleContext(const ModuleRegistry* registry,
@@ -66,6 +70,7 @@ public:
 private:
     std::vector<std::string> errors_;
     std::vector<Diagnostic>  diagnostics_;
+    std::vector<TestCase>    testCases_;
     ImportResolver           imports_;
     TypeRegistry             typeRegistry_;
     // True while the cross-file dependency walk is registering imported
@@ -260,7 +265,8 @@ private:
     void checkExtendDecl(LucisParser::ExtendDeclContext* decl);
     void checkExtendMethodBodies(LucisParser::ExtendDeclContext* decl);
     void checkExternDecl(LucisParser::ExternDeclContext* decl);
-    void registerFunctionSignature(LucisParser::FunctionDeclContext* func);
+    void registerFunctionSignature(LucisParser::FunctionDeclContext* func,
+                                   bool isLocal = false);
     void checkFunction(LucisParser::FunctionDeclContext* func);
     bool blockAlwaysReturns(LucisParser::BlockContext* block);
     void registerGlobalBuiltins();

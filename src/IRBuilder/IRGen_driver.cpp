@@ -239,6 +239,10 @@ std::unique_ptr<IRModule> IRGen::generate(LucisParser::ProgramContext* tree,
 
     visitProgram(tree);
 
+    // Test mode: synthesize the test harness `main` in the entry unit.
+    if (testMode_ && !testCases_.empty())
+        synthesizeTestMain();
+
     // Finalize debug info
     if (dbgBuilder_) {
         dbgBuilder_->finalize();

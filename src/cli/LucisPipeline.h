@@ -10,6 +10,7 @@
 #include "ffi/CBindings.h"
 #include "types/TypeRegistry.h"
 #include "semantic/SemanticDB.h"
+#include "attributes/TestAttribute.h"
 
 struct SourceUnit {
     std::string filePath;
@@ -33,6 +34,9 @@ struct PipelineResult {
 
     // Compile-time constant integer values from checker (for array dimensions, etc.)
     std::unordered_map<std::string, int64_t> compileTimeValues;
+
+    // #[test] cases collected from all units (symbolName pre-resolved).
+    std::vector<TestCase> testCases;
 
     bool hasErrors = false;
 };
