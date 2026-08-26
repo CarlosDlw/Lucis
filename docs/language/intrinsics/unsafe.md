@@ -90,7 +90,11 @@ string  s = lucis::unsafe::va_arg_string(va);
 
 `va_arg_bool` reads a promoted `int32` and truncates to 1-bit `bool`, avoiding an LLVM crash on `i1`.
 
-`va_arg_string` reads a `char*`, calls `lucis_fromCStr` / `strlen` to reconstruct the Lucis `{ptr, len}` fat pointer.
+`va_arg_string` reads a `char*` and returns an **owned copy** (tracked
+memory, safe to auto-drop). Reading as a view would let the temporary's
+auto-drop free the buffer the variadic argument points into — e.g. a
+string slot of a live `vec<string>` — dangling every other reference to
+it. The copy costs one allocation per call.
 
 ### `va_end(va: va_list)`
 

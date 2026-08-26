@@ -201,7 +201,8 @@ void registerUnsafeNamespace(IntrinsicRegistry& reg, TypeRegistry& typeReg) {
         fn.params.push_back({"va_list", false});
         fn.description =
             "Reads the next C string (char*) from the variadic argument list, "
-            "converts it to a Lucis string via strlen, and advances the handle.\n\n"
+            "copies it into tracked memory (safe to auto-free), and advances "
+            "the handle.\n\n"
             "```lucis\n"
             "string val = lucis::unsafe::va_arg_string(args);\n"
             "```";
@@ -222,9 +223,13 @@ void registerUnsafeNamespace(IntrinsicRegistry& reg, TypeRegistry& typeReg) {
             // Step 1: Read the char* from va_list (safe — same type as va_arg_ptr)
             llvm::Value* cstr = builder.CreateVAArg(args[0], ptrTy, "va_arg_str_ptr");
 
-            // Step 2: Call lucis_fromCStr to get { ptr, len }
+            // Step 2: Copy the C string into tracked memory and return
+            // { ptr, len }. The copy is OWNED by the caller, so auto-drop
+            // of the resulting temporary frees only the copy — never the
+            // buffer the variadic argument points into (e.g. a string slot
+            // of a live vec<string>, or the caller's argv).
             auto* retStructTy = llvm::StructType::get(context, {ptrTy, i64Ty});
-            auto callee = module->getOrInsertFunction("lucis_fromCStr", retStructTy, ptrTy);
+            auto callee = module->getOrInsertFunction("lucis_fromCStrCopy", retStructTy, ptrTy);
             auto* retVal = builder.CreateCall(callee, {cstr}, "va_arg_str");
 
             // Step 3: Wrap into Lucis string type { ptr, len }

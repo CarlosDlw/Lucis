@@ -4,6 +4,28 @@ All notable changes to the Lucis language and its compiler.
 
 ---
 
+## Unreleased — fix: `va_arg_string` returns an owned copy (UAF)
+
+- **Fixed a use-after-free** that corrupted strings on their second use
+  when they came from `fn main(vec<string> args)`: e.g. two `printf`
+  calls with the same argument produced garbage on the second. The
+  runtime tracks owned string allocations in a registry and only frees
+  registered pointers — so auto-drop of a *view* temporaries was safe
+  for literals (rodata, not registered) but freed the *slot of a live
+  `vec<string>`* when the view came from `va_arg_string` (registered
+  heap → dropped → dangling every other reference to it).
+- `lucis::unsafe::va_arg_string` now copies the C string into tracked
+  memory (`lucis_fromCStrCopy`) before returning: auto-drop of the
+  temporary frees only the copy, never the caller's buffer (a `vec`
+  element, `argv`, a struct field, …). One extra allocation per string
+  read from the variadic list — the safe trade.
+- Docs updated in `docs/language/intrinsics/unsafe.md`.
+- Found via `local_projects/lrelf` (the ELF-reader CLI): the error path
+  lost the file name because the second use of the argument was
+  dangling. The same reproduction (`printf` a `vec<string>` element
+  twice) was stable with rodata literals and only broke for registered
+  heap — confirming the tracking mechanism.
+
 ## Unreleased — LSP flat-latency symbol resolution (Phase B, step 6)
 
 - The last inline `topLevelDecl()` sweeps are gone. `FileSymbolIndex`
