@@ -38,6 +38,10 @@ public:
     // 0-based line, or nullptr.
     LucisParser::ExtendMethodContext* enclosingExtendMethodAt(size_t line) const;
 
+    // The top-level declaration whose source span contains the given
+    // 0-based line, or nullptr.
+    LucisParser::TopLevelDeclContext* enclosingDeclAt(size_t line) const;
+
 private:
     // emplace() keeps the first declaration for each name: same result as
     // the linear "return first match" sweeps the index replaces.
@@ -66,4 +70,12 @@ private:
         LucisParser::ExtendMethodContext* decl = nullptr;
     };
     std::vector<ExtendMethodSpan> extendMethodSpans_;
+
+    // Top-level declaration spans sorted by start line (same strategy).
+    struct DeclSpan {
+        unsigned startLine = 0;
+        unsigned endLine   = 0;
+        LucisParser::TopLevelDeclContext* decl = nullptr;
+    };
+    std::vector<DeclSpan> declSpans_;
 };

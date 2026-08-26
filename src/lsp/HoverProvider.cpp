@@ -466,9 +466,13 @@ std::optional<HoverResult> HoverProvider::hover(const std::string& source,
     }
 
     // ── Check if hovering a function name in a functionDecl ─────────
-    for (auto* tld : parsed.tree->topLevelDecl()) {
+    // With the cached index, only the declaration enclosing the cursor is
+    // examined; the linear sweep remains as fallback.
+    auto hoverInTopLevelDecl =
+        [&](LucisParser::TopLevelDeclContext* tld)
+        -> std::optional<HoverResult> {
         if (auto* func = tld->functionDecl()) {
-            if (func->IDENTIFIER().empty()) continue;
+            if (func->IDENTIFIER().empty()) return std::nullopt;
             auto* nameToken = func->name;
             if (nameToken == hoveredToken) {
                 return makeResult(nameToken, withDoc(formatFunctionDecl(func), func->getStart()->getLine() - 1, func->attributeList()));
@@ -545,7 +549,7 @@ std::optional<HoverResult> HoverProvider::hover(const std::string& source,
         // ── Enum declaration name ───────────────────────────────────
         if (auto* ed = tld->enumDecl()) {
             auto* enumName = ed->IDENTIFIER();
-            if (!enumName) continue;
+            if (!enumName) return std::nullopt;
             if (enumName->getSymbol() == hoveredToken) {
                 return makeResult(hoveredToken, withDoc(formatEnumDecl(ed), ed->getStart()->getLine() - 1, ed->attributeList()));
             }
@@ -562,7 +566,7 @@ std::optional<HoverResult> HoverProvider::hover(const std::string& source,
 
         // ── Union declaration name ──────────────────────────────────
         if (auto* ud = tld->unionDecl()) {
-            if (!ud->IDENTIFIER()) continue;
+            if (!ud->IDENTIFIER()) return std::nullopt;
             if (ud->IDENTIFIER()->getSymbol() == hoveredToken) {
                 return makeResult(hoveredToken, withDoc(formatUnionDecl(ud), ud->getStart()->getLine() - 1, ud->attributeList()));
             }
@@ -578,7 +582,7 @@ std::optional<HoverResult> HoverProvider::hover(const std::string& source,
 
         // ── Extend declaration name ─────────────────────────────────
         if (auto* ext = tld->extendDecl()) {
-            if (!ext->IDENTIFIER()) continue;
+            if (!ext->IDENTIFIER()) return std::nullopt;
             if (ext->IDENTIFIER()->getSymbol() == hoveredToken) {
                 std::string md = withDoc(formatExtendMethods(ext), ext->getStart()->getLine() - 1, ext->attributeList());
                 return makeResult(hoveredToken, md);
@@ -587,7 +591,7 @@ std::optional<HoverResult> HoverProvider::hover(const std::string& source,
 
         // ── Type alias declaration ──────────────────────────────────
         if (auto* ta = tld->typeAliasDecl()) {
-            if (!ta->IDENTIFIER()) continue;
+            if (!ta->IDENTIFIER()) return std::nullopt;
             if (ta->IDENTIFIER()->getSymbol() == hoveredToken) {
                 std::string md = "```lucis\ntype " + tokenText + " = "
                                + typeSpecToString(ta->typeSpec()) + "\n```";
@@ -597,11 +601,21 @@ std::optional<HoverResult> HoverProvider::hover(const std::string& source,
 
         // ── Extern declaration name ─────────────────────────────────
         if (auto* ext = tld->externDecl()) {
-            if (!ext->IDENTIFIER()) continue;
+            if (!ext->IDENTIFIER()) return std::nullopt;
             if (ext->IDENTIFIER()->getSymbol() == hoveredToken) {
                 return makeResult(hoveredToken, withDoc(formatExternDecl(ext), ext->getStart()->getLine() - 1, ext->attributeList()));
             }
         }
+
+        return std::nullopt;
+    };
+
+    if (activeIndex_) {
+        if (auto* tld = activeIndex_->enclosingDeclAt(line))
+            if (auto r = hoverInTopLevelDecl(tld)) return r;
+    } else {
+        for (auto* tld : parsed.tree->topLevelDecl())
+            if (auto r = hoverInTopLevelDecl(tld)) return r;
     }
 
     // ── Resolve identifier expressions inside function bodies ───────
@@ -609,99 +623,121 @@ std::optional<HoverResult> HoverProvider::hover(const std::string& source,
     // This handles method calls, field access, enum access, static method calls,
     // type specs in varDecl/params, and plain identifiers.
 
-    for (auto* tld : parsed.tree->topLevelDecl()) {
-        auto* func = tld->functionDecl();
-        if (func) {
-            auto* startTok = func->getStart();
-            auto* stopTok  = func->getStop();
-            if (startTok && stopTok &&
-                tokenLine >= startTok->getLine() && tokenLine <= stopTok->getLine()) {
-                auto result = walkTreeForHover(func->block(), hoveredToken, tokenText,
-                                               parsed.tree, *cBindingsPtr, line, project);
-                if (result) return result;
+    auto hoverExtendMethod =
+        [&](LucisParser::ExtendMethodContext* method,
+            LucisParser::ExtendDeclContext* ext) -> std::optional<HoverResult> {
+        // Method name
+        if (method->name && method->name == hoveredToken) {
+            std::string structName = ext->IDENTIFIER() ? safeText(ext->IDENTIFIER()) : "?";
+            bool isStatic = (method->AMPERSAND() == nullptr);
+            auto resolveSelf = [&](const std::string& t) -> std::string {
+                return substituteSelfToken(t, structName);
+            };
+            std::string retType = resolveSelf(typeSpecToString(method->typeSpec()));
+            std::string md = "```lucis\n(" + std::string(isStatic ? "static method" : "method")
+                + ") " + retType + " " + structName + "::" + tokenText + "(";
+            std::vector<LucisParser::ParamContext*> params;
+            if (isStatic) {
+                if (auto* pl = method->paramList())
+                    params = pl->param();
+            } else {
+                params = method->param();
             }
-            continue;
+            bool first = true;
+            if (!isStatic) { md += "&self"; first = false; }
+            for (auto* p : params) {
+                if (!first) md += ", ";
+                first = false;
+                md += resolveSelf(typeSpecToString(p->typeSpec())) + " "
+                    + (p->IDENTIFIER() ? safeText(p->IDENTIFIER()) : "?");
+            }
+            md += ")\n```";
+            return makeResult(hoveredToken, md);
         }
 
-        // Walk into extend block method bodies
-        auto* ext = tld->extendDecl();
-        if (ext) {
-            auto* startTok = ext->getStart();
-            auto* stopTok  = ext->getStop();
-            if (!startTok || !stopTok) continue;
-            if (tokenLine < startTok->getLine() || tokenLine > stopTok->getLine())
-                continue;
+        // Return type spec
+        auto r = hoverTypeSpec(method->typeSpec(), hoveredToken,
+                                parsed.tree, *cBindingsPtr, project);
+        if (r) return r;
 
-            // Check extend method parameter names and type specs
-            for (auto* method : ext->extendMethod()) {
-                auto* mStart = method->getStart();
-                auto* mStop  = method->getStop();
-                if (!mStart || !mStop) continue;
-                if (tokenLine < mStart->getLine() || tokenLine > mStop->getLine())
+        // Parameter names and types
+        bool isStatic = (method->AMPERSAND() == nullptr);
+        std::vector<LucisParser::ParamContext*> params;
+        if (isStatic) {
+            if (auto* pl = method->paramList())
+                params = pl->param();
+        } else {
+            params = method->param();
+        }
+        for (auto* p : params) {
+            if (!p->IDENTIFIER()) continue;
+            if (p->IDENTIFIER()->getSymbol() == hoveredToken) {
+                std::string md = formatTypedHover(
+                    "parameter",
+                    typeSpecToString(p->typeSpec()),
+                    safeText(p->IDENTIFIER()),
+                    *cBindingsPtr);
+                return makeResult(hoveredToken, md);
+            }
+            r = hoverTypeSpec(p->typeSpec(), hoveredToken,
+                               parsed.tree, *cBindingsPtr, project);
+            if (r) return r;
+        }
+
+        // Walk method body
+        return walkTreeForHover(method->block(), hoveredToken,
+            tokenText, parsed.tree, *cBindingsPtr, line, project);
+    };
+
+    if (activeIndex_) {
+        if (auto* func = activeIndex_->enclosingFunctionAt(line)) {
+            auto result = walkTreeForHover(func->block(), hoveredToken, tokenText,
+                                           parsed.tree, *cBindingsPtr, line, project);
+            if (result) return result;
+        }
+        if (auto* method = activeIndex_->enclosingExtendMethodAt(line)) {
+            LucisParser::ExtendDeclContext* ext = nullptr;
+            for (auto* p = method->parent; p; p = p->parent) {
+                if ((ext = dynamic_cast<LucisParser::ExtendDeclContext*>(p))) break;
+            }
+            if (ext) {
+                if (auto r = hoverExtendMethod(method, ext)) return r;
+            }
+        }
+    } else {
+        for (auto* tld : parsed.tree->topLevelDecl()) {
+            auto* func = tld->functionDecl();
+            if (func) {
+                auto* startTok = func->getStart();
+                auto* stopTok  = func->getStop();
+                if (startTok && stopTok &&
+                    tokenLine >= startTok->getLine() && tokenLine <= stopTok->getLine()) {
+                    auto result = walkTreeForHover(func->block(), hoveredToken, tokenText,
+                                                   parsed.tree, *cBindingsPtr, line, project);
+                    if (result) return result;
+                }
+                continue;
+            }
+
+            // Walk into extend block method bodies
+            auto* ext = tld->extendDecl();
+            if (ext) {
+                auto* startTok = ext->getStart();
+                auto* stopTok  = ext->getStop();
+                if (!startTok || !stopTok) continue;
+                if (tokenLine < startTok->getLine() || tokenLine > stopTok->getLine())
                     continue;
 
-                // Method name
-                if (method->name && method->name == hoveredToken) {
-                    std::string structName = ext->IDENTIFIER() ? safeText(ext->IDENTIFIER()) : "?";
-                    bool isStatic = (method->AMPERSAND() == nullptr);
-                    auto resolveSelf = [&](const std::string& t) -> std::string {
-                        return substituteSelfToken(t, structName);
-                    };
-                    std::string retType = resolveSelf(typeSpecToString(method->typeSpec()));
-                    std::string md = "```lucis\n(" + std::string(isStatic ? "static method" : "method")
-                        + ") " + retType + " " + structName + "::" + tokenText + "(";
-                    std::vector<LucisParser::ParamContext*> params;
-                    if (isStatic) {
-                        if (auto* pl = method->paramList())
-                            params = pl->param();
-                    } else {
-                        params = method->param();
-                    }
-                    bool first = true;
-                    if (!isStatic) { md += "&self"; first = false; }
-                    for (auto* p : params) {
-                        if (!first) md += ", ";
-                        first = false;
-                        md += resolveSelf(typeSpecToString(p->typeSpec())) + " "
-                            + (p->IDENTIFIER() ? safeText(p->IDENTIFIER()) : "?");
-                    }
-                    md += ")\n```";
-                    return makeResult(hoveredToken, md);
-                }
+                // Check extend method parameter names and type specs
+                for (auto* method : ext->extendMethod()) {
+                    auto* mStart = method->getStart();
+                    auto* mStop  = method->getStop();
+                    if (!mStart || !mStop) continue;
+                    if (tokenLine < mStart->getLine() || tokenLine > mStop->getLine())
+                        continue;
 
-                // Return type spec
-                auto r = hoverTypeSpec(method->typeSpec(), hoveredToken,
-                                        parsed.tree, *cBindingsPtr, project);
-                if (r) return r;
-
-                // Parameter names and types
-                bool isStatic = (method->AMPERSAND() == nullptr);
-                std::vector<LucisParser::ParamContext*> params;
-                if (isStatic) {
-                    if (auto* pl = method->paramList())
-                        params = pl->param();
-                } else {
-                    params = method->param();
+                    if (auto r = hoverExtendMethod(method, ext)) return r;
                 }
-                for (auto* p : params) {
-                    if (!p->IDENTIFIER()) continue;
-                    if (p->IDENTIFIER()->getSymbol() == hoveredToken) {
-                        std::string md = formatTypedHover(
-                            "parameter",
-                            typeSpecToString(p->typeSpec()),
-                            safeText(p->IDENTIFIER()),
-                            *cBindingsPtr);
-                        return makeResult(hoveredToken, md);
-                    }
-                    r = hoverTypeSpec(p->typeSpec(), hoveredToken,
-                                       parsed.tree, *cBindingsPtr, project);
-                    if (r) return r;
-                }
-
-                // Walk method body
-                auto result = walkTreeForHover(method->block(), hoveredToken,
-                    tokenText, parsed.tree, *cBindingsPtr, line, project);
-                if (result) return result;
             }
         }
     }

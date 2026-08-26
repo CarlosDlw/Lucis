@@ -4,6 +4,30 @@ All notable changes to the Lucis language and its compiler.
 
 ---
 
+## Unreleased — LSP flat-latency symbol resolution (Phase B, step 6)
+
+- The last inline `topLevelDecl()` sweeps are gone. `FileSymbolIndex`
+  gained `enclosingDeclAt()` (top-level spans); go-to-definition and
+  hover now resolve the declaration under the cursor through the index
+  (plus `enclosingFunctionAt`/`enclosingExtendMethodAt` for body walks)
+  instead of scanning the whole file per request.
+- Measured on synthetic files (function-heavy, parse cached):
+  go-to-definition 200/2000/5000 functions = 0.3/0.5/1.0 ms (was
+  0.6/4.8/11.7 ms — ~90% faster on large files, latency now nearly
+  flat); hover 0.3/0.8/2.1 ms.
+
+## Unreleased — LSP flat-latency symbol resolution (Phase B, step 6)
+
+- The last inline `topLevelDecl()` sweeps are gone. `FileSymbolIndex`
+  gained `enclosingDeclAt()` (top-level spans); go-to-definition and
+  hover now resolve the declaration under the cursor through the index
+  (plus `enclosingFunctionAt`/`enclosingExtendMethodAt` for body walks)
+  instead of scanning the whole file per request.
+- Measured on synthetic files (function-heavy, parse cached):
+  go-to-definition 200/2000/5000 functions = 0.3/0.5/1.0 ms (was
+  0.6/4.8/11.7 ms — ~90% faster on large files, latency now nearly
+  flat); hover 0.3/0.8/2.1 ms.
+
 ## Unreleased — LSP indexed type inference in completion (Phase B, step 5)
 
 - The static inference helpers of `CompletionProvider` — the

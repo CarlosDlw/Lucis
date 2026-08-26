@@ -367,7 +367,11 @@ std::optional<DefinitionResult> DefinitionProvider::resolveAtPosition(
     }
 
     // ── Top-level declarations: jump to self (declaration definition) ──
-    for (auto* tld : tree->topLevelDecl()) {
+    // With the cached index, only the declaration enclosing the cursor is
+    // examined; the linear sweep remains as fallback.
+    auto resolveInTopLevelDecl =
+        [&](LucisParser::TopLevelDeclContext* tld)
+        -> std::optional<DefinitionResult> {
         // Function name → jump to self
         if (auto* func = tld->functionDecl()) {
             if (!func->IDENTIFIER().empty() && func->name && func->name->getTokenIndex() == hoveredToken->getTokenIndex())
@@ -456,61 +460,87 @@ std::optional<DefinitionResult> DefinitionProvider::resolveAtPosition(
             if (ext->IDENTIFIER() && ext->IDENTIFIER()->getSymbol() == hoveredToken)
                 return makeResult(hoveredToken, filePath);
         }
+
+        return std::nullopt;
+    };
+
+    if (activeIndex_) {
+        if (auto* tld = activeIndex_->enclosingDeclAt(cursorLine))
+            if (auto r = resolveInTopLevelDecl(tld)) return r;
+    } else {
+        for (auto* tld : tree->topLevelDecl())
+            if (auto r = resolveInTopLevelDecl(tld)) return r;
     }
 
     // ── Walk function bodies ────────────────────────────────────────
-    for (auto* tld : tree->topLevelDecl()) {
-        if (auto* func = tld->functionDecl()) {
-            auto* startTok = func->getStart();
-            auto* stopTok  = func->getStop();
-            if (startTok && stopTok &&
-                tokenLine >= startTok->getLine() && tokenLine <= stopTok->getLine()) {
-                auto result = walkBlockForDef(func->block(), hoveredToken,
-                    tokenText, tree, bindings, cursorLine, filePath, project);
-                if (result) return result;
-            }
-            continue;
+    auto resolveExtendMethod =
+        [&](LucisParser::ExtendMethodContext* method)
+        -> std::optional<DefinitionResult> {
+        // Return type spec
+        if (auto r = resolveTypeSpecToken(method->typeSpec(), hoveredToken,
+                tree, bindings, filePath, project))
+            return r;
+
+        // Parameters type specs
+        bool isStatic = (method->AMPERSAND() == nullptr);
+        std::vector<LucisParser::ParamContext*> params;
+        if (isStatic) {
+            if (auto* pl = method->paramList())
+                params = pl->param();
+        } else {
+            params = method->param();
+        }
+        for (auto* p : params) {
+            if (auto r = resolveTypeSpecToken(p->typeSpec(), hoveredToken,
+                    tree, bindings, filePath, project))
+                return r;
         }
 
-        // Walk extend block method bodies
-        if (auto* ext = tld->extendDecl()) {
-            auto* startTok = ext->getStart();
-            auto* stopTok  = ext->getStop();
-            if (!startTok || !stopTok) continue;
-            if (tokenLine < startTok->getLine() || tokenLine > stopTok->getLine())
-                continue;
+        // Walk method body
+        return walkBlockForDef(method->block(), hoveredToken,
+            tokenText, tree, bindings, cursorLine, filePath, project);
+    };
 
-            for (auto* method : ext->extendMethod()) {
-                auto* mStart = method->getStart();
-                auto* mStop  = method->getStop();
-                if (!mStart || !mStop) continue;
-                if (tokenLine < mStart->getLine() || tokenLine > mStop->getLine())
+    if (activeIndex_) {
+        if (auto* func = activeIndex_->enclosingFunctionAt(cursorLine)) {
+            if (auto result = walkBlockForDef(func->block(), hoveredToken,
+                    tokenText, tree, bindings, cursorLine, filePath, project))
+                return result;
+        }
+        if (auto* method = activeIndex_->enclosingExtendMethodAt(cursorLine)) {
+            if (auto r = resolveExtendMethod(method)) return r;
+        }
+    } else {
+        for (auto* tld : tree->topLevelDecl()) {
+            if (auto* func = tld->functionDecl()) {
+                auto* startTok = func->getStart();
+                auto* stopTok  = func->getStop();
+                if (startTok && stopTok &&
+                    tokenLine >= startTok->getLine() && tokenLine <= stopTok->getLine()) {
+                    auto result = walkBlockForDef(func->block(), hoveredToken,
+                        tokenText, tree, bindings, cursorLine, filePath, project);
+                    if (result) return result;
+                }
+                continue;
+            }
+
+            // Walk extend block method bodies
+            if (auto* ext = tld->extendDecl()) {
+                auto* startTok = ext->getStart();
+                auto* stopTok  = ext->getStop();
+                if (!startTok || !stopTok) continue;
+                if (tokenLine < startTok->getLine() || tokenLine > stopTok->getLine())
                     continue;
 
-                // Return type spec
-                if (auto r = resolveTypeSpecToken(method->typeSpec(), hoveredToken,
-                        tree, bindings, filePath, project))
-                    return r;
+                for (auto* method : ext->extendMethod()) {
+                    auto* mStart = method->getStart();
+                    auto* mStop  = method->getStop();
+                    if (!mStart || !mStop) continue;
+                    if (tokenLine < mStart->getLine() || tokenLine > mStop->getLine())
+                        continue;
 
-                // Parameters type specs
-                bool isStatic = (method->AMPERSAND() == nullptr);
-                std::vector<LucisParser::ParamContext*> params;
-                if (isStatic) {
-                    if (auto* pl = method->paramList())
-                        params = pl->param();
-                } else {
-                    params = method->param();
+                    if (auto r = resolveExtendMethod(method)) return r;
                 }
-                for (auto* p : params) {
-                    if (auto r = resolveTypeSpecToken(p->typeSpec(), hoveredToken,
-                            tree, bindings, filePath, project))
-                        return r;
-                }
-
-                // Walk method body
-                auto result = walkBlockForDef(method->block(), hoveredToken,
-                    tokenText, tree, bindings, cursorLine, filePath, project);
-                if (result) return result;
             }
         }
     }

@@ -18,6 +18,14 @@ FileSymbolIndex::FileSymbolIndex(LucisParser::ProgramContext* tree) {
     if (!tree) return;
 
     for (auto* tld : tree->topLevelDecl()) {
+        if (tld->getStart() && tld->getStop()) {
+            DeclSpan span;
+            span.startLine = static_cast<unsigned>(tld->getStart()->getLine());
+            span.endLine   = static_cast<unsigned>(tld->getStop()->getLine());
+            span.decl      = tld;
+            declSpans_.push_back(span);
+        }
+
         if (auto* f = tld->functionDecl()) {
             auto name = idText(f, 0);
             if (!name.empty()) functions_.emplace(name, f);
@@ -66,6 +74,10 @@ FileSymbolIndex::FileSymbolIndex(LucisParser::ProgramContext* tree) {
               });
     std::sort(extendMethodSpans_.begin(), extendMethodSpans_.end(),
               [](const ExtendMethodSpan& a, const ExtendMethodSpan& b) {
+                  return a.startLine < b.startLine;
+              });
+    std::sort(declSpans_.begin(), declSpans_.end(),
+              [](const DeclSpan& a, const DeclSpan& b) {
                   return a.startLine < b.startLine;
               });
 }
@@ -150,6 +162,20 @@ FileSymbolIndex::enclosingExtendMethodAt(size_t line) const {
             return line < span.startLine;
         });
     if (it == extendMethodSpans_.begin()) return nullptr;
+    --it;
+    if (tokenLine <= it->endLine) return it->decl;
+    return nullptr;
+}
+
+LucisParser::TopLevelDeclContext*
+FileSymbolIndex::enclosingDeclAt(size_t line) const {
+    if (declSpans_.empty()) return nullptr;
+    size_t tokenLine = line + 1;
+
+    auto it = std::upper_bound(
+        declSpans_.begin(), declSpans_.end(), tokenLine,
+        [](size_t line, const DeclSpan& span) { return line < span.startLine; });
+    if (it == declSpans_.begin()) return nullptr;
     --it;
     if (tokenLine <= it->endLine) return it->decl;
     return nullptr;
