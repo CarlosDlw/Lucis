@@ -10,6 +10,7 @@
 #include "lsp/SignatureHelpProvider.h"
 #include "lsp/ProjectContext.h"
 #include "lsp/ParseCache.h"
+#include "lsp/TokenIndex.h"
 
 #include <stdio.h>
 #ifndef EOF
@@ -57,6 +58,19 @@ private:
         std::vector<Diagnostic> diags;
     };
     std::unordered_map<std::string, CachedDiags> cachedDiags_;
+
+    // Token index cache: URI → {source, index}. Built once per parse;
+    // providers query it to find the token under the cursor without
+    // re-scanning the token stream on every request.
+    std::unordered_map<
+        std::string,
+        std::pair<std::string, std::unique_ptr<TokenIndex>>>
+        tokenIndexCache_;
+
+    // Returns the cached token index for uri, rebuilding it when the
+    // document source changed (same policy as ParseCache::getOrParse).
+    TokenIndex* getTokenIndex(const std::string& uri,
+                              const std::string& source);
 
     // Deferred diagnostics: didChange schedules a check; the server flushes
     // it at the next dispatch once the debounce window elapsed, so typing

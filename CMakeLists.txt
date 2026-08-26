@@ -309,6 +309,7 @@ set(SOURCES
     src/lsp/HoverProvider.cpp
     src/lsp/DefinitionProvider.cpp
     src/lsp/FileSymbolIndex.cpp
+    src/lsp/TokenIndex.cpp
     src/lsp/CompletionProvider.cpp
     src/lsp/DocComment.cpp
     src/lsp/ParseCache.cpp

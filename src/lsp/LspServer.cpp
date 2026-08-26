@@ -362,6 +362,7 @@ void LspServer::handleDidOpen(const json& msg) {
 
         documents_.open(uri, text);
         parseCache_.invalidate(uri);
+        tokenIndexCache_.erase(uri);
         cachedTokens_.erase(uri);
         cachedDiags_.erase(uri);
         std::cerr << "[lucis-lsp] opened: " << uri << "\n";
@@ -430,6 +431,7 @@ void LspServer::handleDidSave(const json& msg) {
             text = params["text"];
             documents_.update(uri, text);
             parseCache_.invalidate(uri);
+            tokenIndexCache_.erase(uri);
             cachedTokens_.erase(uri);
             cachedDiags_.erase(uri);
         } else {
@@ -532,6 +534,7 @@ void LspServer::handleDidClose(const json& msg) {
 
         documents_.close(uri);
         parseCache_.invalidate(uri);
+        tokenIndexCache_.erase(uri);
         cachedTokens_.erase(uri);
         cachedDiags_.erase(uri);
         std::cerr << "[lucis-lsp] closed: " << uri << "\n";
@@ -560,6 +563,21 @@ void LspServer::flushPendingDiagnostics() {
     pendingUri_.clear();
     pendingSource_.clear();
     publishDiagnostics(uri, source);
+}
+
+TokenIndex* LspServer::getTokenIndex(const std::string& uri,
+                                     const std::string& source) {
+    auto it = tokenIndexCache_.find(uri);
+    if (it != tokenIndexCache_.end() && it->second.first == source)
+        return it->second.second.get();
+
+    auto* parse = parseCache_.getOrParse(uri, source);
+    if (!parse || !parse->tokens) return nullptr;
+
+    auto index = std::make_unique<TokenIndex>(parse->tokens->getTokens());
+    auto* ptr = index.get();
+    tokenIndexCache_[uri] = {source, std::move(index)};
+    return ptr;
 }
 
 void LspServer::publishDiagnostics(const std::string& uri,
@@ -646,7 +664,8 @@ void LspServer::handleHover(const json& msg) {
         auto result = hoverProvider_.hover(source, line, col, filePath,
                                             projectContext_.isValid()
                                                 ? &projectContext_ : nullptr,
-                                            cached);
+                                            cached,
+                                            getTokenIndex(uri, source));
         if (!result) {
             sendResponse(msg["id"], nullptr);
             return;
@@ -694,7 +713,8 @@ void LspServer::handleDefinition(const json& msg) {
         auto result = definitionProvider_.definition(source, line, col, filePath,
                                                       projectContext_.isValid()
                                                           ? &projectContext_ : nullptr,
-                                                      cached);
+                                                      cached,
+                                                      getTokenIndex(uri, source));
         if (!result) {
             sendResponse(msg["id"], nullptr);
             return;

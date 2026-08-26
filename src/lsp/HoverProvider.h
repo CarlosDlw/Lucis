@@ -15,6 +15,7 @@
 #include "intrinsics/IntrinsicRegistry.h"
 #include "ffi/CBindings.h"
 #include "lsp/DocComment.h"
+#include "lsp/TokenIndex.h"
 
 struct ParseResult;
 class ProjectContext;
@@ -44,9 +45,8 @@ public:
                                      size_t line, size_t col,
                                      const std::string& filePath,
                                      const ProjectContext* project,
-                                     ParseResult* preParsed = nullptr);
-
-    // Lightweight variable info collected from AST (no Checker needed).
+                                     ParseResult* preParsed = nullptr,
+                                     const TokenIndex* tokenIndex = nullptr);
     struct LocalVar {
         std::string typeName;
         unsigned    arrayDims = 0;

@@ -7,6 +7,7 @@
 #include "generated/LucisParser.h"
 #include "ffi/CBindings.h"
 #include "lsp/FileSymbolIndex.h"
+#include "lsp/TokenIndex.h"
 
 struct ParseResult;
 class ProjectContext;
@@ -29,7 +30,8 @@ public:
         const std::string& source, size_t line, size_t col,
         const std::string& filePath,
         const ProjectContext* project,
-        ParseResult* preParsed = nullptr);
+        ParseResult* preParsed = nullptr,
+        const TokenIndex* tokenIndex = nullptr);
 
     // Lightweight variable info (reused from HoverProvider pattern).
     struct LocalVar {

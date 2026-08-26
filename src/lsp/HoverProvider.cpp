@@ -284,7 +284,8 @@ std::optional<HoverResult> HoverProvider::hover(const std::string& source,
                                                  size_t line, size_t col,
                                                  const std::string& filePath,
                                                  const ProjectContext* project,
-                                                 ParseResult* preParsed) {
+                                                 ParseResult* preParsed,
+                                                 const TokenIndex* tokenIndex) {
     ParseResult localParseStorage;
     auto& parsed = preParsed ? *preParsed : (localParseStorage = Parser::parseString(source), localParseStorage);
     if (!parsed.tree) return std::nullopt;
@@ -360,14 +361,18 @@ std::optional<HoverResult> HoverProvider::hover(const std::string& source,
     size_t tokenLine = line + 1;
     antlr4::Token* hoveredToken = nullptr;
 
-    for (auto& token : parsed.tokens->getTokens()) {
-        if (token->getType() == antlr4::Token::EOF) continue;
-        if (token->getLine() == tokenLine) {
-            size_t start = token->getCharPositionInLine();
-            size_t end   = start + token->getText().length();
-            if (col >= start && col < end) {
-                hoveredToken = token;
-                break;
+    if (tokenIndex) {
+        hoveredToken = tokenIndex->tokenAt(line, col);
+    } else {
+        for (auto& token : parsed.tokens->getTokens()) {
+            if (token->getType() == antlr4::Token::EOF) continue;
+            if (token->getLine() == tokenLine) {
+                size_t start = token->getCharPositionInLine();
+                size_t end   = start + token->getText().length();
+                if (col >= start && col < end) {
+                    hoveredToken = token;
+                    break;
+                }
             }
         }
     }

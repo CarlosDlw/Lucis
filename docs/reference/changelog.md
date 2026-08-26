@@ -4,6 +4,21 @@ All notable changes to the Lucis language and its compiler.
 
 ---
 
+## Unreleased — LSP token index under the cursor (Phase B, step 2)
+
+- New `TokenIndex`: tokens of a document indexed by line, built once per
+  parse and cached by the server (same source-comparison policy as the
+  `ParseCache`). `hover` and go-to-definition replace their per-request
+  linear scan of the whole token stream with an O(tokens-on-line)
+  lookup; the index is rebuilt only when the document text changes.
+- The index is invalidated together with the parse cache on
+  didOpen/didSave/didClose; didChange goes through the same
+  source-comparison path as `getOrParse`.
+- Remaining Phase B targets: the per-request `parseDocComments` re-scan
+  and the enclosing-function body walks in hover, plus the same-file
+  `find*` sweeps of HoverProvider/CompletionProvider (FileSymbolIndex
+  already covers DefinitionProvider).
+
 ## Unreleased — LSP shared file symbol index (Phase B, step 1)
 
 - New `FileSymbolIndex`: a per-file index of top-level declarations
