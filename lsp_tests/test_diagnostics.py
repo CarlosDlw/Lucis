@@ -118,6 +118,16 @@ class LspSession:
         self._send({"jsonrpc": "2.0", "method": "textDocument/didSave",
                     "params": {"textDocument": {"uri": self.uri}, "text": text}})
 
+    def flush(self):
+        """Force the debounced didChange diagnostics to be published: any
+        incoming message triggers the server's flush before handling it."""
+        self._send({"jsonrpc": "2.0", "method": "workspace/didChangeConfiguration",
+                    "params": {}})
+
+    def settle_and_flush(self):
+        time.sleep(0.4)   # wait out the server's debounce window
+        self.flush()
+
     def publish(self, timeout=10):
         """Read frames until the next publishDiagnostics for this uri."""
         deadline = time.monotonic() + timeout
@@ -170,8 +180,10 @@ def main():
               any("type mismatch" in m for m in messages(diags)),
               f"got={messages(diags)}")
 
-        # didChange fixing it -> errors clear (the typing cycle).
+        # didChange fixing it -> errors clear (the typing cycle). Diagnostics
+        # from didChange are debounced, so settle the window and flush.
         s.did_change(GOOD)
+        s.settle_and_flush()
         diags = s.publish()
         check("didChange with a fix clears errors",
               messages(diags) == [],
@@ -179,6 +191,7 @@ def main():
 
         # didChange with invalid syntax -> diagnostics come back.
         s.did_change(BAD_SYNTAX)
+        s.settle_and_flush()
         diags = s.publish()
         check("didChange with invalid syntax publishes diagnostics",
               len(diags or []) >= 1,
@@ -186,6 +199,7 @@ def main():
 
         # didChange back to good text -> clears again.
         s.did_change(GOOD)
+        s.settle_and_flush()
         diags = s.publish()
         check("didChange recovered publishes clean",
               messages(diags) == [],

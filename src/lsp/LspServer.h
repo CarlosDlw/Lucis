@@ -50,6 +50,24 @@ private:
     };
     std::unordered_map<std::string, CachedTokens> cachedTokens_;
 
+    // Diagnostics cache: URI → {source, diagnostics}. Re-publishing the same
+    // source (e.g. didChange without real text change) skips the checker.
+    struct CachedDiags {
+        std::string source;
+        std::vector<Diagnostic> diags;
+    };
+    std::unordered_map<std::string, CachedDiags> cachedDiags_;
+
+    // Deferred diagnostics: didChange schedules a check; the server flushes
+    // it at the next dispatch once the debounce window elapsed, so typing
+    // does not run the full checker per keystroke. didOpen/didSave still
+    // publish immediately.
+    static constexpr double kDiagDebounceMs = 250.0;
+    std::string pendingUri_;
+    std::string pendingSource_;
+    double pendingSinceMs_ = 0.0;
+    void flushPendingDiagnostics();
+
     bool             initialized_ = false;
     bool             shutdown_    = false;
 

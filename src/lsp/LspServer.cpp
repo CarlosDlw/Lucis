@@ -7,8 +7,15 @@
 #include <fstream>
 #include <iostream>
 #include <thread>
+#include <chrono>
 
 namespace fs = std::filesystem;
+
+// Monotonic milliseconds, used for the diagnostics debounce window.
+static double steadyMs() {
+    return std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count();
+}
 
 // LSP error codes
 static constexpr int kParseError     = -32700;
@@ -51,6 +58,10 @@ int LspServer::run() {
 // ═══════════════════════════════════════════════════════════════════════
 
 void LspServer::dispatch(const json& msg) {
+    // Flush deferred diagnostics from the last didChange before handling
+    // the next message (debounce: skip the full checker on every keystroke).
+    flushPendingDiagnostics();
+
     if (!msg.contains("method")) {
         // Response or invalid — ignore for now
         return;
@@ -351,6 +362,8 @@ void LspServer::handleDidOpen(const json& msg) {
 
         documents_.open(uri, text);
         parseCache_.invalidate(uri);
+        cachedTokens_.erase(uri);
+        cachedDiags_.erase(uri);
         std::cerr << "[lucis-lsp] opened: " << uri << "\n";
 
         std::string filePath = DocumentStore::uriToPath(uri);
@@ -418,6 +431,7 @@ void LspServer::handleDidSave(const json& msg) {
             documents_.update(uri, text);
             parseCache_.invalidate(uri);
             cachedTokens_.erase(uri);
+            cachedDiags_.erase(uri);
         } else {
             text = documents_.get(uri);
         }
@@ -447,15 +461,16 @@ void LspServer::handleDidChange(const json& msg) {
 
         std::string text = changes[0]["text"];
         documents_.update(uri, text);
-        parseCache_.invalidate(uri);
         cachedTokens_.erase(uri);
+        cachedDiags_.erase(uri);
 
-        // Quickly register any new stdlib imports so errors disappear
-        // before save. Full rebuild happens on didSave.
+        // Parse exactly once: reuse the cached ParseResult to register new
+        // `use`s immediately AND to feed the (possibly deferred) publish.
+        // No parseCache_.invalidate() — getOrParse compares the source.
+        auto* parse = parseCache_.getOrParse(uri, text);
         try {
-            auto parseResult = Parser::parseString(text);
-            if (parseResult.tree) {
-                for (auto* pre : parseResult.tree->preambleDecl()) {
+            if (parse && parse->tree) {
+                for (auto* pre : parse->tree->preambleDecl()) {
                     auto* ud = pre->useDecl();
                     if (!ud) continue;
                     std::string modulePath;
@@ -496,9 +511,13 @@ void LspServer::handleDidChange(const json& msg) {
                     }
                 }
             }
-            // Re-publish diagnostics now that the module is registered
-            publishDiagnostics(uri, text);
         } catch (...) {} // best-effort, never break the LSP
+
+        // Schedule diagnostics; the publish is deferred by the debounce
+        // window and flushed at the next dispatch.
+        pendingUri_ = uri;
+        pendingSource_ = text;
+        pendingSinceMs_ = steadyMs();
     } catch (const std::exception& e) {
         std::cerr << "[lucis-lsp] didChange error: " << e.what() << "\n";
     } catch (...) {
@@ -514,6 +533,7 @@ void LspServer::handleDidClose(const json& msg) {
         documents_.close(uri);
         parseCache_.invalidate(uri);
         cachedTokens_.erase(uri);
+        cachedDiags_.erase(uri);
         std::cerr << "[lucis-lsp] closed: " << uri << "\n";
 
         // Clear diagnostics for the closed file
@@ -532,15 +552,35 @@ void LspServer::handleDidClose(const json& msg) {
 //  Diagnostics
 // ═══════════════════════════════════════════════════════════════════════
 
+void LspServer::flushPendingDiagnostics() {
+    if (pendingUri_.empty()) return;
+    if (steadyMs() - pendingSinceMs_ < kDiagDebounceMs) return;
+    std::string uri = pendingUri_;
+    std::string source = pendingSource_;
+    pendingUri_.clear();
+    pendingSource_.clear();
+    publishDiagnostics(uri, source);
+}
+
 void LspServer::publishDiagnostics(const std::string& uri,
                                     const std::string& source) {
     try {
+        // Deferred publish from the last didChange (debounced).
+        flushPendingDiagnostics();
+
         std::string filePath = DocumentStore::uriToPath(uri);
-        auto* cached = parseCache_.getOrParse(uri, source);
-        auto diags = diagnosticEngine_.run(source, filePath,
-                                            projectContext_.isValid()
-                                                ? &projectContext_ : nullptr,
-                                            cached);
+        std::vector<Diagnostic> diags;
+        auto cachedIt = cachedDiags_.find(uri);
+        if (cachedIt != cachedDiags_.end() && cachedIt->second.source == source) {
+            diags = cachedIt->second.diags;
+        } else {
+            auto* cached = parseCache_.getOrParse(uri, source);
+            diags = diagnosticEngine_.run(source, filePath,
+                                          projectContext_.isValid()
+                                              ? &projectContext_ : nullptr,
+                                          cached);
+            cachedDiags_[uri] = {source, diags};
+        }
 
         json lspDiags = json::array();
         for (auto& d : diags) {

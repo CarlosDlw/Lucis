@@ -20,6 +20,18 @@ All notable changes to the Lucis language and its compiler.
   become extra pipeline entries; results are aggregated into a single test
   binary with deduplicated units and tests.
 
+## Unreleased — LSP typing latency (Phase A)
+
+- `textDocument/didChange` parses the document once (the cached
+  `ParseResult` also feeds the publish) and **defers diagnostics** behind a
+  debounce window: the full semantic check no longer runs per keystroke,
+  only when the typing pauses (flushed by the next dispatch).
+- `publishDiagnostics` caches results per source text, so unchanged text is
+  republished without re-running the checker.
+- `lsp_tests/test_diagnostics.py` added earlier in the hardening step;
+  diagnostics content and the didOpen/didChange/didSave lifecycle are now
+  covered.
+
 ---
 
 ## Unreleased — Native Test Framework
