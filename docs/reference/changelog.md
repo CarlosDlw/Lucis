@@ -4,6 +4,36 @@ All notable changes to the Lucis language and its compiler.
 
 ---
 
+## Unreleased — LSP indexed type inference in completion (Phase B, step 5)
+
+- The static inference helpers of `CompletionProvider` — the
+  `find*DeclForInference` set, `lookupFuncReturnType`, the enum/extend/
+  bitstruct lookups inside `inferExprTypeName`, and the `Self`
+  resolution in `collectLocalsFromStmts` — now go through the
+  server-cached `FileSymbolIndex` via `FuncLookupCtx::index` (the
+  linear sweeps remain as fallback). A redundant enum re-scan in the
+  match-expr path was removed.
+- **Measured finding**: completion latency on large files is NOT scan
+  bound anymore — it is result-volume bound. After `receiver.()` on an
+  unresolvable receiver, the provider returns the whole symbol world
+  (2,137 items ≈ 467 KB ≈ 37 ms in a 2,000-function file). Capping or
+  narrowing that fallback is the next target.
+
+## Unreleased — LSP indexed type inference in completion (Phase B, step 5)
+
+- The static inference helpers of `CompletionProvider` — the
+  `find*DeclForInference` set, `lookupFuncReturnType`, the enum/extend/
+  bitstruct lookups inside `inferExprTypeName`, and the `Self`
+  resolution in `collectLocalsFromStmts` — now go through the
+  server-cached `FileSymbolIndex` via `FuncLookupCtx::index` (the
+  linear sweeps remain as fallback). A redundant enum re-scan in the
+  match-expr path was removed.
+- **Measured finding**: completion latency on large files is NOT scan
+  bound anymore — it is result-volume bound. After `receiver.()` on an
+  unresolvable receiver, the provider returns the whole symbol world
+  (2,137 items ≈ 467 KB ≈ 37 ms in a 2,000-function file). Capping or
+  narrowing that fallback is the next target.
+
 ## Unreleased — LSP symbol-indexed finders in hover & completion (Phase B, step 4)
 
 - The same-file `find*` helpers of `HoverProvider` (8) and

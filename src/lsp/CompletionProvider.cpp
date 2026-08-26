@@ -159,6 +159,7 @@ static std::string unwrapIndexedType(std::string typeName,
 
 struct FuncLookupCtx {
   LucisParser::ProgramContext *tree = nullptr;
+  const FileSymbolIndex *index = nullptr;
   const CBindings *bindings = nullptr;
   const BuiltinRegistry *builtinReg = nullptr;
   const IntrinsicRegistry *intrinsicReg = nullptr;
@@ -487,7 +488,10 @@ findFunctionDeclForInference(const std::string &name,
                              const FuncLookupCtx *flc) {
   if (!flc)
     return nullptr;
-  if (flc->tree) {
+  if (flc->index) {
+    if (auto *fd = flc->index->function(name))
+      return fd;
+  } else if (flc->tree) {
     for (auto *tld : flc->tree->topLevelDecl()) {
       auto *fd = tld->functionDecl();
       if (fd && !fd->IDENTIFIER().empty() && safeIdAt(fd, 0) == name)
@@ -510,7 +514,10 @@ static LucisParser::EnumDeclContext *
 findEnumDeclForInference(const std::string &name, const FuncLookupCtx *flc) {
   if (!flc)
     return nullptr;
-  if (flc->tree) {
+  if (flc->index) {
+    if (auto *ed = flc->index->enumDecl(name))
+      return ed;
+  } else if (flc->tree) {
     for (auto *tld : flc->tree->topLevelDecl()) {
       auto *ed = tld->enumDecl();
       if (ed && ed->IDENTIFIER() && safeText(ed->IDENTIFIER()) == name)
@@ -533,7 +540,10 @@ static LucisParser::StructDeclContext *
 findStructDeclForInference(const std::string &name, const FuncLookupCtx *flc) {
   if (!flc)
     return nullptr;
-  if (flc->tree) {
+  if (flc->index) {
+    if (auto *sd = flc->index->structDecl(name))
+      return sd;
+  } else if (flc->tree) {
     for (auto *tld : flc->tree->topLevelDecl()) {
       auto *sd = tld->structDecl();
       if (sd && sd->IDENTIFIER() && safeText(sd->IDENTIFIER()) == name)
@@ -556,7 +566,10 @@ static LucisParser::UnionDeclContext *
 findUnionDeclForInference(const std::string &name, const FuncLookupCtx *flc) {
   if (!flc)
     return nullptr;
-  if (flc->tree) {
+  if (flc->index) {
+    if (auto *ud = flc->index->unionDecl(name))
+      return ud;
+  } else if (flc->tree) {
     for (auto *tld : flc->tree->topLevelDecl()) {
       auto *ud = tld->unionDecl();
       if (ud && ud->IDENTIFIER() && safeText(ud->IDENTIFIER()) == name)
@@ -733,7 +746,12 @@ static std::string lookupFuncReturnType(const std::string &funcName,
     if (cfunc && cfunc->returnType)
       return cfunc->returnType->name;
   }
-  if (flc->tree) {
+  if (flc->index) {
+    if (auto *fd = flc->index->function(funcName)) {
+      if (fd->typeSpec())
+        return resolveSelfType(safeText(fd->typeSpec()), flc->tree, fd);
+    }
+  } else if (flc->tree) {
     for (auto *tld : flc->tree->topLevelDecl()) {
       if (auto *fd = tld->functionDecl()) {
         if (!fd->IDENTIFIER().empty() && safeIdAt(fd, 0) == funcName &&
@@ -1112,7 +1130,9 @@ static std::string inferExprTypeName(
       auto lastScope = typeName.rfind("::");
       if (lastScope != std::string::npos)
         typeName = typeName.substr(lastScope + 2);
-      if (flc && flc->tree) {
+      if (flc && flc->index) {
+        if (flc->index->enumDecl(typeName)) return typeName;
+      } else if (flc && flc->tree) {
         for (auto* tld : flc->tree->topLevelDecl()) {
           if (auto* e = tld->enumDecl();
               e && e->IDENTIFIER() && safeText(e->IDENTIFIER()) == typeName)
@@ -1260,7 +1280,14 @@ static std::string inferExprTypeName(
       }
 
       // 1) Check user-defined extend methods
-      if (flc && flc->tree) {
+      if (flc && flc->index) {
+        if (auto *ext = flc->index->extendDecl(receiverType)) {
+          for (auto *m : ext->extendMethod()) {
+            if (safeIdAt(m, 0) == methodName && m->typeSpec())
+              return resolveSelfType(safeText(m->typeSpec()), ext);
+          }
+        }
+      } else if (flc && flc->tree) {
         for (auto *tld : flc->tree->topLevelDecl()) {
           auto *ext = tld->extendDecl();
           if (!ext)
@@ -1300,19 +1327,28 @@ static std::string inferExprTypeName(
       }
 
       // 1d) Check bitstruct methods (raw, clearAll, setAll)
-      if (flc && flc->tree && flc->methodReg) {
-        for (auto *tld : flc->tree->topLevelDecl()) {
-          if (auto *bd = tld->bitstructDecl()) {
-            if (safeText(bd->IDENTIFIER()) != receiverType)
-              continue;
-            auto *md = flc->methodReg->lookup(TypeKind::BitStruct, methodName);
-            if (md) {
-              if (md->returnType == "_backing")
-                return CompletionProvider::bitstructBackingType(bd);
-              if (md->returnType == "_self")
-                return receiverType;
-              return md->returnType;
+      if (flc && flc->methodReg) {
+        LucisParser::BitstructDeclContext *bd = nullptr;
+        if (flc->index)
+          bd = flc->index->bitstructDecl(receiverType);
+        else if (flc->tree) {
+          for (auto *tld : flc->tree->topLevelDecl()) {
+            if (auto *b = tld->bitstructDecl()) {
+              if (safeText(b->IDENTIFIER()) == receiverType) {
+                bd = b;
+                break;
+              }
             }
+          }
+        }
+        if (bd) {
+          auto *md = flc->methodReg->lookup(TypeKind::BitStruct, methodName);
+          if (md) {
+            if (md->returnType == "_backing")
+              return CompletionProvider::bitstructBackingType(bd);
+            if (md->returnType == "_self")
+              return receiverType;
+            return md->returnType;
           }
         }
       }
@@ -1455,13 +1491,6 @@ static std::string inferExprTypeName(
       std::vector<std::string> sourceArgs;
       parseGenericInstance(matchedType, baseName, sourceArgs);
       auto* ed = findEnumDeclForInference(baseName, flc);
-      if (!ed && flc->tree) {
-        for (auto* tld : flc->tree->topLevelDecl()) {
-          if (auto* e = tld->enumDecl();
-              e && e->IDENTIFIER() && safeText(e->IDENTIFIER()) == baseName)
-            { ed = e; break; }
-        }
-      }
       if (ed) {
         for (auto* variant : ed->enumVariant()) {
           if (!variant || variant->typeSpec().empty()) continue;
@@ -1672,20 +1701,37 @@ static void collectLocalsFromStmts(
         typeName = safeText(vd->typeSpec());
 
       // Resolve Self to the enclosing extend's struct name
-      if (typeName == "Self" && flc && flc->tree) {
-        for (auto* tld : flc->tree->topLevelDecl()) {
-          auto* ext = tld->extendDecl();
-          if (!ext) continue;
-          for (auto* m : ext->extendMethod()) {
-            if (m->getStart() && stmt->getStart() &&
-                m->getStart()->getLine() <= stmt->getStart()->getLine() &&
-                m->getStop() && stmt->getStart()->getLine() <= m->getStop()->getLine()) {
-              // This statement is inside this extend method
-              typeName = safeText(ext->IDENTIFIER());
-              break;
+      if (typeName == "Self" && flc) {
+        if (flc->index) {
+          // The server-cached index finds the extend method enclosing
+          // this statement; its extend block names the struct.
+          if (stmt->getStart()) {
+            if (auto *m = flc->index->enclosingExtendMethodAt(
+                    static_cast<size_t>(stmt->getStart()->getLine() - 1))) {
+              for (auto *p = m->parent; p; p = p->parent) {
+                if (auto *ext =
+                        dynamic_cast<LucisParser::ExtendDeclContext *>(p)) {
+                  typeName = safeText(ext->IDENTIFIER());
+                  break;
+                }
+              }
             }
           }
-          if (typeName != "Self") break;
+        } else if (flc->tree) {
+          for (auto* tld : flc->tree->topLevelDecl()) {
+            auto* ext = tld->extendDecl();
+            if (!ext) continue;
+            for (auto* m : ext->extendMethod()) {
+              if (m->getStart() && stmt->getStart() &&
+                  m->getStart()->getLine() <= stmt->getStart()->getLine() &&
+                  m->getStop() && stmt->getStart()->getLine() <= m->getStop()->getLine()) {
+                // This statement is inside this extend method
+                typeName = safeText(ext->IDENTIFIER());
+                break;
+              }
+            }
+            if (typeName != "Self") break;
+          }
         }
       }
 
@@ -2290,6 +2336,7 @@ CompletionProvider::complete(const std::string &source, size_t line, size_t col,
       } else if (!req.receiverCall.empty()) {
         FuncLookupCtx flc;
         flc.tree = parsed->tree;
+        flc.index = activeIndex_;
         flc.bindings = cBindingsPtr;
         flc.builtinReg = &builtinRegistry_;
         flc.intrinsicReg = &intrinsicRegistry_;
@@ -7258,6 +7305,7 @@ CompletionProvider::collectLocals(LucisParser::FunctionDeclContext *func,
 
   FuncLookupCtx flc;
   flc.tree = tree;
+  flc.index = activeIndex_;
   flc.bindings = bindings;
   flc.builtinReg = &builtinRegistry_;
   flc.intrinsicReg = &intrinsicRegistry_;
@@ -7330,6 +7378,7 @@ CompletionProvider::collectLocalsFromMethod(
 
   FuncLookupCtx flc;
   flc.tree = tree;
+  flc.index = activeIndex_;
   collectLocalsFromBlock(method->block(), beforeLine, result, &flc);
   return result;
 }
