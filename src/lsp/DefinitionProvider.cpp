@@ -218,17 +218,21 @@ static void collectLocalsFromBlock(
 std::optional<DefinitionResult> DefinitionProvider::definition(
     const std::string& source, size_t line, size_t col,
     const std::string& filePath, const ProjectContext* project,
-    ParseResult* preParsed, const TokenIndex* tokenIndex) {
+    ParseResult* preParsed, const DocumentIndex* docIndex) {
 
     ParseResult localParseStorage;
     auto& parsed = preParsed ? *preParsed : (localParseStorage = Parser::parseString(source), localParseStorage);
     if (!parsed.tree) return std::nullopt;
 
     // Index the document once so the symbol finders below are O(1)
-    // instead of re-scanning topLevelDecl() per lookup.
-    FileSymbolIndex fileIndex(parsed.tree);
+    // instead of re-scanning topLevelDecl() per lookup. Prefer the
+    // server's cached index; build a per-request one as fallback.
+    std::unique_ptr<FileSymbolIndex> localIndex;
+    const FileSymbolIndex* symbols = docIndex
+        ? &docIndex->symbols()
+        : (localIndex = std::make_unique<FileSymbolIndex>(parsed.tree), localIndex.get());
     const FileSymbolIndex* prevIndex = activeIndex_;
-    activeIndex_ = &fileIndex;
+    activeIndex_ = symbols;
     struct IndexRestore {
         const FileSymbolIndex*& slot;
         const FileSymbolIndex*  prev;
@@ -268,8 +272,8 @@ std::optional<DefinitionResult> DefinitionProvider::definition(
     size_t tokenLine = line + 1;
     antlr4::Token* hoveredToken = nullptr;
 
-    if (tokenIndex) {
-        hoveredToken = tokenIndex->tokenAt(line, col);
+    if (docIndex) {
+        hoveredToken = docIndex->tokens().tokenAt(line, col);
     } else {
         for (auto& token : parsed.tokens->getTokens()) {
             if (token->getType() == antlr4::Token::EOF) continue;

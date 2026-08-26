@@ -310,6 +310,7 @@ set(SOURCES
     src/lsp/DefinitionProvider.cpp
     src/lsp/FileSymbolIndex.cpp
     src/lsp/TokenIndex.cpp
+    src/lsp/DocumentIndex.cpp
     src/lsp/CompletionProvider.cpp
     src/lsp/DocComment.cpp
     src/lsp/ParseCache.cpp

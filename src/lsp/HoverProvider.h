@@ -15,7 +15,7 @@
 #include "intrinsics/IntrinsicRegistry.h"
 #include "ffi/CBindings.h"
 #include "lsp/DocComment.h"
-#include "lsp/TokenIndex.h"
+#include "lsp/DocumentIndex.h"
 
 struct ParseResult;
 class ProjectContext;
@@ -46,7 +46,7 @@ public:
                                      const std::string& filePath,
                                      const ProjectContext* project,
                                      ParseResult* preParsed = nullptr,
-                                     const TokenIndex* tokenIndex = nullptr);
+                                     const DocumentIndex* docIndex = nullptr);
     struct LocalVar {
         std::string typeName;
         unsigned    arrayDims = 0;

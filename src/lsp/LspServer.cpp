@@ -362,7 +362,7 @@ void LspServer::handleDidOpen(const json& msg) {
 
         documents_.open(uri, text);
         parseCache_.invalidate(uri);
-        tokenIndexCache_.erase(uri);
+        docIndexCache_.erase(uri);
         cachedTokens_.erase(uri);
         cachedDiags_.erase(uri);
         std::cerr << "[lucis-lsp] opened: " << uri << "\n";
@@ -431,7 +431,7 @@ void LspServer::handleDidSave(const json& msg) {
             text = params["text"];
             documents_.update(uri, text);
             parseCache_.invalidate(uri);
-            tokenIndexCache_.erase(uri);
+            docIndexCache_.erase(uri);
             cachedTokens_.erase(uri);
             cachedDiags_.erase(uri);
         } else {
@@ -534,7 +534,7 @@ void LspServer::handleDidClose(const json& msg) {
 
         documents_.close(uri);
         parseCache_.invalidate(uri);
-        tokenIndexCache_.erase(uri);
+        docIndexCache_.erase(uri);
         cachedTokens_.erase(uri);
         cachedDiags_.erase(uri);
         std::cerr << "[lucis-lsp] closed: " << uri << "\n";
@@ -565,18 +565,18 @@ void LspServer::flushPendingDiagnostics() {
     publishDiagnostics(uri, source);
 }
 
-TokenIndex* LspServer::getTokenIndex(const std::string& uri,
-                                     const std::string& source) {
-    auto it = tokenIndexCache_.find(uri);
-    if (it != tokenIndexCache_.end() && it->second.first == source)
+DocumentIndex* LspServer::getDocumentIndex(const std::string& uri,
+                                           const std::string& source) {
+    auto it = docIndexCache_.find(uri);
+    if (it != docIndexCache_.end() && it->second.first == source)
         return it->second.second.get();
 
     auto* parse = parseCache_.getOrParse(uri, source);
-    if (!parse || !parse->tokens) return nullptr;
+    if (!parse || !parse->tree || !parse->tokens) return nullptr;
 
-    auto index = std::make_unique<TokenIndex>(parse->tokens->getTokens());
+    auto index = std::make_unique<DocumentIndex>(parse->tree, parse->tokens->getTokens(), source);
     auto* ptr = index.get();
-    tokenIndexCache_[uri] = {source, std::move(index)};
+    docIndexCache_[uri] = {source, std::move(index)};
     return ptr;
 }
 
@@ -661,11 +661,12 @@ void LspServer::handleHover(const json& msg) {
             filePath = filePath.substr(7);
 
         auto* cached = parseCache_.getOrParse(uri, source);
+        auto* docIndex = getDocumentIndex(uri, source);
         auto result = hoverProvider_.hover(source, line, col, filePath,
                                             projectContext_.isValid()
                                                 ? &projectContext_ : nullptr,
                                             cached,
-                                            getTokenIndex(uri, source));
+                                            docIndex);
         if (!result) {
             sendResponse(msg["id"], nullptr);
             return;
@@ -710,11 +711,12 @@ void LspServer::handleDefinition(const json& msg) {
             filePath = filePath.substr(7);
 
         auto* cached = parseCache_.getOrParse(uri, source);
+        auto* docIndex = getDocumentIndex(uri, source);
         auto result = definitionProvider_.definition(source, line, col, filePath,
                                                       projectContext_.isValid()
                                                           ? &projectContext_ : nullptr,
                                                       cached,
-                                                      getTokenIndex(uri, source));
+                                                      docIndex);
         if (!result) {
             sendResponse(msg["id"], nullptr);
             return;

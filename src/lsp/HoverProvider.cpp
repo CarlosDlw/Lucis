@@ -285,13 +285,16 @@ std::optional<HoverResult> HoverProvider::hover(const std::string& source,
                                                  const std::string& filePath,
                                                  const ProjectContext* project,
                                                  ParseResult* preParsed,
-                                                 const TokenIndex* tokenIndex) {
+                                                 const DocumentIndex* docIndex) {
     ParseResult localParseStorage;
     auto& parsed = preParsed ? *preParsed : (localParseStorage = Parser::parseString(source), localParseStorage);
     if (!parsed.tree) return std::nullopt;
 
-    // Parse doc-comments from raw source for hover enrichment.
-    docComments_ = parseDocComments(source);
+    // Parse doc-comments from raw source for hover enrichment. Prefer the
+    // server's cached index so the whole source is not re-scanned on every
+    // hover request.
+    docComments_ = docIndex ? docIndex->docComments()
+                            : parseDocComments(source);
 
     // Resolve C headers — use project-level bindings if available.
     CBindings localBindings;
@@ -361,8 +364,8 @@ std::optional<HoverResult> HoverProvider::hover(const std::string& source,
     size_t tokenLine = line + 1;
     antlr4::Token* hoveredToken = nullptr;
 
-    if (tokenIndex) {
-        hoveredToken = tokenIndex->tokenAt(line, col);
+    if (docIndex) {
+        hoveredToken = docIndex->tokens().tokenAt(line, col);
     } else {
         for (auto& token : parsed.tokens->getTokens()) {
             if (token->getType() == antlr4::Token::EOF) continue;
