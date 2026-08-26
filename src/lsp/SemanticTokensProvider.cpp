@@ -276,13 +276,15 @@ static void walkTree(IdentMap& map, InactiveRanges& inactiveRanges,
             classifyIdent(map, id, SemanticTokenType::Namespace);
     }
     else if (auto* ctx = dynamic_cast<LucisParser::UseItemContext*>(node)) {
-        // The last IDENTIFIER is the imported symbol (function/type)
+        // Both the imported symbol and its optional local alias are
+        // identifiers belonging to the same import declaration.
         uint32_t mods = 0;
         if (ctx->modulePath() &&
             ctx->modulePath()->getText().rfind("std::", 0) == 0) {
             mods = static_cast<uint32_t>(SemanticTokenMod::DefaultLib);
         }
-        classifyIdent(map, ctx->IDENTIFIER(), SemanticTokenType::Function, mods);
+        for (auto* id : ctx->IDENTIFIER())
+            classifyIdent(map, id, SemanticTokenType::Function, mods);
     }
     else if (auto* ctx = dynamic_cast<LucisParser::UseGroupContext*>(node)) {
         uint32_t mods = 0;

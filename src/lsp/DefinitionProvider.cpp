@@ -1,4 +1,5 @@
 #include "lsp/DefinitionProvider.h"
+#include "imports/UseParser.h"
 #include "lsp/ProjectContext.h"
 #include "parser/Parser.h"
 #include "ffi/CHeaderResolver.h"
@@ -334,35 +335,11 @@ std::optional<DefinitionResult> DefinitionProvider::resolveAtPosition(
     for (auto* pre : tree->preambleDecl()) {
         auto* useDecl = pre->useDecl();
         if (!useDecl) continue;
-        if (auto* root = dynamic_cast<LucisParser::UseRootContext*>(useDecl)) {
-            if (root->IDENTIFIER() && root->IDENTIFIER()->getSymbol() == hoveredToken) {
-                return std::nullopt;
-            }
-        }
-        if (auto* item = dynamic_cast<LucisParser::UseItemContext*>(useDecl)) {
-            if (!item->IDENTIFIER() || !item->modulePath()) continue;
-            if (item->IDENTIFIER()->getSymbol() == hoveredToken) {
-                std::string modulePath;
-                for (auto* id : item->modulePath()->IDENTIFIER()) {
-                    if (!modulePath.empty()) modulePath += "::";
-                    modulePath += id->getText();
-                }
-                return resolveImportedSymbol(safeText(item->IDENTIFIER()),
-                                             modulePath, project);
-            }
-        }
-        if (auto* group = dynamic_cast<LucisParser::UseGroupContext*>(useDecl)) {
-            if (!group->modulePath()) continue;
-            std::string modulePath;
-            for (auto* id : group->modulePath()->IDENTIFIER()) {
-                if (!modulePath.empty()) modulePath += "::";
-                modulePath += id->getText();
-            }
-            for (auto* id : group->IDENTIFIER()) {
-                if (id->getSymbol() == hoveredToken) {
-                    return resolveImportedSymbol(id->getText(), modulePath, project);
-                }
-            }
+        for (auto& e : parseUseDeclWithTokens(useDecl)) {
+            if (e.binding.kind != UseBinding::Kind::Symbol) continue;
+            if (e.localToken != hoveredToken) continue;
+            return resolveImportedSymbol(e.binding.exportedName,
+                                         e.binding.modulePath, project);
         }
     }
 
@@ -721,6 +698,29 @@ std::optional<DefinitionResult> DefinitionProvider::resolveIdent(
 
     // 10) Cross-file symbol from project registry
     if (project && project->isValid()) {
+        // Imported symbol under a local alias: resolve via the file's use
+        // declarations so `use lib::sqr as square;` finds `fn sqr`.
+        auto aliasMap = buildImportAliasMap(tree);
+        auto aliasIt = aliasMap.symbols.find(name);
+        if (aliasIt != aliasMap.symbols.end()) {
+            auto registryPath = ModuleRegistry::usePathToModulePath(aliasIt->second.first);
+            auto* sym = project->registry().findSymbol(registryPath, aliasIt->second.second);
+            if (!sym) {
+                for (auto& ns : project->registry().allModules()) {
+                    sym = project->registry().findSymbol(ns, aliasIt->second.second);
+                    if (sym) break;
+                }
+            }
+            if (sym && sym->decl) {
+                DefinitionResult r;
+                r.uri     = "file://" + sym->sourceFile;
+                r.line    = static_cast<int>(sym->line) - 1;
+                r.col     = sym->column;
+                r.endLine = r.line;
+                r.endCol  = r.col + static_cast<unsigned>(sym->name.size());
+                return r;
+            }
+        }
         for (auto& ns : project->registry().allModules()) {
             auto* sym = project->registry().findSymbol(ns, name);
             if (!sym || !sym->decl) continue;

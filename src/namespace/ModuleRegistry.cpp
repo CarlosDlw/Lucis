@@ -285,6 +285,19 @@ bool ModuleRegistry::hasModule(const std::string& modulePath) const {
     return modules_.count(modulePath) > 0;
 }
 
+void ModuleRegistry::setConstValue(const std::string& modulePath,
+                                   const std::string& name, int64_t value) const {
+    auto it = modules_.find(modulePath);
+    if (it == modules_.end()) return;
+    for (auto& sym : it->second) {
+        if (sym.kind == ExportedSymbol::Constant && sym.name == name) {
+            sym.hasConstIntValue = true;
+            sym.constIntValue = value;
+            return;
+        }
+    }
+}
+
 std::string ModuleRegistry::mangle(const std::string& modulePath,
                                     const std::string& name) {
     if (name == "main") return "main";

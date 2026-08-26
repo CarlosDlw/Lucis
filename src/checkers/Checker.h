@@ -404,6 +404,15 @@ private:
     // C function-like macros: name → definition
     std::unordered_map<std::string, const CFunctionLikeMacro*> cFunctionLikeMacros_;
 
+    // Local import binding → exported symbol name. Entries without an
+    // alias map to themselves.
+    std::unordered_map<std::string, std::string> userImportNames_;
+
+    std::string importedSymbolName(const std::string& localName) const {
+        auto it = userImportNames_.find(localName);
+        return it == userImportNames_.end() ? localName : it->second;
+    }
+
     // Check if a function is known (local, same-module, imported, or builtin)
     bool isKnownFunction(const std::string& name) const;
     bool isKnownType(const std::string& name) const;

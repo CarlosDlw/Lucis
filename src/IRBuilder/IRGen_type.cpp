@@ -245,6 +245,10 @@ const TypeInfo* IRGen::resolveTypeInfo(LucisParser::TypeSpecContext* ctx) {
             std::cerr << "lucis: invalid generic type syntax '" << ctx->getText() << "'\n";
             return typeRegistry_.lookup("int32");
         }
+        // Imported generic under a local alias: templates and the registry
+        // are keyed by the EXPORTED name.
+        auto genericBase = userImports_.count(baseName)
+            ? importedSymbolName(baseName) : baseName;
         auto typeParams = ctx->typeSpec();
 
         // Resolve all type arguments
@@ -256,22 +260,22 @@ const TypeInfo* IRGen::resolveTypeInfo(LucisParser::TypeSpecContext* ctx) {
         }
 
         // Check if it's a user-defined generic struct
-        auto structIt = genericStructTemplates_.find(baseName);
+        auto structIt = genericStructTemplates_.find(genericBase);
         if (structIt != genericStructTemplates_.end()) {
-            return instantiateGenericStruct(baseName, structIt->second, resolvedArgs);
+            return instantiateGenericStruct(genericBase, structIt->second, resolvedArgs);
         }
-        auto unionIt = genericUnionTemplates_.find(baseName);
+        auto unionIt = genericUnionTemplates_.find(genericBase);
         if (unionIt != genericUnionTemplates_.end()) {
-            return instantiateGenericUnion(baseName, unionIt->second, resolvedArgs);
+            return instantiateGenericUnion(genericBase, unionIt->second, resolvedArgs);
         }
-        auto enumIt = genericEnumTemplates_.find(baseName);
+        auto enumIt = genericEnumTemplates_.find(genericBase);
         if (enumIt != genericEnumTemplates_.end()) {
-            return instantiateGenericEnum(baseName, enumIt->second, resolvedArgs);
+            return instantiateGenericEnum(genericBase, enumIt->second, resolvedArgs);
         }
-        auto traitIt = genericTraitTemplates_.find(baseName);
+        auto traitIt = genericTraitTemplates_.find(genericBase);
         if (traitIt != genericTraitTemplates_.end()) {
             static TypeInfo traitTI;
-            traitTI.name = baseName;
+            traitTI.name = genericBase;
             traitTI.kind = TypeKind::Trait;
             return &traitTI;
         }
@@ -294,15 +298,15 @@ const TypeInfo* IRGen::resolveTypeInfo(LucisParser::TypeSpecContext* ctx) {
                     return nullptr;
                 }
                 // Retry: the visit should have populated the template map
-                if (auto eIt = genericEnumTemplates_.find(baseName); eIt != genericEnumTemplates_.end())
-                    return instantiateGenericEnum(baseName, eIt->second, resolvedArgs);
-                if (auto sIt = genericStructTemplates_.find(baseName); sIt != genericStructTemplates_.end())
-                    return instantiateGenericStruct(baseName, sIt->second, resolvedArgs);
-                if (auto uIt = genericUnionTemplates_.find(baseName); uIt != genericUnionTemplates_.end())
-                    return instantiateGenericUnion(baseName, uIt->second, resolvedArgs);
-                if (auto tIt = genericTraitTemplates_.find(baseName); tIt != genericTraitTemplates_.end()) {
+                if (auto eIt = genericEnumTemplates_.find(genericBase); eIt != genericEnumTemplates_.end())
+                    return instantiateGenericEnum(genericBase, eIt->second, resolvedArgs);
+                if (auto sIt = genericStructTemplates_.find(genericBase); sIt != genericStructTemplates_.end())
+                    return instantiateGenericStruct(genericBase, sIt->second, resolvedArgs);
+                if (auto uIt = genericUnionTemplates_.find(genericBase); uIt != genericUnionTemplates_.end())
+                    return instantiateGenericUnion(genericBase, uIt->second, resolvedArgs);
+                if (auto tIt = genericTraitTemplates_.find(genericBase); tIt != genericTraitTemplates_.end()) {
                     static TypeInfo traitTI;
-                    traitTI.name = baseName;
+                    traitTI.name = genericBase;
                     traitTI.kind = TypeKind::Trait;
                     return &traitTI;
                 }
@@ -310,14 +314,14 @@ const TypeInfo* IRGen::resolveTypeInfo(LucisParser::TypeSpecContext* ctx) {
             };
 
             // Check current module namespace
-            if (auto* sym = moduleRegistry_->findSymbol(currentModulePath_, baseName)) {
+            if (auto* sym = moduleRegistry_->findSymbol(currentModulePath_, genericBase)) {
                 if (auto* loaded = loadGenericType(sym))
                     return loaded;
             }
 
             // Check all imported namespaces
             for (const auto& [_, ns] : userImports_) {
-                if (auto* sym = moduleRegistry_->findSymbol(ns, baseName)) {
+                if (auto* sym = moduleRegistry_->findSymbol(ns, genericBase)) {
                     if (auto* loaded = loadGenericType(sym))
                         return loaded;
                 }
@@ -325,7 +329,7 @@ const TypeInfo* IRGen::resolveTypeInfo(LucisParser::TypeSpecContext* ctx) {
 
             // Final fallback: scan all modules
             for (auto& candidateNs : moduleRegistry_->allModules()) {
-                if (auto* sym = moduleRegistry_->findSymbol(candidateNs, baseName)) {
+                if (auto* sym = moduleRegistry_->findSymbol(candidateNs, genericBase)) {
                     if (auto* loaded = loadGenericType(sym))
                         return loaded;
                 }
@@ -334,12 +338,12 @@ const TypeInfo* IRGen::resolveTypeInfo(LucisParser::TypeSpecContext* ctx) {
 
         // Check for user-defined generic type that was just loaded
         // (the lazy load above may have populated the template map)
-        if (auto sIt = genericStructTemplates_.find(baseName); sIt != genericStructTemplates_.end())
-            return instantiateGenericStruct(baseName, sIt->second, resolvedArgs);
-        if (auto uIt = genericUnionTemplates_.find(baseName); uIt != genericUnionTemplates_.end())
-            return instantiateGenericUnion(baseName, uIt->second, resolvedArgs);
-        if (auto eIt = genericEnumTemplates_.find(baseName); eIt != genericEnumTemplates_.end())
-            return instantiateGenericEnum(baseName, eIt->second, resolvedArgs);
+        if (auto sIt = genericStructTemplates_.find(genericBase); sIt != genericStructTemplates_.end())
+            return instantiateGenericStruct(genericBase, sIt->second, resolvedArgs);
+        if (auto uIt = genericUnionTemplates_.find(genericBase); uIt != genericUnionTemplates_.end())
+            return instantiateGenericUnion(genericBase, uIt->second, resolvedArgs);
+        if (auto eIt = genericEnumTemplates_.find(genericBase); eIt != genericEnumTemplates_.end())
+            return instantiateGenericEnum(genericBase, eIt->second, resolvedArgs);
 
         // Built-in extended generics (Task<T>, Result<T>, Option<T>)
         if (resolvedArgs.size() == 1) {
@@ -465,24 +469,40 @@ const TypeInfo* IRGen::resolveTypeInfo(LucisParser::TypeSpecContext* ctx) {
             if (auto* sameNs = moduleRegistry_->findSymbol(currentModulePath_, name)) {
                 loadSymbolType(sameNs);
                 if (auto* loaded = typeRegistry_.lookup(name)) return loaded;
+                if (sameNs->kind == ExportedSymbol::TraitDecl) {
+                    static TypeInfo traitSentinel;
+                    traitSentinel.name = name;
+                    traitSentinel.kind = TypeKind::Trait;
+                    return &traitSentinel;
+                }
             }
 
             auto importIt = userImports_.find(name);
             if (importIt != userImports_.end()) {
-                if (auto* imported = moduleRegistry_->findSymbol(importIt->second, name)) {
+                auto exported = importedSymbolName(name);
+                if (auto* imported = moduleRegistry_->findSymbol(importIt->second, exported)) {
                     loadSymbolType(imported);
-                    if (auto* loaded = typeRegistry_.lookup(name)) return loaded;
+                    if (auto* loaded = typeRegistry_.lookup(exported)) return loaded;
+                    // Trait under a local alias: return a trait sentinel so
+                    // impl/extends resolution sees TypeKind::Trait.
+                    if (imported->kind == ExportedSymbol::TraitDecl) {
+                        static TypeInfo traitSentinel;
+                        traitSentinel.name = exported;
+                        traitSentinel.kind = TypeKind::Trait;
+                        return &traitSentinel;
+                    }
                 }
             }
 
             // Fallback: scan all unique imported namespaces for the type.
             if (!userImports_.empty()) {
                 std::unordered_set<std::string> scannedNs;
+                auto exportedFallback = importedSymbolName(name);
                 for (const auto& [_, ns] : userImports_) {
                     if (scannedNs.insert(ns).second) {
-                        if (auto* found = moduleRegistry_->findSymbol(ns, name)) {
+                        if (auto* found = moduleRegistry_->findSymbol(ns, exportedFallback)) {
                             loadSymbolType(found);
-                            if (auto* loaded = typeRegistry_.lookup(name)) return loaded;
+                            if (auto* loaded = typeRegistry_.lookup(exportedFallback)) return loaded;
                         }
                     }
                 }

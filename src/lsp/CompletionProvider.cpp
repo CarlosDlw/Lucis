@@ -2,6 +2,7 @@
 #include "lsp/TypeInferrer.h"
 #include "ffi/CHeaderResolver.h"
 #include "imports/ImportResolver.h"
+#include "imports/UseParser.h"
 #include "lsp/DocComment.h"
 #include "lsp/ProjectContext.h"
 #include "namespace/ModuleRegistry.h"
@@ -3654,50 +3655,38 @@ void CompletionProvider::addImportedSymbols(std::vector<CompletionItem> &items,
     auto *useDecl = pre->useDecl();
     if (!useDecl)
       continue;
-    std::string modulePath;
+    std::unordered_map<std::string, std::string> exportedByLocal;
+    std::unordered_map<std::string, std::string> moduleByLocal;
     std::vector<std::string> symbolNames;
 
-    if (auto *root = dynamic_cast<LucisParser::UseRootContext *>(useDecl)) {
-      if (!root->IDENTIFIER())
+    for (auto &b : parseUseDecl(useDecl)) {
+      if (b.kind == UseBinding::Kind::EnumWildcard)
         continue;
-      symbolNames.push_back(safeText(root->IDENTIFIER()));
-    } else if (auto *item =
-                   dynamic_cast<LucisParser::UseItemContext *>(useDecl)) {
-      if (!item->modulePath() || !item->IDENTIFIER())
-        continue;
-      for (auto *id : item->modulePath()->IDENTIFIER()) {
-        if (!modulePath.empty())
-          modulePath += "::";
-        modulePath += id->getText();
-      }
-      symbolNames.push_back(safeText(item->IDENTIFIER()));
-    } else if (auto *group =
-                   dynamic_cast<LucisParser::UseGroupContext *>(useDecl)) {
-      if (!group->modulePath())
-        continue;
-      for (auto *id : group->modulePath()->IDENTIFIER()) {
-        if (!modulePath.empty())
-          modulePath += "::";
-        modulePath += id->getText();
-      }
-      for (auto *id : group->IDENTIFIER()) {
-        symbolNames.push_back(id->getText());
-      }
+      symbolNames.push_back(b.localName);
+      moduleByLocal[b.localName] = b.modulePath;
+      if (b.kind == UseBinding::Kind::Symbol)
+        exportedByLocal[b.localName] = b.exportedName;
     }
 
     for (auto &symName : symbolNames) {
       if (!matchesPrefix(symName, prefix))
         continue;
 
-      std::string importedPath = modulePath;
-      if (!importedPath.empty())
-        importedPath += "::";
-      importedPath += symName;
+      auto modulePath = moduleByLocal[symName];
+      auto exportedIt = exportedByLocal.find(symName);
+      bool isModuleBinding = exportedIt == exportedByLocal.end();
+      auto symExport = isModuleBinding ? symName : exportedIt->second;
 
-      bool isModule = modulePath.empty();
-      if (!isModule && project && project->isValid()) {
+      // A module import is a namespace (use std::log;); a symbol import
+      // resolves to module::exportedName.
+      std::string importedPath = modulePath;
+      if (!isModuleBinding)
+        importedPath += "::" + symExport;
+
+      bool isModule = isModuleBinding;
+      if (isModuleBinding && project && project->isValid()) {
         isModule = project->registry().hasModule(
-            ModuleRegistry::usePathToModulePath(importedPath));
+            ModuleRegistry::usePathToModulePath(modulePath));
       }
       // For `use std::X;` imports, the imported symbol may be a std module.
       if (!isModule && modulePath == "std") {
@@ -3716,12 +3705,12 @@ void CompletionProvider::addImportedSymbols(std::vector<CompletionItem> &items,
       }
 
       auto registryPath = ModuleRegistry::usePathToModulePath(modulePath);
-      auto *sym = project->registry().findSymbol(registryPath, symName);
+      auto *sym = project->registry().findSymbol(registryPath, symExport);
 
       // Broad search all modules (handles path-mismatch from directory scan)
       if (!sym) {
         for (auto& ns : project->registry().allModules()) {
-          sym = project->registry().findSymbol(ns, symName);
+          sym = project->registry().findSymbol(ns, symExport);
           if (sym) break;
         }
       }
@@ -4370,6 +4359,14 @@ void CompletionProvider::addStructFields(std::vector<CompletionItem> &items,
     lookupName = base;
   }
 
+  // Imported type under a local alias: fields live under the exported name.
+  if (project && project->isValid()) {
+    auto aliasMap = buildImportAliasMap(tree);
+    auto aliasIt = aliasMap.symbols.find(lookupName);
+    if (aliasIt != aliasMap.symbols.end())
+      lookupName = aliasIt->second.second;
+  }
+
   // Same-file struct
   auto *sd = findStructDecl(tree, lookupName);
   if (sd) {
@@ -4681,6 +4678,14 @@ void CompletionProvider::addExtendMethods(std::vector<CompletionItem> &items,
   if (parseGenericInstance(typeName, base, args))
     lookupName = base;
 
+  // Imported type under a local alias: extends live under the exported name.
+  if (project && project->isValid()) {
+    auto aliasMap = buildImportAliasMap(tree);
+    auto aliasIt = aliasMap.symbols.find(lookupName);
+    if (aliasIt != aliasMap.symbols.end())
+      lookupName = aliasIt->second.second;
+  }
+
   // Same-file extend blocks
   for (auto *tld : tree->topLevelDecl()) {
     auto *ext = tld->extendDecl();
@@ -4921,12 +4926,22 @@ void CompletionProvider::addTraitMethods(std::vector<CompletionItem> &items,
                                          LucisParser::ProgramContext *tree,
                                          const std::string &prefix,
                                          const ProjectContext *project) {
-  // Scan local impl blocks
+  // Imported type under a local alias: impls live under the exported name.
+  std::string lookupName = typeName;
+  if (project && project->isValid()) {
+    auto aliasMap = buildImportAliasMap(tree);
+    auto aliasIt = aliasMap.symbols.find(lookupName);
+    if (aliasIt != aliasMap.symbols.end())
+      lookupName = aliasIt->second.second;
+  }
+  // Scan local impl blocks (the local type may be written with its alias,
+  // e.g. `impl AreaTrait for MyPoint`; both names must match).
   for (auto *tld : tree->topLevelDecl()) {
     auto *id = tld->implDecl();
     if (!id) continue;
     if (!id->typeSpec(1)) continue;
-    if (safeText(id->typeSpec(1)) != typeName) continue;
+    auto implTypeText = safeText(id->typeSpec(1));
+    if (implTypeText != typeName && implTypeText != lookupName) continue;
     for (auto *m : id->implMethod()) {
       if (m->AMPERSAND() == nullptr) continue;
       std::string mName = safeIdAt(m, 0);
@@ -4947,7 +4962,7 @@ void CompletionProvider::addTraitMethods(std::vector<CompletionItem> &items,
         if (sym->kind != ExportedSymbol::ImplBlock) continue;
         auto *id = dynamic_cast<LucisParser::ImplDeclContext *>(sym->decl);
         if (!id || !id->typeSpec(1)) continue;
-        if (safeText(id->typeSpec(1)) != typeName) continue;
+        if (safeText(id->typeSpec(1)) != lookupName) continue;
         for (auto *m : id->implMethod()) {
           if (m->AMPERSAND() == nullptr) continue;
           std::string mName = safeIdAt(m, 0);
@@ -4955,8 +4970,7 @@ void CompletionProvider::addTraitMethods(std::vector<CompletionItem> &items,
           CompletionItem ci;
           ci.label = mName;
           ci.kind = CompletionKind::Method;
-          ci.detail = "trait method: " + typeName + "." + mName + "(...) [" + ns + "]";
-          items.push_back(std::move(ci));
+          ci.detail = "trait method: " + typeName + "." + mName + "(...) [" + ns + "]";          items.push_back(std::move(ci));
         }
       }
     }
@@ -5576,22 +5590,27 @@ resolveImportedModuleAlias(const std::string &alias,
     if (!useDecl)
       continue;
 
-    // use std::log::println; (alias is println, modulePath is std::log)
-    if (auto *item = dynamic_cast<LucisParser::UseItemContext *>(useDecl)) {
-      if (!item->modulePath() || !item->IDENTIFIER())
+    for (auto &e : parseUseDeclWithTokens(useDecl)) {
+      if (e.binding.kind == UseBinding::Kind::EnumWildcard)
         continue;
-      if (safeText(item->IDENTIFIER()) != alias)
+      if (e.binding.localName != alias)
         continue;
 
-      std::string modulePath;
-      for (auto *id : item->modulePath()->IDENTIFIER()) {
-        if (!modulePath.empty())
-          modulePath += "::";
-        modulePath += id->getText();
+      if (e.binding.kind == UseBinding::Kind::Module) {
+        // use std::log;  /  use std;  →  the module path itself
+        if (e.binding.modulePath == "std")
+          return e.binding.modulePath;
+        if (project && project->isValid() &&
+            project->registry().hasModule(ModuleRegistry::usePathToModulePath(
+                e.binding.modulePath))) {
+          return e.binding.modulePath;
+        }
+        return std::nullopt;
       }
 
-      auto fullPath = modulePath + "::" + alias;
-      if (modulePath == "std") {
+      // use std::log::println as output; → module::exported
+      auto fullPath = e.binding.modulePath + "::" + e.binding.exportedName;
+      if (e.binding.modulePath == "std") {
         return fullPath;
       }
       if (project && project->isValid() &&
@@ -5600,15 +5619,6 @@ resolveImportedModuleAlias(const std::string &alias,
         return fullPath;
       }
       return std::nullopt;
-    }
-
-    // use std; (simple root import, alias is the module name itself)
-    if (auto *root = dynamic_cast<LucisParser::UseRootContext *>(useDecl)) {
-      if (!root->IDENTIFIER())
-        continue;
-      if (safeText(root->IDENTIFIER()) == alias) {
-        return alias;
-      }
     }
   }
   return std::nullopt;

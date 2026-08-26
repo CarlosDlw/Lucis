@@ -12,6 +12,7 @@
 #include "ffi/CBindings.h"
 #include "ffi/CHeaderResolver.h"
 #include "imports/ImportResolver.h"
+#include "imports/UseParser.h"
 #include "comptime/ComptimeValue.h"
 
 #include <iostream>
@@ -146,46 +147,23 @@ std::vector<std::string> LucisPipeline::extractUseModulePaths(
     // Check both preamble and top-level use declarations
     auto extract = [&](auto* decl) {
         if (auto* use = decl->useDecl()) {
-            if (auto* root = dynamic_cast<LucisParser::UseRootContext*>(use)) {
-                result.push_back(root->IDENTIFIER()->getText());
-            } else if (auto* item = dynamic_cast<LucisParser::UseItemContext*>(use)) {
-                // Reconstruct module path from the modulePath rule
-                std::string path;
-                for (auto* id : item->modulePath()->IDENTIFIER())
-                    path += (path.empty() ? "" : "::") + id->getText();
-                result.push_back(path);
-            } else if (auto* group = dynamic_cast<LucisParser::UseGroupContext*>(use)) {
-                std::string path;
-                for (auto* id : group->modulePath()->IDENTIFIER())
-                    path += (path.empty() ? "" : "::") + id->getText();
-                result.push_back(path);
-            } else if (auto* wild = dynamic_cast<LucisParser::UseEnumWildcardContext*>(use)) {
-                // use Type::* — module path comes from the type spec
-                // For now, just skip wildcard imports in module resolution
-                (void)wild;
+            for (auto& b : parseUseDecl(use)) {
+                if (b.kind == UseBinding::Kind::Module) {
+                    result.push_back(b.modulePath);
+                } else if (b.kind == UseBinding::Kind::Symbol) {
+                    // `use a::b;` may be a module (a/b.lc) or a symbol (b
+                    // of module a). Push both candidates; whatever resolves
+                    // gets loaded by the BFS.
+                    result.push_back(b.modulePath);
+                    result.push_back(b.modulePath + "::" + b.exportedName);
+                }
+                // EnumWildcard imports do not name a module.
             }
         }
     };
 
     for (auto* pre : tree->preambleDecl()) extract(pre);
-    for (auto* top : tree->topLevelDecl()) {
-        if (auto* use = top->useDecl()) {
-            // Top-level use declarations (not using preamble)
-            if (auto* root = dynamic_cast<LucisParser::UseRootContext*>(use)) {
-                result.push_back(root->IDENTIFIER()->getText());
-            } else if (auto* item = dynamic_cast<LucisParser::UseItemContext*>(use)) {
-                std::string path;
-                for (auto* id : item->modulePath()->IDENTIFIER())
-                    path += (path.empty() ? "" : "::") + id->getText();
-                result.push_back(path);
-            } else if (auto* group = dynamic_cast<LucisParser::UseGroupContext*>(use)) {
-                std::string path;
-                for (auto* id : group->modulePath()->IDENTIFIER())
-                    path += (path.empty() ? "" : "::") + id->getText();
-                result.push_back(path);
-            }
-        }
-    }
+    for (auto* top : tree->topLevelDecl()) extract(top);
 
     return result;
 }

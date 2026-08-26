@@ -9,6 +9,7 @@
 struct ImportedSymbol {
     std::string modulePath;  // e.g. "std::log"
     std::string name;        // e.g. "println"
+    std::string localName;   // local binding; equals name without an alias
 };
 
 // Manages all `use` declarations in a file and resolves
@@ -18,8 +19,21 @@ public:
     // Register a single import:  use std::log::println;
     void addImport(const std::string& modulePath, const std::string& symbol);
 
+    // Register an import with a local alias: use std::log::println as log;
+    void addImport(const std::string& modulePath, const std::string& symbol,
+                   const std::string& localName);
+
     // Returns true if `symbol` was imported by any `use` declaration.
     bool isImported(const std::string& symbol) const;
+
+    // Returns true when `name` is the exported name of some registered
+    // import (matched after alias translation, e.g. "abs" for
+    // `use std::math::abs as myAbs;`).
+    bool isExportedSymbol(const std::string& name) const;
+
+    // Returns the exported name for a local binding, or an empty string
+    // when the binding is not a registered import.
+    std::string exportedName(const std::string& localName) const;
 
     // Given an imported symbol and the LLVM type suffix (e.g. "i32", "i64"),
     // returns the mangled C function name (e.g. "lucis_println_i32").
@@ -53,7 +67,8 @@ public:
 
 private:
     std::vector<ImportedSymbol>        imports_;
-    std::unordered_set<std::string>    symbols_;  // fast lookup
+    std::unordered_set<std::string>    symbols_;  // local bindings, fast lookup
+    std::unordered_set<std::string>    exportedNames_;  // exported names too
 
     // Known builtin modules and their exported symbols
     static const std::unordered_map<std::string,

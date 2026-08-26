@@ -4,6 +4,62 @@ All notable changes to the Lucis language and its compiler.
 
 ---
 
+## Unreleased — import aliases: deep cross-module support + LSP coverage
+
+- **Methods of imported types work with `as`** (`use lib::Point as MyPoint;`
+  → `p.norm()`): the checker's extend-block registration (B.5) compared
+  the local binding against the exported name; it now uses
+  `importedSymbolName`. Same for imported `impl` blocks (B.7) and trait
+  pre-registration when the impl's trait is not explicitly imported.
+- **Imported structs no longer create opaque skeletons**: pending maps in
+  the checker and IRGen are keyed by the exported name (an alias-keyed
+  skeleton produced an empty `%MyPoint` LLVM type → `alloca` crash), and
+  `TypeInfo::toLLVMType` builds struct/union bodies self-contained from
+  their fields — type aliases of structs (`type A = Point;`) work even
+  when the LLVM type was not pre-created.
+- **Generic templates and constants imported under aliases**:
+  `use lib::Box as Bx; Bx<int32>` and `[IMPORTED_CONST]` array
+  dimensions work. The checker's full constant evaluator persists
+  integer values in the `ModuleRegistry` (const cache write); the IRGen
+  reads them for `[N]T` sizes — no duplicated evaluation.
+- **Nested array literals**: ragged shapes (`[[1,2],[3]]`) now produce a
+  clear diagnostic instead of an IR-generator crash; the IRGen stays
+  defensive (never feeds `InsertValue` mismatched types).
+- **Fixed a pre-existing bug**: trait impl methods were forward-declared
+  but never emitted (their bodies were skipped as "already lowered"),
+  breaking `make test`'s `trait_methods` at link time.
+- **LSP**: new `lsp_tests/test_import_aliases.py` (23 cases) pins
+  completion, hover, go-to-definition, signature help and semantic
+  tokens for every importable symbol kind under aliases (stdlib `.lc`
+  variadic, builtins, user functions, structs+methods, traits,
+  constants, type aliases, enums). This surfaced and fixed a
+  signature-help bug: `analyzeCallSite` failed when the cursor sat
+  inside a string literal (`output("…")` never found its `(`).
+
+## Unreleased — `use` import aliases (`as`) + trailing commas
+
+- **Import aliases everywhere**: `use module::func as local;` and group
+  aliases `use module::{ func as local, other };` now work for stdlib
+  builtins, stdlib `.lc` functions (variadic `printf` included),
+  user-module functions, constants and types. Builtins dispatch on the
+  exported name while the source uses the local binding
+  (`ImportResolver` gained `isExportedSymbol` for the translated name).
+- **Module imports of any depth**: `use module;`, `use fold::module;`
+  and `use std::module;` import a namespace; members are accessed
+  qualified (`module::CONST`) or via `use fold::module::{ sym }`.
+  The module-vs-symbol ambiguity of `use a::b;` is resolved at
+  check time (stdlib symbol → full-path module → symbol → fallback),
+  and the import BFS now loads the full-path module when it exists.
+- **Single normalized model**: new `src/imports/UseParser.{h,cpp}`
+  (`UseBinding` + token-level `parseUseDeclWithTokens`) consumed by the
+  checker, IRGen, pipeline and all LSP providers — no more per-file
+  re-interpretation of the four `use` forms.
+- **Trailing commas**: array literals (`[1, 2, 3,]`) and `use` groups.
+- Tests: `tests/import_alias_trailing_array.lc` + `tests/fold/module.lc`
+  (stdlib/builtin/user aliases, module members, empty/flat arrays).
+  Known pre-existing bug found while testing (not caused here): nested
+  array literals `[[1,2],[3]]` crash the IR generator.
+
 ## Unreleased — fix: `va_arg_string` returns an owned copy (UAF)
 
 - **Fixed a use-after-free** that corrupted strings on their second use

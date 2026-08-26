@@ -1,0 +1,34 @@
+use stdio::printf as output;
+use std::test::{ assertEqual };
+use std::math::{ abs as myAbs };
+use std::conv::{ toHex as hexOf };
+use tests::fold::module;
+use tests::fold::module::{ FORTY_TWO as ANSWER, eight as getEight };
+
+fn testImportAliasAndTrailingArray() int32 {
+    []int32 values = [10, 20, 30,];
+    assertEqual(values.len(), 3);
+
+    // Alias of a stdlib .lc function (variadic).
+    output("[import alias/trailing array: OK]\n");
+
+    // Alias of builtin C functions (group + item).
+    assertEqual(myAbs(-5), 5);
+    assertEqual(hexOf(255), "ff");
+
+    // Two-segment module import with qualified member access.
+    assertEqual(module::FORTY_TWO, 42);
+
+    // Group alias for constants and functions of a user module.
+    assertEqual(ANSWER, 42);
+    assertEqual(getEight(), 8);
+
+    // Trailing comma in empty / flat array literals.
+    []int32 empty = [];
+    assertEqual(empty.len(), 0);
+    []int32 withComma = [1, 2, 3,];
+    assertEqual(withComma.len(), 3);
+    assertEqual(withComma[2], 3);
+
+    return 0;
+}

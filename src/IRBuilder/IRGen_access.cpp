@@ -703,6 +703,11 @@ std::any IRGen::visitStructLitExpr(LucisParser::StructLitExprContext* ctx) {
     auto identifiers = ctx->IDENTIFIER();
     auto typeName = identifiers.size() > 0 ? identifiers[0]->getText() : "";
     auto* ti = typeRegistry_.lookup(typeName);
+    if (!ti && userImports_.count(typeName)) {
+        // Imported type under a local alias.
+        auto exported = importedSymbolName(typeName);
+        ti = typeRegistry_.lookup(exported);
+    }
     if (!ti || (ti->kind != TypeKind::Struct && ti->kind != TypeKind::Union)) {
         std::cerr << "lucis: unknown struct/union type '" << typeName << "'\n";
         return static_cast<llvm::Value*>(
@@ -1801,7 +1806,37 @@ std::any IRGen::visitEnumAccessExpr(LucisParser::EnumAccessExprContext* ctx) {
     auto variantName = identifiers.size() > 1 ? identifiers[1]->getText() : "";
 
     auto* ti = typeRegistry_.lookup(enumName);
+    if (!ti && userImports_.count(enumName)) {
+        // Imported enum under a local alias.
+        auto exported = importedSymbolName(enumName);
+        ti = typeRegistry_.lookup(exported);
+    }
     if (!ti || ti->kind != TypeKind::Enum) {
+        // Module member access: `module::CONST` (imported via
+        // `use fold::module;`). Resolves the constant's global.
+        auto importIt = userImports_.find(enumName);
+        if (importIt != userImports_.end() && moduleRegistry_) {
+            auto exported = importedSymbolName(variantName);
+            auto* sym = moduleRegistry_->findSymbol(importIt->second, exported);
+            if (sym && sym->kind == ExportedSymbol::Constant && sym->decl) {
+                auto* cd = static_cast<LucisParser::ConstDeclaratorContext*>(sym->decl);
+                auto* gv = module_->getGlobalVariable("const_" + exported);
+                if (!gv) {
+                    llvm::Type* llvmType = llvm::Type::getInt32Ty(*context_);
+                    const TypeInfo* typeInfo = nullptr;
+                    if (cd->typeSpec())
+                        typeInfo = resolveTypeInfo(cd->typeSpec());
+                    else if (cd->expression())
+                        typeInfo = resolveExprTypeInfo(cd->expression());
+                    if (typeInfo)
+                        llvmType = typeInfo->toLLVMType(*context_, module_->getDataLayout());
+                    gv = module_->getOrInsertGlobal("const_" + exported, llvmType);
+                }
+                auto* loadedTy = gv->getValueType();
+                return static_cast<llvm::Value*>(
+                    builder_->CreateLoad(loadedTy, gv, exported));
+            }
+        }
         // Check if it's a C enum — constants are stored in cEnumConstants_
         auto it = cEnumConstants_.find(variantName);
         if (it != cEnumConstants_.end()) {

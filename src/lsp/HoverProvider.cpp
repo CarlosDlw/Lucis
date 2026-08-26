@@ -1,4 +1,5 @@
 #include "lsp/HoverProvider.h"
+#include "imports/UseParser.h"
 #include "lsp/TypeInferrer.h"
 #include "lsp/ProjectContext.h"
 #include "lsp/DocComment.h"
@@ -403,63 +404,33 @@ std::optional<HoverResult> HoverProvider::hover(const std::string& source,
     for (auto* pre : parsed.tree->preambleDecl()) {
         auto* useDecl = pre->useDecl();
         if (!useDecl) continue;
-        if (auto* root = dynamic_cast<LucisParser::UseRootContext*>(useDecl)) {
-            if (root->IDENTIFIER() && root->IDENTIFIER()->getSymbol() == hoveredToken) {
-                std::string md = "```lucis\n(module) " + safeText(root->IDENTIFIER()) + "\n```";
+        for (auto& e : parseUseDeclWithTokens(useDecl)) {
+            if (e.binding.kind == UseBinding::Kind::EnumWildcard) continue;
+            if (e.localToken && e.localToken != hoveredToken) continue;
+            if (e.binding.kind == UseBinding::Kind::Module) {
+                std::string md = "```lucis\n(module) " +
+                                 e.binding.localName + "\n```";
                 return makeResult(hoveredToken, md);
             }
+            return hoverImportedSymbol(e.binding.exportedName,
+                e.binding.modulePath, hoveredToken,
+                parsed.tree, *cBindingsPtr, project);
         }
-        if (auto* item = dynamic_cast<LucisParser::UseItemContext*>(useDecl)) {
-            if (!item->IDENTIFIER() || !item->modulePath()) continue;
-            // Hover on the imported symbol name
-            if (item->IDENTIFIER()->getSymbol() == hoveredToken) {
-                auto symbolName = safeText(item->IDENTIFIER());
-                // Resolve via project context
-                std::string modulePath;
-                for (auto* id : item->modulePath()->IDENTIFIER()) {
-                    if (!modulePath.empty()) modulePath += "::";
-                    modulePath += id->getText();
-                }
-                return hoverImportedSymbol(symbolName, modulePath,
-                    hoveredToken, parsed.tree, *cBindingsPtr, project);
-            }
-            // Hover on module path identifiers
-            for (auto* id : item->modulePath()->IDENTIFIER()) {
+        // Hover on module path identifiers (partial paths resolve segment by
+        // segment: std → std::log → ...).
+        LucisParser::ModulePathContext* mp = nullptr;
+        if (auto* i = dynamic_cast<LucisParser::UseItemContext*>(useDecl)) mp = i->modulePath();
+        else if (auto* g = dynamic_cast<LucisParser::UseGroupContext*>(useDecl)) mp = g->modulePath();
+        if (mp) {
+            for (auto* id : mp->IDENTIFIER()) {
                 if (id->getSymbol() == hoveredToken) {
                     std::string partialPath;
-                    for (auto* pid : item->modulePath()->IDENTIFIER()) {
+                    for (auto* pid : mp->IDENTIFIER()) {
                         if (!partialPath.empty()) partialPath += "::";
                         partialPath += pid->getText();
                         if (pid == id) break;
                     }
                     return hoverModulePathSegment(partialPath, hoveredToken, project);
-                }
-            }
-        }
-        if (auto* group = dynamic_cast<LucisParser::UseGroupContext*>(useDecl)) {
-            if (!group->modulePath()) continue;
-            std::string modulePath;
-            for (auto* id : group->modulePath()->IDENTIFIER()) {
-                if (!modulePath.empty()) modulePath += "::";
-                modulePath += id->getText();
-            }
-            // Hover on module path identifiers
-            for (auto* id : group->modulePath()->IDENTIFIER()) {
-                if (id->getSymbol() == hoveredToken) {
-                    std::string partialPath;
-                    for (auto* pid : group->modulePath()->IDENTIFIER()) {
-                        if (!partialPath.empty()) partialPath += "::";
-                        partialPath += pid->getText();
-                        if (pid == id) break;
-                    }
-                    return hoverModulePathSegment(partialPath, hoveredToken, project);
-                }
-            }
-            // Hover on imported symbol names
-            for (auto* id : group->IDENTIFIER()) {
-                if (id->getSymbol() == hoveredToken) {
-                    return hoverImportedSymbol(id->getText(), modulePath,
-                        hoveredToken, parsed.tree, *cBindingsPtr, project);
                 }
             }
         }
@@ -949,6 +920,15 @@ std::optional<HoverResult> HoverProvider::hoverIdent(
 
     // 3) Cross-file symbol from project registry (imported via `use`)
     if (project && project->isValid()) {
+        // Imported symbol under a local alias: resolve via the file's use
+        // declarations so `use lib::sqr as square;` hovers `fn sqr`.
+        auto aliasMap = buildImportAliasMap(tree);
+        auto aliasIt = aliasMap.symbols.find(name);
+        if (aliasIt != aliasMap.symbols.end()) {
+            return hoverImportedSymbol(aliasIt->second.second,  // exported
+                                       aliasIt->second.first,   // module path
+                                       token, tree, bindings, project);
+        }
         for (auto& ns : project->registry().allModules()) {
             auto* sym = project->registry().findSymbol(ns, name);
             if (!sym) continue;
@@ -1573,65 +1553,28 @@ static std::optional<std::string> resolveImportedModuleAliasPath(
         auto* useDecl = pre->useDecl();
         if (!useDecl) continue;
 
-        if (auto* root = dynamic_cast<LucisParser::UseRootContext*>(useDecl)) {
-            auto* id = root->IDENTIFIER();
-            if (id && id->getText() == name)
-                return id->getText();
-        }
-
-        if (auto* item = dynamic_cast<LucisParser::UseItemContext*>(useDecl)) {
-            if (!item->modulePath()) continue;
-            auto* importedId = item->IDENTIFIER();
-            if (importedId && importedId->getText() == name) {
-                std::string modulePath;
-                for (auto* id : item->modulePath()->IDENTIFIER()) {
-                    if (!modulePath.empty()) modulePath += "::";
-                    modulePath += id->getText();
-                }
-                modulePath += "::";
-                modulePath += importedId->getText();
-                return modulePath;
-            }
-            auto ids = item->modulePath()->IDENTIFIER();
-            if (ids.empty()) continue;
-            auto* aliasId = ids.back();
-            if (aliasId->getText() == name) {
-                std::string modulePath;
-                for (auto* id : ids) {
-                    if (!modulePath.empty()) modulePath += "::";
-                    modulePath += id->getText();
-                }
-                return modulePath;
+        for (auto& e : parseUseDeclWithTokens(useDecl)) {
+            if (e.binding.kind == UseBinding::Kind::EnumWildcard) continue;
+            if (e.localToken && e.localToken->getText() == name) {
+                if (e.binding.kind == UseBinding::Kind::Module)
+                    return e.binding.modulePath;
+                return e.binding.modulePath + "::" + e.binding.exportedName;
             }
         }
 
-        if (auto* group = dynamic_cast<LucisParser::UseGroupContext*>(useDecl)) {
-            if (!group->modulePath() || group->IDENTIFIER().empty()) continue;
-            // Check if the name matches any of the imported symbols in the group
-            for (auto* id : group->IDENTIFIER()) {
-                if (id->getText() == name) {
-                    std::string modulePath;
-                    for (auto* pid : group->modulePath()->IDENTIFIER()) {
-                        if (!modulePath.empty()) modulePath += "::";
-                        modulePath += pid->getText();
-                    }
-                    modulePath += "::";
-                    modulePath += name;
-                    return modulePath;
-                }
-            }
-            // Check if the name matches the last segment of the module path
-            auto pathIds = group->modulePath()->IDENTIFIER();
-            if (!pathIds.empty()) {
-                auto* aliasId = pathIds.back();
-                if (aliasId->getText() == name) {
-                    std::string modulePath;
-                    for (auto* id : pathIds) {
-                        if (!modulePath.empty()) modulePath += "::";
-                        modulePath += id->getText();
-                    }
-                    return modulePath;
-                }
+        // Module path segments: `use std::log;` hover on `std` resolves
+        // the accumulated path. Root imports (`use module;`) are matched
+        // through their binding token above.
+        LucisParser::ModulePathContext* mp = nullptr;
+        if (auto* i = dynamic_cast<LucisParser::UseItemContext*>(useDecl)) mp = i->modulePath();
+        else if (auto* g = dynamic_cast<LucisParser::UseGroupContext*>(useDecl)) mp = g->modulePath();
+        if (mp) {
+            std::string accumulated;
+            for (auto* id : mp->IDENTIFIER()) {
+                if (!accumulated.empty()) accumulated += "::";
+                accumulated += id->getText();
+                if (id->getText() == name)
+                    return accumulated;
             }
         }
     }

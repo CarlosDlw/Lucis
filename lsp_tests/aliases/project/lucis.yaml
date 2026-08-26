@@ -1,0 +1,6 @@
+name: aliases
+version: 0.0.1
+binary: aliases
+out_dir: build
+source:
+  - src/

@@ -74,6 +74,7 @@ use tests::trait_static::testTraitStatic;
 use tests::trait_methods::testTraitMethods;
 use tests::trait_generic::testTraitGeneric;
 use tests::void_types::testVoidTypes;
+use tests::import_alias_trailing_array::testImportAliasAndTrailingArray;
 use tests::stdstr::testStdstr;
 use tests::stdconv::testStdConv;
 use tests::stdfmt::testStdFmt;
@@ -90,6 +91,7 @@ fn main() int32 {
     testStringCollectionsMethods();
     testArrayTypes();
     testArrayFeaturesFull();
+    testImportAliasAndTrailingArray();
     testVoidTypes();
     testCStringTypes();
     testFloatTypes();

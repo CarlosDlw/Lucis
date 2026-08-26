@@ -420,6 +420,15 @@ private:
     // User imports: symbol name → source module path
     std::unordered_map<std::string, std::string> userImports_;
 
+    // Local import binding → exported symbol name. Entries without an
+    // alias map to themselves.
+    std::unordered_map<std::string, std::string> userImportNames_;
+
+    std::string importedSymbolName(const std::string& localName) const {
+        auto it = userImportNames_.find(localName);
+        return it == userImportNames_.end() ? localName : it->second;
+    }
+
     // Caches resolved TypeInfo for expression nodes (used by resolveExprTypeInfo)
     std::unordered_map<const antlr4::ParserRuleContext*, const TypeInfo*> exprTypeCache_;
 

@@ -160,20 +160,42 @@ bool ImportResolver::moduleExportsSymbol(const std::string& modulePath,
 
 void ImportResolver::addImport(const std::string& modulePath,
                                const std::string& symbol) {
-    if (symbols_.insert(symbol).second) {
-        imports_.push_back({ modulePath, symbol });
-    }
+    addImport(modulePath, symbol, symbol);
+}
+
+void ImportResolver::addImport(const std::string& modulePath,
+                               const std::string& symbol,
+                               const std::string& localName) {
+    if (localName.empty() || symbol.empty()) return;
+    if (symbols_.insert(localName).second)
+        imports_.push_back({ modulePath, symbol, localName });
+    exportedNames_.insert(symbol);
 }
 
 bool ImportResolver::isImported(const std::string& symbol) const {
     return symbols_.count(symbol) > 0;
 }
 
+bool ImportResolver::isExportedSymbol(const std::string& name) const {
+    return exportedNames_.count(name) > 0;
+}
+
+std::string ImportResolver::exportedName(const std::string& localName) const {
+    for (const auto& imported : imports_) {
+        if (imported.localName == localName)
+            return imported.name;
+    }
+    return "";
+}
+
 std::string ImportResolver::resolve(const std::string& symbol,
                                     const std::string& typeSuffix) const {
-    if (!isImported(symbol)) return "";
+    for (const auto& imported : imports_) {
+        if (imported.localName != symbol) continue;
 
-    // Map symbol + type suffix → C function name
-    // Convention: lucis_<symbol>_<typeSuffix>
-    return "lucis_" + symbol + "_" + typeSuffix;
+        // Map the exported symbol + type suffix to the runtime C function.
+        // The local alias is only a source-level binding.
+        return "lucis_" + imported.name + "_" + typeSuffix;
+    }
+    return "";
 }

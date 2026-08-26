@@ -607,9 +607,23 @@ std::any IRGen::visitVarDeclStmt(LucisParser::VarDeclStmtContext* ctx) {
                         auto cit = compileTimeValues_.find(identName);
                         if (cit != compileTimeValues_.end()) {
                             sizes.push_back(static_cast<unsigned>(cit->second));
-                        } else {
-                            break;
+                            continue;
                         }
+                        // Imported const used as an array dimension: the
+                        // semantic checker already evaluated the constant
+                        // (its full const-evaluator ran before IR gen) and
+                        // persisted the integer value in the module registry.
+                        auto importIt = userImports_.find(identName);
+                        if (importIt != userImports_.end() && moduleRegistry_) {
+                            auto exported = importedSymbolName(identName);
+                            auto* sym = moduleRegistry_->findSymbol(importIt->second, exported);
+                            if (sym && sym->kind == ExportedSymbol::Constant &&
+                                sym->hasConstIntValue && sym->constIntValue > 0) {
+                                sizes.push_back(static_cast<unsigned>(sym->constIntValue));
+                                continue;
+                            }
+                        }
+                        break;
                     }
                     spec = spec->typeSpec(0);
                 }
@@ -3214,6 +3228,11 @@ std::any IRGen::visitExprStmt(LucisParser::ExprStmtContext* ctx) {
 std::any IRGen::visitCallStmt(LucisParser::CallStmtContext* ctx) {
         SET_DBG_LOC(ctx);
     auto funcName = ctx->IDENTIFIER()->getText();
+    // Keep source-level aliases transparent to stdlib call dispatch.
+    if (imports_.isImported(funcName) || imports_.isExportedSymbol(funcName)) {
+        auto exported = imports_.exportedName(funcName);
+        if (!exported.empty()) funcName = exported;
+    }
 
     // ── Comptime function call as statement ───────────────────────
     if (comptimeEngine_ && comptimeEngine_->isReady() &&
@@ -3500,7 +3519,8 @@ std::any IRGen::visitCallStmt(LucisParser::CallStmtContext* ctx) {
     // ── print/println/eprint/eprintln (imported from std::log) ─────
     if ((funcName == "print" || funcName == "println" ||
          funcName == "eprint" || funcName == "eprintln") &&
-        (userImports_.count(funcName) || imports_.isImported(funcName))) {
+        (userImports_.count(funcName) || imports_.isImported(funcName) ||
+         imports_.isExportedSymbol(funcName))) {
       std::vector<llvm::Value*> args;
       std::vector<LucisParser::ExpressionContext*> argExprs;
       if (auto* argList = ctx->argList()) {
@@ -3944,7 +3964,7 @@ std::any IRGen::visitCallStmt(LucisParser::CallStmtContext* ctx) {
         return {};
     }
 
-    if (!imports_.isImported(funcName)) {
+    if (!imports_.isImported(funcName) && !imports_.isExportedSymbol(funcName)) {
         std::cerr << "lucis: call to undeclared function '" << funcName
                   << "'. Did you forget 'use std::log::" << funcName << ";'?\n";
         return {};

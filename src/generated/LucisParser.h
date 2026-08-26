@@ -252,8 +252,10 @@ public:
     antlr4::tree::TerminalNode *USE();
     ModulePathContext *modulePath();
     antlr4::tree::TerminalNode *SCOPE();
-    antlr4::tree::TerminalNode *IDENTIFIER();
+    std::vector<antlr4::tree::TerminalNode *> IDENTIFIER();
+    antlr4::tree::TerminalNode* IDENTIFIER(size_t i);
     antlr4::tree::TerminalNode *SEMI();
+    antlr4::tree::TerminalNode *AS();
 
     virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
   };
@@ -283,6 +285,8 @@ public:
     antlr4::tree::TerminalNode* IDENTIFIER(size_t i);
     antlr4::tree::TerminalNode *RBRACE();
     antlr4::tree::TerminalNode *SEMI();
+    std::vector<antlr4::tree::TerminalNode *> AS();
+    antlr4::tree::TerminalNode* AS(size_t i);
     std::vector<antlr4::tree::TerminalNode *> COMMA();
     antlr4::tree::TerminalNode* COMMA(size_t i);
 

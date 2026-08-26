@@ -1529,14 +1529,17 @@ std::any IRGen::visitIdentExpr(LucisParser::IdentExprContext* ctx) {
 
     // ── User-imported constant from another module ─────────────────────
     if (userImports_.count(name)) {
-        std::string globalName = "const_" + name;
+        // The global is emitted under the exported name in its defining
+        // module; the local binding (possibly an alias) only selects it.
+        auto exported = importedSymbolName(name);
+        std::string globalName = "const_" + exported;
         auto* gv = module_->getGlobalVariable(globalName);
         if (!gv) {
             // Determine LLVM type from the defining module's declaration
             llvm::Type* llvmType = llvm::Type::getInt32Ty(*context_);
             auto modPath = userImports_[name];
             if (moduleRegistry_) {
-                auto* sym = moduleRegistry_->findSymbol(modPath, name);
+                auto* sym = moduleRegistry_->findSymbol(modPath, exported);
                 if (sym && sym->kind == ExportedSymbol::Constant) {
                     if (auto* cd = dynamic_cast<LucisParser::ConstDeclaratorContext*>(sym->decl)) {
                         const TypeInfo* typeInfo = nullptr;
@@ -1590,6 +1593,21 @@ std::any IRGen::visitArrayLitExpr(LucisParser::ArrayLitExprContext* ctx) {
     }
 
     auto* elemTy = vals[0]->getType();
+    // Nested literals must all have the same LLVM type (e.g. [2 x i32] for
+    // [[1,2],[3,4]]). A ragged literal was rejected by the checker, but stay
+    // defensive: never feed InsertValue mismatched types (that is UB/assert).
+    for (size_t i = 1; i < vals.size(); i++) {
+        if (vals[i]->getType() != elemTy) {
+            std::cerr << "lucis: array literal elements have mismatched types "
+                      << "('";
+            elemTy->print(llvm::errs());
+            llvm::errs() << "' vs '";
+            vals[i]->getType()->print(llvm::errs());
+            std::cerr << "') — nested array literals must have equal sizes\n";
+            return static_cast<llvm::Value*>(
+                llvm::UndefValue::get(llvm::Type::getInt32Ty(*context_)));
+        }
+    }
     auto* arrTy  = llvm::ArrayType::get(elemTy, vals.size());
     llvm::Value* agg = llvm::UndefValue::get(arrTy);
     for (size_t i = 0; i < vals.size(); i++)

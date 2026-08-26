@@ -228,6 +228,7 @@ std::unique_ptr<IRModule> IRGen::generate(LucisParser::ProgramContext* tree,
     locals_.clear();
     imports_ = ImportResolver{};
     userImports_.clear();
+    userImportNames_.clear();
     callTargetMap_.clear();
     externCFunctions_.clear();
     fnReturnTypes_.clear();

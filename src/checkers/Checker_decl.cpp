@@ -1,5 +1,6 @@
 #include "checkers/Checker.h"
 #include "checkers/Checker_helpers.h"
+#include "imports/UseParser.h"
 
 #include "generated/LucisLexer.h"
 #include "ffi/CBindings.h"
@@ -31,133 +32,87 @@ void Checker::checkUseDecls(LucisParser::ProgramContext* tree) {
             return nullptr;
         }();
         if (!isDeclActive(attrs)) return;
-        if (auto* root = dynamic_cast<LucisParser::UseRootContext*>(useDecl)) {
-            auto rootName = root->IDENTIFIER()->getText();
-            if (rootName == "std") {
-                userImports_[rootName] = rootName;
-            } else if (moduleRegistry_ && moduleRegistry_->hasModule(rootName)) {
-                userImports_[rootName] = rootName;
-            } else if (!moduleRegistry_ || !findModuleFile(ModuleRegistry::usePathToModulePath(rootName)).empty()) {
-                userImports_[rootName] = rootName;
-            } else {
-                error(root, "unknown module root '" + rootName + "'");
-            }
-        } else if (auto* item = dynamic_cast<LucisParser::UseItemContext*>(useDecl)) {
-            std::string path;
-            for (auto* id : item->modulePath()->IDENTIFIER()) {
-                if (!path.empty()) path += "::";
-                path += id->getText();
-            }
-            auto symbolName = item->IDENTIFIER()->getText();
-            auto modPath = ModuleRegistry::usePathToModulePath(path);
 
-            if (ImportResolver::isStdModule(path)) {
-                if (ImportResolver::moduleExportsSymbol(path, symbolName)) {
-                    imports_.addImport(path, symbolName);
+        auto bindings = parseUseDecl(useDecl);
+        for (auto& b : bindings) {
+            if (b.kind == UseBinding::Kind::Module) {
+                // use std::log;  /  use fold::module;  /  use module;
+                auto modPath = ModuleRegistry::usePathToModulePath(b.modulePath);
+                if (b.modulePath == "std") {
+                    userImports_[b.localName] = modPath;
                 } else if (moduleRegistry_ && moduleRegistry_->hasModule(modPath)) {
-                    auto* sym = moduleRegistry_->findSymbol(modPath, symbolName);
+                    userImports_[b.localName] = modPath;
+                } else if (!moduleRegistry_ || !findModuleFile(modPath).empty()) {
+                    userImports_[b.localName] = modPath;
+                } else {
+                    error(b.ctx, "unknown module '" + b.modulePath + "'");
+                }
+            } else if (b.kind == UseBinding::Kind::Symbol) {
+                // use module::func [as local];  (also every group item)
+                //
+                // `use a::b;` is ambiguous between a module import (a/b.lc)
+                // and a symbol import (symbol b of module a). Resolution
+                // order: stdlib symbol → full-path module → symbol of a
+                // known module → module path fallback.
+                auto modPath = ModuleRegistry::usePathToModulePath(b.modulePath);
+                auto fullModPath =
+                    ModuleRegistry::usePathToModulePath(
+                        b.modulePath + "::" + b.exportedName);
+                userImportNames_[b.localName] = b.exportedName;
+
+                bool isModuleImport =
+                    ImportResolver::isStdModule(fullModPath) ||
+                    (moduleRegistry_ && moduleRegistry_->hasModule(fullModPath)) ||
+                    (!moduleRegistry_ && !findModuleFile(fullModPath).empty()) ||
+                    (moduleRegistry_ && !findModuleFile(fullModPath).empty());
+
+                if (ImportResolver::isStdModule(b.modulePath) &&
+                    ImportResolver::moduleExportsSymbol(b.modulePath, b.exportedName)) {
+                    // stdlib symbol: use std::log::println [as local];
+                    imports_.addImport(b.modulePath, b.exportedName, b.localName);
+                } else if (isModuleImport) {
+                    // Use of a full module path: use fold::module;
+                    userImports_[b.localName] = fullModPath;
+                } else if (moduleRegistry_ && moduleRegistry_->hasModule(modPath)) {
+                    auto* sym = moduleRegistry_->findSymbol(modPath, b.exportedName);
                     if (!sym) {
-                        error(item, "module '" + path +
-                                    "' does not export '" + symbolName + "'");
+                        // Search all modules (handles path-mismatch from directory scan)
+                        for (auto& ns : moduleRegistry_->allModules()) {
+                            sym = moduleRegistry_->findSymbol(ns, b.exportedName);
+                            if (sym) break;
+                        }
+                    }
+                    if (!sym) {
+                        error(b.ctx, "module '" + b.modulePath +
+                                    "' does not export '" + b.exportedName + "'");
                     } else {
-                        userImports_[symbolName] = modPath;
+                        userImports_[b.localName] = modPath;
                     }
                 } else if (!moduleRegistry_ || !findModuleFile(modPath).empty()) {
-                    userImports_[symbolName] = modPath;
+                    userImports_[b.localName] = modPath;
                 } else {
-                    error(item, "unknown module '" + path + "'");
+                    error(b.ctx, "unknown module '" + b.modulePath + "'");
                 }
-            } else if (ImportResolver::isStdModule(path + "::" + symbolName)) {
-                userImports_[symbolName] = ModuleRegistry::usePathToModulePath(path + "::" + symbolName);
-            } else if (moduleRegistry_ && moduleRegistry_->hasModule(modPath)) {
-                auto* sym = moduleRegistry_->findSymbol(modPath, symbolName);
-                if (!sym) {
-                    // Search all modules (handles path-mismatch from directory scan)
-                    for (auto& ns : moduleRegistry_->allModules()) {
-                        sym = moduleRegistry_->findSymbol(ns, symbolName);
-                        if (sym) break;
-                    }
-                }
-                if (!sym) {
-                    error(item, "module '" + path +
-                                "' does not export '" + symbolName + "'");
+            } else if (b.kind == UseBinding::Kind::EnumWildcard) {
+                auto* ew = static_cast<LucisParser::UseEnumWildcardContext*>(b.ctx);
+                unsigned arrayDims = 0;
+                auto* enumType = resolveTypeSpec(ew->typeSpec(), arrayDims);
+                if (!enumType) {
+                    error(ew, "unknown type in 'use' wildcard");
+                } else if (enumType->kind != TypeKind::Enum) {
+                    error(ew, "type '" + enumType->name + "' is not an enum");
+                } else if (arrayDims > 0) {
+                    error(ew, "cannot use array type in 'use' wildcard");
                 } else {
-                    userImports_[symbolName] = modPath;
-                }
-            } else if (!moduleRegistry_ || !findModuleFile(modPath).empty()) {
-                userImports_[symbolName] = modPath;
-            } else {
-                error(item, "unknown module '" + path + "'");
-            }
-        } else if (auto* grp = dynamic_cast<LucisParser::UseGroupContext*>(useDecl)) {
-            std::string path;
-            for (auto* id : grp->modulePath()->IDENTIFIER()) {
-                if (!path.empty()) path += "::";
-                path += id->getText();
-            }
-            auto modPath = ModuleRegistry::usePathToModulePath(path);
-
-            if (ImportResolver::isStdModule(path)) {
-                for (auto* id : grp->IDENTIFIER()) {
-                    auto symbolName = id->getText();
-                    if (ImportResolver::moduleExportsSymbol(path, symbolName)) {
-                        imports_.addImport(path, symbolName);
-                    } else if (moduleRegistry_ && moduleRegistry_->hasModule(modPath)) {
-                        auto* sym = moduleRegistry_->findSymbol(modPath, symbolName);
-                        if (!sym) {
-                            for (auto& ns : moduleRegistry_->allModules()) {
-                                sym = moduleRegistry_->findSymbol(ns, symbolName);
-                                if (sym) break;
-                            }
+                    for (const auto& vi : enumType->enumVariantInfos) {
+                        auto [it, inserted] = enumVariantImports_.try_emplace(
+                            vi.name,
+                            InjectedVariant{ enumType, &vi });
+                        if (!inserted) {
+                            error(ew, "ambiguous variant name '" + vi.name +
+                                       "': already imported from '" +
+                                       it->second.enumType->name + "'");
                         }
-                        if (!sym) {
-                            error(grp, "module '" + path +
-                                        "' does not export '" + symbolName + "'");
-                        } else {
-                            userImports_[symbolName] = modPath;
-                        }
-                    } else if (!moduleRegistry_ || !findModuleFile(modPath).empty()) {
-                        userImports_[symbolName] = modPath;
-                    } else {
-                        error(grp, "unknown module '" + path + "'");
-                    }
-                }
-            } else if (moduleRegistry_ && moduleRegistry_->hasModule(modPath)) {
-                for (auto* id : grp->IDENTIFIER()) {
-                    auto symbolName = id->getText();
-                    auto* sym = moduleRegistry_->findSymbol(modPath, symbolName);
-                    if (!sym) {
-                        error(grp, "module '" + path +
-                                    "' does not export '" + symbolName + "'");
-                    } else {
-                        userImports_[symbolName] = modPath;
-                    }
-                }
-            } else if (!moduleRegistry_ || !findModuleFile(modPath).empty()) {
-                for (auto* id : grp->IDENTIFIER()) {
-                    userImports_[id->getText()] = modPath;
-                }
-            } else {
-                error(grp, "unknown module '" + path + "'");
-            }
-        } else if (auto* ew = dynamic_cast<LucisParser::UseEnumWildcardContext*>(useDecl)) {
-            unsigned arrayDims = 0;
-            auto* enumType = resolveTypeSpec(ew->typeSpec(), arrayDims);
-            if (!enumType) {
-                error(ew, "unknown type in 'use' wildcard");
-            } else if (enumType->kind != TypeKind::Enum) {
-                error(ew, "type '" + enumType->name + "' is not an enum");
-            } else if (arrayDims > 0) {
-                error(ew, "cannot use array type in 'use' wildcard");
-            } else {
-                for (const auto& vi : enumType->enumVariantInfos) {
-                    auto [it, inserted] = enumVariantImports_.try_emplace(
-                        vi.name,
-                        InjectedVariant{ enumType, &vi });
-                    if (!inserted) {
-                        error(ew, "ambiguous variant name '" + vi.name +
-                                   "': already imported from '" +
-                                   it->second.enumType->name + "'");
                     }
                 }
             }

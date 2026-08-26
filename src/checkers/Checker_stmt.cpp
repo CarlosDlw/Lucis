@@ -850,6 +850,14 @@ void Checker::checkConstDeclStmt(LucisParser::ConstDeclStmtContext* stmt) {
             auto ev = evaluateConstExpr(d->expression());
             if (ev) {
                 compileTimeValues_[name] = *ev;
+                // Persist integer constants in the module registry so later
+                // pipeline stages (IR generation, cross-module `[CONST]`
+                // array dimensions) can read the value without re-evaluating
+                // the expression.
+                if (ev->kind() == ComptimeValue::Kind::Int && moduleRegistry_) {
+                    moduleRegistry_->setConstValue(
+                        currentModulePath_, name, ev->asInt());
+                }
             }
         }
     }

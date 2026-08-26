@@ -1,5 +1,6 @@
 #include "checkers/Checker.h"
 #include "checkers/Checker_helpers.h"
+#include "imports/UseParser.h"
 
 #include "generated/LucisLexer.h"
 #include "ffi/CBindings.h"
@@ -178,6 +179,8 @@ bool Checker::check(LucisParser::ProgramContext* tree) {
         return false;
     }
 
+    userImportNames_.clear();
+
     // Pass 0: register global builtins (always available, no import needed)
     registerGlobalBuiltins();
 
@@ -196,18 +199,12 @@ bool Checker::check(LucisParser::ProgramContext* tree) {
             if (pre->includeDecl()) {
                 lastIncludePos = pos;
             } else if (auto* ud = pre->useDecl()) {
-                if (auto* item = dynamic_cast<LucisParser::UseItemContext*>(ud)) {
-                    if (item->IDENTIFIER()) {
-                        auto n = item->IDENTIFIER()->getText();
-                        if (cBindings_->findFunction(n))
-                            lucisImportPos[n] = pos;
-                    }
-                } else if (auto* group = dynamic_cast<LucisParser::UseGroupContext*>(ud)) {
-                    for (auto* id : group->IDENTIFIER()) {
-                        auto n = id->getText();
-                        if (cBindings_->findFunction(n))
-                            lucisImportPos[n] = pos;
-                    }
+                for (auto& b : parseUseDecl(ud)) {
+                    if (b.kind != UseBinding::Kind::Symbol) continue;
+                    // The exported name may match a C function (e.g. printf);
+                    // the override is registered under the local binding.
+                    if (cBindings_->findFunction(b.exportedName))
+                        lucisImportPos[b.localName] = pos;
                 }
             }
             pos++;
@@ -376,7 +373,7 @@ bool Checker::check(LucisParser::ProgramContext* tree) {
 
         // Pre-register imported enums so type aliases referencing them resolve
         for (auto& [symName, ns] : userImports_) {
-            auto* sym = moduleRegistry_->findSymbol(ns, symName);
+            auto* sym = moduleRegistry_->findSymbol(ns, importedSymbolName(symName));
             if (!sym || sym->kind != ExportedSymbol::Enum) continue;
             if (!typeRegistry_.lookup(sym->name) && !genericEnumTemplates_.count(sym->name)) {
                 auto* ed = static_cast<LucisParser::EnumDeclContext*>(sym->decl);
@@ -460,7 +457,7 @@ bool Checker::check(LucisParser::ProgramContext* tree) {
             }
         }
         for (auto& [symName, ns] : userImports_) {
-            auto* sym = moduleRegistry_->findSymbol(ns, symName);
+            auto* sym = moduleRegistry_->findSymbol(ns, importedSymbolName(symName));
             if (!sym) continue;
             if (sym->kind == ExportedSymbol::Struct &&
                 !typeRegistry_.lookup(sym->name) &&
@@ -665,7 +662,7 @@ bool Checker::check(LucisParser::ProgramContext* tree) {
             }
         }
         for (auto& [symName, ns] : userImports_) {
-            auto* sym = moduleRegistry_->findSymbol(ns, symName);
+            auto* sym = moduleRegistry_->findSymbol(ns, importedSymbolName(symName));
             if (!sym) continue;
             if (sym->kind == ExportedSymbol::Enum) {
                 if (typeRegistry_.lookup(sym->name) || genericEnumTemplates_.count(sym->name))
@@ -717,9 +714,12 @@ bool Checker::check(LucisParser::ProgramContext* tree) {
                 }
             }
             for (auto& [symName, ns] : userImports_) {
-                auto* sym = moduleRegistry_->findSymbol(ns, symName);
-                if (sym && sym->kind == ExportedSymbol::Struct && !genericStructTemplates_.count(symName)) {
-                    pendingMap[symName] = {
+                auto* sym = moduleRegistry_->findSymbol(ns, importedSymbolName(symName));
+                if (!sym || sym->kind != ExportedSymbol::Struct) continue;
+                // Key by the EXPORTED name (the local binding may be an
+                // alias); skeletons and the registration use that name.
+                if (!genericStructTemplates_.count(sym->name)) {
+                    pendingMap[sym->name] = {
                         static_cast<LucisParser::StructDeclContext*>(sym->decl), ns
                     };
                 }
@@ -787,7 +787,7 @@ bool Checker::check(LucisParser::ProgramContext* tree) {
 
         // Phase B unions: user imports (no inheritance, single pass)
         for (auto& [symName, ns] : userImports_) {
-            auto* sym = moduleRegistry_->findSymbol(ns, symName);
+            auto* sym = moduleRegistry_->findSymbol(ns, importedSymbolName(symName));
             if (!sym || sym->kind != ExportedSymbol::Union) continue;
             if (genericUnionTemplates_.count(sym->name)) continue;
             auto* existing = typeRegistry_.lookup(sym->name);
@@ -813,15 +813,18 @@ bool Checker::check(LucisParser::ProgramContext* tree) {
         }
         for (auto& [symName, ns] : userImports_) {
             // For each imported struct, look for its extend block in the same ns
-            auto* sym = moduleRegistry_->findSymbol(ns, symName);
+            auto* sym = moduleRegistry_->findSymbol(ns, importedSymbolName(symName));
             if (!sym || (sym->kind != ExportedSymbol::Struct &&
                          sym->kind != ExportedSymbol::Union))
                 continue;
             // Find extend block with the same name in the same module
+            // (the extend is registered under the EXPORTED name; the local
+            // binding may be an alias).
             auto nsSyms = moduleRegistry_->getModuleSymbols(ns);
+            auto exportedName = importedSymbolName(symName);
             for (auto* nsSym : nsSyms) {
                 if (nsSym->kind == ExportedSymbol::ExtendBlock &&
-                    nsSym->name == symName) {
+                    nsSym->name == exportedName) {
                     auto* extDecl = static_cast<LucisParser::ExtendDeclContext*>(nsSym->decl);
                     // Pre-register types referenced in extend method signatures
                     // (e.g. return types like ReadFileResult) so resolveTypeSpec
@@ -853,7 +856,7 @@ bool Checker::check(LucisParser::ProgramContext* tree) {
             }
         }
         for (auto& [symName, ns] : userImports_) {
-            auto* sym = moduleRegistry_->findSymbol(ns, symName);
+            auto* sym = moduleRegistry_->findSymbol(ns, importedSymbolName(symName));
             if (!sym || sym->kind != ExportedSymbol::TraitDecl) continue;
             auto* traitDecl = static_cast<LucisParser::TraitDeclContext*>(sym->decl);
             checkTraitDecl(traitDecl);
@@ -885,12 +888,13 @@ bool Checker::check(LucisParser::ProgramContext* tree) {
             }
         }
         for (auto& [symName, ns] : userImports_) {
-            auto* sym = moduleRegistry_->findSymbol(ns, symName);
+            auto* sym = moduleRegistry_->findSymbol(ns, importedSymbolName(symName));
             if (!sym || (sym->kind != ExportedSymbol::Struct &&
                          sym->kind != ExportedSymbol::Union &&
                          sym->kind != ExportedSymbol::Enum))
                 continue;
             auto nsSyms = moduleRegistry_->getModuleSymbols(ns);
+            auto exportedName = importedSymbolName(symName);
             for (auto* nsSym : nsSyms) {
                 if (nsSym->kind != ExportedSymbol::ImplBlock) continue;
                 // Check if the impl block's type matches the imported type
@@ -899,7 +903,26 @@ bool Checker::check(LucisParser::ProgramContext* tree) {
                 // no "for Type"); the parser already reported the error.
                 if (implDecl->typeSpec().size() < 2) continue;
                 auto implTypeName = implDecl->typeSpec(1)->getText();
-                if (implTypeName == symName) {
+                if (implTypeName == exportedName) {
+                    // The impl's trait may live in a module that is NOT
+                    // imported explicitly (e.g. `impl Area for Point` inside
+                    // lib.lc while the user only imports Point). Pre-register
+                    // the trait before checking the impl, mirroring the
+                    // lazy-load the IRGen side performs.
+                    auto traitName = implDecl->typeSpec(0)->getText();
+                    if (traitName != "" && !traitRegistry_.lookup(traitName)) {
+                        auto* tsym = moduleRegistry_->findSymbol(ns, traitName);
+                        if (!tsym) {
+                            for (auto& mod : moduleRegistry_->allModules()) {
+                                tsym = moduleRegistry_->findSymbol(mod, traitName);
+                                if (tsym) break;
+                            }
+                        }
+                        if (tsym && tsym->kind == ExportedSymbol::TraitDecl) {
+                            checkTraitDecl(
+                                static_cast<LucisParser::TraitDeclContext*>(tsym->decl));
+                        }
+                    }
                     checkImplDecl(implDecl);
                 }
             }
@@ -914,7 +937,7 @@ bool Checker::check(LucisParser::ProgramContext* tree) {
             }
         }
         for (auto& [symName, ns] : userImports_) {
-            auto* sym = moduleRegistry_->findSymbol(ns, symName);
+            auto* sym = moduleRegistry_->findSymbol(ns, importedSymbolName(symName));
             if (!sym) continue;
             if (sym->kind == ExportedSymbol::Function) {
                 auto* decl = static_cast<LucisParser::FunctionDeclContext*>(sym->decl);

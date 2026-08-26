@@ -17,10 +17,13 @@ preambleDecl
 
 // use std::log::println;
 // use std::log::{ println, print };
+// use std::log::{ print as output, println };
+// use module;  → module root import
 useDecl
     : attributeList USE IDENTIFIER SEMI                                                      # useRoot
-    | attributeList USE modulePath SCOPE IDENTIFIER SEMI                                     # useItem
-    | attributeList USE modulePath SCOPE LBRACE IDENTIFIER (COMMA IDENTIFIER)* RBRACE SEMI   # useGroup
+    | attributeList USE modulePath SCOPE IDENTIFIER (AS IDENTIFIER)? SEMI                    # useItem
+    | attributeList USE modulePath SCOPE LBRACE IDENTIFIER (AS IDENTIFIER)?
+        (COMMA IDENTIFIER (AS IDENTIFIER)?)* COMMA? RBRACE SEMI                              # useGroup
     | attributeList USE typeSpec SCOPE STAR SEMI                                             # useEnumWildcard
     ;
 
@@ -707,7 +710,7 @@ expression
     | LPAREN expression RPAREN                                 # parenExpr
     | SPREAD expression                                        # spreadExpr
     | LBRACKET expression PIPE FOR typeSpec IDENTIFIER IN expression (IF expression)? RBRACKET  # listCompExpr
-    | LBRACKET (expression (COMMA expression)*)? RBRACKET      # arrayLitExpr
+    | LBRACKET (expression (COMMA expression)*)? COMMA? RBRACKET # arrayLitExpr
     | NULL_LIT                                                 # nullLitExpr
     | SUFFIXED_INT                                             # suffixedIntLitExpr
     | SUFFIXED_INT_FLOAT                                       # suffixedIntFloatExpr

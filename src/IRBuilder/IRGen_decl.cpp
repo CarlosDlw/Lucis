@@ -1,5 +1,6 @@
 #include "IRBuilder/IRGen.h"
 #include "IRBuilder/IRGen_helpers.h"
+#include "imports/UseParser.h"
 
 #include <llvm/IR/BasicBlock.h>
 #include <llvm/IR/Constants.h>
@@ -736,8 +737,13 @@ std::any IRGen::visitImplDecl(LucisParser::ImplDeclContext* ctx)
         auto mangledFnName = mangleImplMethodName(
             trait->name, implTI->name, methodName);
 
-        // Check if already lowered
-        if (loweredImplMethods_.count(mangledFnName)) continue;
+        // A forward declaration may already exist (created by
+        // declareImplMethods during cross-file registration). Reuse it and
+        // lower the body into it; only skip when a body already exists.
+        auto loweredIt = loweredImplMethods_.find(mangledFnName);
+        if (loweredIt != loweredImplMethods_.end() &&
+            loweredIt->second && !loweredIt->second->empty())
+            continue;
 
         // Resolve return type
         const TypeInfo* retTI = resolveTypeInfo(method->typeSpec());
@@ -782,11 +788,23 @@ std::any IRGen::visitImplDecl(LucisParser::ImplDeclContext* ctx)
             if (!retLLType) retLLType = llvm::Type::getVoidTy(*context_);
         }
 
-        auto* fnType = llvm::FunctionType::get(retLLType, paramLLTypes, false);
-        auto* fn = llvm::Function::Create(
-            fnType, llvm::Function::ExternalLinkage, mangledFnName, module_);
-
-        loweredImplMethods_[mangledFnName] = fn;
+        llvm::Function* fn;
+        if (loweredIt != loweredImplMethods_.end() && loweredIt->second) {
+            // Reuse the forward-declared function.
+            fn = loweredIt->second;
+            auto* fnType = llvm::FunctionType::get(retLLType, paramLLTypes, false);
+            if (fn->getFunctionType() != fnType) {
+                // Signature mismatch (should not happen — the checker
+                // validated the impl) — create a fresh definition.
+                fn = llvm::Function::Create(
+                    fnType, llvm::Function::ExternalLinkage, mangledFnName, module_);
+            }
+        } else {
+            auto* fnType = llvm::FunctionType::get(retLLType, paramLLTypes, false);
+            fn = llvm::Function::Create(
+                fnType, llvm::Function::ExternalLinkage, mangledFnName, module_);
+            loweredImplMethods_[mangledFnName] = fn;
+        }
 
         // Lower the method body
         auto* prevFn = currentFunction_;
@@ -1506,61 +1524,67 @@ std::any IRGen::visitBlock(LucisParser::BlockContext* ctx) {
 
 // use std::log::println;   →  register in ImportResolver
 
-
 std::any IRGen::visitUseRoot(LucisParser::UseRootContext* ctx) {
         SET_DBG_LOC(ctx);
     if (!irDeclActive(ctx->attributeList(), targetTriple_, debugOutput_)) return {};
-    auto rootName = ctx->IDENTIFIER()->getText();
-    userImports_[rootName] = rootName;
+    auto bindings = parseUseDecl(ctx);
+    for (auto& b : bindings) {
+        if (b.kind != UseBinding::Kind::Module) continue;
+        // Module root import: userImports_[local] = module path.
+        userImports_[b.localName] = ModuleRegistry::usePathToModulePath(b.modulePath);
+    }
     return {};
 }
 
-// use std::log::println;   →  register in ImportResolver
-
+// use std::log::println [as local];   →  register in ImportResolver
 
 std::any IRGen::visitUseItem(LucisParser::UseItemContext* ctx) {
         SET_DBG_LOC(ctx);
     if (!irDeclActive(ctx->attributeList(), targetTriple_, debugOutput_)) return {};
-    std::string path;
-    for (auto* id : ctx->modulePath()->IDENTIFIER()) {
-        if (!path.empty()) path += "::";
-        path += id->getText();
-    }
-    auto symbolName = ctx->IDENTIFIER()->getText();
-    auto qualifiedPath = path + "::" + symbolName;
-
-    if (ImportResolver::isStdModule(path)) {
-        imports_.addImport(path, symbolName);
-    } else if (ImportResolver::isStdModule(qualifiedPath)) {
-        // Module alias import, e.g. `use std::log;`
-        userImports_[symbolName] = ModuleRegistry::usePathToModulePath(qualifiedPath);
-    } else {
-        // User module import — record for call resolution
-        userImports_[symbolName] = ModuleRegistry::usePathToModulePath(path);
+    auto bindings = parseUseDecl(ctx);
+    for (auto& b : bindings) {
+        if (b.kind != UseBinding::Kind::Symbol) continue;
+        userImportNames_[b.localName] = b.exportedName;
+        auto fullModPath = ModuleRegistry::usePathToModulePath(
+            b.modulePath + "::" + b.exportedName);
+        bool isModuleImport =
+            ImportResolver::isStdModule(fullModPath) ||
+            (moduleRegistry_ && moduleRegistry_->hasModule(fullModPath));
+        if (ImportResolver::isStdModule(b.modulePath)) {
+            imports_.addImport(b.modulePath, b.exportedName, b.localName);
+            // stdlib symbols may also be defined in stdlib .lc modules
+            // (e.g. stdio::printf); keep the module binding for those.
+            if (!moduleRegistry_ || !moduleRegistry_->hasModule(fullModPath))
+                userImports_[b.localName] =
+                    ModuleRegistry::usePathToModulePath(b.modulePath);
+        } else if (isModuleImport) {
+            userImports_[b.localName] = fullModPath;
+        } else {
+            userImports_[b.localName] = ModuleRegistry::usePathToModulePath(b.modulePath);
+        }
     }
     return {};
 }
 
-// use std::log::{ println, print };
-
+// use std::log::{ print as output, println };
 
 std::any IRGen::visitUseGroup(LucisParser::UseGroupContext* ctx) {
         SET_DBG_LOC(ctx);
     if (!irDeclActive(ctx->attributeList(), targetTriple_, debugOutput_)) return {};
-    std::string path;
-    for (auto* id : ctx->modulePath()->IDENTIFIER()) {
-        if (!path.empty()) path += "::";
-        path += id->getText();
-    }
-
-    if (ImportResolver::isStdModule(path)) {
-        for (auto* id : ctx->IDENTIFIER()) {
-            imports_.addImport(path, id->getText());
-        }
-    } else {
-        auto modPath = ModuleRegistry::usePathToModulePath(path);
-        for (auto* id : ctx->IDENTIFIER()) {
-            userImports_[id->getText()] = modPath;
+    auto bindings = parseUseDecl(ctx);
+    for (auto& b : bindings) {
+        if (b.kind != UseBinding::Kind::Symbol) continue;
+        userImportNames_[b.localName] = b.exportedName;
+        if (ImportResolver::isStdModule(b.modulePath)) {
+            imports_.addImport(b.modulePath, b.exportedName, b.localName);
+            if (!moduleRegistry_ || !moduleRegistry_->hasModule(
+                    ModuleRegistry::usePathToModulePath(
+                        b.modulePath + "::" + b.exportedName)))
+                userImports_[b.localName] =
+                    ModuleRegistry::usePathToModulePath(b.modulePath);
+        } else {
+            auto modPath = ModuleRegistry::usePathToModulePath(b.modulePath);
+            userImports_[b.localName] = modPath;
         }
     }
     return {};
@@ -1609,49 +1633,38 @@ void IRGen::registerCrossFileSymbols(LucisParser::ProgramContext* ctx) {
                 return nullptr;
             }();
             if (!irDeclActive(attrs, targetTriple_, debugOutput_)) continue;
-            // use ModuleName; (useRoot)
-            if (auto* root = dynamic_cast<LucisParser::UseRootContext*>(ud)) {
-                userImports_[root->IDENTIFIER()->getText()] = root->IDENTIFIER()->getText();
-            }
-            // use Module::symbol; (useItem)
-            else if (auto* item = dynamic_cast<LucisParser::UseItemContext*>(ud)) {
-                std::string path;
-                for (auto* id : item->modulePath()->IDENTIFIER()) {
-                    if (!path.empty()) path += "::";
-                    path += id->getText();
+            auto bindings = parseUseDecl(ud);
+            for (auto& b : bindings) {
+                if (b.kind == UseBinding::Kind::Module) {
+                    // use std::log;  →  namespace binding
+                    userImports_[b.localName] = ModuleRegistry::usePathToModulePath(b.modulePath);
+                } else if (b.kind == UseBinding::Kind::Symbol) {
+                    userImportNames_[b.localName] = b.exportedName;
+                    auto fullModPath = ModuleRegistry::usePathToModulePath(
+                        b.modulePath + "::" + b.exportedName);
+                    bool isModuleImport =
+                        ImportResolver::isStdModule(fullModPath) ||
+                        (moduleRegistry_ && moduleRegistry_->hasModule(fullModPath));
+                    if (ImportResolver::isStdModule(b.modulePath)) {
+                        imports_.addImport(b.modulePath, b.exportedName, b.localName);
+                        if (!moduleRegistry_ || !moduleRegistry_->hasModule(fullModPath))
+                            userImports_[b.localName] =
+                                ModuleRegistry::usePathToModulePath(b.modulePath);
+                    } else if (isModuleImport) {
+                        userImports_[b.localName] = fullModPath;
+                    } else {
+                        userImports_[b.localName] =
+                            ModuleRegistry::usePathToModulePath(b.modulePath);
+                    }
                 }
-                auto symbolName = item->IDENTIFIER()->getText();
-                auto qualifiedPath = path + "::" + symbolName;
-                if (ImportResolver::isStdModule(path)) {
-                    imports_.addImport(path, symbolName);
-                } else if (ImportResolver::isStdModule(qualifiedPath)) {
-                    userImports_[symbolName] = ModuleRegistry::usePathToModulePath(qualifiedPath);
-                } else {
-                    userImports_[symbolName] = ModuleRegistry::usePathToModulePath(path);
-                }
-            }
-            // use Module::{A, B}; (useGroup)
-            else if (auto* group = dynamic_cast<LucisParser::UseGroupContext*>(ud)) {
-                std::string path;
-                for (auto* id : group->modulePath()->IDENTIFIER()) {
-                    if (!path.empty()) path += "::";
-                    path += id->getText();
-                }
-                if (ImportResolver::isStdModule(path)) {
-                    for (auto* id : group->IDENTIFIER())
-                        imports_.addImport(path, id->getText());
-                } else {
-                    auto modPath = ModuleRegistry::usePathToModulePath(path);
-                    for (auto* id : group->IDENTIFIER())
-                        userImports_[id->getText()] = modPath;
-                }
+                // EnumWildcard bindings are resolved by visitUseEnumWildcard.
             }
         }
     }
 
     // Pre-register imported enums so local type aliases referencing them resolve
     for (auto& [symName, sourceNs] : userImports_) {
-        auto* sym = moduleRegistry_->findSymbol(sourceNs, symName);
+        auto* sym = moduleRegistry_->findSymbol(sourceNs, importedSymbolName(symName));
         if (!sym || sym->kind != ExportedSymbol::Enum) continue;
         if (!typeRegistry_.lookup(sym->name) && !genericEnumTemplates_.count(sym->name)) {
             auto* enumCtx = dynamic_cast<LucisParser::EnumDeclContext*>(sym->decl);
@@ -1667,10 +1680,14 @@ void IRGen::registerCrossFileSymbols(LucisParser::ProgramContext* ctx) {
         };
         std::unordered_map<std::string, Pending> pending;
         for (auto& [symName, sourceNs] : userImports_) {
-            auto* sym = moduleRegistry_->findSymbol(sourceNs, symName);
-            if (sym && sym->kind == ExportedSymbol::Struct &&
-                !genericStructTemplates_.count(symName)) {
-                pending[symName] = { static_cast<LucisParser::StructDeclContext*>(sym->decl), sourceNs };
+            auto* sym = moduleRegistry_->findSymbol(sourceNs, importedSymbolName(symName));
+            if (!sym || sym->kind != ExportedSymbol::Struct) continue;
+            // Key by the EXPORTED name: skeletons, LLVM struct types and the
+            // final registration all use the exported name. Using the local
+            // binding (an alias) would create an empty "alias" skeleton and
+            // an opaque %alias LLVM type.
+            if (!genericStructTemplates_.count(sym->name)) {
+                pending[sym->name] = { static_cast<LucisParser::StructDeclContext*>(sym->decl), sourceNs };
             }
         }
         // Add transitive parents
@@ -1958,7 +1975,7 @@ void IRGen::registerCrossFileSymbols(LucisParser::ProgramContext* ctx) {
 
     // ── Phase 1c: Register enums / type aliases from imported namespaces
     for (auto& [symbolName, sourceNs] : userImports_) {
-        auto* sym = moduleRegistry_->findSymbol(sourceNs, symbolName);
+        auto* sym = moduleRegistry_->findSymbol(sourceNs, importedSymbolName(symbolName));
         if (!sym) continue;
 
         if (sym->kind == ExportedSymbol::Enum) {
@@ -1977,7 +1994,7 @@ void IRGen::registerCrossFileSymbols(LucisParser::ProgramContext* ctx) {
 
     // ── Phase 1d: Register structs / unions from imported namespaces ────
     for (auto& [symbolName, sourceNs] : userImports_) {
-        auto* sym = moduleRegistry_->findSymbol(sourceNs, symbolName);
+        auto* sym = moduleRegistry_->findSymbol(sourceNs, importedSymbolName(symbolName));
         if (!sym) continue;
 
         if (sym->kind == ExportedSymbol::Struct) {
@@ -2022,25 +2039,10 @@ void IRGen::registerCrossFileSymbols(LucisParser::ProgramContext* ctx) {
                         for (auto* pd : moduleTree->preambleDecl()) {
                             auto* ud = pd->useDecl();
                             if (!ud) continue;
-                            if (auto* item = dynamic_cast<LucisParser::UseItemContext*>(ud)) {
-                                std::string path;
-                                for (auto* id : item->modulePath()->IDENTIFIER()) {
-                                    if (!path.empty()) path += "::";
-                                    path += id->getText();
-                                }
-                                if (ImportResolver::isStdModule(path))
-                                    imports_.addImport(path, item->IDENTIFIER()->getText());
-                            }
-                            else if (auto* group = dynamic_cast<LucisParser::UseGroupContext*>(ud)) {
-                                std::string path;
-                                for (auto* id : group->modulePath()->IDENTIFIER()) {
-                                    if (!path.empty()) path += "::";
-                                    path += id->getText();
-                                }
-                                if (ImportResolver::isStdModule(path)) {
-                                    for (auto* id : group->IDENTIFIER())
-                                        imports_.addImport(path, id->getText());
-                                }
+                            for (auto& b : parseUseDecl(ud)) {
+                                if (b.kind != UseBinding::Kind::Symbol) continue;
+                                if (ImportResolver::isStdModule(b.modulePath))
+                                    imports_.addImport(b.modulePath, b.exportedName, b.localName);
                             }
                         }
                     }
@@ -2264,7 +2266,7 @@ void IRGen::registerCrossFileSymbols(LucisParser::ProgramContext* ctx) {
 
     // ── Phase 2b: Declare extern functions from imported namespaces ────
     for (auto& [symbolName, sourceNs] : userImports_) {
-        auto* sym = moduleRegistry_->findSymbol(sourceNs, symbolName);
+        auto* sym = moduleRegistry_->findSymbol(sourceNs, importedSymbolName(symbolName));
         if (!sym || sym->kind != ExportedSymbol::Function) continue;
 
         auto* funcCtx = dynamic_cast<LucisParser::FunctionDeclContext*>(sym->decl);

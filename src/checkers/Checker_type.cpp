@@ -143,6 +143,29 @@ const TypeInfo* Checker::resolveTypeSpec(LucisParser::TypeSpecContext* ctx,
                     error(cur, "const '" + identName + "' must have a literal initializer to be used as array size");
                     return nullptr;
                 }
+            } else if (userImports_.count(identName) && moduleRegistry_) {
+                // Imported const used as an array dimension: evaluate the
+                // defining module's constant declaration.
+                auto exported = importedSymbolName(identName);
+                auto* sym = moduleRegistry_->findSymbol(
+                    userImports_[identName], exported);
+                if (!sym || sym->kind != ExportedSymbol::Constant || !sym->decl) {
+                    error(cur, "array dimension must be a compile-time constant; '" +
+                          identName + "' is not an imported const");
+                    return nullptr;
+                }
+                auto* cd = static_cast<LucisParser::ConstDeclaratorContext*>(sym->decl);
+                auto ev = evaluateConstExpr(cd->expression());
+                if (!ev || ev->kind() != ComptimeValue::Kind::Int) {
+                    error(cur, "imported const '" + identName + "' must have a literal integer initializer");
+                    return nullptr;
+                }
+                int64_t size = ev->asInt();
+                if (size <= 0) {
+                    error(cur, "array size must be a positive integer, got '" +
+                          identName + "' = " + std::to_string(size));
+                    return nullptr;
+                }
             } else {
                 error(cur, "array dimension must be a compile-time constant (literal or const); '" +
                       identName + "' is not a const");
@@ -428,23 +451,27 @@ const TypeInfo* Checker::resolveTypeSpec(LucisParser::TypeSpecContext* ctx,
         }
 
         // Check user-defined generic struct templates first
-        auto structIt = genericStructTemplates_.find(baseName);
+        // (an imported template under a local alias is keyed by its
+        // exported name).
+        auto genericBase = userImports_.count(baseName)
+            ? importedSymbolName(baseName) : baseName;
+        auto structIt = genericStructTemplates_.find(genericBase);
         if (structIt != genericStructTemplates_.end()) {
-            return instantiateGenericStruct(baseName, structIt->second, resolvedArgs, cur);
+            return instantiateGenericStruct(genericBase, structIt->second, resolvedArgs, cur);
         }
-        auto unionIt = genericUnionTemplates_.find(baseName);
+        auto unionIt = genericUnionTemplates_.find(genericBase);
         if (unionIt != genericUnionTemplates_.end()) {
-            return instantiateGenericUnion(baseName, unionIt->second, resolvedArgs, cur);
+            return instantiateGenericUnion(genericBase, unionIt->second, resolvedArgs, cur);
         }
-        auto enumIt = genericEnumTemplates_.find(baseName);
+        auto enumIt = genericEnumTemplates_.find(genericBase);
         if (enumIt != genericEnumTemplates_.end()) {
-            return instantiateGenericEnum(baseName, enumIt->second, resolvedArgs, cur);
+            return instantiateGenericEnum(genericBase, enumIt->second, resolvedArgs, cur);
         }
-        auto traitIt = genericTraitTemplates_.find(baseName);
+        auto traitIt = genericTraitTemplates_.find(genericBase);
         if (traitIt != genericTraitTemplates_.end()) {
             // Generic trait reference — return a trait sentinel TypeInfo
             static TypeInfo traitTypeInfo;
-            traitTypeInfo.name = baseName;
+            traitTypeInfo.name = genericBase;
             traitTypeInfo.kind = TypeKind::Trait;
             return &traitTypeInfo;
         }
@@ -567,6 +594,21 @@ const TypeInfo* Checker::resolveTypeSpec(LucisParser::TypeSpecContext* ctx,
         traitTypeInfo.name = name;
         traitTypeInfo.kind = TypeKind::Trait;
         ti = &traitTypeInfo;
+    }
+    if (!ti && userImports_.count(name)) {
+        // Imported type under a local alias: resolve the exported name and
+        // check the registry again (the imported module's full check
+        // registers the type under its exported name).
+        auto exported = importedSymbolName(name);
+        if (exported != name) {
+            ti = typeRegistry_.lookup(exported);
+            if (!ti && traitRegistry_.lookup(exported)) {
+                static TypeInfo traitTypeInfo;
+                traitTypeInfo.name = exported;
+                traitTypeInfo.kind = TypeKind::Trait;
+                ti = &traitTypeInfo;
+            }
+        }
     }
     if (!ti) {
         if (genericStructTemplates_.count(name) ||
@@ -1459,7 +1501,8 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
         if (userImports_.count(name)) {
             auto modPath = userImports_[name];
             if (moduleRegistry_) {
-                auto* sym = moduleRegistry_->findSymbol(modPath, name);
+                auto* sym = moduleRegistry_->findSymbol(
+                    modPath, importedSymbolName(name));
                 if (sym && sym->kind == ExportedSymbol::Constant) {
                     if (auto* cd = dynamic_cast<LucisParser::ConstDeclaratorContext*>(sym->decl)) {
                         if (cd->typeSpec()) {
@@ -3516,6 +3559,11 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
 
         auto typeName = ids[0]->getText();
         auto* typeInfo = typeRegistry_.lookup(typeName);
+        if (!typeInfo && userImports_.count(typeName)) {
+            // Imported type under a local alias.
+            auto exported = importedSymbolName(typeName);
+            typeInfo = typeRegistry_.lookup(exported);
+        }
 
         if (!typeInfo) {
             error(expr, "unknown type '" + typeName + "'");
@@ -4756,12 +4804,34 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
     }
 
     // ── Enum access: Enum::Variant ──────────────────────────────────
+    // Also supports module member access: `module::CONST` / `module::fn`
+    // when the first identifier is an imported module.
     if (auto* ea = dynamic_cast<LucisParser::EnumAccessExprContext*>(expr)) {
         auto ids = ea->IDENTIFIER();
         auto enumName = ids[0]->getText();
         auto variant = ids[1]->getText();
 
+        auto enumIt = userImports_.find(enumName);
+        if (enumIt != userImports_.end()) {
+            auto exported = importedSymbolName(variant);
+            if (moduleRegistry_) {
+                auto* sym = moduleRegistry_->findSymbol(enumIt->second, exported);
+                if (sym && sym->kind == ExportedSymbol::Constant && sym->decl) {
+                    unsigned memberDims = 0;
+                    return resolveTypeSpec(
+                        static_cast<LucisParser::ConstDeclaratorContext*>(
+                            sym->decl)->typeSpec(),
+                        memberDims);
+                }
+            }
+        }
+
         auto* enumType = typeRegistry_.lookup(enumName);
+        if (!enumType && userImports_.count(enumName)) {
+            // Imported enum under a local alias.
+            auto exported = importedSymbolName(enumName);
+            enumType = typeRegistry_.lookup(exported);
+        }
         if (!enumType) {
             error(expr, "unknown enum type '" + enumName + "'");
             return nullptr;
@@ -4999,10 +5069,24 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
         auto* firstType = resolveExprType(elements[0]);
         for (size_t i = 1; i < elements.size(); i++) {
             auto* elemType = resolveExprType(elements[i]);
-            if (firstType && elemType && !isAssignable(firstType, elemType))
+            if (firstType && elemType && !isAssignable(firstType, elemType)) {
                 error(expr, "array element type mismatch: expected '" +
                                  firstType->name + "', got '" +
                                  elemType->name + "'");
+            }
+            // Nested literals must agree on inner length — a ragged array
+            // (different inner sizes) would otherwise generate invalid IR.
+            auto* innerA =
+                dynamic_cast<LucisParser::ArrayLitExprContext*>(elements[0]);
+            auto* innerB =
+                dynamic_cast<LucisParser::ArrayLitExprContext*>(elements[i]);
+            if (innerA && innerB &&
+                innerA->expression().size() != innerB->expression().size()) {
+                error(expr, "nested array literal size mismatch: expected " +
+                                 std::to_string(innerA->expression().size()) +
+                                 ", got " +
+                                 std::to_string(innerB->expression().size()));
+            }
         }
         return firstType;
     }

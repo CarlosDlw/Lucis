@@ -172,6 +172,12 @@ std::any IRGen::visitFnCallExpr(LucisParser::FnCallExprContext* ctx) {
     // Check if base is a simple identifier
     if (auto* identBase = dynamic_cast<LucisParser::IdentExprContext*>(baseExpr)) {
         calleeName = identBase->IDENTIFIER()->getText();
+        // Imports may expose a local alias, while builtin dispatch and
+        // runtime mangling use the exported symbol name.
+        if (imports_.isImported(calleeName)) {
+            auto exported = imports_.exportedName(calleeName);
+            if (!exported.empty()) calleeName = exported;
+        }
 
         // ── Comptime function call ────────────────────────────────────
         if (comptimeEngine_ && comptimeEngine_->isReady() &&
@@ -521,7 +527,8 @@ std::any IRGen::visitFnCallExpr(LucisParser::FnCallExprContext* ctx) {
         }
 
         // ── sprintf() as expression: format string with {} placeholders ──
-        if (calleeName == "sprintf" && imports_.isImported("sprintf")) {
+        if (calleeName == "sprintf" &&
+            (imports_.isImported("sprintf") || imports_.isExportedSymbol("sprintf"))) {
             auto* ptrTy   = llvm::PointerType::getUnqual(*context_);
             auto* usizeTy = module_->getDataLayout().getIntPtrType(*context_);
             auto* strTy   = typeRegistry_.lookup("string")
@@ -626,7 +633,8 @@ std::any IRGen::visitFnCallExpr(LucisParser::FnCallExprContext* ctx) {
         }
 
         // ── dbg() as expression: print debug info and return value ──
-        if (calleeName == "dbg" && imports_.isImported("dbg")) {
+        if (calleeName == "dbg" &&
+            (imports_.isImported("dbg") || imports_.isExportedSymbol("dbg"))) {
             auto* ptrTy   = llvm::PointerType::getUnqual(*context_);
             auto* usizeTy = module_->getDataLayout().getIntPtrType(*context_);
             auto* i32Ty   = llvm::Type::getInt32Ty(*context_);
@@ -700,7 +708,7 @@ std::any IRGen::visitFnCallExpr(LucisParser::FnCallExprContext* ctx) {
         }
 
         // ── std::io functions as expressions ────────────────────────────
-        if (imports_.isImported(calleeName)) {
+        if (imports_.isImported(calleeName) || imports_.isExportedSymbol(calleeName)) {
             auto* ptrTy   = llvm::PointerType::getUnqual(*context_);
             auto* usizeTy = module_->getDataLayout().getIntPtrType(*context_);
             auto* voidTy  = llvm::Type::getVoidTy(*context_);

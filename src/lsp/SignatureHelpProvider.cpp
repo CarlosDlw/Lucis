@@ -3,9 +3,11 @@
 #include "lsp/ProjectContext.h"
 #include "lsp/DocComment.h"
 #include "lsp/TypeChainResolver.h"
+#include "imports/UseParser.h"
 #include "parser/Parser.h"
 #include "ffi/CHeaderResolver.h"
 #include "namespace/ModuleRegistry.h"
+#include "imports/ImportResolver.h"
 
 #include <sstream>
 #include <fstream>
@@ -96,8 +98,19 @@ SignatureHelpProvider::analyzeCallSite(const std::string& source,
     // Walk backwards from cursor to find the matching '(' while counting commas.
     int depth = 0;       // nesting depth for (), [], {}
     size_t commas = 0;   // commas at depth 0 (our call level)
+    // Determine whether the cursor sits INSIDE a string/char literal, so the
+    // backward walk starts with the right state: the quote immediately before
+    // the cursor is then treated as the opening quote of the literal we are
+    // in — without this, a call like `output("done\n")` with the cursor ahead
+    // of the string never finds its '('.
     bool inString = false;
     bool inChar = false;
+    for (size_t i = 0; i < offset; i++) {
+        char c = source[i];
+        if (c == '\\') { i++; continue; }  // escapes do not toggle literals
+        if (c == '"' && !inChar)           inString = !inString;
+        else if (c == '\'' && !inString)   inChar = !inChar;
+    }
 
     size_t openParen = std::string::npos;
     for (size_t i = offset; i > 0; ) {
@@ -1148,6 +1161,56 @@ SignatureHelpProvider::signatureHelp(
 
     // 3) Cross-file functions (imported via `use`)
     if (project && project->isValid()) {
+        // Stdlib .lc modules are not part of the project registry (their
+        // canonical path lives outside the project root) — parse them on
+        // demand so aliases of stdio::printf and friends get signatures.
+        auto tryStdlibFunction = [&](const std::string& modulePath,
+                                     const std::string& funcName) -> bool {
+            if (!ImportResolver::isStdModule(modulePath)) return false;
+            auto registryPath = ModuleRegistry::usePathToModulePath(modulePath);
+            for (auto& dir : ImportResolver::stdlibSearchPaths()) {
+                std::error_code ec;
+                auto candidate = fs::path(dir) / (registryPath + ".lc");
+                if (!fs::exists(candidate, ec) || ec) continue;
+                auto pr = project->getStdlibParse(candidate.string());
+                if (!pr || !pr->tree) continue;
+                for (auto* tld : pr->tree->topLevelDecl()) {
+                    auto* fd = tld->functionDecl();
+                    if (!fd || fd->IDENTIFIER().empty()) continue;
+                    if (safeIdAt(fd, 0) != funcName) continue;
+                    auto sig = buildFromFunction(fd, {});
+                    sig.activeParameter = site->activeParam;
+                    result.signatures.push_back(std::move(sig));
+                    return true;
+                }
+            }
+            return false;
+        };
+        // Imported symbol under a local alias: `use lib::sqr as square;` →
+        // look up the exported name in its module.
+        auto aliasMap = buildImportAliasMap(parsed.tree);
+        auto aliasIt = aliasMap.symbols.find(name);
+        if (aliasIt != aliasMap.symbols.end()) {
+            auto registryPath =
+                ModuleRegistry::usePathToModulePath(aliasIt->second.first);
+            auto* sym = project->registry().findSymbol(registryPath,
+                                                       aliasIt->second.second);
+            if (!sym) {
+                for (auto& ns : project->registry().allModules()) {
+                    sym = project->registry().findSymbol(ns, aliasIt->second.second);
+                    if (sym) break;
+                }
+            }
+            if (sym && sym->kind == ExportedSymbol::Function) {
+                if (auto* fd = dynamic_cast<LucisParser::FunctionDeclContext*>(sym->decl)) {
+                    auto sig = buildFromFunction(fd, {});
+                    sig.activeParameter = site->activeParam;
+                    result.signatures.push_back(std::move(sig));
+                }
+            } else if (!sym) {
+                tryStdlibFunction(aliasIt->second.first, aliasIt->second.second);
+            }
+        }
         for (auto& ns : project->registry().allModules()) {
             auto* sym = project->registry().findSymbol(ns, name);
             if (!sym) continue;

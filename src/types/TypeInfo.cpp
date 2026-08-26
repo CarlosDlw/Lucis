@@ -114,7 +114,27 @@ llvm::Type* TypeInfo::toLLVMType(llvm::LLVMContext& ctx,
         auto lookupName = name;
         if (lookupName.rfind("volatile ", 0) == 0)
             lookupName = lookupName.substr(9);
-        auto* st = llvm::StructType::getTypeByName(ctx, lookupName);
+        if (auto* st = llvm::StructType::getTypeByName(ctx, lookupName))
+            return st;
+        // Self-contained: build the body from the field list. This covers
+        // type aliases (`type A = Point;` → %A), imported types and any
+        // struct whose LLVM type was not pre-created by the IR generator —
+        // `getTypeByName` alone would return null and crash layout queries.
+        if (fields.empty())
+            return nullptr;  // skeleton without a body — nothing to build
+        auto* st = llvm::StructType::create(ctx, lookupName);
+        std::vector<llvm::Type*> body;
+        body.reserve(fields.size());
+        for (const auto& f : fields) {
+            if (!f.typeInfo) {
+                // Unknown field type (should not happen after the checker);
+                // keep the struct opaque rather than emitting garbage.
+                st->setBody(llvm::StructType::get(ctx));  // placeholder
+                return st;
+            }
+            body.push_back(fieldToLLVMType(f, ctx, dl));
+        }
+        st->setBody(body);
         return st;
     }
 
@@ -123,7 +143,23 @@ llvm::Type* TypeInfo::toLLVMType(llvm::LLVMContext& ctx,
         auto lookupName = name;
         if (lookupName.rfind("volatile ", 0) == 0)
             lookupName = lookupName.substr(9);
-        auto* st = llvm::StructType::getTypeByName(ctx, lookupName);
+        if (auto* st = llvm::StructType::getTypeByName(ctx, lookupName))
+            return st;
+        if (fields.empty())
+            return nullptr;  // skeleton without a body — nothing to build
+        // Union = storage big enough for the largest member (mirrors the
+        // enum-payload strategy). Type aliases of unions hit this path.
+        auto* st = llvm::StructType::create(ctx, lookupName);
+        llvm::Type* largest = fieldToLLVMType(fields[0], ctx, dl);
+        llvm::TypeSize largestSize = dl.getTypeAllocSize(largest);
+        for (size_t i = 1; i < fields.size(); ++i) {
+            auto* ft = fieldToLLVMType(fields[i], ctx, dl);
+            if (dl.getTypeAllocSize(ft) > largestSize) {
+                largest = ft;
+                largestSize = dl.getTypeAllocSize(ft);
+            }
+        }
+        st->setBody(largest);
         return st;
     }
 

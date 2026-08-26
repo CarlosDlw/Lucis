@@ -28,6 +28,14 @@ struct ExportedSymbol {
 
     // Keeps the parse tree alive as long as this symbol exists.
     std::shared_ptr<ParseResult> treeAnchor;
+
+    // Compile-time integer value of a Constant symbol, persisted by the
+    // semantic checker (which runs before any IR generation) so any module
+    // can use it — e.g. `[IMPORTED_CONST]` array dimensions. `mutable` because
+    // this is a semantic cache: writing it does not change the registry
+    // structure and the checker holds a const pointer.
+    mutable bool    hasConstIntValue = false;
+    mutable int64_t constIntValue = 0;
 };
 
 class ModuleRegistry {
@@ -59,6 +67,13 @@ public:
     static std::string usePathToModulePath(const std::string& usePath);
 
     static std::string modulePathToFile(const std::string& modulePath);
+
+    // Persists the compile-time integer value of a Constant symbol so
+    // later pipeline stages (IR generation, other modules) can read it
+    // without re-evaluating the constant expression. Const: this is a
+    // cache write, not a structural mutation.
+    void setConstValue(const std::string& modulePath,
+                       const std::string& name, int64_t value) const;
 
 private:
     std::unordered_map<std::string, std::vector<ExportedSymbol>> modules_;
