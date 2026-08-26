@@ -69,6 +69,12 @@ private:
     };
     std::unordered_map<std::string, DocCommentCacheEntry> crossFileDocCache_;
 
+    // Index of the document currently being resolved (server-cached).
+    // Set for the duration of hover() — the server is single-threaded
+    // and processes one request at a time. The symbol finders below
+    // consult it before falling back to the linear topLevelDecl sweeps.
+    const FileSymbolIndex* activeIndex_ = nullptr;
+
     // Attach doc-comment and #[doc("...")] attribute (if any) to hover markdown.
     std::string withDoc(const std::string& md, size_t declLine,
                         LucisParser::AttributeListContext* attrs = nullptr);

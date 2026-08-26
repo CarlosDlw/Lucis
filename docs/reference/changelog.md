@@ -4,6 +4,32 @@ All notable changes to the Lucis language and its compiler.
 
 ---
 
+## Unreleased — LSP symbol-indexed finders in hover & completion (Phase B, step 4)
+
+- The same-file `find*` helpers of `HoverProvider` (8) and
+  `CompletionProvider` (7, incl. `findEnclosingMethod`) now consult the
+  server-cached `FileSymbolIndex` instead of re-scanning `topLevelDecl()`
+  per request, matching what go-to-definition got in step 1. The linear
+  sweeps remain as fallback for direct provider calls.
+- `FileSymbolIndex` grew `enclosingExtendMethodAt()` (extend-method spans)
+  for `findEnclosingMethod`.
+- Remaining completion cost (measured ~37 ms on a 2,000-function file)
+  is dominated by the static collector/inference helpers that walk the
+  tree per request — the next target.
+
+## Unreleased — LSP symbol-indexed finders in hover & completion (Phase B, step 4)
+
+- The same-file `find*` helpers of `HoverProvider` (8) and
+  `CompletionProvider` (7, incl. `findEnclosingMethod`) now consult the
+  server-cached `FileSymbolIndex` instead of re-scanning `topLevelDecl()`
+  per request, matching what go-to-definition got in step 1. The linear
+  sweeps remain as fallback for direct provider calls.
+- `FileSymbolIndex` grew `enclosingExtendMethodAt()` (extend-method spans)
+  for `findEnclosingMethod`.
+- Remaining completion cost (measured ~37 ms on a 2,000-function file)
+  is dominated by the static collector/inference helpers that walk the
+  tree per request — the next target.
+
 ## Unreleased — LSP cached document index (Phase B, step 3)
 
 - The token index, file symbol index and parsed doc-comments are now

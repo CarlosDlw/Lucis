@@ -290,6 +290,16 @@ std::optional<HoverResult> HoverProvider::hover(const std::string& source,
     auto& parsed = preParsed ? *preParsed : (localParseStorage = Parser::parseString(source), localParseStorage);
     if (!parsed.tree) return std::nullopt;
 
+    // Use the server-cached symbol index so the find* helpers below are
+    // O(1) instead of re-scanning topLevelDecl() per lookup.
+    const FileSymbolIndex* prevIndex = activeIndex_;
+    activeIndex_ = docIndex ? &docIndex->symbols() : nullptr;
+    struct IndexRestore {
+        const FileSymbolIndex*& slot;
+        const FileSymbolIndex*  prev;
+        ~IndexRestore() { slot = prev; }
+    } restore{activeIndex_, prevIndex};
+
     // Parse doc-comments from raw source for hover enrichment. Prefer the
     // server's cached index so the whole source is not re-scanned on every
     // hover request.
@@ -7026,6 +7036,9 @@ HoverProvider::collectLocals(LucisParser::FunctionDeclContext* func,
 LucisParser::FunctionDeclContext*
 HoverProvider::findEnclosingFunction(LucisParser::ProgramContext* tree,
                                      size_t line) {
+    if (activeIndex_)
+        return activeIndex_->enclosingFunctionAt(line);
+
     size_t tokenLine = line + 1; // convert to 1-based
     for (auto* tld : tree->topLevelDecl()) {
         auto* func = tld->functionDecl();
@@ -7042,6 +7055,9 @@ HoverProvider::findEnclosingFunction(LucisParser::ProgramContext* tree,
 LucisParser::FunctionDeclContext*
 HoverProvider::findFunctionDecl(LucisParser::ProgramContext* tree,
                                 const std::string& name) {
+    if (activeIndex_)
+        return activeIndex_->function(name);
+
     for (auto* tld : tree->topLevelDecl()) {
         if (auto* func = tld->functionDecl()) {
             if (safeIdAt(func, 0) == name)
@@ -7054,6 +7070,9 @@ HoverProvider::findFunctionDecl(LucisParser::ProgramContext* tree,
 LucisParser::StructDeclContext*
 HoverProvider::findStructDecl(LucisParser::ProgramContext* tree,
                               const std::string& name) {
+    if (activeIndex_)
+        return activeIndex_->structDecl(name);
+
     for (auto* tld : tree->topLevelDecl()) {
         if (auto* sd = tld->structDecl()) {
             if (safeText(sd->IDENTIFIER()) == name)
@@ -7066,6 +7085,9 @@ HoverProvider::findStructDecl(LucisParser::ProgramContext* tree,
 LucisParser::EnumDeclContext*
 HoverProvider::findEnumDecl(LucisParser::ProgramContext* tree,
                             const std::string& name) {
+    if (activeIndex_)
+        return activeIndex_->enumDecl(name);
+
     for (auto* tld : tree->topLevelDecl()) {
         if (auto* ed = tld->enumDecl()) {
             if (ed->IDENTIFIER() && safeText(ed->IDENTIFIER()) == name)
@@ -7078,6 +7100,9 @@ HoverProvider::findEnumDecl(LucisParser::ProgramContext* tree,
 LucisParser::BitstructDeclContext*
 HoverProvider::findBitStructDecl(LucisParser::ProgramContext* tree,
                                  const std::string& name) {
+    if (activeIndex_)
+        return activeIndex_->bitstructDecl(name);
+
     for (auto* tld : tree->topLevelDecl()) {
         if (auto* bd = tld->bitstructDecl()) {
             if (bd->IDENTIFIER() && safeText(bd->IDENTIFIER()) == name)
@@ -7090,6 +7115,9 @@ HoverProvider::findBitStructDecl(LucisParser::ProgramContext* tree,
 LucisParser::UnionDeclContext*
 HoverProvider::findUnionDecl(LucisParser::ProgramContext* tree,
                              const std::string& name) {
+    if (activeIndex_)
+        return activeIndex_->unionDecl(name);
+
     for (auto* tld : tree->topLevelDecl()) {
         if (auto* ud = tld->unionDecl()) {
             if (safeText(ud->IDENTIFIER()) == name)
@@ -7102,6 +7130,9 @@ HoverProvider::findUnionDecl(LucisParser::ProgramContext* tree,
 LucisParser::TypeAliasDeclContext*
 HoverProvider::findTypeAliasDecl(LucisParser::ProgramContext* tree,
                                  const std::string& name) {
+    if (activeIndex_)
+        return activeIndex_->typeAliasDecl(name);
+
     for (auto* tld : tree->topLevelDecl()) {
         if (auto* ta = tld->typeAliasDecl()) {
             if (safeText(ta->IDENTIFIER()) == name)
@@ -7114,6 +7145,9 @@ HoverProvider::findTypeAliasDecl(LucisParser::ProgramContext* tree,
 LucisParser::ExtendDeclContext*
 HoverProvider::findExtendDecl(LucisParser::ProgramContext* tree,
                               const std::string& name) {
+    if (activeIndex_)
+        return activeIndex_->extendDecl(name);
+
     for (auto* tld : tree->topLevelDecl()) {
         if (auto* ext = tld->extendDecl()) {
             if (safeText(ext->IDENTIFIER()) == name)

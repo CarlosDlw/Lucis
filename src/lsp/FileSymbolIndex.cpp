@@ -40,6 +40,14 @@ FileSymbolIndex::FileSymbolIndex(LucisParser::ProgramContext* tree) {
             if (ta->IDENTIFIER()) aliases_.emplace(ta->IDENTIFIER()->getText(), ta);
         } else if (auto* x = tld->extendDecl()) {
             if (x->IDENTIFIER()) extends_.emplace(x->IDENTIFIER()->getText(), x);
+            for (auto* method : x->extendMethod()) {
+                if (!method->getStart() || !method->getStop()) continue;
+                ExtendMethodSpan span;
+                span.startLine = static_cast<unsigned>(method->getStart()->getLine());
+                span.endLine   = static_cast<unsigned>(method->getStop()->getLine());
+                span.decl      = method;
+                extendMethodSpans_.push_back(span);
+            }
         } else if (auto* x = tld->externDecl()) {
             if (x->IDENTIFIER()) externs_.emplace(x->IDENTIFIER()->getText(), x);
         } else if (auto* cd = tld->constDeclStmt()) {
@@ -54,6 +62,10 @@ FileSymbolIndex::FileSymbolIndex(LucisParser::ProgramContext* tree) {
 
     std::sort(funcSpans_.begin(), funcSpans_.end(),
               [](const FuncSpan& a, const FuncSpan& b) {
+                  return a.startLine < b.startLine;
+              });
+    std::sort(extendMethodSpans_.begin(), extendMethodSpans_.end(),
+              [](const ExtendMethodSpan& a, const ExtendMethodSpan& b) {
                   return a.startLine < b.startLine;
               });
 }
@@ -122,6 +134,22 @@ FileSymbolIndex::enclosingFunctionAt(size_t line) const {
         funcSpans_.begin(), funcSpans_.end(), tokenLine,
         [](size_t line, const FuncSpan& span) { return line < span.startLine; });
     if (it == funcSpans_.begin()) return nullptr;
+    --it;
+    if (tokenLine <= it->endLine) return it->decl;
+    return nullptr;
+}
+
+LucisParser::ExtendMethodContext*
+FileSymbolIndex::enclosingExtendMethodAt(size_t line) const {
+    if (extendMethodSpans_.empty()) return nullptr;
+    size_t tokenLine = line + 1;
+
+    auto it = std::upper_bound(
+        extendMethodSpans_.begin(), extendMethodSpans_.end(), tokenLine,
+        [](size_t line, const ExtendMethodSpan& span) {
+            return line < span.startLine;
+        });
+    if (it == extendMethodSpans_.begin()) return nullptr;
     --it;
     if (tokenLine <= it->endLine) return it->decl;
     return nullptr;

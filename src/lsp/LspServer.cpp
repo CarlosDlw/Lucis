@@ -758,10 +758,12 @@ void LspServer::handleCompletion(const json& msg) {
             filePath = filePath.substr(7);
 
         auto* cached = parseCache_.getOrParse(uri, source);
+        auto* docIndex = getDocumentIndex(uri, source);
         auto items = completionProvider_.complete(
             source, line, col, filePath,
             projectContext_.isValid() ? &projectContext_ : nullptr,
-            cached);
+            cached,
+            docIndex);
 
         json result = json::array();
         for (auto& item : items) {

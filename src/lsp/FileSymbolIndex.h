@@ -34,6 +34,10 @@ public:
     // (top-level functions never overlap), or nullptr.
     LucisParser::FunctionDeclContext* enclosingFunctionAt(size_t line) const;
 
+    // The extend-block method whose source span contains the given
+    // 0-based line, or nullptr.
+    LucisParser::ExtendMethodContext* enclosingExtendMethodAt(size_t line) const;
+
 private:
     // emplace() keeps the first declaration for each name: same result as
     // the linear "return first match" sweeps the index replaces.
@@ -54,4 +58,12 @@ private:
         LucisParser::FunctionDeclContext* decl = nullptr;
     };
     std::vector<FuncSpan> funcSpans_;
+
+    // Extend-method spans sorted by start line (same lookup strategy).
+    struct ExtendMethodSpan {
+        unsigned startLine = 0;
+        unsigned endLine   = 0;
+        LucisParser::ExtendMethodContext* decl = nullptr;
+    };
+    std::vector<ExtendMethodSpan> extendMethodSpans_;
 };

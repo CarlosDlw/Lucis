@@ -2159,7 +2159,8 @@ std::vector<CompletionItem>
 CompletionProvider::complete(const std::string &source, size_t line, size_t col,
                              const std::string &filePath,
                              const ProjectContext *project,
-                             ParseResult* preParsed) {
+                             ParseResult* preParsed,
+                             const DocumentIndex* docIndex) {
 
   // 1) Analyze context from raw text (works even with incomplete code)
   auto req = analyzeContext(source, line, col, nullptr);
@@ -2213,6 +2214,16 @@ CompletionProvider::complete(const std::string &source, size_t line, size_t col,
         return {};
     }
   }
+
+  // Use the server-cached symbol index so the find* helpers below are
+  // O(1) instead of re-scanning topLevelDecl() per lookup.
+  const FileSymbolIndex *prevIndex = activeIndex_;
+  activeIndex_ = docIndex ? &docIndex->symbols() : nullptr;
+  struct IndexRestore {
+    const FileSymbolIndex *&slot;
+    const FileSymbolIndex *prev;
+    ~IndexRestore() { slot = prev; }
+  } restore{activeIndex_, prevIndex};
 
   // Resolve C headers — always per-file, not from the global project bindings.
   const CBindings *cBindingsPtr = nullptr;
@@ -7326,6 +7337,9 @@ CompletionProvider::collectLocalsFromMethod(
 LucisParser::FunctionDeclContext *
 CompletionProvider::findEnclosingFunction(LucisParser::ProgramContext *tree,
                                           size_t line) {
+  if (activeIndex_)
+    return activeIndex_->enclosingFunctionAt(line);
+
   size_t tokenLine = line + 1; // 0-based → 1-based
   for (auto *tld : tree->topLevelDecl()) {
     if (auto *func = tld->functionDecl()) {
@@ -7342,6 +7356,9 @@ CompletionProvider::findEnclosingFunction(LucisParser::ProgramContext *tree,
 LucisParser::ExtendMethodContext *
 CompletionProvider::findEnclosingMethod(LucisParser::ProgramContext *tree,
                                         size_t line) {
+  if (activeIndex_)
+    return activeIndex_->enclosingExtendMethodAt(line);
+
   size_t tokenLine = line + 1;
   for (auto *tld : tree->topLevelDecl()) {
     auto *ext = tld->extendDecl();
@@ -7361,6 +7378,9 @@ CompletionProvider::findEnclosingMethod(LucisParser::ProgramContext *tree,
 LucisParser::BitstructDeclContext*
 CompletionProvider::findBitstructDecl(LucisParser::ProgramContext *tree,
                                       const std::string &name) {
+  if (activeIndex_)
+    return activeIndex_->bitstructDecl(name);
+
   for (auto *tld : tree->topLevelDecl()) {
     if (auto *bd = tld->bitstructDecl()) {
       if (safeText(bd->IDENTIFIER()) == name)
@@ -7373,6 +7393,9 @@ CompletionProvider::findBitstructDecl(LucisParser::ProgramContext *tree,
 LucisParser::StructDeclContext*
 CompletionProvider::findStructDecl(LucisParser::ProgramContext *tree,
                                    const std::string &name) {
+  if (activeIndex_)
+    return activeIndex_->structDecl(name);
+
   for (auto *tld : tree->topLevelDecl()) {
     if (auto *sd = tld->structDecl()) {
       if (safeText(sd->IDENTIFIER()) == name)
@@ -7385,6 +7408,9 @@ CompletionProvider::findStructDecl(LucisParser::ProgramContext *tree,
 LucisParser::UnionDeclContext *
 CompletionProvider::findUnionDecl(LucisParser::ProgramContext *tree,
                                   const std::string &name) {
+  if (activeIndex_)
+    return activeIndex_->unionDecl(name);
+
   for (auto *tld : tree->topLevelDecl()) {
     if (auto *ud = tld->unionDecl()) {
       if (safeText(ud->IDENTIFIER()) == name)
@@ -7397,6 +7423,9 @@ CompletionProvider::findUnionDecl(LucisParser::ProgramContext *tree,
 LucisParser::EnumDeclContext *
 CompletionProvider::findEnumDecl(LucisParser::ProgramContext *tree,
                                  const std::string &name) {
+  if (activeIndex_)
+    return activeIndex_->enumDecl(name);
+
   for (auto *tld : tree->topLevelDecl()) {
     if (auto *ed = tld->enumDecl()) {
       if (ed->IDENTIFIER() && safeText(ed->IDENTIFIER()) == name)
@@ -7409,6 +7438,9 @@ CompletionProvider::findEnumDecl(LucisParser::ProgramContext *tree,
 LucisParser::ExtendDeclContext *
 CompletionProvider::findExtendDecl(LucisParser::ProgramContext *tree,
                                    const std::string &name) {
+  if (activeIndex_)
+    return activeIndex_->extendDecl(name);
+
   for (auto *tld : tree->topLevelDecl()) {
     if (auto *ext = tld->extendDecl()) {
       if (safeText(ext->IDENTIFIER()) == name)

@@ -15,6 +15,7 @@
 #include "types/ExtendedTypeRegistry.h"
 #include "intrinsics/IntrinsicRegistry.h"
 #include "imports/ImportResolver.h"
+#include "lsp/DocumentIndex.h"
 
 struct ParseResult;
 class ProjectContext;
@@ -75,7 +76,8 @@ public:
     std::vector<CompletionItem> complete(
         const std::string& source, size_t line, size_t col,
         const std::string& filePath, const ProjectContext* project,
-        ParseResult* preParsed = nullptr);
+        ParseResult* preParsed = nullptr,
+        const DocumentIndex* docIndex = nullptr);
 
     // Pre-warm C header cache (call early to avoid first-completion delay).
     void warmHeaderCache(const std::string& projectRoot = "");
@@ -98,6 +100,12 @@ private:
     bool hasIncludeBindingsCache_ = false;
     std::string includeFingerprintCache_;
     CBindings includeBindingsCache_;
+
+    // Index of the document currently being completed (server-cached).
+    // Set for the duration of complete() — the server is single-threaded
+    // and processes one request at a time. The symbol finders below
+    // consult it before falling back to the linear topLevelDecl sweeps.
+    const FileSymbolIndex* activeIndex_ = nullptr;
     TypeRegistry includeTypeRegCache_;  // keeps TypeInfo objects alive for includeBindingsCache_
 
     // ── Context detection ───────────────────────────────────────────
