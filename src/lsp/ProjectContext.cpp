@@ -62,12 +62,20 @@ bool ProjectContext::buildImpl(const std::string& filePath,
     valid_ = false;
     units_.clear();
     fileModulePaths_.clear();
+    importErrors_.clear();  // stale errors must not leak into later diagnostics
     registry_ = ModuleRegistry();
     cBindings_ = CBindings();
     cTypeReg_ = TypeRegistry();
 
     projectRoot_ = findProjectRoot(filePath);
     if (projectRoot_.empty()) return false;
+
+    // Canonicalize the anchor so the BFS and the directory scan agree on
+    // a single path for the entry document (no duplicate registrations).
+    std::error_code anchorEc;
+    auto anchorPath = fs::canonical(filePath, anchorEc).string();
+    if (anchorEc)
+        anchorPath = filePath;
 
     // Load source paths from lucis.yaml
     sourcePaths_.clear();
@@ -84,10 +92,10 @@ bool ProjectContext::buildImpl(const std::string& filePath,
     std::unordered_set<std::string> visited;
     // Queue stores (filePath, logicalModulePath, importChain)
     // importChain tracks the path from entry to current module for cycle detection
-    auto entryModPath = fs::relative(filePath, projectRoot_).replace_extension("").string();
+    auto entryModPath = fs::relative(anchorPath, projectRoot_).replace_extension("").string();
     std::deque<std::tuple<std::string, std::string, std::vector<std::string>>> queue;
-    queue.emplace_back(filePath, entryModPath, std::vector<std::string>{entryModPath});
-    visited.insert(filePath);
+    queue.emplace_back(anchorPath, entryModPath, std::vector<std::string>{entryModPath});
+    visited.insert(anchorPath);
 
     while (!queue.empty()) {
         auto [curPath, modPath, importChain] = std::move(queue.front());
@@ -100,11 +108,13 @@ bool ProjectContext::buildImpl(const std::string& filePath,
         // Use persistent stdlib cache to avoid re-parsing stdlib on every rebuild.
         // The anchor file parses from the editor's in-memory text when given
         // (unsaved changes / in-memory documents).
-        if (anchorSource && curPath == filePath) {
+        if (anchorSource && curPath == anchorPath) {
             unit.parseResult = std::make_shared<ParseResult>(
                 Parser::parseString(*anchorSource));
         } else {
             unit.parseResult = getStdlibParse(curPath);
+            if (!unit.parseResult)
+                unit.parseResult = parseProjectFile(curPath);
         }
         if (!unit.parseResult) {
             try {
@@ -127,7 +137,8 @@ bool ProjectContext::buildImpl(const std::string& filePath,
 
         // Resolve C headers from this file
         std::vector<LucisParser::IncludeDeclContext*> includes;
-        for (auto* pre : unit.parseResult->tree->preambleDecl())
+        auto* tree = unit.parseResult->tree;
+        for (auto* pre : tree->preambleDecl())
             if (auto* inc = pre->includeDecl()) includes.push_back(inc);
         if (!includes.empty()) {
             CHeaderResolver resolver(cTypeReg_, cBindings_);
@@ -192,17 +203,17 @@ bool ProjectContext::buildImpl(const std::string& filePath,
             }
         };
 
-        for (auto* pre : unit.parseResult->tree->preambleDecl()) {
+        for (auto* pre : tree->preambleDecl()) {
             if (auto* use = pre->useDecl())
                 enqueueUse(use);
         }
-        for (auto* top : unit.parseResult->tree->topLevelDecl()) {
+        for (auto* top : tree->topLevelDecl()) {
             if (auto* use = top->useDecl())
                 enqueueUse(use);
         }
 
         // Process c_macro blocks from this file
-        processCMacroBlocks(unit.parseResult->tree, curPath, projectRoot_, cBindings_);
+        processCMacroBlocks(tree, curPath, projectRoot_, cBindings_);
 
         units_.push_back(std::move(unit));
     }
@@ -234,7 +245,9 @@ bool ProjectContext::buildImpl(const std::string& filePath,
                 for (auto& c : unit.modulePath) if (c == '\\') c = '/';
 
                 try {
-                    unit.parseResult = std::make_shared<ParseResult>(Parser::parse(canon));
+                    unit.parseResult = parseProjectFile(canon);
+                    if (!unit.parseResult)
+                        unit.parseResult = std::make_shared<ParseResult>(Parser::parse(canon));
                 } catch (...) { continue; }
                 if (!unit.parseResult->tree) continue;
 
@@ -303,6 +316,28 @@ std::shared_ptr<ParseResult> ProjectContext::getStdlibParse(const std::string& f
         return nullptr;
     }
     if (pr->tree) stdlibCache_[filePath] = pr;
+    return pr;
+}
+
+std::shared_ptr<ParseResult> ProjectContext::parseProjectFile(const std::string& canonPath) const {
+    std::error_code ec;
+    auto mtime = fs::last_write_time(canonPath, ec);
+    if (ec) mtime = {};
+
+    auto it = projectFileCache_.find(canonPath);
+    if (it != projectFileCache_.end() && it->second.mtime == mtime)
+        return it->second.result;
+
+    std::shared_ptr<ParseResult> pr;
+    try {
+        pr = std::make_shared<ParseResult>(Parser::parse(canonPath));
+    } catch (const std::exception& e) {
+        std::cerr << "[lucis-lsp] parse error in " << canonPath
+                  << ": " << e.what() << "\n";
+        return nullptr;
+    }
+    if (pr->tree)
+        projectFileCache_[canonPath] = {mtime, pr};
     return pr;
 }
 

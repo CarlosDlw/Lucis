@@ -4,6 +4,24 @@ All notable changes to the Lucis language and its compiler.
 
 ---
 
+## Unreleased — LSP incremental project rebuild (Phase C)
+
+- **Project files are now cached by mtime**: `ProjectContext` re-parses a
+  file only when it actually changed on disk since the last rebuild.
+  Import chains, the project scan, and transitive stdlib modules are
+  reused across `didOpen`/`didSave` rebuilds, so editing latency no
+  longer grows with project size. Measured on the traits fixture:
+  cold rebuild 47 ms → warm rebuild 3 ms.
+- **Fixed stale import-error diagnostics**: `importErrors_` was never
+  cleared between rebuilds, so a circular-import error kept being
+  re-published for the file even after the cycle was fixed. The vector
+  is now reset at the start of every build.
+- **No duplicate module registrations**: the anchor document is
+  canonicalized up front, so the BFS and the directory scan always agree
+  on a single path for it.
+- Removed the dead `keepAlive`/`keptUnits_` API (superseded by
+  `ExportedSymbol::treeAnchor`).
+
 ## Unreleased — LSP crash on malformed `impl` (parse error)
 
 - **Fixed a pre-existing LSP SIGSEGV**: opening a document whose source

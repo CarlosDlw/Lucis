@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 #include <unordered_map>
+#include <filesystem>
 
 #include "parser/Parser.h"
 #include "namespace/ModuleRegistry.h"
@@ -28,10 +29,6 @@ public:
     ModuleRegistry& registry() { return registry_; }
     const ModuleRegistry& registry() const { return registry_; }
     const CBindings& cBindings() const { return cBindings_; }
-
-    // Keep a parsed source unit alive (prevents dangling AST pointers).
-    // DEPRECATED: ExportedSymbol::treeAnchor now keeps trees alive automatically.
-    void keepAlive(std::shared_ptr<ParseResult> pr) { keptUnits_.push_back(std::move(pr)); }
 
     // Returns the module path for the given source file (relative to project root).
     std::string modulePathFor(const std::string& filePath) const;
@@ -63,6 +60,10 @@ public:
     // Returns nullptr if filePath is not inside any stdlib directory.
     std::shared_ptr<ParseResult> getStdlibParse(const std::string& filePath) const;
 
+    // Parse a project file, reusing the cached parse when the file is
+    // unchanged on disk since the last build.
+    std::shared_ptr<ParseResult> parseProjectFile(const std::string& canonPath) const;
+
 private:
     ModuleRegistry              registry_;
     CBindings                   cBindings_;
@@ -78,7 +79,6 @@ private:
         std::shared_ptr<ParseResult> parseResult;
     };
     std::vector<SourceUnit> units_;
-    std::vector<std::shared_ptr<ParseResult>> keptUnits_; // Phase 8: on-demand parsed stdlib modules
 
     // Import errors (circular imports, etc.)
     std::vector<ImportError> importErrors_;
@@ -88,6 +88,15 @@ private:
 
     // Persistent cache of stdlib parse results (never invalidated within a session).
     mutable std::unordered_map<std::string, std::shared_ptr<ParseResult>> stdlibCache_;
+
+    // Persistent cache of project-file parses, keyed by canonical path.
+    // Entries whose mtime is unchanged are reused across rebuilds — the
+    // project is only re-parsed when a file actually changed on disk.
+    struct CachedProjectFile {
+        std::filesystem::file_time_type mtime;
+        std::shared_ptr<ParseResult>    result;
+    };
+    mutable std::unordered_map<std::string, CachedProjectFile> projectFileCache_;
 
     // Resolve a use ident (e.g. "std::log") to a file path.
     std::string resolveUseToFile(const std::string& useIdent) const;
