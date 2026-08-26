@@ -224,6 +224,17 @@ std::optional<DefinitionResult> DefinitionProvider::definition(
     auto& parsed = preParsed ? *preParsed : (localParseStorage = Parser::parseString(source), localParseStorage);
     if (!parsed.tree) return std::nullopt;
 
+    // Index the document once so the symbol finders below are O(1)
+    // instead of re-scanning topLevelDecl() per lookup.
+    FileSymbolIndex fileIndex(parsed.tree);
+    const FileSymbolIndex* prevIndex = activeIndex_;
+    activeIndex_ = &fileIndex;
+    struct IndexRestore {
+        const FileSymbolIndex*& slot;
+        const FileSymbolIndex*  prev;
+        ~IndexRestore() { slot = prev; }
+    } restore{activeIndex_, prevIndex};
+
     // Resolve C headers
     CBindings localBindings;
     TypeRegistry cTypeReg;
@@ -1939,6 +1950,9 @@ DefinitionProvider::collectLocals(LucisParser::FunctionDeclContext* func,
 LucisParser::FunctionDeclContext*
 DefinitionProvider::findEnclosingFunction(LucisParser::ProgramContext* tree,
                                           size_t line) {
+    if (activeIndex_)
+        return activeIndex_->enclosingFunctionAt(line);
+
     size_t tokenLine = line + 1;
     for (auto* tld : tree->topLevelDecl()) {
         auto* func = tld->functionDecl();
@@ -1955,6 +1969,9 @@ DefinitionProvider::findEnclosingFunction(LucisParser::ProgramContext* tree,
 LucisParser::FunctionDeclContext*
 DefinitionProvider::findFunctionDecl(LucisParser::ProgramContext* tree,
                                      const std::string& name) {
+    if (activeIndex_)
+        return activeIndex_->function(name);
+
     for (auto* tld : tree->topLevelDecl()) {
         if (auto* func = tld->functionDecl())
             if (safeIdAt(func, 0) == name)
@@ -1966,6 +1983,9 @@ DefinitionProvider::findFunctionDecl(LucisParser::ProgramContext* tree,
 LucisParser::StructDeclContext*
 DefinitionProvider::findStructDecl(LucisParser::ProgramContext* tree,
                                    const std::string& name) {
+    if (activeIndex_)
+        return activeIndex_->structDecl(name);
+
     for (auto* tld : tree->topLevelDecl()) {
         if (auto* sd = tld->structDecl())
             if (safeText(sd->IDENTIFIER()) == name)
@@ -1977,6 +1997,9 @@ DefinitionProvider::findStructDecl(LucisParser::ProgramContext* tree,
 LucisParser::EnumDeclContext*
 DefinitionProvider::findEnumDecl(LucisParser::ProgramContext* tree,
                                  const std::string& name) {
+    if (activeIndex_)
+        return activeIndex_->enumDecl(name);
+
     for (auto* tld : tree->topLevelDecl()) {
         if (auto* ed = tld->enumDecl())
             if (ed->IDENTIFIER() && safeText(ed->IDENTIFIER()) == name)
@@ -1988,6 +2011,9 @@ DefinitionProvider::findEnumDecl(LucisParser::ProgramContext* tree,
 LucisParser::UnionDeclContext*
 DefinitionProvider::findUnionDecl(LucisParser::ProgramContext* tree,
                                   const std::string& name) {
+    if (activeIndex_)
+        return activeIndex_->unionDecl(name);
+
     for (auto* tld : tree->topLevelDecl()) {
         if (auto* ud = tld->unionDecl())
             if (safeText(ud->IDENTIFIER()) == name)
@@ -1999,6 +2025,9 @@ DefinitionProvider::findUnionDecl(LucisParser::ProgramContext* tree,
 LucisParser::TypeAliasDeclContext*
 DefinitionProvider::findTypeAliasDecl(LucisParser::ProgramContext* tree,
                                       const std::string& name) {
+    if (activeIndex_)
+        return activeIndex_->typeAliasDecl(name);
+
     for (auto* tld : tree->topLevelDecl()) {
         if (auto* ta = tld->typeAliasDecl())
             if (safeText(ta->IDENTIFIER()) == name)
@@ -2010,6 +2039,9 @@ DefinitionProvider::findTypeAliasDecl(LucisParser::ProgramContext* tree,
 LucisParser::ExtendDeclContext*
 DefinitionProvider::findExtendDecl(LucisParser::ProgramContext* tree,
                                    const std::string& name) {
+    if (activeIndex_)
+        return activeIndex_->extendDecl(name);
+
     for (auto* tld : tree->topLevelDecl()) {
         if (auto* ext = tld->extendDecl())
             if (safeText(ext->IDENTIFIER()) == name)
@@ -2021,6 +2053,9 @@ DefinitionProvider::findExtendDecl(LucisParser::ProgramContext* tree,
 LucisParser::ExternDeclContext*
 DefinitionProvider::findExternDecl(LucisParser::ProgramContext* tree,
                                    const std::string& name) {
+    if (activeIndex_)
+        return activeIndex_->externDecl(name);
+
     for (auto* tld : tree->topLevelDecl()) {
         if (auto* ext = tld->externDecl())
             if (safeText(ext->IDENTIFIER()) == name)
@@ -2032,6 +2067,9 @@ DefinitionProvider::findExternDecl(LucisParser::ProgramContext* tree,
 LucisParser::ConstDeclStmtContext*
 DefinitionProvider::findConstDecl(LucisParser::ProgramContext* tree,
                                   const std::string& name) {
+    if (activeIndex_)
+        return activeIndex_->constDecl(name);
+
     for (auto* tld : tree->topLevelDecl()) {
         if (auto* cd = tld->constDeclStmt()) {
             for (auto* d : cd->constDeclarator()) {

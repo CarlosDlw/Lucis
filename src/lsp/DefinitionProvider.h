@@ -6,6 +6,7 @@
 
 #include "generated/LucisParser.h"
 #include "ffi/CBindings.h"
+#include "lsp/FileSymbolIndex.h"
 
 struct ParseResult;
 class ProjectContext;
@@ -38,6 +39,13 @@ public:
     };
 
 private:
+    // Index of the document currently being resolved. Set for the
+    // duration of definition() — the LSP server is single-threaded and
+    // processes one request at a time, so the slot is never re-entered.
+    // The symbol finders below consult it before falling back to the
+    // linear topLevelDecl sweeps.
+    const FileSymbolIndex* activeIndex_ = nullptr;
+
     // Collect local variables + params with their declaration tokens.
     std::unordered_map<std::string, LocalVar>
     collectLocals(LucisParser::FunctionDeclContext* func, size_t beforeLine);

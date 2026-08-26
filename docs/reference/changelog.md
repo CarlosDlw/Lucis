@@ -4,6 +4,22 @@ All notable changes to the Lucis language and its compiler.
 
 ---
 
+## Unreleased — LSP shared file symbol index (Phase B, step 1)
+
+- New `FileSymbolIndex`: a per-file index of top-level declarations
+  (functions, structs, enums, unions, bitstructs, type aliases, extend
+  blocks, externs, consts) plus O(log n) enclosing-function lookup,
+  built once per parse instead of re-scanning `tree->topLevelDecl()`
+  on every request.
+- `DefinitionProvider` (go-to-definition) now resolves same-file symbols
+  through the index; every `find*` helper that used a linear sweep
+  consults it first. Behaviour is identical — lookups keep
+  "first declaration in source order" semantics, and the linear sweep
+  remains as fallback.
+- Next step (Phase B, step 2): the providers' per-request linear token
+  scan (finding the token under the cursor) — the dominant remaining
+  cost in go-to-definition on large files.
+
 ## Unreleased — LSP incremental project rebuild (Phase C)
 
 - **Project files are now cached by mtime**: `ProjectContext` re-parses a

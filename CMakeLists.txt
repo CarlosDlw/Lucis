@@ -308,6 +308,7 @@ set(SOURCES
     src/lsp/DiagnosticEngine.cpp
     src/lsp/HoverProvider.cpp
     src/lsp/DefinitionProvider.cpp
+    src/lsp/FileSymbolIndex.cpp
     src/lsp/CompletionProvider.cpp
     src/lsp/DocComment.cpp
     src/lsp/ParseCache.cpp
