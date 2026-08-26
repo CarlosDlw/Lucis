@@ -2147,6 +2147,9 @@ void IRGen::registerCrossFileSymbols(LucisParser::ProgramContext* ctx) {
             if (sym->kind != ExportedSymbol::ImplBlock) continue;
             auto* implCtx = dynamic_cast<LucisParser::ImplDeclContext*>(sym->decl);
             if (!implCtx || implCtx->typeParamList()) continue; // skip generic
+            // Malformed impl (syntax error, e.g. "impl H" without
+            // "for Type") — the parser already reported the error.
+            if (implCtx->typeSpec().size() < 2) continue;
 
             // Validate impl type exists
             const TypeInfo* implTI = resolveTypeInfo(implCtx->typeSpec(1));

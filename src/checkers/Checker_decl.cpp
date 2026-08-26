@@ -1043,6 +1043,12 @@ void Checker::checkTraitDecl(LucisParser::TraitDeclContext* decl)
 
 void Checker::checkImplDecl(LucisParser::ImplDeclContext* decl)
 {
+    // Malformed impl from a parse error (e.g. "impl H" with no
+    // "for Type") — the parser already reported the syntax error;
+    // never dereference typeSpecs the parser did not fill.
+    auto specs = decl->typeSpec();
+    if (specs.size() < 2) return;
+
     // If generic impl, store as template
     if (auto* tpl = decl->typeParamList()) {
         GenericImplTemplate tmpl;
@@ -1056,7 +1062,7 @@ void Checker::checkImplDecl(LucisParser::ImplDeclContext* decl)
         }
         tmpl.decl = decl;
         // Key by the implementing type base name
-        auto implTypeName = decl->typeSpec(1)->getText();
+        auto implTypeName = specs[1]->getText();
         genericImplTemplates_[implTypeName] = std::move(tmpl);
 
         std::vector<std::string> savedParams;

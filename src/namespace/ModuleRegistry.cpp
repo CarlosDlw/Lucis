@@ -183,9 +183,14 @@ void ModuleRegistry::registerFile(const std::string& modulePath,
         else if (auto* implDecl = topLevel->implDecl()) {
             ExportedSymbol sym;
             sym.kind       = ExportedSymbol::ImplBlock;
-            // Name format: "TraitName:TypeName"
-            auto traitName = implDecl->typeSpec(0)->getText();
-            auto typeName  = implDecl->typeSpec(1)->getText();
+            // A malformed `impl` (parse error, e.g. "impl H" without
+            // "for Type") may lack typeSpecs — never dereference
+            // positions the parser did not fill.
+            auto specs = implDecl->typeSpec();
+            std::string traitName =
+                specs.size() >= 1 ? specs[0]->getText() : "";
+            std::string typeName =
+                specs.size() >= 2 ? specs[1]->getText() : "";
             sym.name       = traitName + ":" + typeName;
             sym.modulePath = modulePath;
             sym.sourceFile = filePath;

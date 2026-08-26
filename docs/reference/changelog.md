@@ -4,6 +4,20 @@ All notable changes to the Lucis language and its compiler.
 
 ---
 
+## Unreleased — LSP crash on malformed `impl` (parse error)
+
+- **Fixed a pre-existing LSP SIGSEGV**: opening a document whose source
+  contains an incomplete `impl` (e.g. `impl Hashable` with no
+  `for Type { ... }`) crashed the server during the project rebuild. The
+  parser recovers from the syntax error but leaves the `implDecl` tree
+  node with fewer than two `typeSpec`s; `ModuleRegistry` and the checker
+  dereferenced the missing one unconditionally.
+- All `impl` consumers now tolerate malformed nodes (syntax errors are
+  reported by the parser, never by a segfault): `ModuleRegistry::registerFile`,
+  `Checker::checkImplDecl`, the imported-impl matching in `Checker_driver`,
+  and `declareImplMethods` in `IRGen_decl`. Closing such a document no
+  longer kills `lucis lsp`.
+
 ## Unreleased — `[]uint8` ↔ `string` casts
 
 - **Zero-cost byte/string views**: `[]uint8 as string` and `string as []uint8`

@@ -895,6 +895,9 @@ bool Checker::check(LucisParser::ProgramContext* tree) {
                 if (nsSym->kind != ExportedSymbol::ImplBlock) continue;
                 // Check if the impl block's type matches the imported type
                 auto* implDecl = static_cast<LucisParser::ImplDeclContext*>(nsSym->decl);
+                // Skip malformed impls (syntax error, e.g. "impl H" with
+                // no "for Type"); the parser already reported the error.
+                if (implDecl->typeSpec().size() < 2) continue;
                 auto implTypeName = implDecl->typeSpec(1)->getText();
                 if (implTypeName == symName) {
                     checkImplDecl(implDecl);
