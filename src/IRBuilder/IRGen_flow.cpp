@@ -1455,9 +1455,23 @@ std::any IRGen::visitMatchExpr(LucisParser::MatchExprContext* ctx) {
     if (!resultTy) resultTy = phiIncoming[0].first->getType();
     auto* phi = builder_->CreatePHI(resultTy, phiIncoming.size(), "match.result");
     for (auto& [val, bb] : phiIncoming) {
-        auto* coerced = coerceValueToType(val, resultTy);
+        // Coerce the incoming value *inside its predecessor block* so the
+        // coercion instruction is dominated by the phi edge. Emitting the
+        // cast at the merge block would reference a value from a
+        // non-dominating predecessor (e.g. a post-increment that lives inside
+        // a checked-division `div.ok` block), tripping LLVM's
+        // "Instruction does not dominate all uses" verifier error.
+        llvm::Value* coerced = val;
+        if (val->getType() != resultTy) {
+            if (auto* term = bb->getTerminator())
+                builder_->SetInsertPoint(term);  // insert before terminator
+            else
+                builder_->SetInsertPoint(bb);
+            coerced = coerceValueToType(val, resultTy);
+        }
         phi->addIncoming(coerced, bb);
     }
+    builder_->SetInsertPoint(mergeBB);
     return static_cast<llvm::Value*>(phi);
 }
 
