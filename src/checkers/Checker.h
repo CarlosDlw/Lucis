@@ -434,6 +434,33 @@ private:
     std::string                            currentFnConsumeKey_;
     std::unordered_map<std::string, size_t> currentParamIndices_;
 
+    // Transitive consumption dependencies. An edge records "caller parameter P
+    // is passed as argument A to callee C". Edges are collected while bodies
+    // are checked (independent of whether C is already known to consume) and
+    // resolved to a fixpoint after all bodies are checked, so ownership
+    // transfer propagates through arbitrarily long call chains regardless of
+    // declaration or pass order.
+    struct ConsumeEdge {
+        size_t      callerParamIdx;
+        std::string calleeKey;
+        size_t      calleeArgIdx;
+    };
+    std::unordered_map<std::string, std::vector<ConsumeEdge>> consumeEdges_;
+
+    // Record, for the function currently being checked, that parameter at
+    // argExpr flows into calleeKey's calleeArgIdx argument (no-op when argExpr
+    // is not one of the current function's parameters).
+    void recordConsumeEdgeIfParam(
+        const std::string& calleeKey,
+        size_t calleeArgIdx,
+        LucisParser::ExpressionContext* argExpr);
+
+    // Propagate consumed parameters through consumeEdges_ until no new
+    // consumption is discovered. Runs after all function/method bodies are
+    // checked so callers of a consuming function are themselves marked as
+    // consuming, transitively.
+    void resolveConsumptionFixpoint();
+
     // Check if a function is known (local, same-module, imported, or builtin)
     bool isKnownFunction(const std::string& name) const;
     bool isKnownType(const std::string& name) const;

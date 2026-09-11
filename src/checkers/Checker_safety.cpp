@@ -610,6 +610,60 @@ void Checker::applyCallOwnershipEffects(
                 markExprAsMoved(args[paramIdx], whereCtx);
         }
     }
+
+    // Record dependency edges for every argument that is a parameter of the
+    // function currently being checked. This happens even when the callee's
+    // consumption set is unknown yet (or may still grow), so the post-check
+    // fixpoint can propagate ownership transfer through the call chain.
+    for (size_t i = 0; i < args.size(); ++i)
+        recordConsumeEdgeIfParam(calleeName, i, args[i]);
+}
+
+
+
+void Checker::recordConsumeEdgeIfParam(
+    const std::string& calleeKey,
+    size_t calleeArgIdx,
+    LucisParser::ExpressionContext* argExpr) {
+    if (currentFnConsumeKey_.empty() || calleeKey.empty()) return;
+    auto* ident = dynamic_cast<LucisParser::IdentExprContext*>(argExpr);
+    if (!ident) return;
+    auto pit = currentParamIndices_.find(ident->IDENTIFIER()->getText());
+    if (pit == currentParamIndices_.end()) return;
+
+    auto& edges = consumeEdges_[currentFnConsumeKey_];
+    for (const auto& e : edges) {
+        if (e.callerParamIdx == pit->second && e.calleeKey == calleeKey &&
+            e.calleeArgIdx == calleeArgIdx)
+            return;
+    }
+    edges.push_back({pit->second, calleeKey, calleeArgIdx});
+}
+
+
+
+void Checker::resolveConsumptionFixpoint() {
+    bool changed = true;
+    while (changed) {
+        changed = false;
+        for (const auto& [callerKey, edges] : consumeEdges_) {
+            for (const auto& e : edges) {
+                auto cit = userFunctionConsumingArgs_.find(e.calleeKey);
+                if (cit == userFunctionConsumingArgs_.end()) continue;
+                const auto& calleeConsumed = cit->second;
+                if (std::find(calleeConsumed.begin(), calleeConsumed.end(),
+                              e.calleeArgIdx) == calleeConsumed.end())
+                    continue;
+
+                auto& consumed = userFunctionConsumingArgs_[callerKey];
+                if (std::find(consumed.begin(), consumed.end(),
+                              e.callerParamIdx) == consumed.end()) {
+                    consumed.push_back(e.callerParamIdx);
+                    changed = true;
+                }
+            }
+        }
+    }
 }
 
 

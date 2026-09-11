@@ -1,0 +1,100 @@
+use std::log::println;
+use std::test::{ assertEqual };
+
+struct Token {
+    string value;
+    int32 line;
+}
+
+extend Token {
+    fn new(string value, int32 line) Self {
+        return Token { value, line };
+    }
+
+    fn getValue(&self) string {
+        return self.value;
+    }
+
+    // extend -> free function that forwards to the constructor.
+    fn viaFree(string s, int32 l) Self {
+        return forwardToken(s, l);
+    }
+}
+
+// free -> extend
+fn forwardToken(string s, int32 l) Token {
+    return Token::new(s, l);
+}
+
+// free -> free -> extend (transitive chain)
+fn relay1(string s, int32 l) Token {
+    return forwardToken(s, l);
+}
+
+fn relay2(string s, int32 l) Token {
+    return relay1(s, l);
+}
+
+trait Maker {
+    fn produce(string s, int32 l) Token;
+}
+
+impl Maker for Token {
+    fn produce(string s, int32 l) Token {
+        return Token { value: s, line: l };
+    }
+}
+
+fn testOwnershipTransfer() int32 {
+    println("[Testing cross-call ownership transfer...]");
+
+    string base = "alpha bravo charlie delta echo".slice(0, 30);
+
+    vec<Token> toks;
+
+    // Loop-local source strings: unless ownership is transferred to the
+    // returned Token, each one is freed at the end of its iteration and the
+    // stored token is left dangling.
+    int32 i = 0;
+    while i < 5 {
+        string src = base.slice(0, 5);
+        toks.push(forwardToken(src, i));
+        i = i + 1;
+    }
+
+    // Other call shapes: direct, extend -> free, and impl static.
+    string d1 = "delta".slice(0, 5);
+    toks.push(Token::new(d1, 10));
+
+    string d2 = "echo".slice(0, 4);
+    toks.push(Token::viaFree(d2, 11));
+
+    string d3 = "foxtrot".slice(0, 7);
+    toks.push(Token::produce(d3, 12));
+
+    string d4 = "golf".slice(0, 4);
+    toks.push(relay2(d4, 13));
+
+    // Churn the heap with differently-sized content so any prematurely freed
+    // block is overwritten and would surface as corrupted token values.
+    string churn = "";
+    int32 k = 0;
+    while k < 256 {
+        churn = "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzz".slice(0, 5);
+        k = k + 1;
+    }
+
+    i = 0;
+    while i < 5 {
+        assertEqual(toks[i as uint32].getValue(), "alpha");
+        i = i + 1;
+    }
+    assertEqual(toks[5 as uint32].getValue(), "delta");
+    assertEqual(toks[6 as uint32].getValue(), "echo");
+    assertEqual(toks[7 as uint32].getValue(), "foxtrot");
+    assertEqual(toks[8 as uint32].getValue(), "golf");
+    assertEqual(churn, "zzzzz");
+
+    println("[ownership transfer: OK]");
+    ret 0;
+}

@@ -1216,6 +1216,9 @@ void Checker::checkImplMethodBodies(LucisParser::ImplDeclContext* decl)
     const TypeInfo* prevImplType = currentImplType_;
     currentImplType_ = implTI;
 
+    auto prevFnConsumeKey = currentFnConsumeKey_;
+    auto prevParamIndices = currentParamIndices_;
+
     for (auto* method : decl->implMethod()) {
         locals_.clear();
         for (auto& [name, vi] : globalVars_)
@@ -1223,6 +1226,11 @@ void Checker::checkImplMethodBodies(LucisParser::ImplDeclContext* decl)
 
         auto methodName = method->name->getText();
         bool isStatic = (method->AMPERSAND() == nullptr);
+
+        // Track this method's context so parameters moved into the return value
+        // get recorded (keyed like the Checker's static-call resolution).
+        currentFnConsumeKey_ = implTI->name + "::" + methodName;
+        currentParamIndices_.clear();
 
         // Resolve return type
         unsigned retDims = 0;
@@ -1236,6 +1244,7 @@ void Checker::checkImplMethodBodies(LucisParser::ImplDeclContext* decl)
 
         // Register params as locals
         if (isStatic) {
+            size_t paramIdx = 0;
             if (auto* pl = method->paramList()) {
                 for (auto* p : pl->param()) {
                     if (p->SPREAD()) continue;
@@ -1248,9 +1257,11 @@ void Checker::checkImplMethodBodies(LucisParser::ImplDeclContext* decl)
                         continue;
                     }
                     locals_[paramName] = {pType, dims, {}, true, false, nullptr};
+                    currentParamIndices_[paramName] = paramIdx++;
                 }
             }
         } else {
+            size_t paramIdx = 0;
             for (auto* p : method->param()) {
                 if (p->SPREAD()) continue;
                 auto paramName = p->IDENTIFIER()->getText();
@@ -1262,6 +1273,7 @@ void Checker::checkImplMethodBodies(LucisParser::ImplDeclContext* decl)
                     continue;
                 }
                 locals_[paramName] = {pType, dims, {}, true, false, nullptr};
+                currentParamIndices_[paramName] = paramIdx++;
             }
         }
 
@@ -1271,9 +1283,14 @@ void Checker::checkImplMethodBodies(LucisParser::ImplDeclContext* decl)
         checkBlock(method->block(), retType, nullptr);
         currentReturnType_ = prevReturnType;
 
+        currentFnConsumeKey_.clear();
+        currentParamIndices_.clear();
+
         warnUnusedLocals(method);
     }
 
+    currentFnConsumeKey_ = prevFnConsumeKey;
+    currentParamIndices_ = prevParamIndices;
     currentImplType_ = prevImplType;
 }
 

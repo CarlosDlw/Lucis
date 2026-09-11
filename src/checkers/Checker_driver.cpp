@@ -1204,6 +1204,12 @@ VarInfo vi{typeRegistry_.lookup("int32"), 0, {}, true, false, nullptr};
         }
     }
 
+    // Propagate consumed parameters through the call graph now that every
+    // body has been checked. This makes cross-call ownership transfer
+    // independent of declaration or pass order (free functions, extend and
+    // impl methods can forward ownership to each other in any order).
+    resolveConsumptionFixpoint();
+
     // Only actual errors (not warnings) should cause a check failure
     verifySemanticDBConsistency();
     return !hasErrors();

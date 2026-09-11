@@ -34,6 +34,7 @@ use tests::int_methods_extra::testIntMethodsExtra;
 use tests::int_types::testIntTypes;
 use tests::operator_overload::testOperatorOverload;
 use tests::operators_full::testOperatorsFull;
+use tests::ownership_transfer::testOwnershipTransfer;
 use tests::propagate_operator::testPropagateOperator;
 use tests::ranges_full::testRangesFull;
 use tests::string_collections_methods::testStringCollectionsMethods;
@@ -121,6 +122,7 @@ fn main() int32 {
     testInlineAsmIntel();
     testOperatorOverload();
     testOperatorsFull();
+    testOwnershipTransfer();
     testRangesFull();
     testUnionsFull();
     testTuplesFull();

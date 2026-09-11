@@ -2940,11 +2940,14 @@ std::any IRGen::visitStaticMethodCallExpr(
             if (it == loweredImplMethods_.end()) continue;
             auto* fn = it->second;
             std::vector<llvm::Value*> callArgs;
+            std::vector<LucisParser::ExpressionContext*> argExprs;
             if (auto* argList = ctx->argList()) {
-                for (auto* argExpr : argList->expression())
+                argExprs = argList->expression();
+                for (auto* argExpr : argExprs)
                     callArgs.push_back(castValue(visit(argExpr)));
             }
             auto* retTy = fn->getReturnType();
+            consumeArgsForFunctionKey(structName + "::" + methodName, argExprs);
             if (retTy->isVoidTy()) {
                 builder_->CreateCall(fn, callArgs);
                 return static_cast<llvm::Value*>(
