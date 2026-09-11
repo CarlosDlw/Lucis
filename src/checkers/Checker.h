@@ -465,6 +465,24 @@ private:
     bool isKnownFunction(const std::string& name) const;
     bool isKnownType(const std::string& name) const;
 
+    // ── Cross-module lazy type resolution ────────────────────────────
+    // Register `name` (or its exported form, when it is a local import
+    // alias) on demand from any module, mirroring IRGen::resolveTypeInfo's
+    // fallback chain. This makes the transitive dependencies of a visible
+    // symbol visible without an extra `use`: `use lib::getPoint` is enough
+    // to name `Point` and everything `Point` itself exposes.
+    bool ensureExternalTypeRegistered(const std::string& name);
+
+    // Register one exported type symbol (struct/union/enum/bitstruct/alias/
+    // trait) with idempotency guards. Returns true when it is (now) known.
+    bool registerExternalTypeSymbol(const ExportedSymbol* sym);
+
+    // Guards for the lazy resolver: `lazyTypeResolving_` breaks registration
+    // cycles (skeletons are registered before fields, so recursive types stay
+    // resolvable); `lazyTypeMisses_` memoizes names that no module exports.
+    std::unordered_set<std::string> lazyTypeResolving_;
+    std::unordered_set<std::string> lazyTypeMisses_;
+
     // ── Trait / impl checking ────────────────────────────────────────
 
     void checkTraitDecl(LucisParser::TraitDeclContext* decl);

@@ -310,6 +310,22 @@ const TypeInfo* Checker::resolveTypeParamConstraint(const std::string& constrain
         return &traitConstraint;
     }
 
+    // Cross-module lazy fallback: the constraint trait may live in a module
+    // reached transitively (e.g. a generic imported from another module).
+    if (moduleRegistry_) {
+        ensureExternalTypeRegistered(constraintName);
+        std::string canonical = importedSymbolName(constraintName);
+        const TraitInfo* lazyTrait = traitRegistry_.lookup(constraintName);
+        if (!lazyTrait && canonical != constraintName)
+            lazyTrait = traitRegistry_.lookup(canonical);
+        if (lazyTrait) {
+            static TypeInfo traitConstraint;
+            traitConstraint.name = lazyTrait->name;
+            traitConstraint.kind = TypeKind::Trait;
+            return &traitConstraint;
+        }
+    }
+
     auto* ti = typeRegistry_.lookup(constraintName);
     if (!ti) {
         error(ctx, "unknown type constraint '" + constraintName + "'");

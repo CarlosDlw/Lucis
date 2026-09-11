@@ -1,0 +1,25 @@
+use std::log::println;
+use std::test::{ assertEqual };
+// Import only the enum. Its payload type (`LazyInner`) is a transitive
+// dependency and must be resolved without an extra `use`.
+use tests::lazy_deps_lib::LazyOuter;
+
+fn testLazyCrossModuleTypes() int32 {
+    println("[Testing lazy cross-module type dependencies...]");
+
+    LazyOuter none = LazyOuter::None;
+    assertEqual(none is LazyOuter::None, true);
+    assertEqual(none is LazyOuter::Some, false);
+
+    // `LazyInner` is never imported, yet the variant construction below and
+    // the payload binding must both type-check.
+    LazyOuter some = LazyOuter::Some(LazyInner { v: 5 });
+    int32 got = -1;
+    if some is LazyOuter::Some(inner) {
+        got = inner.v;
+    }
+    assertEqual(got, 5);
+
+    println("[lazy cross-module types: OK]");
+    ret 0;
+}

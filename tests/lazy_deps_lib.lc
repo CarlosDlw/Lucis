@@ -1,0 +1,12 @@
+// Helper module for tests/lazy_deps.lc. Consumers import only `LazyOuter`, so
+// `LazyInner` (its payload type) is reachable only transitively and must be
+// resolved lazily by the checker.
+
+struct LazyInner {
+    int32 v;
+}
+
+enum LazyOuter {
+    None,
+    Some(LazyInner),
+}

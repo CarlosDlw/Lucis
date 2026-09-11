@@ -1421,6 +1421,16 @@ bool Checker::isKnownFunction(const std::string& name) const {
             sym->sourceFile != currentFile_)
             return true;
     }
+    // 6. Any module: a function reached transitively, with no explicit import.
+    if (moduleRegistry_) {
+        auto exported = importedSymbolName(name);
+        for (const auto& ns : moduleRegistry_->allModules()) {
+            auto* sym = moduleRegistry_->findSymbol(ns, exported);
+            if (sym && sym->kind == ExportedSymbol::Function &&
+                sym->sourceFile != currentFile_)
+                return true;
+        }
+    }
     return false;
 }
 
@@ -1443,6 +1453,20 @@ bool Checker::isKnownType(const std::string& name) const {
                     sym->kind == ExportedSymbol::TypeAlias) &&
             sym->sourceFile != currentFile_)
             return true;
+    }
+    // Any module: a type reached transitively, with no explicit import.
+    if (moduleRegistry_) {
+        auto exported = importedSymbolName(name);
+        for (const auto& ns : moduleRegistry_->allModules()) {
+            auto* sym = moduleRegistry_->findSymbol(ns, exported);
+            if (!sym || sym->sourceFile == currentFile_) continue;
+            if (sym->kind == ExportedSymbol::Struct ||
+                sym->kind == ExportedSymbol::Union ||
+                sym->kind == ExportedSymbol::Enum ||
+                sym->kind == ExportedSymbol::TypeAlias ||
+                sym->kind == ExportedSymbol::BitStruct)
+                return true;
+        }
     }
     return false;
 }

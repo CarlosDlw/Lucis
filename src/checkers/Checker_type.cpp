@@ -588,6 +588,16 @@ const TypeInfo* Checker::resolveTypeSpec(LucisParser::TypeSpecContext* ctx,
         return getPointerType(typeRegistry_.lookup("char"));
 
     auto* ti = typeRegistry_.lookup(name);
+
+    // Cross-module lazy fallback: register a type reached transitively (not
+    // necessarily imported under this exact name) so its declaration becomes
+    // visible, mirroring IRGen::resolveTypeInfo. Keeps the "no re-import
+    // needed" principle: a visible symbol's dependencies are visible too.
+    if (!ti && moduleRegistry_) {
+        ensureExternalTypeRegistered(name);
+        ti = typeRegistry_.lookup(name);
+    }
+
     if (!ti && traitRegistry_.lookup(name)) {
         // Not a concrete type, but a trait — return a trait sentinel
         static TypeInfo traitTypeInfo;
@@ -620,6 +630,120 @@ const TypeInfo* Checker::resolveTypeSpec(LucisParser::TypeSpecContext* ctx,
         }
     }
     return ti;
+}
+
+
+
+bool Checker::registerExternalTypeSymbol(const ExportedSymbol* sym) {
+    if (!sym || !sym->decl) return false;
+    const std::string& name = sym->name;
+
+    // Generic templates are registered once; re-registering reports
+    // "already defined", so treat an existing template as resolved.
+    if (genericStructTemplates_.count(name) ||
+        genericUnionTemplates_.count(name) ||
+        genericEnumTemplates_.count(name))
+        return true;
+
+    if (sym->kind == ExportedSymbol::TraitDecl) {
+        if (traitRegistry_.lookup(name)) return true;
+    } else if (auto* existing = typeRegistry_.lookup(name)) {
+        // A full registration short-circuits; only skeletons (and empty
+        // enums/bitstructs) are upgraded by the check*Decl functions.
+        bool skeleton =
+            (existing->kind == TypeKind::Struct &&
+             existing->fields.empty() && existing->bitWidth == 0) ||
+            (existing->kind == TypeKind::Union &&
+             existing->fields.empty() && existing->bitWidth == 0) ||
+            (existing->kind == TypeKind::Enum &&
+             existing->enumVariantInfos.empty()) ||
+            (existing->kind == TypeKind::BitStruct && existing->bitFields.empty());
+        if (!skeleton) return true;
+    }
+
+    // Cycle guard: skeletons exist before their fields resolve, so a
+    // self/mutually-recursive type is already visible while in flight.
+    if (!lazyTypeResolving_.insert(name).second) return true;
+
+    bool prevImported = registeringImported_;
+    std::string prevModule = currentModulePath_;
+    registeringImported_ = true;
+    // Attribute the symbol to its defining module (registries/SemanticDB).
+    if (!sym->modulePath.empty())
+        currentModulePath_ = sym->modulePath;
+
+    switch (sym->kind) {
+        case ExportedSymbol::Struct:
+            checkStructDecl(static_cast<LucisParser::StructDeclContext*>(sym->decl));
+            break;
+        case ExportedSymbol::Union:
+            checkUnionDecl(static_cast<LucisParser::UnionDeclContext*>(sym->decl));
+            break;
+        case ExportedSymbol::Enum:
+            checkEnumDecl(static_cast<LucisParser::EnumDeclContext*>(sym->decl));
+            break;
+        case ExportedSymbol::BitStruct:
+            checkBitStructDecl(static_cast<LucisParser::BitstructDeclContext*>(sym->decl));
+            break;
+        case ExportedSymbol::TypeAlias:
+            checkTypeAliasDecl(static_cast<LucisParser::TypeAliasDeclContext*>(sym->decl));
+            break;
+        case ExportedSymbol::TraitDecl:
+            checkTraitDecl(static_cast<LucisParser::TraitDeclContext*>(sym->decl));
+            break;
+        default:
+            break;
+    }
+
+    currentModulePath_ = prevModule;
+    registeringImported_ = prevImported;
+    lazyTypeResolving_.erase(name);
+    return true;
+}
+
+
+
+bool Checker::ensureExternalTypeRegistered(const std::string& name) {
+    if (!moduleRegistry_ || name.empty()) return false;
+    if (lazyTypeMisses_.count(name)) return false;
+
+    // A local import alias resolves to the exported symbol name.
+    const std::string canonical = importedSymbolName(name);
+
+    // Candidate namespaces, most specific first. `allModules()` is sorted, so
+    // the final fallback is deterministic (first-wins on name collisions).
+    std::vector<std::string> namespaces;
+    std::unordered_set<std::string> seenNs;
+    auto addNs = [&](const std::string& ns) {
+        if (!ns.empty() && seenNs.insert(ns).second) namespaces.push_back(ns);
+    };
+    addNs(currentModulePath_);                                   // same module
+    if (auto it = userImports_.find(name); it != userImports_.end())
+        addNs(it->second);                                       // alias target
+    for (const auto& [_, ns] : userImports_) addNs(ns);          // imported ns
+    for (const auto& ns : moduleRegistry_->allModules()) addNs(ns);
+
+    for (const auto& ns : namespaces) {
+        const ExportedSymbol* sym = moduleRegistry_->findSymbol(ns, name);
+        if (!sym && canonical != name)
+            sym = moduleRegistry_->findSymbol(ns, canonical);
+        if (!sym) continue;
+        if (sym->sourceFile == currentFile_) continue;
+        switch (sym->kind) {
+            case ExportedSymbol::Struct:
+            case ExportedSymbol::Union:
+            case ExportedSymbol::Enum:
+            case ExportedSymbol::TypeAlias:
+            case ExportedSymbol::BitStruct:
+            case ExportedSymbol::TraitDecl:
+                return registerExternalTypeSymbol(sym);
+            default:
+                continue;
+        }
+    }
+
+    lazyTypeMisses_.insert(name);
+    return false;
 }
 
 

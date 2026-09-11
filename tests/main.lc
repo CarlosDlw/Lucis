@@ -32,6 +32,7 @@ use tests::inline_asm_intel::testInlineAsmIntel;
 use tests::integer_literal_formats::testIntegerLiteralFormats;
 use tests::int_methods_extra::testIntMethodsExtra;
 use tests::int_types::testIntTypes;
+use tests::lazy_deps::testLazyCrossModuleTypes;
 use tests::operator_overload::testOperatorOverload;
 use tests::operators_full::testOperatorsFull;
 use tests::ownership_transfer::testOwnershipTransfer;
@@ -83,6 +84,7 @@ use tests::stdfmt::testStdFmt;
 fn main() int32 {
     // testAtomicOrdering();  // FIXME: libatomic memcpy overlap triggers ASAN in lucis test
     testIntTypes();
+    testLazyCrossModuleTypes();
     testIntMethodsExtra();
     testUintTypes();
     testBoolTypes();
