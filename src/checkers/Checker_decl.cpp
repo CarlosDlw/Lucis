@@ -607,6 +607,9 @@ void Checker::checkEnumDecl(LucisParser::EnumDeclContext* decl) {
 
 
 void Checker::checkExtendDecl(LucisParser::ExtendDeclContext* decl) {
+    // The cross-module and attachment paths may reach the same declaration;
+    // register each extend block exactly once.
+    if (!processedExtendDecls_.insert(decl).second) return;
     if (!isDeclActive(decl->attributeList())) return;
     auto structName = decl->IDENTIFIER()->getText();
 
@@ -1010,6 +1013,10 @@ void Checker::checkTraitDecl(LucisParser::TraitDeclContext* decl)
 
 void Checker::checkImplDecl(LucisParser::ImplDeclContext* decl)
 {
+    // The cross-module and attachment paths may reach the same declaration;
+    // register each impl block exactly once.
+    if (!processedImplDecls_.insert(decl).second) return;
+
     // Malformed impl from a parse error (e.g. "impl H" with no
     // "for Type") — the parser already reported the syntax error;
     // never dereference typeSpecs the parser did not fill.

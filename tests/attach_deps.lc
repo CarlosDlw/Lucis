@@ -1,0 +1,25 @@
+use std::log::println;
+use std::test::{ assertEqual };
+// Import only functions. `AttachPoint` and everything it exposes (extend
+// methods, the `+` overload and the `AttachSized` impl) are reached
+// transitively and must be visible without extra imports.
+use tests::attach_deps_lib::{ makePoint, sizeSum };
+
+fn testCrossModuleAttachments() int32 {
+    println("[Testing cross-module type attachments...]");
+
+    AttachPoint p = makePoint(3, 4);
+    AttachPoint q = makePoint(5, 6);
+
+    // extend method
+    assertEqual(p.norm(), 7);
+    // operator overload declared in the same extend
+    assertEqual((p + q).norm(), 18);
+    // trait method provided by a module-local impl
+    assertEqual(p.area(), 12);
+    // generic whose constraint trait and impl live in the other module
+    assertEqual(sizeSum(p, q), 12 + 30);
+
+    println("[cross-module attachments: OK]");
+    ret 0;
+}

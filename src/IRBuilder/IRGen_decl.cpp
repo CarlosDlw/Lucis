@@ -2051,7 +2051,30 @@ void IRGen::registerCrossFileSymbols(LucisParser::ProgramContext* ctx) {
                 continue;
             }
 
-            auto* structTI = typeRegistry_.lookup(sym->name);
+            auto structName = sym->name;
+
+            // The type may only be reachable transitively (not imported by
+            // name), so load its declaration from this module on demand --
+            // otherwise its extend methods would be silently skipped.
+            auto* structTI = typeRegistry_.lookup(structName);
+            if (!structTI ||
+                (structTI->kind == TypeKind::Struct && structTI->fields.empty()) ||
+                (structTI->kind == TypeKind::Union && structTI->fields.empty())) {
+                if (auto* typeSym = moduleRegistry_->findSymbol(ns, structName)) {
+                    if (auto* sCtx = dynamic_cast<LucisParser::StructDeclContext*>(typeSym->decl)) {
+                        for (auto* field : sCtx->structField())
+                            ensureTypeDependencyFromSpec(
+                                ensureTypeDependencyFromSpec, field->typeSpec(), ns);
+                        visitStructDecl(sCtx);
+                    } else if (auto* uCtx = dynamic_cast<LucisParser::UnionDeclContext*>(typeSym->decl)) {
+                        for (auto* field : uCtx->unionField())
+                            ensureTypeDependencyFromSpec(
+                                ensureTypeDependencyFromSpec, field->typeSpec(), ns);
+                        visitUnionDecl(uCtx);
+                    }
+                }
+                structTI = typeRegistry_.lookup(structName);
+            }
             if (!structTI || (structTI->kind != TypeKind::Struct &&
                               structTI->kind != TypeKind::Union)) continue;
             if (structTI->kind == TypeKind::Struct && structTI->fields.empty()) continue;
@@ -2059,8 +2082,44 @@ void IRGen::registerCrossFileSymbols(LucisParser::ProgramContext* ctx) {
             auto* extCtx = dynamic_cast<LucisParser::ExtendDeclContext*>(sym->decl);
             if (!extCtx) continue;
 
-            auto structName = sym->name;
             for (auto* method : extCtx->extendMethod()) {
+                // ── Operator overload ──
+                if (auto* opDecl = method->operatorDecl()) {
+                    auto internalName = opInternalName(opDecl->operatorName());
+                    auto* opRetTI = resolveTypeInfo(opDecl->typeSpec());
+                    if (!opRetTI) continue;
+                    auto* opRetLLTy = opRetTI->toLLVMType(*context_, module_->getDataLayout());
+                    if (!opRetLLTy) continue;
+
+                    bool opIsInstance = (opDecl->AMPERSAND() != nullptr);
+                    std::vector<llvm::Type*> opParamLLTypes;
+                    if (opIsInstance)
+                        opParamLLTypes.push_back(
+                            llvm::PointerType::getUnqual(*context_));
+
+                    std::vector<LucisParser::ParamContext*> opParams;
+                    if (opIsInstance)
+                        opParams = opDecl->param();
+                    else if (auto* opl = opDecl->paramList())
+                        opParams = opl->param();
+                    for (auto* p : opParams) {
+                        auto* pTI = resolveTypeInfo(p->typeSpec());
+                        opParamLLTypes.push_back(
+                            pTI ? pTI->toLLVMType(*context_, module_->getDataLayout())
+                                : llvm::Type::getInt32Ty(*context_));
+                    }
+
+                    auto opFuncName = structName + "__" + internalName + "_" +
+                                      std::to_string(opParamLLTypes.size());
+                    if (module_->getFunction(opFuncName)) continue;
+                    auto* opFnType = llvm::FunctionType::get(
+                        opRetLLTy, opParamLLTypes, false);
+                    auto* opFn = llvm::Function::Create(
+                        opFnType, llvm::Function::ExternalLinkage, opFuncName, module_);
+                    operatorMethods_[structName][internalName].push_back({ opFn, opRetTI });
+                    continue;
+                }
+
                 auto methodName = method->name->getText();
                 auto funcName = structName + "__" + methodName;
 

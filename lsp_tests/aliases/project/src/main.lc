@@ -4,12 +4,6 @@ use lib::{ Color as Hue, Area as AreaTrait };
 use lib::PointAlias as Alias;
 use lib::origin as makeOrigin;
 
-impl AreaTrait for MyPoint {
-    fn area(&self) int32 {
-        ret self.norm();
-    }
-}
-
 fn main() int32 {
     MyPoint p = MyPoint { x: 3, y: 4 };
     int32 s = square(3);
@@ -17,6 +11,7 @@ fn main() int32 {
     Hue::Red;
     Alias a = MyPoint { x: 1, y: 2 };
     int32 t = p.norm();
+    int32 ar = p.area();
     output("done\n");
     ret 0;
 }

@@ -698,7 +698,66 @@ bool Checker::registerExternalTypeSymbol(const ExportedSymbol* sym) {
     currentModulePath_ = prevModule;
     registeringImported_ = prevImported;
     lazyTypeResolving_.erase(name);
+
+    // A type's methods (extend blocks/operators) and trait impls are part of
+    // its visibility contract: bring them in together with the type itself.
+    if (sym->kind == ExportedSymbol::Struct ||
+        sym->kind == ExportedSymbol::Union ||
+        sym->kind == ExportedSymbol::Enum)
+        ensureTypeSemanticAttachments(sym->name, sym->modulePath);
+
     return true;
+}
+
+
+
+void Checker::ensureTypeSemanticAttachments(const std::string& typeName,
+                                            const std::string& ns) {
+    if (!moduleRegistry_ || typeName.empty() || ns.empty()) return;
+
+    std::string prevModule = currentModulePath_;
+    currentModulePath_ = ns;
+
+    auto symbols = moduleRegistry_->getModuleSymbols(ns);
+
+    // `extend Type` blocks: methods and operator overloads for the type.
+    for (auto* sym : symbols) {
+        if (sym->kind != ExportedSymbol::ExtendBlock) continue;
+        if (sym->name != typeName) continue;
+        // The current file's own extends are registered by the local passes
+        // (they may depend on sibling declarations not yet registered here).
+        if (sym->sourceFile == currentFile_) continue;
+        checkExtendDecl(static_cast<LucisParser::ExtendDeclContext*>(sym->decl));
+    }
+
+    // `impl Trait for Type` blocks. Pre-register the trait first: its module
+    // may not be imported at all (e.g. `impl Area for Point` inside lib while
+    // the consumer only knows `Point`).
+    for (auto* sym : symbols) {
+        if (sym->kind != ExportedSymbol::ImplBlock) continue;
+        if (sym->sourceFile == currentFile_) continue;
+        auto* implDecl = static_cast<LucisParser::ImplDeclContext*>(sym->decl);
+        if (!implDecl || implDecl->typeSpec().size() < 2) continue;
+        if (implDecl->typeSpec(1)->getText() != typeName) continue;
+
+        auto traitName = implDecl->typeSpec(0)->getText();
+        if (!traitName.empty() && !traitRegistry_.lookup(traitName)) {
+            auto* traitSym = moduleRegistry_->findSymbol(ns, traitName);
+            if (!traitSym) {
+                for (const auto& mod : moduleRegistry_->allModules()) {
+                    traitSym = moduleRegistry_->findSymbol(mod, traitName);
+                    if (traitSym) break;
+                }
+            }
+            if (traitSym && traitSym->kind == ExportedSymbol::TraitDecl)
+                checkTraitDecl(
+                    static_cast<LucisParser::TraitDeclContext*>(traitSym->decl));
+        }
+
+        checkImplDecl(implDecl);
+    }
+
+    currentModulePath_ = prevModule;
 }
 
 

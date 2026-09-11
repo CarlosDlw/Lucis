@@ -25,6 +25,12 @@ trait Area {
     fn area(&self) int32;
 }
 
+impl Area for Point {
+    fn area(&self) int32 {
+        ret self.norm();
+    }
+}
+
 fn sqr(int32 v) int32 {
     ret v * v;
 }

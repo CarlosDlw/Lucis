@@ -503,6 +503,14 @@ const TypeInfo* IRGen::resolveTypeInfo(LucisParser::TypeSpecContext* ctx) {
                         if (auto* found = moduleRegistry_->findSymbol(ns, exportedFallback)) {
                             loadSymbolType(found);
                             if (auto* loaded = typeRegistry_.lookup(exportedFallback)) return loaded;
+                            // Trait reached transitively: return a sentinel so
+                            // impl/extends resolution sees TypeKind::Trait.
+                            if (found->kind == ExportedSymbol::TraitDecl) {
+                                static TypeInfo traitSentinel;
+                                traitSentinel.name = found->name;
+                                traitSentinel.kind = TypeKind::Trait;
+                                return &traitSentinel;
+                            }
                         }
                     }
                 }
@@ -514,6 +522,12 @@ const TypeInfo* IRGen::resolveTypeInfo(LucisParser::TypeSpecContext* ctx) {
                 if (auto* found = moduleRegistry_->findSymbol(candidateNs, name)) {
                     loadSymbolType(found);
                     if (auto* loaded = typeRegistry_.lookup(name)) return loaded;
+                    if (found->kind == ExportedSymbol::TraitDecl) {
+                        static TypeInfo traitSentinel;
+                        traitSentinel.name = found->name;
+                        traitSentinel.kind = TypeKind::Trait;
+                        return &traitSentinel;
+                    }
                 }
             }
         }

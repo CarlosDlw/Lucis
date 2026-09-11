@@ -477,6 +477,18 @@ private:
     // trait) with idempotency guards. Returns true when it is (now) known.
     bool registerExternalTypeSymbol(const ExportedSymbol* sym);
 
+    // Register the semantic attachments of a type: `extend` blocks (methods
+    // and operators) and trait `impl` blocks from the type's defining module.
+    // Called whenever a cross-module type becomes visible, so a symbol's
+    // dependencies (its methods and impls) are visible with it.
+    void ensureTypeSemanticAttachments(const std::string& typeName,
+                                       const std::string& ns);
+
+    // Deduplicate extend/impl registration across the cross-module and
+    // attachment paths (they can reach the same declaration twice).
+    std::unordered_set<const void*> processedExtendDecls_;
+    std::unordered_set<const void*> processedImplDecls_;
+
     // Guards for the lazy resolver: `lazyTypeResolving_` breaks registration
     // cycles (skeletons are registered before fields, so recursive types stay
     // resolvable); `lazyTypeMisses_` memoizes names that no module exports.

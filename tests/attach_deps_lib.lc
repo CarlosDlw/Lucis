@@ -1,0 +1,36 @@
+// Helper module for tests/attach_deps.lc. Consumers import only functions, so
+// `AttachPoint` is reached transitively and must bring its extend methods,
+// operator overload and trait impl along with it.
+
+struct AttachPoint {
+    int32 x;
+    int32 y;
+}
+
+extend AttachPoint {
+    fn norm(&self) int32 {
+        ret self.x + self.y;
+    }
+
+    fn +(AttachPoint l, AttachPoint r) AttachPoint {
+        ret AttachPoint { l.x + r.x, l.y + r.y };
+    }
+}
+
+trait AttachSized {
+    fn area(&self) int32;
+}
+
+impl AttachSized for AttachPoint {
+    fn area(&self) int32 {
+        ret self.x * self.y;
+    }
+}
+
+fn makePoint(int32 x, int32 y) AttachPoint {
+    ret AttachPoint { x: x, y: y };
+}
+
+fn sizeSum<T: AttachSized>(T a, T b) int32 {
+    ret a.area() + b.area();
+}

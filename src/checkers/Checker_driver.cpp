@@ -559,6 +559,7 @@ bool Checker::check(LucisParser::ProgramContext* tree) {
                         for (auto* ts : variant->typeSpec())
                             self(self, ts, ns);
                     checkEnumDecl(ed);
+                    ensureTypeSemanticAttachments(depSym->name, depSym->modulePath);
                     return;
                 }
                 // Process struct dependency even if skeleton exists but
@@ -599,6 +600,7 @@ bool Checker::check(LucisParser::ProgramContext* tree) {
                     registeringImported_ = true;
                     checkStructDecl(sd);
                     registeringImported_ = false;
+                    ensureTypeSemanticAttachments(depSym->name, depSym->modulePath);
                     return;
                 }
                 if (depSym->kind == ExportedSymbol::Union &&
@@ -612,6 +614,7 @@ bool Checker::check(LucisParser::ProgramContext* tree) {
                     registeringImported_ = true;
                     checkUnionDecl(ud);
                     registeringImported_ = false;
+                    ensureTypeSemanticAttachments(depSym->name, depSym->modulePath);
                     return;
                 }
                 if (depSym->kind == ExportedSymbol::BitStruct &&
