@@ -71,6 +71,14 @@ public:
     // Returns false if the declaration has #[cfg(...)] that evaluates to false.
     bool isDeclActive(LucisParser::AttributeListContext* attrs) const;
 
+    // Parameters a function moves into its return value, keyed by function
+    // name (free functions) or "Type::method" (extend methods). Callers consume
+    // those arguments at the call site, transferring ownership.
+    const std::unordered_map<std::string, std::vector<size_t>>&
+    getUserFunctionConsumingArgs() const {
+        return userFunctionConsumingArgs_;
+    }
+
 private:
     std::vector<std::string> errors_;
     std::vector<Diagnostic>  diagnostics_;
@@ -412,6 +420,19 @@ private:
         auto it = userImportNames_.find(localName);
         return it == userImportNames_.end() ? localName : it->second;
     }
+
+    // ── Function parameter consumption tracking (for move semantics across calls) ──
+    // Maps function name → indices of parameters that are moved into the return value
+    // (i.e., parameters whose ownership is transferred to the returned struct/union).
+    std::unordered_map<std::string, std::vector<size_t>> userFunctionConsumingArgs_;
+
+    // Current function context while checking a body. When a parameter is moved
+    // inside the body (e.g. stored into the returned struct), its index is
+    // recorded in userFunctionConsumingArgs_ so call sites can transfer
+    // ownership. Key is the function name for free functions and
+    // "Type::method" for extend methods; indices exclude `self`.
+    std::string                            currentFnConsumeKey_;
+    std::unordered_map<std::string, size_t> currentParamIndices_;
 
     // Check if a function is known (local, same-module, imported, or builtin)
     bool isKnownFunction(const std::string& name) const;

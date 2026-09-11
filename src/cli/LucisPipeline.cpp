@@ -362,6 +362,9 @@ std::unique_ptr<PipelineResult> LucisPipeline::run(const Options& opts) {
             if (val.kind() == ComptimeValue::Kind::Int)
                 result->compileTimeValues[name] = val.asInt();
         }
+        // Accumulate parameter-consumption info for cross-call ownership transfer
+        for (auto& [fn, idxs] : checker.getUserFunctionConsumingArgs())
+            result->userFunctionConsumingArgs[fn] = idxs;
         // Collect #[test] cases from this unit (resolve the emit symbol name)
         for (auto& tc : checker.testCases()) {
             TestCase t = tc;

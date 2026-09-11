@@ -3450,6 +3450,19 @@ generic_template_handled:
         auto* callResult = builder_->CreateCall(directFn, args,
             directFn->getReturnType()->isVoidTy() ? "" : "call");
 
+        // Consume caller's owned arguments for parameters that are moved into the return value
+        auto it = userFunctionConsumingArgs_.find(calleeName);
+        if (it != userFunctionConsumingArgs_.end()) {
+            if (auto* argList = ctx->argList()) {
+                auto exprs = argList->expression();
+                for (size_t paramIdx : it->second) {
+                    if (paramIdx < exprs.size()) {
+                        consumeExprIfOwnedLocal(exprs[paramIdx]);
+                    }
+                }
+            }
+        }
+
         if (auto* argList = ctx->argList()) {
             auto exprs = argList->expression();
             size_t n = std::min(exprs.size(), args.size());

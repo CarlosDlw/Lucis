@@ -36,6 +36,11 @@ struct PipelineResult {
     // Compile-time constant integer values from checker (for array dimensions, etc.)
     std::unordered_map<std::string, int64_t> compileTimeValues;
 
+    // Parameters a function moves into its return value, keyed by "name"
+    // (free functions) or "Type::method" (extend methods). Callers consume
+    // those arguments instead of freeing them, transferring ownership.
+    std::unordered_map<std::string, std::vector<size_t>> userFunctionConsumingArgs;
+
     // #[test] cases collected from all units (symbolName pre-resolved).
     std::vector<TestCase> testCases;
 

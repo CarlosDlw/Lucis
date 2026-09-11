@@ -2920,6 +2920,7 @@ std::any IRGen::visitStaticMethodCallExpr(
                 }
             }
             auto* retTy = fn->getReturnType();
+            consumeArgsForFunctionKey(structName + "::" + methodName, argExprs);
             if (retTy->isVoidTy()) {
                 builder_->CreateCall(fn, callArgs);
                 return static_cast<llvm::Value*>(

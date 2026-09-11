@@ -3991,14 +3991,26 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
                 // Look up static method from struct methods (walks parent chain)
                 auto* sm = findMethodInChain(ti, methodName2);
                 if (sm && sm->isStatic) {
-                    if (auto* argList = smc->argList())
-                        for (auto* a : argList->expression()) resolveExprType(a);
+                    std::vector<LucisParser::ExpressionContext*> argExprs;
+                    if (auto* argList = smc->argList()) {
+                        for (auto* a : argList->expression()) {
+                            argExprs.push_back(a);
+                            resolveExprType(a);
+                        }
+                    }
+                    applyCallOwnershipEffects(typeName + "::" + methodName2, argExprs, expr);
                     return sm->returnType;
                 }
                 auto* tm = findMethodInTraits(ti, methodName2);
                 if (tm && tm->isStatic) {
-                    if (auto* argList = smc->argList())
-                        for (auto* a : argList->expression()) resolveExprType(a);
+                    std::vector<LucisParser::ExpressionContext*> argExprs;
+                    if (auto* argList = smc->argList()) {
+                        for (auto* a : argList->expression()) {
+                            argExprs.push_back(a);
+                            resolveExprType(a);
+                        }
+                    }
+                    applyCallOwnershipEffects(typeName + "::" + methodName2, argExprs, expr);
                     return tm->returnType;
                 }
                 error(expr, "type '" + nsName + "::" + typeName +
@@ -4043,9 +4055,12 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
         }
 
         std::vector<const TypeInfo*> argTypes;
+        std::vector<LucisParser::ExpressionContext*> argExprs;
         if (auto* argList = smc->argList()) {
-            for (auto* argExpr : argList->expression())
+            for (auto* argExpr : argList->expression()) {
+                argExprs.push_back(argExpr);
                 argTypes.push_back(resolveExprType(argExpr));
+            }
         }
 
         auto* enumType = typeRegistry_.lookup(structName);
@@ -4284,6 +4299,7 @@ const TypeInfo* Checker::resolveExprType(LucisParser::ExpressionContext* expr) {
                 }
             }
         }
+        applyCallOwnershipEffects(structName + "::" + methodName, argExprs, expr);
         return sm->returnType;
     }
 

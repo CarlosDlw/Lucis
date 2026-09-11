@@ -640,6 +640,7 @@ int BuildCommand::run(const ArgParser& parser) {
             irGen.setEmitDebugInfo(pipeOpts.emitDebugInfo);
             irGen.setComptimeEngine(&comptimeEngine);
             irGen.setCompileTimeValues(pipeline->compileTimeValues);
+            irGen.setUserFunctionConsumingArgs(pipeline->userFunctionConsumingArgs);
             auto irMod = irGen.generate(unit.parseResult->tree, unit.filePath);
             if (!irMod) {
                 std::cerr << "lucis: IR generation failed for '" << unit.filePath << "'\n";

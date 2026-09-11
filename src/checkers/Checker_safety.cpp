@@ -7,6 +7,7 @@
 #include "attributes/CfgPredicate.h"
 #include "attributes/TargetInfo.h"
 
+#include <algorithm>
 #include <cctype>
 #include <cstdio>
 #include <cstdlib>
@@ -563,6 +564,18 @@ void Checker::markExprAsMoved(LucisParser::ExpressionContext* expr, antlr4::Pars
     auto& vi = it->second;
     if (!isDropTrackedType(vi.type, vi.arrayDims)) return;
 
+    // If this variable is a parameter of the function currently being checked,
+    // the callee took ownership of it. Record the parameter index so callers
+    // consume the argument at the call site instead of freeing it themselves.
+    if (!currentFnConsumeKey_.empty()) {
+        auto pit = currentParamIndices_.find(name);
+        if (pit != currentParamIndices_.end()) {
+            auto& consumed = userFunctionConsumingArgs_[currentFnConsumeKey_];
+            if (std::find(consumed.begin(), consumed.end(), pit->second) == consumed.end())
+                consumed.push_back(pit->second);
+        }
+    }
+
     if (vi.ownership == VarInfo::OwnershipState::Moved ||
         vi.ownership == VarInfo::OwnershipState::Dropped) {
         error(whereCtx, "double-move detected: value '" + name + "' was already moved");
@@ -578,12 +591,24 @@ void Checker::applyCallOwnershipEffects(
     const std::string& calleeName,
     const std::vector<LucisParser::ExpressionContext*>& args,
     antlr4::ParserRuleContext* whereCtx) {
+    // Built-in functions: use builtin registry for consumption info
     auto* sig = calleeName.empty() ? nullptr : builtinRegistry_.lookup(calleeName);
-    if (!sig) return;
-    for (size_t i = 0; i < args.size(); ++i) {
-        if (builtinRegistry_.argBorrows(calleeName, i)) continue;
-        if (builtinRegistry_.argConsumes(calleeName, i))
-            markExprAsMoved(args[i], whereCtx);
+    if (sig) {
+        for (size_t i = 0; i < args.size(); ++i) {
+            if (builtinRegistry_.argBorrows(calleeName, i)) continue;
+            if (builtinRegistry_.argConsumes(calleeName, i))
+                markExprAsMoved(args[i], whereCtx);
+        }
+        return;
+    }
+
+    // User-defined functions: check if any parameters are consumed (moved into return)
+    auto it = userFunctionConsumingArgs_.find(calleeName);
+    if (it != userFunctionConsumingArgs_.end()) {
+        for (size_t paramIdx : it->second) {
+            if (paramIdx < args.size())
+                markExprAsMoved(args[paramIdx], whereCtx);
+        }
     }
 }
 

@@ -140,6 +140,7 @@ bool BinaryBuilder::build(PipelineResult& pipeline,
         irGen.setSemanticDB(pipeline.semanticDB.get());
         irGen.setComptimeEngine(&comptimeEngine);
         irGen.setCompileTimeValues(pipeline.compileTimeValues);
+        irGen.setUserFunctionConsumingArgs(pipeline.userFunctionConsumingArgs);
         irGen.setTargetTriple(
             opts.targetTriple.empty()
                 ? llvm::sys::getDefaultTargetTriple()

@@ -815,6 +815,11 @@ void Checker::checkExtendMethodBodies(LucisParser::ExtendDeclContext* decl) {
     if (!structTI || structTI->kind != TypeKind::Struct) return;
 
     for (auto* method : decl->extendMethod()) {
+        // Reset parameter-consumption context; only named (non-operator)
+        // methods track ownership transfer to call sites.
+        currentFnConsumeKey_.clear();
+        currentParamIndices_.clear();
+
         // ── Operator overload body ──
         if (auto* opDecl = method->operatorDecl()) {
             locals_.clear();
@@ -881,6 +886,9 @@ void Checker::checkExtendMethodBodies(LucisParser::ExtendDeclContext* decl) {
         auto* retType = resolveTypeSpec(method->typeSpec(), retDims);
         if (!retType) retType = typeRegistry_.lookup("void");
 
+        // Record this method's consumed parameters under "Type::method".
+        currentFnConsumeKey_ = structName + "::" + method->name->getText();
+
         bool isInstance = (method->AMPERSAND() != nullptr);
 
         // Register 'self' for instance methods as *StructName
@@ -898,6 +906,7 @@ void Checker::checkExtendMethodBodies(LucisParser::ExtendDeclContext* decl) {
                 params = pl->param();
         }
 
+        size_t paramIdx = 0;
         for (auto* param : params) {
             auto paramName = param->IDENTIFIER()->getText();
             unsigned pDims = 0;
@@ -913,12 +922,15 @@ void Checker::checkExtendMethodBodies(LucisParser::ExtendDeclContext* decl) {
                 locals_[paramName] = {pType, 1, {}, true, true, nullptr};
             else
 locals_[paramName] = {pType, pDims, {}, true, true, nullptr};
+            currentParamIndices_[paramName] = paramIdx++;
         }
 
         auto* prevRet = currentReturnType_;
         currentReturnType_ = retType;
         checkBlock(method->block(), retType);
         currentReturnType_ = prevRet;
+        currentFnConsumeKey_.clear();
+        currentParamIndices_.clear();
 
         if (retType->kind != TypeKind::Void) {
             if (!blockAlwaysReturns(method->block())) {
@@ -1569,8 +1581,18 @@ void Checker::checkFunction(LucisParser::FunctionDeclContext* func) {
     currentFunctionLabels_.clear();
     asmGotoLabelRefs_.clear();
 
+    // Track this function's context so parameters that are moved inside the
+    // body get recorded in userFunctionConsumingArgs_ (ownership transfer).
+    // Recording happens at the moment of the move (markExprAsMoved), which is
+    // immune to checkBlock restoring the outer locals snapshot on scope exit.
+    auto prevFnConsumeKey = currentFnConsumeKey_;
+    auto prevParamIndices = currentParamIndices_;
+    currentFnConsumeKey_ = func->name->getText();
+    currentParamIndices_.clear();
+
     // Register parameters as locals (params are always initialized and used)
     if (auto* paramList = func->paramList()) {
+        size_t paramIdx = 0;
         for (auto* param : paramList->param()) {
             // Skip untyped variadic ... (no identifier/type)
             if (param->SPREAD() && !param->IDENTIFIER())
@@ -1592,6 +1614,7 @@ void Checker::checkFunction(LucisParser::FunctionDeclContext* func) {
             }
 
             locals_[paramName] = {pType, pDims, {}, true, true, nullptr};
+            currentParamIndices_[paramName] = paramIdx++;
         }
     }
 
@@ -1599,6 +1622,8 @@ void Checker::checkFunction(LucisParser::FunctionDeclContext* func) {
     currentReturnType_ = retType;
     checkBlock(func->block(), retType);
     currentReturnType_ = prevRet;
+    currentFnConsumeKey_ = prevFnConsumeKey;
+    currentParamIndices_ = prevParamIndices;
 
     // Validate asm goto label references (forward references are now resolved)
     for (auto& refName : asmGotoLabelRefs_) {

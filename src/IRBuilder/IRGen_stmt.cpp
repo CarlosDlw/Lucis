@@ -7099,6 +7099,19 @@ bool IRGen::isOwningFieldType(const TypeInfo* ti) {
 
 
 
+void IRGen::consumeArgsForFunctionKey(
+        const std::string& key,
+        const std::vector<LucisParser::ExpressionContext*>& argExprs) {
+    auto it = userFunctionConsumingArgs_.find(key);
+    if (it == userFunctionConsumingArgs_.end()) return;
+    for (size_t paramIdx : it->second) {
+        if (paramIdx < argExprs.size())
+            consumeExprIfOwnedLocal(argExprs[paramIdx]);
+    }
+}
+
+
+
 void IRGen::consumeExprIfOwnedLocal(LucisParser::ExpressionContext* expr) {
     if (!expr) return;
     if (auto* ident = dynamic_cast<LucisParser::IdentExprContext*>(expr)) {

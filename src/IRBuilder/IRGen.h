@@ -429,6 +429,11 @@ private:
         return it == userImportNames_.end() ? localName : it->second;
     }
 
+    // ── Function parameter consumption tracking (for move semantics across calls) ──
+    // Maps function name → indices of parameters that are moved into the return value.
+    // Populated by Checker and consumed at call sites to transfer ownership.
+    std::unordered_map<std::string, std::vector<size_t>> userFunctionConsumingArgs_;
+
     // Caches resolved TypeInfo for expression nodes (used by resolveExprTypeInfo)
     std::unordered_map<const antlr4::ParserRuleContext*, const TypeInfo*> exprTypeCache_;
 
@@ -740,6 +745,12 @@ private:
     bool                isBorrowedStringValueExpr(LucisParser::ExpressionContext* expr) const;
     void                consumeLocalByName(const std::string& name);
     void                consumeExprIfOwnedLocal(LucisParser::ExpressionContext* expr);
+    // Consume caller-owned arguments for parameters the callee takes
+    // ownership of (Checker::userFunctionConsumingArgs_, keyed by "name" or
+    // "Type::method"). No-op when the callee is not a consuming function.
+    void                consumeArgsForFunctionKey(
+                            const std::string& key,
+                            const std::vector<LucisParser::ExpressionContext*>& argExprs);
     llvm::Value*        deepCopyOwnedFields(llvm::Value* val, llvm::Type* ty);
     void                emitScopeCallback(LucisParser::ScopeCallbackContext* ctx);
     void                emitDivByZeroGuard(llvm::Value* divisor,
@@ -775,6 +786,14 @@ public:
     };
     const std::vector<InlineAsmFile>& inlineAssemblyFiles() const { return inlineAssemblyFiles_; }
     const std::string& getEntryPoint() const { return entryPoint_; }
+
+    // Parameters a function moves into its return value, keyed by function
+    // name or "Type::method". Set from the Checker's findings; call sites use
+    // it to transfer ownership of the corresponding caller arguments.
+    void setUserFunctionConsumingArgs(
+        const std::unordered_map<std::string, std::vector<size_t>>& map) {
+        userFunctionConsumingArgs_ = map;
+    }
 
 private:
     std::string entryPoint_;
