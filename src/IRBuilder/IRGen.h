@@ -3,6 +3,7 @@
 #include <memory>
 #include <string>
 #include <any>
+#include <functional>
 #include <vector>
 #include <optional>
 #include <unordered_map>
@@ -523,6 +524,46 @@ private:
 
     // Pre-processing helpers for cross-file symbols
     void registerCrossFileSymbols(LucisParser::ProgramContext* ctx);
+
+    // ── On-demand cross-module semantic attachments ────────────────────
+    // A type reached transitively brings its `extend` methods/operators and
+    // its `impl` blocks along, even when the module that declares them is not
+    // in the consumer's import list. Declared lazily the first time a type
+    // from that namespace is loaded (see resolveTypeInfo), so the checker and
+    // the IRGen agree on what is visible. Both are idempotent.
+    void declareExtendMethodsForNamespace(const std::string& ns);
+    void declareImplMethodsForNamespace(const std::string& ns);
+
+    // Declare the extend/impl blocks that target `typeName`, wherever they
+    // live (the declaring module may be unreachable from the import list).
+    // Returns true when something new was declared, so lookups can retry.
+    bool declareAttachmentsForType(const std::string& typeName);
+
+    // Resolve (and declare on demand) the types referenced by a spec that
+    // belongs to namespace `ns`.
+    void ensureTypeDependencyForSpec(LucisParser::TypeSpecContext* ts,
+                                     const std::string& ns);
+    void ensureFunctionTypeDependencies(LucisParser::FunctionDeclContext* decl,
+                                        const std::string& ns);
+
+    // Namespaces whose extend/impl blocks were already declared.
+    std::unordered_set<std::string> declaredExtendNs_;
+    std::unordered_set<std::string> declaredImplNs_;
+
+    // type name → namespaces declaring an `extend`/`impl` for it, built once
+    // on the first attachment miss so lookups can pull the right module.
+    std::unordered_map<std::string, std::vector<std::string>> attachmentNsByType_;
+    bool attachmentIndexBuilt_ = false;
+
+    // The extend/impl declaration passes are built once in
+    // registerCrossFileSymbols (they need that function's phase context) and
+    // kept callable afterwards for namespaces reached lazily.
+    std::function<void(const std::string&)> declareExtendMethodsFn_;
+    std::function<void(const std::string&)> declareImplMethodsFn_;
+
+    // True once registerCrossFileSymbols finished, so resolveTypeInfo only
+    // pulls attachments on demand for types discovered after registration.
+    bool crossFileSymbolsReady_ = false;
     void declareExternFunction(const std::string& mangledName,
                                LucisParser::FunctionDeclContext* decl);
 

@@ -484,10 +484,28 @@ private:
     void ensureTypeSemanticAttachments(const std::string& typeName,
                                        const std::string& ns);
 
-    // Deduplicate extend/impl registration across the cross-module and
+    // Make the trait named in an `impl Trait for Type` header visible even
+    // when its module was never imported (the impl's module knows it). Must
+    // run before the trait spec is resolved, so that generic trait templates
+    // (e.g. `impl Pair<int32> for T`) resolve instead of erroring.
+    void ensureTraitVisibleForImpl(LucisParser::TypeSpecContext* traitSpec,
+                                   const std::string& implNs);
+
+    // Namespaces that declare an `extend`/`impl` for `typeName`, with the
+    // defining module first. Backed by a one-time index over the registry so
+    // attachment lookup stays flat instead of rescanning every module.
+    // Returns by value: registering during iteration may grow the index.
+    std::vector<std::string> attachmentNamespacesFor(
+        const std::string& typeName, const std::string& ownNs);
+
+    std::unordered_map<std::string, std::vector<std::string>> attachmentNsByType_;
+    bool attachmentIndexBuilt_ = false;
+
+    // Deduplicate extend/impl/trait registration across the cross-module and
     // attachment paths (they can reach the same declaration twice).
     std::unordered_set<const void*> processedExtendDecls_;
     std::unordered_set<const void*> processedImplDecls_;
+    std::unordered_set<const void*> processedTraitDecls_;
 
     // Guards for the lazy resolver: `lazyTypeResolving_` breaks registration
     // cycles (skeletons are registered before fields, so recursive types stay

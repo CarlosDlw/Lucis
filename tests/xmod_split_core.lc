@@ -1,0 +1,12 @@
+// Helper module for tests/xmod_split.lc. It only declares the type; the
+// `extend` methods and the trait impl live in tests/xmod_split_ops.lc, a third
+// module the consumer never imports.
+
+struct SplitPoint {
+    int32 x;
+    int32 y;
+}
+
+fn makeSplitPoint(int32 x, int32 y) SplitPoint {
+    ret SplitPoint { x: x, y: y };
+}

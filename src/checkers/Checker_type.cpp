@@ -713,51 +713,115 @@ bool Checker::registerExternalTypeSymbol(const ExportedSymbol* sym) {
 
 void Checker::ensureTypeSemanticAttachments(const std::string& typeName,
                                             const std::string& ns) {
-    if (!moduleRegistry_ || typeName.empty() || ns.empty()) return;
+    if (!moduleRegistry_ || typeName.empty()) return;
 
     std::string prevModule = currentModulePath_;
-    currentModulePath_ = ns;
+    bool prevImported = registeringImported_;
 
-    auto symbols = moduleRegistry_->getModuleSymbols(ns);
+    // An `extend Type` or `impl Trait for Type` block may live outside the
+    // module that defines the type; `attachmentNamespacesFor` returns every
+    // namespace that declares one, defining module first (deterministic
+    // first-wins on collisions). The dedupe sets keep this idempotent.
+    const auto candidates = attachmentNamespacesFor(typeName, ns);
 
-    // `extend Type` blocks: methods and operator overloads for the type.
-    for (auto* sym : symbols) {
-        if (sym->kind != ExportedSymbol::ExtendBlock) continue;
-        if (sym->name != typeName) continue;
-        // The current file's own extends are registered by the local passes
-        // (they may depend on sibling declarations not yet registered here).
-        if (sym->sourceFile == currentFile_) continue;
-        checkExtendDecl(static_cast<LucisParser::ExtendDeclContext*>(sym->decl));
-    }
+    registeringImported_ = true;
+    for (const auto& cand : candidates) {
+        currentModulePath_ = cand;
+        auto symbols = moduleRegistry_->getModuleSymbols(cand);
 
-    // `impl Trait for Type` blocks. Pre-register the trait first: its module
-    // may not be imported at all (e.g. `impl Area for Point` inside lib while
-    // the consumer only knows `Point`).
-    for (auto* sym : symbols) {
-        if (sym->kind != ExportedSymbol::ImplBlock) continue;
-        if (sym->sourceFile == currentFile_) continue;
-        auto* implDecl = static_cast<LucisParser::ImplDeclContext*>(sym->decl);
-        if (!implDecl || implDecl->typeSpec().size() < 2) continue;
-        if (implDecl->typeSpec(1)->getText() != typeName) continue;
-
-        auto traitName = implDecl->typeSpec(0)->getText();
-        if (!traitName.empty() && !traitRegistry_.lookup(traitName)) {
-            auto* traitSym = moduleRegistry_->findSymbol(ns, traitName);
-            if (!traitSym) {
-                for (const auto& mod : moduleRegistry_->allModules()) {
-                    traitSym = moduleRegistry_->findSymbol(mod, traitName);
-                    if (traitSym) break;
-                }
-            }
-            if (traitSym && traitSym->kind == ExportedSymbol::TraitDecl)
-                checkTraitDecl(
-                    static_cast<LucisParser::TraitDeclContext*>(traitSym->decl));
+        // `extend Type` blocks: methods and operator overloads for the type.
+        for (auto* sym : symbols) {
+            if (sym->kind != ExportedSymbol::ExtendBlock) continue;
+            if (sym->name != typeName) continue;
+            // The current file's own extends are registered by the local passes
+            // (they may depend on sibling declarations not yet registered here).
+            if (sym->sourceFile == currentFile_) continue;
+            checkExtendDecl(static_cast<LucisParser::ExtendDeclContext*>(sym->decl));
         }
 
-        checkImplDecl(implDecl);
+        // `impl Trait for Type` blocks. The trait is made visible on demand by
+        // checkImplDecl, because its module may not be imported at all.
+        for (auto* sym : symbols) {
+            if (sym->kind != ExportedSymbol::ImplBlock) continue;
+            if (sym->sourceFile == currentFile_) continue;
+            auto* implDecl = static_cast<LucisParser::ImplDeclContext*>(sym->decl);
+            if (!implDecl || implDecl->typeSpec().size() < 2) continue;
+            if (implDecl->typeSpec(1)->getText() != typeName) continue;
+            checkImplDecl(implDecl);
+        }
     }
 
     currentModulePath_ = prevModule;
+    registeringImported_ = prevImported;
+}
+
+
+
+std::vector<std::string> Checker::attachmentNamespacesFor(
+    const std::string& typeName, const std::string& ownNs) {
+    if (!attachmentIndexBuilt_) {
+        for (const auto& mod : moduleRegistry_->allModules()) {
+            for (auto* sym : moduleRegistry_->getModuleSymbols(mod)) {
+                if (sym->kind == ExportedSymbol::ExtendBlock) {
+                    attachmentNsByType_[sym->name].push_back(mod);
+                } else if (sym->kind == ExportedSymbol::ImplBlock) {
+                    auto* implDecl = dynamic_cast<LucisParser::ImplDeclContext*>(sym->decl);
+                    if (implDecl && implDecl->typeSpec().size() >= 2)
+                        attachmentNsByType_[implDecl->typeSpec(1)->getText()].push_back(mod);
+                }
+            }
+        }
+        attachmentIndexBuilt_ = true;
+    }
+
+    auto& list = attachmentNsByType_[typeName];
+    // The defining module may declare no attachment of its own, but it should
+    // always be consulted first so its own view of the type wins.
+    if (!ownNs.empty()) {
+        bool present = false;
+        for (const auto& n : list)
+            if (n == ownNs) { present = true; break; }
+        if (!present) list.insert(list.begin(), ownNs);
+    }
+    return list;
+}
+
+
+
+void Checker::ensureTraitVisibleForImpl(LucisParser::TypeSpecContext* traitSpec,
+                                        const std::string& implNs) {
+    if (!moduleRegistry_ || !traitSpec || !traitSpec->IDENTIFIER()) return;
+
+    // The trait spec may be generic (`Pair<int32>`); the declaration is keyed
+    // by its base name.
+    const std::string base = traitSpec->IDENTIFIER()->getText();
+    if (base.empty()) return;
+    if (traitRegistry_.lookup(base) || genericTraitTemplates_.count(base)) return;
+
+    std::vector<std::string> candidates;
+    std::unordered_set<std::string> seenNs;
+    auto addNs = [&](const std::string& n) {
+        if (!n.empty() && seenNs.insert(n).second) candidates.push_back(n);
+    };
+    addNs(implNs);
+    addNs(currentModulePath_);
+    for (const auto& mod : moduleRegistry_->allModules()) addNs(mod);
+
+    for (const auto& cand : candidates) {
+        const ExportedSymbol* sym = moduleRegistry_->findSymbol(cand, base);
+        if (!sym || sym->kind != ExportedSymbol::TraitDecl) continue;
+        // The current file's own trait is registered by the local passes.
+        if (sym->sourceFile == currentFile_) return;
+
+        std::string prevModule = currentModulePath_;
+        bool prevImported = registeringImported_;
+        currentModulePath_ = sym->modulePath;
+        registeringImported_ = true;
+        checkTraitDecl(static_cast<LucisParser::TraitDeclContext*>(sym->decl));
+        registeringImported_ = prevImported;
+        currentModulePath_ = prevModule;
+        return;
+    }
 }
 
 

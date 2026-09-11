@@ -1,0 +1,8 @@
+// Loads tests/xmod_split_ops.lc into the build without re-exporting anything
+// from it. The consumer imports this module, so the ops module is part of the
+// registry but never appears in the consumer's import list.
+use tests::xmod_split_ops::splitOpsTouch;
+
+fn splitLoaderTouch() void {
+    splitOpsTouch();
+}

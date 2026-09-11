@@ -976,6 +976,18 @@ IRGen::MethodEntry* IRGen::findMethodEntryInChain(const TypeInfo* ti,
         if (mIt != smIt->second.end())
             return &mIt->second;
     }
+    // The method may live in a namespace that was never imported (the type was
+    // reached transitively). Declare its extend/impl blocks on demand and
+    // retry once, so lookup agrees with what the checker accepted.
+    if (ti && declareAttachmentsForType(ti->name)) {
+        for (auto* t = ti; t; t = t->parentType) {
+            auto smIt = structMethods_.find(t->name);
+            if (smIt == structMethods_.end()) continue;
+            auto mIt = smIt->second.find(name);
+            if (mIt != smIt->second.end())
+                return &mIt->second;
+        }
+    }
     return nullptr;
 }
 
@@ -989,6 +1001,16 @@ IRGen::MethodEntry* IRGen::findOperatorEntryInChain(const TypeInfo* ti,
         auto mIt = smIt->second.find(internalName);
         if (mIt != smIt->second.end() && !mIt->second.empty())
             return &mIt->second[0];
+    }
+    // Operator overload declared in a namespace reached transitively.
+    if (ti && declareAttachmentsForType(ti->name)) {
+        for (auto* t = ti; t; t = t->parentType) {
+            auto smIt = operatorMethods_.find(t->name);
+            if (smIt == operatorMethods_.end()) continue;
+            auto mIt = smIt->second.find(internalName);
+            if (mIt != smIt->second.end() && !mIt->second.empty())
+                return &mIt->second[0];
+        }
     }
     return nullptr;
 }
@@ -1853,86 +1875,17 @@ void IRGen::registerCrossFileSymbols(LucisParser::ProgramContext* ctx) {
     auto sameNsSymbols = moduleRegistry_->getExternalSymbols(
         currentModulePath_, currentFile_);
 
+    // Thin aliases for the phase code below: the real implementations are
+    // members, so they stay callable on demand from resolveTypeInfo once this
+    // function returns (types discovered after cross-file registration).
     auto ensureTypeDependencyFromSpec =
-        [&](auto&& self, LucisParser::TypeSpecContext* ts, const std::string& ns) -> void {
-            if (!ts) return;
-            if (ts->fnTypeSpec()) {
-                for (auto* inner : ts->fnTypeSpec()->typeSpec())
-                    self(self, inner, ns);
-                return;
-            }
-            for (auto* inner : ts->typeSpec())
-                self(self, inner, ns);
-
-            if (!ts->IDENTIFIER()) return;
-            auto baseName = ts->IDENTIFIER()->getText();
-            auto* depSym = moduleRegistry_->findSymbol(ns, baseName);
-            if (!depSym) {
-                for (auto& candidateNs : moduleRegistry_->allModules()) {
-                    depSym = moduleRegistry_->findSymbol(candidateNs, baseName);
-                    if (depSym) break;
-                }
-            }
-            if (!depSym) return;
-            if (depSym->sourceFile == currentFile_) return;
-
-            if (depSym->kind == ExportedSymbol::Enum && !typeRegistry_.lookup(baseName)) {
-                auto* ed = static_cast<LucisParser::EnumDeclContext*>(depSym->decl);
-                visitEnumDecl(ed);
-                return;
-            }
-            auto* existingTI = typeRegistry_.lookup(baseName);
-            bool needsVisit = !existingTI ||
-                !llvm::StructType::getTypeByName(*context_, baseName);
-            if (depSym->kind == ExportedSymbol::Struct && needsVisit) {
-                auto* sd = static_cast<LucisParser::StructDeclContext*>(depSym->decl);
-                // Register a skeleton first to break self-referential cycles
-                {
-                    TypeInfo skeleton;
-                    skeleton.name = baseName;
-                    skeleton.kind = TypeKind::Struct;
-                    skeleton.bitWidth = 0;
-                    skeleton.isSigned = false;
-                    typeRegistry_.registerType(std::move(skeleton));
-                    if (!llvm::StructType::getTypeByName(*context_, baseName))
-                        llvm::StructType::create(*context_, baseName);
-                }
-                for (auto* field : sd->structField())
-                    self(self, field->typeSpec(), ns);
-                // Upgrade skeleton to full type via visitStructDecl
-                visitStructDecl(sd);
-                return;
-            }
-            bool needsUnionVisit = !existingTI ||
-                !llvm::StructType::getTypeByName(*context_, baseName);
-            if (depSym->kind == ExportedSymbol::Union && needsUnionVisit) {
-                auto* ud = static_cast<LucisParser::UnionDeclContext*>(depSym->decl);
-                // Register a skeleton first to break self-referential cycles
-                {
-                    TypeInfo skeleton;
-                    skeleton.name = baseName;
-                    skeleton.kind = TypeKind::Union;
-                    skeleton.bitWidth = 0;
-                    skeleton.isSigned = false;
-                    typeRegistry_.registerType(std::move(skeleton));
-                    if (!llvm::StructType::getTypeByName(*context_, baseName))
-                        llvm::StructType::create(*context_, baseName);
-                }
-                for (auto* field : ud->unionField())
-                    self(self, field->typeSpec(), ns);
-                // Upgrade skeleton to full type via visitUnionDecl
-                visitUnionDecl(ud);
-            }
+        [this](auto&&, LucisParser::TypeSpecContext* ts, const std::string& ns) -> void {
+            ensureTypeDependencyForSpec(ts, ns);
         };
 
     auto ensureFunctionTypeDependencies =
-        [&](LucisParser::FunctionDeclContext* decl, const std::string& ns) {
-            if (!decl) return;
-            ensureTypeDependencyFromSpec(ensureTypeDependencyFromSpec, decl->typeSpec(), ns);
-            if (auto* params = decl->paramList()) {
-                for (auto* p : params->param())
-                    ensureTypeDependencyFromSpec(ensureTypeDependencyFromSpec, p->typeSpec(), ns);
-            }
+        [this](LucisParser::FunctionDeclContext* decl, const std::string& ns) {
+            IRGen::ensureFunctionTypeDependencies(decl, ns);
         };
 
     // ── Phase 1a: Register enums / type aliases from same namespace ─────
@@ -2019,7 +1972,7 @@ void IRGen::registerCrossFileSymbols(LucisParser::ProgramContext* ctx) {
     // ── Phase 1e: Declare extern extend block methods ───────────────────
     //    For same-namespace and imported structs, find their extend blocks
     //    and declare methods as extern functions.
-    auto declareExtendMethods = [&](const std::string& ns) {
+    declareExtendMethodsFn_ = [this](const std::string& ns) {
         auto allSyms = moduleRegistry_->getModuleSymbols(ns);
         for (auto* sym : allSyms) {
             if (sym->kind != ExportedSymbol::ExtendBlock) continue;
@@ -2063,13 +2016,11 @@ void IRGen::registerCrossFileSymbols(LucisParser::ProgramContext* ctx) {
                 if (auto* typeSym = moduleRegistry_->findSymbol(ns, structName)) {
                     if (auto* sCtx = dynamic_cast<LucisParser::StructDeclContext*>(typeSym->decl)) {
                         for (auto* field : sCtx->structField())
-                            ensureTypeDependencyFromSpec(
-                                ensureTypeDependencyFromSpec, field->typeSpec(), ns);
+                            ensureTypeDependencyForSpec(field->typeSpec(), ns);
                         visitStructDecl(sCtx);
                     } else if (auto* uCtx = dynamic_cast<LucisParser::UnionDeclContext*>(typeSym->decl)) {
                         for (auto* field : uCtx->unionField())
-                            ensureTypeDependencyFromSpec(
-                                ensureTypeDependencyFromSpec, field->typeSpec(), ns);
+                            ensureTypeDependencyForSpec(field->typeSpec(), ns);
                         visitUnionDecl(uCtx);
                     }
                 }
@@ -2128,17 +2079,12 @@ void IRGen::registerCrossFileSymbols(LucisParser::ProgramContext* ctx) {
 
                 // Pre-register types referenced in method signatures
                 // (e.g. ReadFileResult as return type) before resolving them.
-                ensureTypeDependencyFromSpec(
-                    ensureTypeDependencyFromSpec, method->typeSpec(), ns);
-                for (auto* p : method->param()) {
-                    ensureTypeDependencyFromSpec(
-                        ensureTypeDependencyFromSpec, p->typeSpec(), ns);
-                }
+                ensureTypeDependencyForSpec(method->typeSpec(), ns);
+                for (auto* p : method->param())
+                    ensureTypeDependencyForSpec(p->typeSpec(), ns);
                 if (auto* pl = method->paramList()) {
-                    for (auto* p : pl->param()) {
-                        ensureTypeDependencyFromSpec(
-                            ensureTypeDependencyFromSpec, p->typeSpec(), ns);
-                    }
+                    for (auto* p : pl->param())
+                        ensureTypeDependencyForSpec(p->typeSpec(), ns);
                 }
 
                 auto* retTI = resolveTypeInfo(method->typeSpec());
@@ -2191,18 +2137,15 @@ void IRGen::registerCrossFileSymbols(LucisParser::ProgramContext* ctx) {
         }
     };
 
-    // Extend blocks from same namespace
-    declareExtendMethods(currentModulePath_);
-
-    // Extend blocks from imported namespaces
-    std::unordered_set<std::string> processedNs;
-    for (auto& [symbolName, sourceNs] : userImports_) {
-        if (processedNs.insert(sourceNs).second)
-            declareExtendMethods(sourceNs);
-    }
+    // Extend blocks from the current module and every imported namespace.
+    // Namespaces reached only transitively are declared on demand later (see
+    // declareExtendMethodsForNamespace / resolveTypeInfo).
+    declareExtendMethodsForNamespace(currentModulePath_);
+    for (auto& [symbolName, sourceNs] : userImports_)
+        declareExtendMethodsForNamespace(sourceNs);
 
     // ── Impl blocks from same and imported namespaces ──────────────────
-    auto declareImplMethods = [&](const std::string& ns) {
+    declareImplMethodsFn_ = [this](const std::string& ns) {
         auto symbols = moduleRegistry_->getModuleSymbols(ns);
         for (auto* sym : symbols) {
             if (sym->kind != ExportedSymbol::ImplBlock) continue;
@@ -2291,12 +2234,13 @@ void IRGen::registerCrossFileSymbols(LucisParser::ProgramContext* ctx) {
         }
     };
 
-    declareImplMethods(currentModulePath_);
-    processedNs.clear();
-    for (auto& [symbolName, sourceNs] : userImports_) {
-        if (processedNs.insert(sourceNs).second)
-            declareImplMethods(sourceNs);
-    }
+    declareImplMethodsForNamespace(currentModulePath_);
+    for (auto& [symbolName, sourceNs] : userImports_)
+        declareImplMethodsForNamespace(sourceNs);
+
+    // From here on, resolveTypeInfo may pull a type from a namespace that was
+    // never imported; its extend/impl blocks are declared on demand.
+    crossFileSymbolsReady_ = true;
 
     // ── Phase 2: Declare extern functions from same namespace ──────────
     for (auto* sym : sameNsSymbols) {
@@ -2354,6 +2298,145 @@ void IRGen::registerCrossFileSymbols(LucisParser::ProgramContext* ctx) {
 }
 
 // ── Phase 2: Sync type from SemanticDB into local TypeRegistry ────────────────
+
+
+
+// ── On-demand cross-module attachments ──────────────────────────────────────
+
+void IRGen::ensureTypeDependencyForSpec(LucisParser::TypeSpecContext* ts,
+                                        const std::string& ns) {
+    if (!ts) return;
+    if (ts->fnTypeSpec()) {
+        for (auto* inner : ts->fnTypeSpec()->typeSpec())
+            ensureTypeDependencyForSpec(inner, ns);
+        return;
+    }
+    for (auto* inner : ts->typeSpec())
+        ensureTypeDependencyForSpec(inner, ns);
+
+    if (!ts->IDENTIFIER()) return;
+    auto baseName = ts->IDENTIFIER()->getText();
+    auto* depSym = moduleRegistry_->findSymbol(ns, baseName);
+    if (!depSym) {
+        for (auto& candidateNs : moduleRegistry_->allModules()) {
+            depSym = moduleRegistry_->findSymbol(candidateNs, baseName);
+            if (depSym) break;
+        }
+    }
+    if (!depSym) return;
+    if (depSym->sourceFile == currentFile_) return;
+
+    if (depSym->kind == ExportedSymbol::Enum && !typeRegistry_.lookup(baseName)) {
+        auto* ed = static_cast<LucisParser::EnumDeclContext*>(depSym->decl);
+        visitEnumDecl(ed);
+        return;
+    }
+    auto* existingTI = typeRegistry_.lookup(baseName);
+    bool needsVisit = !existingTI ||
+        !llvm::StructType::getTypeByName(*context_, baseName);
+    if (depSym->kind == ExportedSymbol::Struct && needsVisit) {
+        auto* sd = static_cast<LucisParser::StructDeclContext*>(depSym->decl);
+        // Register a skeleton first to break self-referential cycles
+        {
+            TypeInfo skeleton;
+            skeleton.name = baseName;
+            skeleton.kind = TypeKind::Struct;
+            skeleton.bitWidth = 0;
+            skeleton.isSigned = false;
+            typeRegistry_.registerType(std::move(skeleton));
+            if (!llvm::StructType::getTypeByName(*context_, baseName))
+                llvm::StructType::create(*context_, baseName);
+        }
+        for (auto* field : sd->structField())
+            ensureTypeDependencyForSpec(field->typeSpec(), ns);
+        // Upgrade skeleton to full type via visitStructDecl
+        visitStructDecl(sd);
+        return;
+    }
+    bool needsUnionVisit = !existingTI ||
+        !llvm::StructType::getTypeByName(*context_, baseName);
+    if (depSym->kind == ExportedSymbol::Union && needsUnionVisit) {
+        auto* ud = static_cast<LucisParser::UnionDeclContext*>(depSym->decl);
+        // Register a skeleton first to break self-referential cycles
+        {
+            TypeInfo skeleton;
+            skeleton.name = baseName;
+            skeleton.kind = TypeKind::Union;
+            skeleton.bitWidth = 0;
+            skeleton.isSigned = false;
+            typeRegistry_.registerType(std::move(skeleton));
+            if (!llvm::StructType::getTypeByName(*context_, baseName))
+                llvm::StructType::create(*context_, baseName);
+        }
+        for (auto* field : ud->unionField())
+            ensureTypeDependencyForSpec(field->typeSpec(), ns);
+        // Upgrade skeleton to full type via visitUnionDecl
+        visitUnionDecl(ud);
+    }
+}
+
+
+
+void IRGen::ensureFunctionTypeDependencies(LucisParser::FunctionDeclContext* decl,
+                                           const std::string& ns) {
+    if (!decl) return;
+    ensureTypeDependencyForSpec(decl->typeSpec(), ns);
+    if (auto* params = decl->paramList()) {
+        for (auto* p : params->param())
+            ensureTypeDependencyForSpec(p->typeSpec(), ns);
+    }
+}
+
+
+
+void IRGen::declareExtendMethodsForNamespace(const std::string& ns) {
+    if (ns.empty()) return;
+    // Insert first: declaring a method may load a type that recursively asks
+    // for the same namespace; the in-flight pass already covers every symbol.
+    if (!declaredExtendNs_.insert(ns).second) return;
+    if (declareExtendMethodsFn_) declareExtendMethodsFn_(ns);
+}
+
+
+
+void IRGen::declareImplMethodsForNamespace(const std::string& ns) {
+    if (ns.empty()) return;
+    if (!declaredImplNs_.insert(ns).second) return;
+    if (declareImplMethodsFn_) declareImplMethodsFn_(ns);
+}
+
+
+
+bool IRGen::declareAttachmentsForType(const std::string& typeName) {
+    if (!crossFileSymbolsReady_ || typeName.empty() || !moduleRegistry_) return false;
+
+    if (!attachmentIndexBuilt_) {
+        for (const auto& ns : moduleRegistry_->allModules()) {
+            for (auto* sym : moduleRegistry_->getModuleSymbols(ns)) {
+                if (sym->kind == ExportedSymbol::ExtendBlock) {
+                    attachmentNsByType_[sym->name].push_back(ns);
+                } else if (sym->kind == ExportedSymbol::ImplBlock) {
+                    auto* implCtx = dynamic_cast<LucisParser::ImplDeclContext*>(sym->decl);
+                    if (implCtx && implCtx->typeSpec().size() >= 2)
+                        attachmentNsByType_[implCtx->typeSpec(1)->getText()].push_back(ns);
+                }
+            }
+        }
+        attachmentIndexBuilt_ = true;
+    }
+
+    auto it = attachmentNsByType_.find(typeName);
+    if (it == attachmentNsByType_.end()) return false;
+
+    bool declaredSomething = false;
+    for (const auto& ns : it->second) {
+        if (declaredExtendNs_.count(ns) || declaredImplNs_.count(ns)) continue;
+        declareExtendMethodsForNamespace(ns);
+        declareImplMethodsForNamespace(ns);
+        declaredSomething = true;
+    }
+    return declaredSomething;
+}
 
 
 

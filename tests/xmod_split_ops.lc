@@ -1,0 +1,26 @@
+// Third module: extends and implements a type defined in tests/xmod_split_core.
+// A consumer that only imports `makeSplitPoint` must still see these
+// attachments, even though this module is never imported.
+
+use tests::xmod_split_core::SplitPoint;
+
+trait SplitSized {
+    fn area(&self) int32;
+}
+
+// Pulled in transitively through tests/xmod_split_loader.lc so this module is
+// part of the build without the consumer importing it directly.
+fn splitOpsTouch() void {
+}
+
+extend SplitPoint {
+    fn norm(&self) int32 {
+        ret self.x + self.y;
+    }
+}
+
+impl SplitSized for SplitPoint {
+    fn area(&self) int32 {
+        ret self.x * self.y;
+    }
+}

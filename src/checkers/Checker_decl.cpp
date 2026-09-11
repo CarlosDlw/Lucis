@@ -954,9 +954,18 @@ locals_[paramName] = {pType, pDims, {}, true, true, nullptr};
 
 void Checker::checkTraitDecl(LucisParser::TraitDeclContext* decl)
 {
+    // Cross-module registration can reach the same declaration more than once
+    // (a lazy attachment pull and an explicit import both see it); register
+    // each trait exactly once.
+    if (!processedTraitDecls_.insert(decl).second) return;
+
     auto name = decl->IDENTIFIER()->getText();
 
     if (traitRegistry_.lookup(name) || genericTraitTemplates_.count(name)) {
+        // A trait reached from another module is first-wins (deterministic by
+        // namespace order); only a redeclaration in the file being compiled
+        // is a genuine error.
+        if (registeringImported_) return;
         error(decl, "trait '" + name + "' already defined");
         return;
     }
@@ -1044,6 +1053,12 @@ void Checker::checkImplDecl(LucisParser::ImplDeclContext* decl)
         syncToSemanticDB_GenericImpl(implTypeName, savedParams, decl);
         return;
     }
+
+    // The trait may live in a module that is neither imported nor the one
+    // being compiled (e.g. `impl Area for Point` inside lib.lc while the
+    // consumer only knows Point). Make it visible before resolving the spec,
+    // so generic trait templates resolve instead of erroring.
+    ensureTraitVisibleForImpl(specs[0], currentModulePath_);
 
     // Step 1: resolve trait type spec
     unsigned traitDims = 0;
@@ -1390,6 +1405,9 @@ void Checker::registerFunctionSignature(LucisParser::FunctionDeclContext* func,
     // Generic function template — register as template, not as a concrete function
     if (auto* tpl = func->typeParamList()) {
         if (genericFuncTemplates_.count(funcName)) {
+            // Cross-module first-wins: a template reached twice is registered
+            // once; a local redeclaration is still an error.
+            if (registeringImported_) return;
             error(func, "generic function '" + funcName + "' already defined");
             return;
         }
@@ -1405,6 +1423,9 @@ void Checker::registerFunctionSignature(LucisParser::FunctionDeclContext* func,
 
     // Detect duplicate function definitions (skip builtins/externs)
     if (functions_.count(funcName) && !globalBuiltins_.count(funcName)) {
+        // Cross-module first-wins: a signature reached twice is registered
+        // once; a local redeclaration is still an error.
+        if (registeringImported_) return;
         std::string errorMsg = "function '" + funcName + "' already defined";
         if (auto prevDecl = functionDecls_[funcName]) {
             auto prevLine = prevDecl->getStart()->getLine();

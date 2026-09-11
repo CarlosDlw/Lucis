@@ -1424,16 +1424,10 @@ bool Checker::isKnownFunction(const std::string& name) const {
             sym->sourceFile != currentFile_)
             return true;
     }
-    // 6. Any module: a function reached transitively, with no explicit import.
-    if (moduleRegistry_) {
-        auto exported = importedSymbolName(name);
-        for (const auto& ns : moduleRegistry_->allModules()) {
-            auto* sym = moduleRegistry_->findSymbol(ns, exported);
-            if (sym && sym->kind == ExportedSymbol::Function &&
-                sym->sourceFile != currentFile_)
-                return true;
-        }
-    }
+    // A function that is not visible through the checks above is genuinely
+    // undeclared for this unit: `use` is what makes a function callable. This
+    // keeps the diagnostic truthful instead of accepting a call whose
+    // signature was never registered.
     return false;
 }
 

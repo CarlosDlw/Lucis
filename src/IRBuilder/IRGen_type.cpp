@@ -464,6 +464,15 @@ const TypeInfo* IRGen::resolveTypeInfo(LucisParser::TypeSpecContext* ctx) {
                 } else if (sym->kind == ExportedSymbol::TraitDecl) {
                     visitTraitDecl(static_cast<LucisParser::TraitDeclContext*>(sym->decl));
                 }
+                // A type reached transitively brings its module's attachments:
+                // declare the extend methods/operators and impl blocks of the
+                // namespace it came from, so method calls resolve. Idempotent,
+                // and only after cross-file registration has completed (the
+                // explicit passes cover the current and imported namespaces).
+                if (crossFileSymbolsReady_ && !sym->modulePath.empty()) {
+                    declareExtendMethodsForNamespace(sym->modulePath);
+                    declareImplMethodsForNamespace(sym->modulePath);
+                }
             };
 
             if (auto* sameNs = moduleRegistry_->findSymbol(currentModulePath_, name)) {

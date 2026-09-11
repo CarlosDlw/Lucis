@@ -1,0 +1,23 @@
+use std::log::println;
+use std::test::{ assertEqual };
+// The consumer names neither SplitPoint nor the trait nor the extend/impl
+// blocks: only the factory (core module) and a loader that pulls in the ops
+// module transitively. The attachments must still be discovered.
+use tests::xmod_split_core::makeSplitPoint;
+use tests::xmod_split_loader::splitLoaderTouch;
+
+fn testCrossModuleSplitAttachments() int32 {
+    println("[Testing cross-module split attachments...]");
+
+    splitLoaderTouch();
+
+    SplitPoint p = makeSplitPoint(3, 4);
+
+    // extend method declared in tests/xmod_split_ops.lc
+    assertEqual(p.norm(), 7);
+    // trait method provided by an impl in tests/xmod_split_ops.lc
+    assertEqual(p.area(), 12);
+
+    println("[cross-module split attachments: OK]");
+    ret 0;
+}
