@@ -82,6 +82,8 @@ use tests::stdconv::testStdConv;
 use tests::stdfmt::testStdFmt;
 use tests::attach_deps::testCrossModuleAttachments;
 use tests::xmod_split::testCrossModuleSplitAttachments;
+use tests::xmod_more::testCrossModuleGenericConstStatic;
+use tests::xmod_inh::testCrossModuleInheritance;
 
 fn main() int32 {
     // testAtomicOrdering();  // FIXME: libatomic memcpy overlap triggers ASAN in lucis test
@@ -89,6 +91,8 @@ fn main() int32 {
     testLazyCrossModuleTypes();
     testCrossModuleAttachments();
     testCrossModuleSplitAttachments();
+    testCrossModuleGenericConstStatic();
+    testCrossModuleInheritance();
     testIntMethodsExtra();
     testUintTypes();
     testBoolTypes();

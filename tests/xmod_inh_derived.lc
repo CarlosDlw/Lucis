@@ -1,0 +1,17 @@
+// Derives from a struct declared in another module; only the factory is
+// imported by the consumer.
+use tests::xmod_inh_base::XmodBase;
+
+struct XmodDerived : XmodBase {
+    int32 y;
+}
+
+extend XmodDerived {
+    fn sum(&self) int32 {
+        ret self.x + self.y;
+    }
+}
+
+fn makeXmodDerived(int32 x, int32 y) XmodDerived {
+    ret XmodDerived { x: x, y: y };
+}

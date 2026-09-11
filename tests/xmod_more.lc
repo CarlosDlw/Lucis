@@ -1,0 +1,27 @@
+use std::log::println;
+use std::test::{ assertEqual };
+// Only functions and the constant are imported: the generic type, its trait
+// and the static-method type must be discovered transitively.
+use tests::xmod_more_lib::{ makeXmodBox, makeXmodStatic, XMOD_LIMIT };
+
+fn testCrossModuleGenericConstStatic() int32 {
+    println("[Testing cross-module generic instances, const and static methods...]");
+
+    // Generic instance: `extend XmodBox<T>` method and the concrete
+    // `impl XmodShow for XmodBox<int32>` must both be visible.
+    XmodBox<int32> b = makeXmodBox(5);
+    assertEqual(b.get(), 5);
+    assertEqual(b.show(), 5);
+
+    // Imported top-level constant.
+    assertEqual(XMOD_LIMIT, 7);
+
+    // Static extend method on a type that was never imported.
+    XmodStatic s = makeXmodStatic(3);
+    assertEqual(s.val(), 3);
+    XmodStatic t = XmodStatic::create(4);
+    assertEqual(t.val(), 4);
+
+    println("[cross-module generic/const/static: OK]");
+    ret 0;
+}

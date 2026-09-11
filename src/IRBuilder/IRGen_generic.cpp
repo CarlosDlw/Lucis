@@ -311,8 +311,14 @@ const TypeInfo* IRGen::instantiateGenericStruct(
     // ★ Self must resolve to the concrete instantiated type, not the opaque generic template
     subst["Self"] = result;
 
-    // Instantiate extend methods for this struct, if any (only once per concrete type)
-    if (loweredGenericExtendTypes_.insert(mangledName).second) {
+    // A generic instance can be created before its generic `extend` blocks are
+    // declared (e.g. while resolving a function signature during cross-file
+    // registration). Pull them on demand, and only consume the once-per-type
+    // slot when the template actually exists, so a later call can still add
+    // the methods.
+    declareAttachmentsForType(baseName);
+    if (genericExtendTemplates_.count(baseName) &&
+        loweredGenericExtendTypes_.insert(mangledName).second) {
     auto extendIt = genericExtendTemplates_.find(baseName);
     if (extendIt != genericExtendTemplates_.end()) {
         auto& extTmpl = extendIt->second;
@@ -351,8 +357,10 @@ const TypeInfo* IRGen::instantiateGenericStruct(
                 auto* fnType = llvm::FunctionType::get(retLLTy, paramLLTypes, false);
                 auto* fn = module_->getFunction(funcName);
                 if (!fn) {
+                    // Instantiated templates are emitted by every unit that uses
+                    // them; linkonce_odr lets the linker merge the duplicates.
                     fn = llvm::Function::Create(
-                        fnType, llvm::Function::ExternalLinkage, funcName, module_);
+                        fnType, llvm::Function::LinkOnceODRLinkage, funcName, module_);
                 }
                 operatorMethods_[mangledName][internalName].push_back({ fn, retTI });
 
@@ -442,9 +450,21 @@ const TypeInfo* IRGen::instantiateGenericStruct(
             }
 
             auto funcName = mangledName + "__" + methodName;
-            auto* fnType = llvm::FunctionType::get(retLLTy, paramLLTypes, false);
-            auto* fn = llvm::Function::Create(
-                fnType, llvm::Function::ExternalLinkage, funcName, module_);
+            llvm::Function* fn = module_->getFunction(funcName);
+            if (fn && !fn->empty()) {
+                // Already lowered by an earlier path; just expose it.
+                if (isStatic)
+                    staticStructMethods_[mangledName][methodName] = { fn, retTI };
+                else
+                    structMethods_[mangledName][methodName] = { fn, retTI };
+                continue;
+            }
+            if (!fn) {
+                // linkonce_odr: the same instance may be emitted by several units.
+                auto* fnType = llvm::FunctionType::get(retLLTy, paramLLTypes, false);
+                fn = llvm::Function::Create(
+                    fnType, llvm::Function::LinkOnceODRLinkage, funcName, module_);
+            }
 
             if (isStatic)
                 staticStructMethods_[mangledName][methodName] = { fn, retTI };
@@ -607,8 +627,9 @@ const TypeInfo* IRGen::instantiateGenericStruct(
 
                 auto* fnType = llvm::FunctionType::get(
                     retLLType, paramLLTypes, false);
+                // linkonce_odr: generic impl methods are instantiated per unit.
                 auto* fn = llvm::Function::Create(
-                    fnType, llvm::Function::ExternalLinkage,
+                    fnType, llvm::Function::LinkOnceODRLinkage,
                     fnName, module_);
                 loweredImplMethods_[fnName] = fn;
 
@@ -937,8 +958,10 @@ llvm::Function* IRGen::instantiateGenericFunc(
     }
 
     auto* fnType = llvm::FunctionType::get(retLLTy, paramLLTypes, false);
+    // linkonce_odr: a generic function is instantiated by every unit that
+    // calls it, so duplicates must be mergeable by the linker.
     auto* fn = llvm::Function::Create(
-        fnType, llvm::Function::ExternalLinkage, mangledName, module_);
+        fnType, llvm::Function::LinkOnceODRLinkage, mangledName, module_);
 
     if (hasTypedVariadic && tmpl.decl->paramList()) {
         auto* vParam = tmpl.decl->paramList()->param(variadicIdx);

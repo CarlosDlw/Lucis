@@ -766,8 +766,13 @@ std::vector<std::string> Checker::attachmentNamespacesFor(
                     attachmentNsByType_[sym->name].push_back(mod);
                 } else if (sym->kind == ExportedSymbol::ImplBlock) {
                     auto* implDecl = dynamic_cast<LucisParser::ImplDeclContext*>(sym->decl);
-                    if (implDecl && implDecl->typeSpec().size() >= 2)
-                        attachmentNsByType_[implDecl->typeSpec(1)->getText()].push_back(mod);
+                    if (!implDecl || implDecl->typeSpec().size() < 2) continue;
+                    auto* implemented = implDecl->typeSpec(1);
+                    attachmentNsByType_[implemented->getText()].push_back(mod);
+                    // `impl Trait for Box<int32>` is also reachable through the
+                    // bare base name used while instantiating the generic.
+                    if (implemented->IDENTIFIER() && implemented->LT())
+                        attachmentNsByType_[implemented->IDENTIFIER()->getText()].push_back(mod);
                 }
             }
         }
@@ -784,6 +789,48 @@ std::vector<std::string> Checker::attachmentNamespacesFor(
         if (!present) list.insert(list.begin(), ownNs);
     }
     return list;
+}
+
+
+
+void Checker::ensureGenericInstanceAttachments(const std::string& baseName,
+                                               const std::string& instanceName) {
+    if (!moduleRegistry_ || baseName.empty() || instanceName.empty()) return;
+    // Look each instance up at most once.
+    if (!genericInstanceAttachScanned_.insert(instanceName).second) return;
+
+    std::string prevModule = currentModulePath_;
+    bool prevImported = registeringImported_;
+
+    // Reuse the attachment index: every namespace declaring an `extend` or an
+    // `impl` for the base is a candidate for this concrete instance too.
+    const auto candidates = attachmentNamespacesFor(baseName, std::string());
+    for (const auto& mod : candidates) {
+        for (auto* sym : moduleRegistry_->getModuleSymbols(mod)) {
+            if (sym->kind != ExportedSymbol::ImplBlock) continue;
+            if (sym->sourceFile == currentFile_) continue;
+            auto* implDecl = dynamic_cast<LucisParser::ImplDeclContext*>(sym->decl);
+            // Generic impls are stored as templates and instantiated separately.
+            if (!implDecl || implDecl->typeParamList()) continue;
+            auto specs = implDecl->typeSpec();
+            if (specs.size() < 2 || !specs[1]->IDENTIFIER()) continue;
+            // Cheap filter first: only impls whose implemented type has the
+            // same base identifier can possibly match this instance.
+            if (specs[1]->IDENTIFIER()->getText() != baseName) continue;
+
+            currentModulePath_ = mod;
+            registeringImported_ = true;
+            unsigned dims = 0;
+            auto* implTI = resolveTypeSpec(specs[1], dims);
+            if (!implTI || implTI->name != instanceName) continue;
+
+            ensureTraitVisibleForImpl(specs[0], mod);
+            checkImplDecl(implDecl);
+        }
+    }
+
+    registeringImported_ = prevImported;
+    currentModulePath_ = prevModule;
 }
 
 

@@ -1,0 +1,19 @@
+use std::log::println;
+use std::test::{ assertEqual };
+// `XmodDerived` and its base `XmodBase` are both reached transitively.
+use tests::xmod_inh_derived::makeXmodDerived;
+
+fn testCrossModuleInheritance() int32 {
+    println("[Testing cross-module struct inheritance...]");
+
+    XmodDerived d = makeXmodDerived(1, 2);
+
+    // Inherited field and own field.
+    assertEqual(d.x, 1);
+    assertEqual(d.y, 2);
+    // Extend method reading the inherited field.
+    assertEqual(d.sum(), 3);
+
+    println("[cross-module inheritance: OK]");
+    ret 0;
+}

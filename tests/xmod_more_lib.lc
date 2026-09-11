@@ -1,0 +1,47 @@
+// Cross-file scenarios where the consumer names none of the types:
+// a generic struct instance (extend method + trait impl), an exported
+// constant and a static extend method.
+
+const XMOD_LIMIT = 7;
+
+struct XmodBox<T> {
+    T v;
+}
+
+extend XmodBox<T> {
+    fn get(&self) T {
+        ret self.v;
+    }
+}
+
+trait XmodShow {
+    fn show(&self) int32;
+}
+
+impl XmodShow for XmodBox<int32> {
+    fn show(&self) int32 {
+        ret self.v;
+    }
+}
+
+fn makeXmodBox(int32 v) XmodBox<int32> {
+    ret XmodBox<int32> { v: v };
+}
+
+struct XmodStatic {
+    int32 v;
+}
+
+extend XmodStatic {
+    fn create(int32 v) XmodStatic {
+        ret XmodStatic { v: v };
+    }
+
+    fn val(&self) int32 {
+        ret self.v;
+    }
+}
+
+fn makeXmodStatic(int32 v) XmodStatic {
+    ret XmodStatic::create(v);
+}

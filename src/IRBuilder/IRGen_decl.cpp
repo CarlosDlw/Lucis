@@ -43,6 +43,10 @@ std::any IRGen::visitStructDecl(LucisParser::StructDeclContext* ctx) {
         tmpl.decl = ctx;
         auto name = ctx->IDENTIFIER()->getText();
         genericStructTemplates_[name] = std::move(tmpl);
+        // A generic type reached transitively must bring its generic `extend`
+        // and `impl` blocks before an instance is instantiated from it. Gated
+        // to run only after cross-file registration.
+        declareAttachmentsForType(name);
         return {};
     }
 
@@ -153,6 +157,7 @@ std::any IRGen::visitUnionDecl(LucisParser::UnionDeclContext* ctx) {
         tmpl.decl = ctx;
         auto name = ctx->IDENTIFIER()->getText();
         genericUnionTemplates_[name] = std::move(tmpl);
+        declareAttachmentsForType(name);
         return {};
     }
 
@@ -220,6 +225,7 @@ std::any IRGen::visitEnumDecl(LucisParser::EnumDeclContext* ctx) {
             tmpl.typeParams.push_back(tp->IDENTIFIER(0)->getText());
         tmpl.decl = ctx;
         genericEnumTemplates_[enumName] = std::move(tmpl);
+        declareAttachmentsForType(enumName);
         return {};
     }
 
@@ -1977,11 +1983,40 @@ void IRGen::registerCrossFileSymbols(LucisParser::ProgramContext* ctx) {
         for (auto* sym : allSyms) {
             if (sym->kind != ExportedSymbol::ExtendBlock) continue;
             if (sym->sourceFile == currentFile_) continue;
-            // Only process extend blocks for types we've registered.
-            // Check generic struct templates FIRST — a skeleton may already
-            // exist in typeRegistry_ from Phase 0c (line 1643), but we need
-            // the generic extend registered in genericExtendTemplates_.
-            if (genericStructTemplates_.count(sym->name)) {
+            auto structName = sym->name;
+
+            // The type may only be reachable transitively (not imported by
+            // name), so load its declaration from this module on demand. Such a
+            // load can register a *generic template*, which must be known
+            // before choosing the generic vs. concrete path below -- and above
+            // all before any instance is instantiated from that template.
+            auto* structTI = typeRegistry_.lookup(structName);
+            bool needsLoad =
+                !genericStructTemplates_.count(structName) &&
+                !genericUnionTemplates_.count(structName) &&
+                (!structTI ||
+                 (structTI->kind == TypeKind::Struct && structTI->fields.empty()) ||
+                 (structTI->kind == TypeKind::Union && structTI->fields.empty()));
+            if (needsLoad) {
+                if (auto* typeSym = moduleRegistry_->findSymbol(ns, structName)) {
+                    if (auto* sCtx = dynamic_cast<LucisParser::StructDeclContext*>(typeSym->decl)) {
+                        for (auto* field : sCtx->structField())
+                            ensureTypeDependencyForSpec(field->typeSpec(), ns);
+                        visitStructDecl(sCtx);
+                    } else if (auto* uCtx = dynamic_cast<LucisParser::UnionDeclContext*>(typeSym->decl)) {
+                        for (auto* field : uCtx->unionField())
+                            ensureTypeDependencyForSpec(field->typeSpec(), ns);
+                        visitUnionDecl(uCtx);
+                    }
+                }
+                structTI = typeRegistry_.lookup(structName);
+            }
+
+            // Generic `extend Type<T>` blocks are stored as templates and
+            // instantiated per concrete type. Check this AFTER the on-demand
+            // load: a skeleton may already exist in typeRegistry_, but the
+            // template in genericExtendTemplates_ is what matters here.
+            if (genericStructTemplates_.count(structName)) {
                 auto* genExtCtx = dynamic_cast<LucisParser::ExtendDeclContext*>(sym->decl);
                 if (genExtCtx) {
                     // Process the defining module's stdlib imports so that
@@ -2004,28 +2039,6 @@ void IRGen::registerCrossFileSymbols(LucisParser::ProgramContext* ctx) {
                 continue;
             }
 
-            auto structName = sym->name;
-
-            // The type may only be reachable transitively (not imported by
-            // name), so load its declaration from this module on demand --
-            // otherwise its extend methods would be silently skipped.
-            auto* structTI = typeRegistry_.lookup(structName);
-            if (!structTI ||
-                (structTI->kind == TypeKind::Struct && structTI->fields.empty()) ||
-                (structTI->kind == TypeKind::Union && structTI->fields.empty())) {
-                if (auto* typeSym = moduleRegistry_->findSymbol(ns, structName)) {
-                    if (auto* sCtx = dynamic_cast<LucisParser::StructDeclContext*>(typeSym->decl)) {
-                        for (auto* field : sCtx->structField())
-                            ensureTypeDependencyForSpec(field->typeSpec(), ns);
-                        visitStructDecl(sCtx);
-                    } else if (auto* uCtx = dynamic_cast<LucisParser::UnionDeclContext*>(typeSym->decl)) {
-                        for (auto* field : uCtx->unionField())
-                            ensureTypeDependencyForSpec(field->typeSpec(), ns);
-                        visitUnionDecl(uCtx);
-                    }
-                }
-                structTI = typeRegistry_.lookup(structName);
-            }
             if (!structTI || (structTI->kind != TypeKind::Struct &&
                               structTI->kind != TypeKind::Union)) continue;
             if (structTI->kind == TypeKind::Struct && structTI->fields.empty()) continue;
@@ -2417,8 +2430,13 @@ bool IRGen::declareAttachmentsForType(const std::string& typeName) {
                     attachmentNsByType_[sym->name].push_back(ns);
                 } else if (sym->kind == ExportedSymbol::ImplBlock) {
                     auto* implCtx = dynamic_cast<LucisParser::ImplDeclContext*>(sym->decl);
-                    if (implCtx && implCtx->typeSpec().size() >= 2)
-                        attachmentNsByType_[implCtx->typeSpec(1)->getText()].push_back(ns);
+                    if (!implCtx || implCtx->typeSpec().size() < 2) continue;
+                    auto* implemented = implCtx->typeSpec(1);
+                    attachmentNsByType_[implemented->getText()].push_back(ns);
+                    // `impl Trait for Box<int32>` is also reachable through the
+                    // bare base name used while instantiating the generic.
+                    if (implemented->IDENTIFIER() && implemented->LT())
+                        attachmentNsByType_[implemented->IDENTIFIER()->getText()].push_back(ns);
                 }
             }
         }

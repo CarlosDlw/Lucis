@@ -603,6 +603,10 @@ const TypeInfo* Checker::instantiateGenericStruct(
         }
     }
 
+    // `impl Trait for Box<int32>` blocks only become addressable now that the
+    // concrete instance exists.
+    ensureGenericInstanceAttachments(baseName, mangledName);
+
     instantiatingGenerics_.erase(mangledName);
     return result;
 }
@@ -684,6 +688,10 @@ const TypeInfo* Checker::instantiateGenericUnion(
     }
 
     typeRegistry_.registerType(std::move(ti));
+
+    // `impl Trait for Gen<args>` blocks now have a concrete instance to bind to.
+    ensureGenericInstanceAttachments(baseName, mangledName);
+
     instantiatingGenerics_.erase(mangledName);
     return typeRegistry_.lookup(mangledName);
 }
@@ -836,6 +844,10 @@ const TypeInfo* Checker::instantiateGenericEnum(
     }
 
     typeRegistry_.registerType(std::move(ti));
+
+    // `impl Trait for Gen<args>` blocks now have a concrete instance to bind to.
+    ensureGenericInstanceAttachments(baseName, mangledName);
+
     instantiatingGenerics_.erase(mangledName);
     return typeRegistry_.lookup(mangledName);
 }

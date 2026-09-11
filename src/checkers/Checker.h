@@ -498,6 +498,15 @@ private:
     std::vector<std::string> attachmentNamespacesFor(
         const std::string& typeName, const std::string& ownNs);
 
+    // Register `impl Trait for Gen<args>` blocks that target a concrete
+    // generic instance; they only become addressable once the instance
+    // exists, so this runs at the end of generic instantiation.
+    void ensureGenericInstanceAttachments(const std::string& baseName,
+                                          const std::string& instanceName);
+
+    // Instances whose `extend`/`impl` blocks were already looked up.
+    std::unordered_set<std::string> genericInstanceAttachScanned_;
+
     std::unordered_map<std::string, std::vector<std::string>> attachmentNsByType_;
     bool attachmentIndexBuilt_ = false;
 

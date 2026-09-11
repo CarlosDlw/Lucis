@@ -1,0 +1,5 @@
+// Base of the cross-module inheritance test. The consumer never imports it.
+
+struct XmodBase {
+    int32 x;
+}
